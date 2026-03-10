@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
+import multipart from '@fastify/multipart';
 import dotenv from 'dotenv';
 import authRoutes from './modules/auth/auth.routes.js';
 import obraRoutes from './modules/obras/obras.routes.js';
@@ -19,6 +20,13 @@ server.setSerializerCompiler(serializerCompiler);
 
 server.register(cors, {
   origin: true // Allow all for dev
+});
+
+server.register(multipart, {
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+    files: 1
+  }
 });
 
 server.register(jwt, {

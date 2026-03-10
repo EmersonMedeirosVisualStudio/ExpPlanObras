@@ -1,5 +1,5 @@
 
-import { Home, Calendar, Hammer, FileText, Map } from 'lucide-react';
+import { Home, Calendar, Hammer, FileText, Map, DollarSign } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 
@@ -14,6 +14,7 @@ export function DashboardSidebar({ currentView, setCurrentView }: DashboardSideb
   const menuItems = [
     { id: 'obras', label: 'Cadastro de Obra', icon: Home, path: '/dashboard' },
     { id: 'mapa', label: 'Mapa das Obras', icon: Map, path: '/dashboard/mapa' },
+    { id: 'orcamentos', label: 'Orçamentos', icon: DollarSign, path: null },
     { id: 'planejamento', label: 'Planejamento', icon: Calendar, path: null },
     { id: 'execucao', label: 'Execução', icon: Hammer, path: null },
     { id: 'relatorios', label: 'Relatórios', icon: FileText, path: null },

@@ -48,3 +48,16 @@ export const updateObraSchema = z.object({
 
 export type CreateObraInput = z.infer<typeof createObraSchema>;
 export type UpdateObraInput = z.infer<typeof updateObraSchema>;
+
+export const updateOrcamentoSchema = z.object({
+  valorPrevisto: z.number().min(0)
+});
+
+export const createCustoSchema = z.object({
+  description: z.string().min(1),
+  amount: z.number().positive(),
+  date: z.string().optional() // ISO date
+});
+
+export type UpdateOrcamentoInput = z.infer<typeof updateOrcamentoSchema>;
+export type CreateCustoInput = z.infer<typeof createCustoSchema>;

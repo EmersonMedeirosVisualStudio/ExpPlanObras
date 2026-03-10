@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: expplanobras-backend
+    rootDir: backend
+    env: node
+    plan: free
+    buildCommand: |
+      npm ci
+      npx prisma generate --schema=./prisma/postgres/schema.prisma
+      npx prisma migrate deploy --schema=./prisma/postgres/schema.prisma
+      npm run build
+    startCommand: |
+      node dist/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false

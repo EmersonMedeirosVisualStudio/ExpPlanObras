@@ -1,0 +1,3 @@
+name;type;status;street;number;neighborhood;city;state;latitude;longitude;description;valorPrevisto
+Obra A;PUBLICA;EM_ANDAMENTO;Rua das Flores;123;Centro;Natal;RN;-5.812; -35.205;Reforma de escola;150000,50
+Obra B;PARTICULAR;NAO_INICIADA;Av. Brasil;456;Tirol;Natal;RN;-5.790; -35.220;Construção de galpão;250000.00
