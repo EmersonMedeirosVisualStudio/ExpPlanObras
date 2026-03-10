@@ -1,0 +1,230 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Tenant {
+  id        Int      @id @default(autoincrement())
+  name      String
+  slug      String   @unique
+  cnpj      String   @unique // CPF/CNPJ da empresa
+  status    String   @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  users     TenantUser[]
+  obras     Obra[]
+  etapas    Etapa[]
+  custos    Custo[]
+  documentos Documento[]
+  tarefas   Tarefa[]
+  responsaveisTecnicos ResponsavelTecnico[]
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  cpf       String   @unique // CPF do usuário
+  name      String?
+  password  String
+  
+  whatsapp  String?
+  address   String?
+  location  String?  // Localizador (pode ser coordenadas ou referência)
+  
+  isSystemAdmin Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenants   TenantUser[]
+}
+
+model TenantUser {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int
+  userId    Int
+  role      String   @default("USER") // ADMIN, MANAGER, USER
+  
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+  @@index([tenantId])
+}
+
+model Obra {
+  id        Int      @id @default(autoincrement())
+  name      String   // Nome da Obra
+  description String? // Descrição da Obra
+  type      String   @default("PARTICULAR") // PUBLICA, PARTICULAR
+  status    String   @default("NAO_INICIADA") // AGUARDANDO_RECURSOS, AGUARDANDO_CONTRATO, AGUARDANDO_OS, NAO_INICIADA, EM_ANDAMENTO, PARADA, FINALIZADA
+  
+  // Endereço Detalhado
+  street       String?
+  number       String?
+  neighborhood String?
+  city         String?
+  state        String?
+  latitude     String?
+  longitude    String?
+  
+  valorPrevisto Decimal? // Valor previsto total
+  
+  tenantId  Int
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  etapas    Etapa[]
+  custos    Custo[]
+  documentos Documento[]
+  tarefas   Tarefa[]
+  
+  medicoes  Medicao[]
+  pagamentos Pagamento[]
+  responsaveis ResponsavelObra[]
+
+  @@index([tenantId])
+}
+
+model Etapa {
+  id        Int      @id @default(autoincrement())
+  name      String
+  obraId    Int
+  obra      Obra     @relation(fields: [obraId], references: [id])
+  tenantId  Int
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  startDate DateTime?
+  endDate   DateTime?
+  status    String   @default("PENDENTE")
+
+  @@index([tenantId])
+  @@index([obraId])
+}
+
+model Custo {
+  id        Int      @id @default(autoincrement())
+  description String
+  amount    Decimal
+  date      DateTime
+  obraId    Int
+  obra      Obra     @relation(fields: [obraId], references: [id])
+  tenantId  Int
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([obraId])
+}
+
+model Documento {
+  id        Int      @id @default(autoincrement())
+  name      String
+  url       String
+  type      String
+  obraId    Int
+  obra      Obra     @relation(fields: [obraId], references: [id])
+  tenantId  Int
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  uploadedAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([obraId])
+}
+
+model Tarefa {
+  id        Int      @id @default(autoincrement())
+  title     String
+  description String?
+  status    String   @default("PENDENTE")
+  dueDate   DateTime?
+  obraId    Int
+  obra      Obra     @relation(fields: [obraId], references: [id])
+  tenantId  Int
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([obraId])
+}
+
+// --- Novas Tabelas para Gestão Completa ---
+
+model ResponsavelTecnico {
+  id        Int      @id @default(autoincrement())
+  name      String
+  professionalTitle String? // Engenheiro Civil, Arquiteto, etc.
+  crea      String?  // Registro profissional
+  cpf       String?
+  email     String?
+  phone     String?
+  
+  tenantId  Int
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  
+  obras     ResponsavelObra[]
+
+  @@index([tenantId])
+}
+
+model ResponsavelObra {
+  id        Int      @id @default(autoincrement())
+  obraId    Int
+  obra      Obra     @relation(fields: [obraId], references: [id])
+  
+  responsavelId Int
+  responsavel ResponsavelTecnico @relation(fields: [responsavelId], references: [id])
+  
+  role      String   // Fiscal, Executor, Coordenador, etc.
+  startDate DateTime @default(now())
+  endDate   DateTime?
+  notes     String?
+  
+  @@index([obraId])
+  @@index([responsavelId])
+}
+
+model Medicao {
+  id        Int      @id @default(autoincrement())
+  obraId    Int
+  obra      Obra     @relation(fields: [obraId], references: [id])
+  
+  date      DateTime
+  description String
+  amount    Decimal  // Valor medido/liberado
+  percentage Decimal? // Percentual físico executado
+  
+  // Opcional: responsável pela medição (pode ser um User ou ResponsavelTecnico)
+  
+  createdAt DateTime @default(now())
+  
+  pagamentos Pagamento[]
+
+  @@index([obraId])
+}
+
+model Pagamento {
+  id        Int      @id @default(autoincrement())
+  obraId    Int
+  obra      Obra     @relation(fields: [obraId], references: [id])
+  
+  medicaoId Int?
+  medicao   Medicao? @relation(fields: [medicaoId], references: [id])
+  
+  date      DateTime
+  amount    Decimal
+  documentNumber String? // Nota Fiscal, Recibo
+  notes     String?
+  
+  createdAt DateTime @default(now())
+
+  @@index([obraId])
+  @@index([medicaoId])
+}
