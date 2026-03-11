@@ -20,7 +20,7 @@ export function DashboardSidebar({ currentView, setCurrentView }: DashboardSideb
     { id: 'relatorios', label: 'Relatórios', icon: FileText, path: null },
   ];
 
-  const handleNavigation = (id: string, path: string) => {
+  const handleNavigation = (id: string, path: string | null) => {
     setCurrentView(id);
     if (path) {
         if (id === 'obras' && window.location.pathname.includes('/mapa')) {
