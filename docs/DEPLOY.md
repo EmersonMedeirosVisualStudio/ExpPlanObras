@@ -46,6 +46,7 @@ Checklist Render (Backend) - clique a clique
 4. Environment -> adicione:
    - DATABASE_URL (Postgres do Neon/Supabase)
    - JWT_SECRET (uma string forte)
+   - PORT não precisa configurar (o Render define automaticamente)
 5. Deploys -> Manual Deploy -> Deploy latest commit
 6. Depois do deploy, copie a URL pública da API e teste /health
 

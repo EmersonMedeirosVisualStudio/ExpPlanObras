@@ -8,6 +8,13 @@ import { parseCSV } from '../../utils/csv.js';
 export default async function obraRoutes(server: FastifyInstance) {
   server.addHook('onRequest', authenticate);
 
+  server.addHook('preHandler', async (request, reply) => {
+    const tenantId = (request.user as any)?.tenantId;
+    if (typeof tenantId !== 'number') {
+      return reply.code(403).send({ message: 'Tenant não selecionado' });
+    }
+  });
+
   server.post('/import', async (request, reply) => {
     const { tenantId } = request.user as any;
     const file = await (request as any).file();
@@ -162,14 +169,14 @@ export default async function obraRoutes(server: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      const { tenantId } = request.user;
+      const { tenantId } = request.user as any;
       const obra = await createObra(request.body as z.infer<typeof createObraSchema>, tenantId);
       return reply.code(201).send(obra);
     }
   );
 
   server.get('/', async (request, reply) => {
-    const { tenantId } = request.user;
+    const { tenantId } = request.user as any;
     const obras = await getObras(tenantId);
     return reply.send(obras);
   });
@@ -184,7 +191,7 @@ export default async function obraRoutes(server: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      const { tenantId } = request.user;
+      const { tenantId } = request.user as any;
       const { id } = request.params as { id: number };
       const obra = await getObraById(id, tenantId);
       
@@ -207,7 +214,7 @@ export default async function obraRoutes(server: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      const { tenantId } = request.user;
+      const { tenantId } = request.user as any;
       const { id } = request.params as { id: number };
       try {
         const obra = await updateObra(id, request.body as z.infer<typeof updateObraSchema>, tenantId);
@@ -228,7 +235,7 @@ export default async function obraRoutes(server: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      const { tenantId } = request.user;
+      const { tenantId } = request.user as any;
       const { id } = request.params as { id: number };
       try {
         await deleteObra(id, tenantId);

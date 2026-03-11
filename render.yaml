@@ -5,7 +5,7 @@ services:
     env: node
     plan: free
     buildCommand: |
-      npm ci
+      npm ci --include=dev
       npx prisma generate --schema=./prisma/postgres/schema.prisma
       npx prisma migrate deploy --schema=./prisma/postgres/schema.prisma
       npm run build
@@ -14,8 +14,6 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: API_PORT
-        value: 10000
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET

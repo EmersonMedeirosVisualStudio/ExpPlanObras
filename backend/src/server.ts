@@ -43,7 +43,7 @@ server.get('/health', async (request, reply) => {
 
 const start = async () => {
   try {
-    const port = parseInt(process.env.API_PORT || '3333');
+    const port = parseInt(process.env.PORT || process.env.API_PORT || '3333');
     await server.listen({ port, host: '0.0.0.0' });
     console.log(`Server listening on port ${port}`);
   } catch (err) {
