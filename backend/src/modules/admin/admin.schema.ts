@@ -20,6 +20,9 @@ export const updateTenantSchema = z.object({
   slug: z.string().min(3).optional(),
   cnpj: z.string().min(14).optional(),
   status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
+  subscriptionStatus: z.enum(['TRIAL', 'ACTIVE', 'PAST_DUE', 'CANCELED']).optional(),
+  trialEndsAt: z.string().datetime().nullable().optional(),
+  paidUntil: z.string().datetime().nullable().optional(),
 });
 
 export type CreateTenantInput = z.infer<typeof createTenantSchema>;

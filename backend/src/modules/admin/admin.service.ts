@@ -3,6 +3,11 @@ import prisma from "../../plugins/prisma.js";
 import { CreateTenantInput, UpdateTenantInput } from "./admin.schema.js";
 import bcrypt from "bcryptjs";
 
+function getTrialEndsAt() {
+  const days = Number(process.env.TRIAL_DAYS || '30');
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+}
+
 export async function createTenantByAdmin(input: CreateTenantInput) {
   const { 
     name, slug, cnpj, 
@@ -19,6 +24,8 @@ export async function createTenantByAdmin(input: CreateTenantInput) {
         name,
         slug,
         cnpj,
+        subscriptionStatus: 'TRIAL',
+        trialEndsAt: getTrialEndsAt(),
       },
     });
 
@@ -86,10 +93,44 @@ export async function getAllTenants() {
 }
 
 export async function updateTenant(id: number, input: UpdateTenantInput) {
+    const data: any = { ...input };
+    if (Object.prototype.hasOwnProperty.call(input, 'trialEndsAt') && input.trialEndsAt !== undefined) {
+      data.trialEndsAt = input.trialEndsAt === null ? null : new Date(input.trialEndsAt as any);
+    }
+    if (Object.prototype.hasOwnProperty.call(input, 'paidUntil') && input.paidUntil !== undefined) {
+      data.paidUntil = input.paidUntil === null ? null : new Date(input.paidUntil as any);
+    }
     return prisma.tenant.update({
-        where: { id },
-        data: input
+      where: { id },
+      data,
     });
+}
+
+export async function activateTenantSubscription(id: number, months: number) {
+  const paidUntil = new Date();
+  paidUntil.setMonth(paidUntil.getMonth() + months);
+  return prisma.tenant.update({
+    where: { id },
+    data: {
+      subscriptionStatus: 'ACTIVE',
+      paidUntil,
+    },
+  });
+}
+
+export async function grantTenantAccessDays(id: number, days: number) {
+  const paidUntil = new Date();
+  paidUntil.setDate(paidUntil.getDate() + days);
+  return prisma.tenant.update({
+    where: { id },
+    data: {
+      status: 'ACTIVE',
+      subscriptionStatus: 'ACTIVE',
+      paidUntil,
+      billingProvider: 'MANUAL',
+      billingPlan: `MANUAL_${days}D`,
+    } as any,
+  });
 }
 
 export async function deleteTenant(id: number) {

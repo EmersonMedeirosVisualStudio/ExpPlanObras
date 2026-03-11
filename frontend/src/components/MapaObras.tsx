@@ -1,14 +1,13 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { ExternalLink } from 'lucide-react';
 
 // Fix for default marker icon in Next.js
-// @ts-ignore
+// @ts-expect-error Leaflet types do not expose _getIconUrl
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -62,13 +61,7 @@ const createCustomIcon = (color: string) => {
 };
 
 export default function MapaObras({ obras }: MapaObrasProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) return <div className="h-[600px] w-full bg-gray-100 animate-pulse rounded-lg"></div>;
+  // Dynamic import in the page already avoids SSR issues for Leaflet.
 
   // Filter obras with valid coordinates
   const validObras = obras.filter(o => o.latitude && o.longitude && !isNaN(parseFloat(o.latitude)) && !isNaN(parseFloat(o.longitude)));

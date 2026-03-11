@@ -1,8 +1,8 @@
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
-import { User, LogOut, Key } from 'lucide-react';
+import { LogOut, Key } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,17 +20,19 @@ interface User {
 
 export function UserMenu() {
     const router = useRouter();
-    const [currentUser, setCurrentUser] = useState<User | null>(null);
+    const [currentUser] = useState<User | null>(() => {
+        if (typeof window === 'undefined') return null;
+        const user = localStorage.getItem('user');
+        if (!user) return null;
+        try {
+            return JSON.parse(user) as User;
+        } catch {
+            return null;
+        }
+    });
     const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [passwordData, setPasswordData] = useState({ oldPassword: '', newPassword: '' });
     const [passwordError, setPasswordError] = useState('');
-
-    useEffect(() => {
-        const user = localStorage.getItem('user');
-        if (user) {
-            setCurrentUser(JSON.parse(user));
-        }
-    }, []);
 
     const handleLogout = () => {
         localStorage.removeItem('token');
@@ -46,8 +48,12 @@ export function UserMenu() {
             alert('Senha alterada com sucesso!');
             setShowPasswordModal(false);
             setPasswordData({ oldPassword: '', newPassword: '' });
-        } catch (err: any) {
-            setPasswordError(err.response?.data?.message || 'Erro ao alterar senha');
+        } catch (err: unknown) {
+            const message =
+                typeof err === 'object' && err && 'response' in err
+                    ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+                    : undefined;
+            setPasswordError(message || 'Erro ao alterar senha');
         }
     };
 

@@ -1,26 +1,24 @@
 'use client';
 
 import { UserMenu } from '@/components/UserMenu';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 export function DashboardHeader() {
-  const [companyName, setCompanyName] = useState('');
-
-  useEffect(() => {
+  const [companyName] = useState(() => {
+    if (typeof window === 'undefined') return '';
     const userStr = localStorage.getItem('user');
-    if (userStr) {
-      try {
-        const user = JSON.parse(userStr);
-        if (user.tenants && user.tenants.length > 0) {
-            setCompanyName(user.tenants[0].name);
-        } else if (user.isSystemAdmin) {
-            setCompanyName('Administração do Sistema');
-        }
-      } catch (e) {
-        console.error("Error parsing user from localstorage", e);
+    if (!userStr) return '';
+    try {
+      const user = JSON.parse(userStr) as { tenants?: Array<{ name?: string }>; isSystemAdmin?: boolean };
+      if (Array.isArray(user.tenants) && user.tenants.length > 0) {
+        return String(user.tenants[0]?.name || '');
       }
+      if (user.isSystemAdmin) return 'Administração do Sistema';
+      return '';
+    } catch {
+      return '';
     }
-  }, []);
+  });
 
   return (
     <nav className="bg-white shadow-sm border-b z-20 relative w-full">

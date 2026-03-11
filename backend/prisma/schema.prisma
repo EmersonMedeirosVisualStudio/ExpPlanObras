@@ -13,6 +13,12 @@ model Tenant {
   slug      String   @unique
   cnpj      String   @unique // CPF/CNPJ da empresa
   status    String   @default("ACTIVE") // ACTIVE, INACTIVE
+  subscriptionStatus String @default("TRIAL") // TRIAL, ACTIVE, PAST_DUE, CANCELED
+  trialEndsAt DateTime?
+  paidUntil DateTime?
+  billingProvider String?
+  billingPlan String?
+  billingExternalId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   

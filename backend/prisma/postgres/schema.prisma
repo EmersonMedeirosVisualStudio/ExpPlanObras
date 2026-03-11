@@ -13,6 +13,12 @@ model Tenant {
   slug      String   @unique
   cnpj      String   @unique
   status    String   @default("ACTIVE")
+  subscriptionStatus String @default("TRIAL")
+  trialEndsAt DateTime?
+  paidUntil DateTime?
+  billingProvider String?
+  billingPlan String?
+  billingExternalId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   users     TenantUser[]
@@ -191,4 +197,3 @@ model Pagamento {
   @@index([obraId])
   @@index([medicaoId])
 }
-

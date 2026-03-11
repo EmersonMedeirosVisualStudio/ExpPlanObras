@@ -30,6 +30,17 @@ api.interceptors.response.use(
         window.location.href = '/login';
       }
     }
+    if (error.response?.status === 402) {
+      if (typeof window !== 'undefined') {
+        const message = error.response?.data?.message;
+        if (typeof message === 'string' && message.length > 0) {
+          localStorage.setItem('auth_error', message);
+        }
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      }
+    }
     return Promise.reject(error);
   }
 );

@@ -2,7 +2,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createTenantSchema, updateTenantSchema } from './admin.schema.js';
-import { createTenantByAdmin, getAllTenants, updateTenant, deleteTenant } from './admin.service.js';
+import { createTenantByAdmin, getAllTenants, updateTenant, deleteTenant, activateTenantSubscription, grantTenantAccessDays } from './admin.service.js';
 import { checkSystemAdmin } from '../../utils/authenticate.js';
 
 export default async function adminRoutes(server: FastifyInstance) {
@@ -57,6 +57,49 @@ export default async function adminRoutes(server: FastifyInstance) {
             server.log.error(error);
             return reply.code(500).send({ message: error.message || 'Error updating tenant' });
         }
+    }
+  );
+
+  server.post(
+    '/tenants/:id/activate',
+    {
+      schema: {
+        params: z.object({
+          id: z.coerce.number().int(),
+        }),
+        body: z.object({
+          months: z.coerce.number().int().min(1).max(36).default(1),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: number };
+      const { months } = request.body as { months: number };
+      const tenant = await activateTenantSubscription(id, months);
+      return reply.send(tenant);
+    }
+  );
+
+  server.post(
+    '/tenants/:id/grant-access',
+    {
+      schema: {
+        params: z.object({
+          id: z.coerce.number().int(),
+        }),
+        body: z.object({
+          days: z.coerce.number().int(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: number };
+      const { days } = request.body as { days: number };
+      if (![30, 60, 90, 365].includes(days)) {
+        return reply.code(400).send({ message: 'Dias inválidos' });
+      }
+      const tenant = await grantTenantAccessDays(id, days);
+      return reply.send(tenant);
     }
   );
 

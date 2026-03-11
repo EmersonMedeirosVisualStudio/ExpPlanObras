@@ -3,7 +3,6 @@
 
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
-import { useRouter } from 'next/navigation';
 import { Loader2, Plus, Trash2, Edit2, CheckCircle, XCircle } from 'lucide-react';
 import { UserMenu } from '@/components/UserMenu';
 
@@ -16,8 +15,20 @@ interface Tenant {
   users: { user: { name: string; email: string } }[];
 }
 
+function getApiErrorMessage(err: unknown) {
+  if (typeof err !== 'object' || !err) return undefined;
+  if (!('response' in err)) return undefined;
+  const response = (err as { response?: unknown }).response;
+  if (typeof response !== 'object' || !response) return undefined;
+  if (!('data' in response)) return undefined;
+  const data = (response as { data?: unknown }).data;
+  if (typeof data !== 'object' || !data) return undefined;
+  if (!('message' in data)) return undefined;
+  const message = (data as { message?: unknown }).message;
+  return typeof message === 'string' ? message : undefined;
+}
+
 export default function AdminTenantsPage() {
-  const router = useRouter();
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -55,8 +66,7 @@ export default function AdminTenantsPage() {
     try {
       const response = await api.get('/api/admin/tenants');
       setTenants(response.data);
-    } catch (err) {
-      console.error(err);
+    } catch {
     } finally {
       setLoading(false);
     }
@@ -67,7 +77,7 @@ export default function AdminTenantsPage() {
       try {
           await api.put(`/api/admin/tenants/${tenant.id}`, { status: newStatus });
           fetchTenants();
-      } catch (err) {
+      } catch {
           alert('Erro ao alterar status da empresa');
       }
   };
@@ -77,8 +87,19 @@ export default function AdminTenantsPage() {
     try {
         await api.delete(`/api/admin/tenants/${id}`);
         fetchTenants();
-    } catch (err) {
+    } catch {
         alert('Erro ao excluir empresa');
+    }
+  };
+
+  const handleGrantAccessDays = async (tenant: Tenant, days: 30 | 60 | 90 | 365) => {
+    const label = days === 365 ? '1 ano' : `${days} dias`;
+    if (!confirm(`Liberar acesso por ${label} para "${tenant.name}"?`)) return;
+    try {
+      await api.post(`/api/admin/tenants/${tenant.id}/grant-access`, { days });
+      fetchTenants();
+    } catch (err: unknown) {
+      alert(getApiErrorMessage(err) || 'Erro ao liberar acesso');
     }
   };
 
@@ -95,8 +116,8 @@ export default function AdminTenantsPage() {
             representativePassword: '', representativeWhatsapp: '', representativeAddress: ''
           });
           fetchTenants();
-      } catch (err: any) {
-          setError(err.response?.data?.message || 'Erro ao criar empresa');
+      } catch (err: unknown) {
+          setError(getApiErrorMessage(err) || 'Erro ao criar empresa');
       } finally {
           setCreating(false);
       }
@@ -123,7 +144,7 @@ export default function AdminTenantsPage() {
           setShowEditModal(false);
           setEditingTenant(null);
           fetchTenants();
-      } catch (err: any) {
+      } catch {
           alert('Erro ao atualizar empresa');
       } finally {
           setCreating(false);
@@ -209,6 +230,34 @@ export default function AdminTenantsPage() {
                                 <span className="text-xs">{tenant.users[0]?.user.email}</span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                                <button
+                                    onClick={() => handleGrantAccessDays(tenant, 30)}
+                                    className="text-gray-700 hover:text-gray-900"
+                                    title="Liberar 30 dias"
+                                >
+                                    30d
+                                </button>
+                                <button
+                                    onClick={() => handleGrantAccessDays(tenant, 60)}
+                                    className="text-gray-700 hover:text-gray-900"
+                                    title="Liberar 60 dias"
+                                >
+                                    60d
+                                </button>
+                                <button
+                                    onClick={() => handleGrantAccessDays(tenant, 90)}
+                                    className="text-gray-700 hover:text-gray-900"
+                                    title="Liberar 90 dias"
+                                >
+                                    90d
+                                </button>
+                                <button
+                                    onClick={() => handleGrantAccessDays(tenant, 365)}
+                                    className="text-gray-700 hover:text-gray-900"
+                                    title="Liberar 1 ano"
+                                >
+                                    1a
+                                </button>
                                 <button 
                                     onClick={() => handleToggleStatus(tenant)}
                                     className={`${tenant.status === 'ACTIVE' ? 'text-green-600 hover:text-green-900' : 'text-gray-400 hover:text-gray-600'}`}

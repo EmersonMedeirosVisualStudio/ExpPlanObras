@@ -4,8 +4,28 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
-import { cn } from '@/lib/utils';
 import { Loader2 } from 'lucide-react';
+import { useEffect } from 'react';
+
+type TenantOption = {
+  tenantId: number;
+  role: string;
+  name: string;
+  slug: string;
+};
+
+function getApiErrorMessage(err: unknown) {
+  if (typeof err !== 'object' || !err) return undefined;
+  if (!('response' in err)) return undefined;
+  const response = (err as { response?: unknown }).response;
+  if (typeof response !== 'object' || !response) return undefined;
+  if (!('data' in response)) return undefined;
+  const data = (response as { data?: unknown }).data;
+  if (typeof data !== 'object' || !data) return undefined;
+  if (!('message' in data)) return undefined;
+  const message = (data as { message?: unknown }).message;
+  return typeof message === 'string' ? message : undefined;
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,8 +46,16 @@ export default function LoginPage() {
 
   // Multi-tenant selection state
   const [showTenantSelection, setShowTenantSelection] = useState(false);
-  const [availableTenants, setAvailableTenants] = useState<any[]>([]);
+  const [availableTenants, setAvailableTenants] = useState<TenantOption[]>([]);
   const [userId, setUserId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const authError = localStorage.getItem('auth_error');
+    if (authError) {
+      localStorage.removeItem('auth_error');
+      setError(authError);
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,9 +114,8 @@ export default function LoginPage() {
             setError('Cadastro realizado. Faça login.');
         }
       }
-    } catch (err: any) {
-      console.error(err);
-      setError(err.response?.data?.message || 'Something went wrong');
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err) || 'Something went wrong');
     } finally {
       setLoading(false);
     }
@@ -112,8 +139,8 @@ export default function LoginPage() {
         // But we have it in state if we just logged in.
         // Let's rely on the token.
         router.push('/dashboard');
-    } catch (err: any) {
-        setError('Falha ao selecionar empresa.');
+    } catch (err: unknown) {
+        setError(getApiErrorMessage(err) || 'Falha ao selecionar empresa.');
     } finally {
         setLoading(false);
     }
@@ -124,7 +151,7 @@ export default function LoginPage() {
         <div className="flex min-h-screen items-center justify-center bg-gray-100 p-4">
             <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-8 shadow-md">
                 <div className="flex justify-center mb-6">
-                    <img src="/logo.svg" alt="ExpPlanObras Logo" className="h-16 w-auto" />
+                    <img src="/logo.svg" alt="Logo" className="h-16 w-auto" />
                 </div>
                 <div className="text-center">
                     <h2 className="text-3xl font-bold tracking-tight text-gray-900">Selecione a Empresa</h2>
@@ -154,7 +181,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gray-100 p-4">
       <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-8 shadow-md">
         <div className="flex justify-center mb-6">
-            <img src="/logo.svg" alt="ExpPlanObras Logo" className="h-20 w-auto" />
+            <img src="/logo.svg" alt="Logo" className="h-20 w-auto" />
         </div>
         <div className="text-center">
           <h2 className="text-3xl font-bold tracking-tight text-gray-900">
@@ -176,7 +203,7 @@ export default function LoginPage() {
             {!isLogin && (
               <>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Nome Completo</label>
+                  <label className="block text-sm font-medium text-gray-700">Nome do Representante</label>
                   <input
                     name="name"
                     type="text"
@@ -187,7 +214,7 @@ export default function LoginPage() {
                   />
                 </div>
                  <div>
-                  <label className="block text-sm font-medium text-gray-700">Email</label>
+                  <label className="block text-sm font-medium text-gray-700">Email do Representante</label>
                   <input
                     name="email"
                     type="email"
@@ -264,7 +291,7 @@ export default function LoginPage() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700">CPF</label>
+                      <label className="block text-sm font-medium text-gray-700">CPF do Representante</label>
               <input
                 id="cpf"
                 name="cpf"
@@ -322,6 +349,18 @@ export default function LoginPage() {
               {isLogin ? 'Entrar' : 'Cadastrar'}
             </button>
           </div>
+
+          {!isLogin && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setIsLogin(true)}
+                className="group relative flex w-full justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Entrar
+              </button>
+            </div>
+          )}
         </form>
       </div>
     </div>

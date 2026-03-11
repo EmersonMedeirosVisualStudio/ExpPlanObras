@@ -6,7 +6,9 @@ import dotenv from 'dotenv';
 import authRoutes from './modules/auth/auth.routes.js';
 import obraRoutes from './modules/obras/obras.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
-import { z } from 'zod';
+import billingRoutes from './modules/billing/billing.routes.js';
+import mercadoPagoWebhooks from './modules/webhooks/mercadopago.routes.js';
+import maintenanceRoutes from './modules/maintenance/maintenance.routes.js';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 
 dotenv.config();
@@ -36,6 +38,9 @@ server.register(jwt, {
 server.register(authRoutes, { prefix: '/api/auth' });
 server.register(obraRoutes, { prefix: '/api/obras' });
 server.register(adminRoutes, { prefix: '/api/admin' });
+server.register(billingRoutes, { prefix: '/api/billing' });
+server.register(mercadoPagoWebhooks, { prefix: '/api/webhooks' });
+server.register(maintenanceRoutes, { prefix: '/api/maintenance' });
 
 server.get('/health', async (request, reply) => {
   return { status: 'ok' };

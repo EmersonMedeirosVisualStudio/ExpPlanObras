@@ -132,7 +132,7 @@ export default function DashboardPage() {
         });
         await fetchObras();
         alert('Importação concluída');
-      } catch (e: any) {
+      } catch {
         alert('Falha na importação do CSV');
       } finally {
         setImporting(false);
@@ -333,7 +333,14 @@ function OrcamentosView() {
     const load = async () => {
       try {
         const res = await api.get('/api/obras');
-        setObras(res.data.map((o: any) => ({ id: o.id, name: o.name })));
+        const data = res.data as unknown;
+        const list = Array.isArray(data) ? data : [];
+        setObras(
+          list.map((o) => {
+            const obj = (typeof o === 'object' && o) ? (o as { id?: unknown; name?: unknown }) : {};
+            return { id: Number(obj.id), name: String(obj.name || '') };
+          })
+        );
       } catch (e) {
         console.error(e);
       }

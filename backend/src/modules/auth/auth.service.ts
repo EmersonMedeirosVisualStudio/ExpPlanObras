@@ -3,6 +3,25 @@ import { RegisterInput, LoginInput } from "./auth.schema.js";
 import bcrypt from "bcryptjs";
 import { FastifyInstance } from "fastify";
 
+function getTrialEndsAt() {
+  const days = Number(process.env.TRIAL_DAYS || '30');
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+}
+
+function assertTenantActive(tenant: { status: string; subscriptionStatus?: string; trialEndsAt?: Date | null; paidUntil?: Date | null }) {
+  if (tenant.status === 'INACTIVE') {
+    throw new Error('Tenant inativo');
+  }
+  const now = new Date();
+  const subscriptionStatus = tenant.subscriptionStatus || 'TRIAL';
+  if (subscriptionStatus === 'TRIAL' && tenant.trialEndsAt && tenant.trialEndsAt < now) {
+    throw new Error('Período de teste expirou. Assinatura necessária');
+  }
+  if (subscriptionStatus === 'ACTIVE' && tenant.paidUntil && tenant.paidUntil < now) {
+    throw new Error('Assinatura expirada. Renovação necessária');
+  }
+}
+
 export async function registerUser(input: RegisterInput) {
   // @ts-ignore
   const { name, email, cpf, password, tenantName, tenantSlug, cnpj, whatsapp, address, location } = input;
@@ -17,6 +36,8 @@ export async function registerUser(input: RegisterInput) {
         name: tenantName,
         slug: tenantSlug,
         cnpj: cnpj,
+        subscriptionStatus: 'TRIAL',
+        trialEndsAt: getTrialEndsAt(),
       },
     });
 
@@ -114,6 +135,7 @@ export async function loginUser(input: LoginInput, app: FastifyInstance) {
 
   if (user.tenants.length === 1) {
     selectedTenant = user.tenants[0];
+    assertTenantActive(selectedTenant.tenant as any);
     token = app.jwt.sign({
       userId: user.id,
       tenantId: selectedTenant.tenantId,
@@ -148,13 +170,16 @@ export async function selectTenant(userId: number, tenantId: number, app: Fastif
             }
         },
         include: {
-            user: true
+            user: true,
+            tenant: true
         }
     });
 
     if (!tenantUser) {
         throw new Error("User does not belong to this tenant");
     }
+
+    assertTenantActive(tenantUser.tenant as any);
 
     const token = app.jwt.sign({
         userId: userId,

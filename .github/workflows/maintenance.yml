@@ -1,0 +1,20 @@
+name: maintenance
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  purge_expired:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Purge expired tenants
+        run: |
+          curl -fsS -X POST "$API_BASE_URL/api/maintenance/purge-expired" \
+            -H "x-maintenance-token: $MAINTENANCE_TOKEN" \
+            -H "content-type: application/json"
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          MAINTENANCE_TOKEN: ${{ secrets.MAINTENANCE_TOKEN }}
+
