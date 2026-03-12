@@ -37,6 +37,13 @@ export default async function authRoutes(server: FastifyInstance) {
     }
   );
 
+  server.get('/google/status', async (request, reply) => {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+    return reply.send({ enabled: Boolean(clientId && clientSecret && redirectUri) });
+  });
+
   server.get('/google/start', async (request, reply) => {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const redirectUri = process.env.GOOGLE_REDIRECT_URI;

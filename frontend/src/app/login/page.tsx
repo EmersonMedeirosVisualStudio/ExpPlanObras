@@ -33,6 +33,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
 
   // Form states
   const [email, setEmail] = useState('');
@@ -101,6 +102,15 @@ export default function LoginPage() {
           setLoading(false);
         });
     }
+
+    api
+      .get('/api/auth/google/status')
+      .then((res) => {
+        setGoogleEnabled(Boolean(res.data?.enabled));
+      })
+      .catch(() => {
+        setGoogleEnabled(false);
+      });
   }, []);
 
   const handleGoogle = () => {
@@ -203,7 +213,15 @@ export default function LoginPage() {
         <div className="flex min-h-screen items-center justify-center bg-gray-100 p-4">
             <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-8 shadow-md">
                 <div className="flex justify-center mb-6">
-                    <img src="/logo.svg" alt="Logo" className="h-16 w-auto" />
+                    <img
+                      src="/LogoDoSistema.jpg"
+                      alt="Logo"
+                      className="h-16 w-auto"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = '/LogoDoSistema2.jpg';
+                      }}
+                    />
                 </div>
                 <div className="text-center">
                     <h2 className="text-3xl font-bold tracking-tight text-gray-900">Selecione a Empresa</h2>
@@ -233,7 +251,15 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gray-100 p-4">
       <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-8 shadow-md">
         <div className="flex justify-center mb-6">
-            <img src="/logo.svg" alt="Logo" className="h-20 w-auto" />
+            <img
+              src="/LogoDoSistema.jpg"
+              alt="Logo"
+              className="h-20 w-auto"
+              onError={(e) => {
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = '/LogoDoSistema2.jpg';
+              }}
+            />
         </div>
         <div className="text-center">
           <h2 className="text-3xl font-bold tracking-tight text-gray-900">
@@ -402,16 +428,18 @@ export default function LoginPage() {
             </button>
           </div>
 
-          <div>
-            <button
-              type="button"
-              onClick={handleGoogle}
-              disabled={loading}
-              className="group relative flex w-full justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            >
-              Entrar com Google
-            </button>
-          </div>
+          {googleEnabled && (
+            <div>
+              <button
+                type="button"
+                onClick={handleGoogle}
+                disabled={loading}
+                className="group relative flex w-full justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Entrar com Google
+              </button>
+            </div>
+          )}
 
           {!isLogin && (
             <div>
