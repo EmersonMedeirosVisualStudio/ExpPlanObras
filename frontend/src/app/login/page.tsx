@@ -44,7 +44,15 @@ export default function LoginPage() {
   const [tenantName, setTenantName] = useState('');
   const [tenantSlug, setTenantSlug] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
-  const [address, setAddress] = useState('');
+  const [link, setLink] = useState('');
+  const [street, setStreet] = useState('');
+  const [number, setNumber] = useState('');
+  const [neighborhood, setNeighborhood] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [cep, setCep] = useState('');
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
 
   // Multi-tenant selection state
   const [showTenantSelection, setShowTenantSelection] = useState(false);
@@ -118,6 +126,68 @@ export default function LoginPage() {
     window.location.href = `${apiBase.replace(/\/$/, '')}/api/auth/google/start`;
   };
 
+  const formatCpf = (input: string) => {
+    let value = input.replace(/\D/g, '').slice(0, 11);
+    value = value.replace(/(\d{3})(\d)/, '$1.$2');
+    value = value.replace(/(\d{3})(\d)/, '$1.$2');
+    value = value.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+    return value;
+  };
+
+  const formatCnpj = (input: string) => {
+    let value = input.replace(/\D/g, '').slice(0, 14);
+    value = value.replace(/^(\d{2})(\d)/, '$1.$2');
+    value = value.replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3');
+    value = value.replace(/\.(\d{3})(\d)/, '.$1/$2');
+    value = value.replace(/(\d{4})(\d)/, '$1-$2');
+    return value;
+  };
+
+  const formatCep = (input: string) => {
+    let value = input.replace(/\D/g, '').slice(0, 8);
+    if (value.length > 5) value = value.replace(/^(\d{5})(\d)/, '$1-$2');
+    return value;
+  };
+
+  const formatWhatsapp = (input: string) => {
+    const digits = input.replace(/\D/g, '').slice(0, 11);
+    if (digits.length <= 2) return digits;
+    const ddd = digits.slice(0, 2);
+    const rest = digits.slice(2);
+    if (rest.length <= 4) return `(${ddd}) ${rest}`;
+    if (rest.length <= 8) return `(${ddd}) ${rest.slice(0, 4)}-${rest.slice(4)}`;
+    return `(${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`;
+  };
+
+  const parseFromLink = (raw: string) => {
+    const linkValue = String(raw || '').trim();
+    if (!linkValue) return;
+
+    const atMatch = linkValue.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+    if (atMatch) {
+      setLatitude(atMatch[1]);
+      setLongitude(atMatch[2]);
+    }
+
+    const queryMatch = linkValue.match(/[?&](?:query|q)=([^&]+)/i);
+    if (queryMatch) {
+      try {
+        const decoded = decodeURIComponent(queryMatch[1].replace(/\+/g, ' ')).trim();
+        if (decoded.length > 0) {
+          const parts = decoded.split(',').map((p) => p.trim()).filter((p) => p.length > 0);
+          if (parts.length > 0 && street.length === 0) setStreet(parts[0]);
+          const cepMatch = decoded.match(/\b(\d{5})-?(\d{3})\b/);
+          if (cepMatch && cep.length === 0) setCep(formatCep(`${cepMatch[1]}${cepMatch[2]}`));
+          const ufMatch = decoded.match(/\b([A-Z]{2})\b/);
+          if (ufMatch && state.length === 0) setState(ufMatch[1]);
+          if (parts.length >= 2 && neighborhood.length === 0) setNeighborhood(parts[1]);
+          if (parts.length >= 3 && city.length === 0) setCity(parts[2]);
+        }
+      } catch {
+      }
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -150,14 +220,22 @@ export default function LoginPage() {
         // Register
         await api.post('/api/auth/register', {
           email,
-          cpf,
+          cpf: cpf.replace(/\D/g, ''),
           password,
           name,
           tenantName,
           tenantSlug,
-          cnpj,
+          cnpj: cnpj.replace(/\D/g, ''),
+          link,
+          street,
+          number,
+          neighborhood,
+          city,
+          state,
+          cep: cep.replace(/\D/g, ''),
+          latitude: latitude.length > 0 ? latitude : undefined,
+          longitude: longitude.length > 0 ? longitude : undefined,
           whatsapp,
-          address,
           googleToken: googleToken || undefined
         });
         
@@ -335,7 +413,7 @@ export default function LoginPage() {
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
                             placeholder="00.000.000/0000-00"
                             value={cnpj}
-                            onChange={(e) => setCnpj(e.target.value)}
+                            onChange={(e) => setCnpj(formatCnpj(e.target.value))}
                         />
                     </div>
                 </div>
@@ -344,29 +422,107 @@ export default function LoginPage() {
             
             {!isLogin && (
               <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Rua / Logradouro</label>
+                  <input
+                    name="street"
+                    type="text"
+                    required
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                    value={street}
+                    onChange={(e) => setStreet(e.target.value)}
+                  />
+                </div>
+
                 <div className="grid grid-cols-2 gap-2">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Whatsapp</label>
-                            <input
-                                name="whatsapp"
-                                type="text"
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
-                                placeholder="(00) 00000-0000"
-                                value={whatsapp}
-                                onChange={(e) => setWhatsapp(e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Endereço</label>
-                            <input
-                                name="address"
-                                type="text"
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
-                                value={address}
-                                onChange={(e) => setAddress(e.target.value)}
-                            />
-                        </div>
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Número</label>
+                    <input
+                      name="number"
+                      type="text"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                      value={number}
+                      onChange={(e) => setNumber(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Bairro</label>
+                    <input
+                      name="neighborhood"
+                      type="text"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                      value={neighborhood}
+                      onChange={(e) => setNeighborhood(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Cidade</label>
+                    <input
+                      name="city"
+                      type="text"
+                      required
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Estado (UF)</label>
+                    <input
+                      name="state"
+                      type="text"
+                      required
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                      placeholder="SP"
+                      value={state}
+                      onChange={(e) => setState(e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2))}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">CEP</label>
+                    <input
+                      name="cep"
+                      type="text"
+                      required
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                      placeholder="00000-000"
+                      value={cep}
+                      onChange={(e) => setCep(formatCep(e.target.value))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Whatsapp</label>
+                    <input
+                      name="whatsapp"
+                      type="text"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                      placeholder="(00) 00000-0000"
+                      value={whatsapp}
+                      onChange={(e) => setWhatsapp(formatWhatsapp(e.target.value))}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Link (site ou referência)</label>
+                  <input
+                    name="link"
+                    type="text"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                    value={link}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setLink(v);
+                      parseFromLink(v);
+                    }}
+                  />
+                </div>
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700">CPF do Representante</label>
@@ -378,7 +534,7 @@ export default function LoginPage() {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
                 placeholder="000.000.000-00"
                 value={cpf}
-                onChange={(e) => setCpf(e.target.value)}
+                onChange={(e) => setCpf(formatCpf(e.target.value))}
               />
             </div>
               </>
@@ -441,17 +597,6 @@ export default function LoginPage() {
             </div>
           )}
 
-          {!isLogin && (
-            <div>
-              <button
-                type="button"
-                onClick={() => setIsLogin(true)}
-                className="group relative flex w-full justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-              >
-                Entrar
-              </button>
-            </div>
-          )}
         </form>
       </div>
     </div>

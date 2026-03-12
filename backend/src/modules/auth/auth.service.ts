@@ -24,7 +24,29 @@ function assertTenantActive(tenant: { status: string; subscriptionStatus?: strin
 
 export async function registerUser(input: RegisterInput) {
   // @ts-ignore
-  const { name, email, cpf, password, tenantName, tenantSlug, cnpj, whatsapp, address, location, oauthProvider, oauthId } = input as any;
+  const {
+    name,
+    email,
+    cpf,
+    password,
+    tenantName,
+    tenantSlug,
+    cnpj,
+    link,
+    street,
+    number,
+    neighborhood,
+    city,
+    state,
+    cep,
+    latitude,
+    longitude,
+    whatsapp,
+    address,
+    location,
+    oauthProvider,
+    oauthId,
+  } = input as any;
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -36,6 +58,16 @@ export async function registerUser(input: RegisterInput) {
         name: tenantName,
         slug: tenantSlug,
         cnpj: cnpj,
+        link,
+        street,
+        number,
+        neighborhood,
+        city,
+        state,
+        cep,
+        latitude,
+        longitude,
+        status: 'TEMPORARY',
         subscriptionStatus: 'TRIAL',
         trialEndsAt: getTrialEndsAt(),
       },
@@ -62,6 +94,14 @@ export async function registerUser(input: RegisterInput) {
         tenantId: tenant.id,
         userId: user.id,
         role: "ADMIN",
+      },
+    });
+
+    await tx.tenantHistoryEntry.create({
+      data: {
+        tenantId: tenant.id,
+        source: 'SYSTEM',
+        message: 'Empresa cadastrada. Status: TEMPORARY (fase experimental).',
       },
     });
 

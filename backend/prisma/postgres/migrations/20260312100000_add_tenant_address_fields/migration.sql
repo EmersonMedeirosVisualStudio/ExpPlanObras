@@ -1,0 +1,8 @@
+ALTER TABLE "Tenant" ADD COLUMN "link" TEXT;
+ALTER TABLE "Tenant" ADD COLUMN "street" TEXT;
+ALTER TABLE "Tenant" ADD COLUMN "number" TEXT;
+ALTER TABLE "Tenant" ADD COLUMN "neighborhood" TEXT;
+ALTER TABLE "Tenant" ADD COLUMN "city" TEXT;
+ALTER TABLE "Tenant" ADD COLUMN "state" TEXT;
+ALTER TABLE "Tenant" ADD COLUMN "cep" TEXT;
+

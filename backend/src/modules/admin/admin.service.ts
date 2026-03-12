@@ -10,7 +10,8 @@ function getTrialEndsAt() {
 
 export async function createTenantByAdmin(input: CreateTenantInput) {
   const { 
-    name, slug, cnpj, 
+    name, slug, cnpj,
+    link, street, number, neighborhood, city, state, cep, latitude, longitude,
     representativeName, representativeEmail, representativeCpf, representativePassword,
     representativeWhatsapp, representativeAddress, representativeLocation
   } = input;
@@ -24,6 +25,16 @@ export async function createTenantByAdmin(input: CreateTenantInput) {
         name,
         slug,
         cnpj,
+        link,
+        street,
+        number,
+        neighborhood,
+        city,
+        state,
+        cep,
+        latitude,
+        longitude,
+        status: 'TEMPORARY',
         subscriptionStatus: 'TRIAL',
         trialEndsAt: getTrialEndsAt(),
       },
@@ -112,6 +123,7 @@ export async function activateTenantSubscription(id: number, months: number) {
   return prisma.tenant.update({
     where: { id },
     data: {
+      status: 'ACTIVE',
       subscriptionStatus: 'ACTIVE',
       paidUntil,
     },

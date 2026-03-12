@@ -55,9 +55,16 @@ export async function purgeExpiredTenants() {
       } as any,
     });
 
+    await prisma.tenantHistoryEntry.create({
+      data: {
+        tenantId: t.id,
+        source: 'SYSTEM',
+        message: 'Dados operacionais descartados por retenção. Status: INACTIVE.',
+      },
+    });
+
     purged += 1;
   }
 
   return { purged };
 }
-

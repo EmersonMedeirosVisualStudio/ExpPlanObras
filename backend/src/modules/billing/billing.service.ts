@@ -171,17 +171,38 @@ export async function syncTenantFromPreapproval(preapprovalId: string) {
 
   if (status === 'authorized' || status === 'active') {
     update.subscriptionStatus = 'ACTIVE';
+    update.status = 'ACTIVE';
     update.paidUntil = paidUntil;
   } else if (status === 'pending') {
     update.subscriptionStatus = 'PAST_DUE';
+    update.status = 'INACTIVE';
   } else if (status === 'cancelled' || status === 'cancelled_by_payer') {
     update.subscriptionStatus = 'CANCELED';
+    update.status = 'INACTIVE';
   }
 
   await prisma.tenant.update({
     where: { id: tenantId },
     data: update,
   });
+
+  if (update.subscriptionStatus) {
+    const msg =
+      update.subscriptionStatus === 'ACTIVE'
+        ? `Assinatura ativada. Status: ACTIVE.`
+        : update.subscriptionStatus === 'PAST_DUE'
+          ? `Assinatura pendente/não paga. Status: INACTIVE.`
+          : update.subscriptionStatus === 'CANCELED'
+            ? `Assinatura cancelada. Status: INACTIVE.`
+            : `Assinatura atualizada: ${String(update.subscriptionStatus)}.`;
+    await prisma.tenantHistoryEntry.create({
+      data: {
+        tenantId,
+        source: 'SYSTEM',
+        message: msg,
+      },
+    });
+  }
 
   if (update.subscriptionStatus === 'ACTIVE' && email) {
     const user = await prisma.user.findUnique({ where: { email } });
@@ -203,4 +224,3 @@ export async function syncTenantFromPreapproval(preapprovalId: string) {
 
   return { tenantId, status: update.subscriptionStatus || status };
 }
-

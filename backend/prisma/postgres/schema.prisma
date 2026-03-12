@@ -12,7 +12,16 @@ model Tenant {
   name      String
   slug      String   @unique
   cnpj      String   @unique
-  status    String   @default("ACTIVE")
+  link      String?
+  street    String?
+  number    String?
+  neighborhood String?
+  city      String?
+  state     String?
+  cep       String?
+  latitude  String?
+  longitude String?
+  status    String   @default("TEMPORARY")
   subscriptionStatus String @default("TRIAL")
   trialEndsAt DateTime?
   paidUntil DateTime?
@@ -28,6 +37,7 @@ model Tenant {
   documentos Documento[]
   tarefas   Tarefa[]
   responsaveisTecnicos ResponsavelTecnico[]
+  history   TenantHistoryEntry[]
 }
 
 model User {
@@ -45,6 +55,36 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   tenants   TenantUser[]
+  tenantHistoryEntries TenantHistoryEntry[]
+}
+
+model TenantHistoryEntry {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int
+  source    String
+  message   String
+  actorUserId Int?
+  createdAt DateTime @default(now())
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actorUser User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  attachments TenantHistoryAttachment[]
+
+  @@index([tenantId])
+  @@index([actorUserId])
+}
+
+model TenantHistoryAttachment {
+  id      Int @id @default(autoincrement())
+  entryId Int
+  url     String?
+  filename String?
+  mimeType String?
+  data     Bytes?
+
+  entry   TenantHistoryEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@index([entryId])
 }
 
 model TenantUser {

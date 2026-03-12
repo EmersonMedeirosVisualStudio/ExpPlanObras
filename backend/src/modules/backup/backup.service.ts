@@ -29,6 +29,12 @@ export async function exportTenantBackup(tenantId: number) {
     orderBy: { id: 'asc' },
   });
 
+  const history = await prisma.tenantHistoryEntry.findMany({
+    where: { tenantId },
+    orderBy: { createdAt: 'asc' },
+    include: { attachments: true },
+  });
+
   return {
     schemaVersion: 1,
     exportedAt: new Date().toISOString(),
@@ -43,6 +49,7 @@ export async function exportTenantBackup(tenantId: number) {
     responsaveisObra,
     medicoes,
     pagamentos,
+    history,
   };
 }
 
@@ -67,6 +74,8 @@ export async function restoreTenantBackup(tenantId: number, backup: any) {
     await tx.tarefa.deleteMany({ where: { tenantId } });
     await tx.obra.deleteMany({ where: { tenantId } });
     await tx.responsavelTecnico.deleteMany({ where: { tenantId } });
+    await tx.tenantHistoryAttachment.deleteMany({ where: { entry: { tenantId } } as any });
+    await tx.tenantHistoryEntry.deleteMany({ where: { tenantId } });
 
     const responsavelIdMap = new Map<number, number>();
     for (const r of backup.responsaveisTecnicos || []) {
@@ -213,7 +222,40 @@ export async function restoreTenantBackup(tenantId: number, backup: any) {
       });
     }
 
+    for (const h of backup.history || []) {
+      const created = await tx.tenantHistoryEntry.create({
+        data: {
+          tenantId,
+          source: h.source,
+          message: h.message,
+          actorUserId: null,
+          createdAt: h.createdAt ? new Date(h.createdAt) : new Date(),
+        } as any,
+      });
+      const atts = Array.isArray(h.attachments) ? h.attachments : [];
+      for (const a of atts as Array<any>) {
+        const url = typeof a?.url === 'string' ? a.url : null;
+        const filename = typeof a?.filename === 'string' ? a.filename : null;
+        const mimeType = typeof a?.mimeType === 'string' ? a.mimeType : null;
+
+        let data: Buffer | null = null;
+        const raw = a?.data;
+        if (raw && typeof raw === 'object' && raw.type === 'Buffer' && Array.isArray(raw.data)) {
+          data = Buffer.from(raw.data);
+        }
+
+        await tx.tenantHistoryAttachment.create({
+          data: {
+            entryId: created.id,
+            url,
+            filename,
+            mimeType,
+            data,
+          } as any,
+        });
+      }
+    }
+
     return { restored: true };
   });
 }
-
