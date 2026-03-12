@@ -39,6 +39,8 @@ model User {
   whatsapp  String?
   address   String?
   location  String?
+  oauthProvider String?
+  oauthId String?
   isSystemAdmin Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

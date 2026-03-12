@@ -24,7 +24,7 @@ function assertTenantActive(tenant: { status: string; subscriptionStatus?: strin
 
 export async function registerUser(input: RegisterInput) {
   // @ts-ignore
-  const { name, email, cpf, password, tenantName, tenantSlug, cnpj, whatsapp, address, location } = input;
+  const { name, email, cpf, password, tenantName, tenantSlug, cnpj, whatsapp, address, location, oauthProvider, oauthId } = input as any;
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -50,7 +50,9 @@ export async function registerUser(input: RegisterInput) {
         password: hashedPassword,
         whatsapp,
         address,
-        location
+        location,
+        oauthProvider,
+        oauthId
       },
     });
 
@@ -158,6 +160,74 @@ export async function loginUser(input: LoginInput, app: FastifyInstance) {
         slug: t.tenant.slug
       }))
     } 
+  };
+}
+
+export async function loginUserByEmail(email: string, app: FastifyInstance) {
+  const user = await prisma.user.findUnique({
+    where: { email },
+    include: {
+      tenants: {
+        include: {
+          tenant: true,
+        },
+      },
+    },
+  });
+
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  if (user.isSystemAdmin) {
+    const token = app.jwt.sign({
+      userId: user.id,
+      role: 'SYSTEM_ADMIN',
+      email: user.email,
+      isSystemAdmin: true,
+    });
+
+    return {
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        cpf: user.cpf,
+        isSystemAdmin: true,
+        tenants: [],
+      },
+    };
+  }
+
+  let token = null;
+  let selectedTenant = null;
+
+  if (user.tenants.length === 1) {
+    selectedTenant = user.tenants[0];
+    assertTenantActive(selectedTenant.tenant as any);
+    token = app.jwt.sign({
+      userId: user.id,
+      tenantId: selectedTenant.tenantId,
+      role: selectedTenant.role,
+      email: user.email,
+    });
+  }
+
+  return {
+    token,
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      cpf: user.cpf,
+      tenants: user.tenants.map((t) => ({
+        tenantId: t.tenantId,
+        role: t.role,
+        name: t.tenant.name,
+        slug: t.tenant.slug,
+      })),
+    },
   };
 }
 

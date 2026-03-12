@@ -32,6 +32,7 @@ export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
 
   // Form states
   const [email, setEmail] = useState('');
@@ -55,7 +56,57 @@ export default function LoginPage() {
       localStorage.removeItem('auth_error');
       setError(authError);
     }
+
+    const params = new URLSearchParams(window.location.search);
+    const gt = params.get('googleToken');
+    const mode = params.get('mode');
+    const googleLogin = params.get('googleLogin');
+    const emailParam = params.get('email');
+    const nameParam = params.get('name');
+
+    if (gt) {
+      setGoogleToken(gt);
+      if (emailParam) setEmail(emailParam);
+      if (nameParam) setName(nameParam);
+      if (mode === 'register') setIsLogin(false);
+    }
+
+    if (gt && googleLogin === '1') {
+      setLoading(true);
+      api
+        .post('/api/auth/google/login', { googleToken: gt })
+        .then((response) => {
+          const { token, user } = response.data;
+
+          if (token) {
+            localStorage.setItem('token', token);
+            localStorage.setItem('user', JSON.stringify(user));
+            if (user.isSystemAdmin) {
+              router.push('/admin/tenants');
+            } else {
+              router.push('/dashboard');
+            }
+          } else if (user.tenants && user.tenants.length > 0) {
+            setUserId(user.id);
+            setAvailableTenants(user.tenants);
+            setShowTenantSelection(true);
+          } else {
+            setError('Usuário não vinculado a nenhuma empresa.');
+          }
+        })
+        .catch((err: unknown) => {
+          setError(getApiErrorMessage(err) || 'Falha no login Google');
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    }
   }, []);
+
+  const handleGoogle = () => {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
+    window.location.href = `${apiBase.replace(/\/$/, '')}/api/auth/google/start`;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -96,7 +147,8 @@ export default function LoginPage() {
           tenantSlug,
           cnpj,
           whatsapp,
-          address
+          address,
+          googleToken: googleToken || undefined
         });
         
         // Auto login after register
@@ -347,6 +399,17 @@ export default function LoginPage() {
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isLogin ? 'Entrar' : 'Cadastrar'}
+            </button>
+          </div>
+
+          <div>
+            <button
+              type="button"
+              onClick={handleGoogle}
+              disabled={loading}
+              className="group relative flex w-full justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Entrar com Google
             </button>
           </div>
 
