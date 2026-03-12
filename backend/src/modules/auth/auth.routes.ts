@@ -18,7 +18,7 @@ export default async function authRoutes(server: FastifyInstance) {
       try {
         const body = request.body as any;
         if (typeof body?.googleToken === 'string' && body.googleToken.length > 0) {
-          const payload = server.jwt.verify(body.googleToken) as any;
+          const payload = (server.jwt as any).verify(body.googleToken) as any;
           body.email = payload?.email;
           body.name = payload?.name || body.name;
           body.oauthProvider = 'google';
@@ -44,7 +44,7 @@ export default async function authRoutes(server: FastifyInstance) {
       return reply.code(500).send({ message: 'Google OAuth não configurado' });
     }
 
-    const state = server.jwt.sign({ nonce: crypto.randomUUID() }, { expiresIn: '10m' });
+    const state = (server.jwt as any).sign({ nonce: crypto.randomUUID() }, { expiresIn: '10m' });
 
     const params = new URLSearchParams({
       client_id: clientId,
@@ -72,7 +72,7 @@ export default async function authRoutes(server: FastifyInstance) {
     if (!clientId || !clientSecret || !redirectUri) return reply.code(500).send({ message: 'Google OAuth não configurado' });
 
     try {
-      server.jwt.verify(state);
+      (server.jwt as any).verify(state);
     } catch {
       return reply.code(401).send({ message: 'State inválido' });
     }
@@ -111,7 +111,7 @@ export default async function authRoutes(server: FastifyInstance) {
       return reply.code(401).send({ message: 'Conta Google inválida' });
     }
 
-    const googleToken = server.jwt.sign({ email, name, sub }, { expiresIn: '10m' });
+    const googleToken = (server.jwt as any).sign({ email, name, sub }, { expiresIn: '10m' });
     const base = appUrl.replace(/\/$/, '');
     const redirect = `${base}/login?googleToken=${encodeURIComponent(googleToken)}&email=${encodeURIComponent(email)}&name=${encodeURIComponent(name)}`;
 
@@ -134,7 +134,7 @@ export default async function authRoutes(server: FastifyInstance) {
     async (request, reply) => {
       try {
         const { googleToken } = request.body as { googleToken: string };
-        const payload = server.jwt.verify(googleToken) as any;
+        const payload = (server.jwt as any).verify(googleToken) as any;
         const email = String(payload?.email || '');
         if (!email) return reply.code(401).send({ message: 'Token inválido' });
         const result = await loginUserByEmail(email, server);
