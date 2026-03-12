@@ -8,6 +8,7 @@ services:
       npm ci --include=dev
       npx prisma generate --schema=./prisma/postgres/schema.prisma
       cd prisma/postgres && npx prisma migrate deploy --schema=./schema.prisma && cd ../..
+      npm run create-system-admin
       npm run build
     startCommand: |
       node dist/server.js

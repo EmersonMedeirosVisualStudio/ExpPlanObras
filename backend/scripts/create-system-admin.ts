@@ -3,10 +3,15 @@ import prisma from '../src/plugins/prisma.js';
 import bcrypt from 'bcryptjs';
 
 async function main() {
-    const email = 'admin@sistema.com';
-    const password = '123456'; // Em produção, usar variável de ambiente
-    const cpf = '000.000.000-00'; // CPF Administrativo
-    const name = 'Administrador Sistema';
+    const email = process.env.ADMIN_EMAIL || '';
+    const password = process.env.ADMIN_PASSWORD || '';
+    const cpf = process.env.ADMIN_CPF || '';
+    const name = process.env.ADMIN_NAME || 'Administrador Sistema';
+
+    if (!email || !password || !cpf) {
+        console.log('Admin bootstrap skipped: set ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_CPF to enable.');
+        return;
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 

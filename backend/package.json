@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "postinstall": "prisma generate --schema=./prisma/schema.prisma",
+    "create-system-admin": "tsx scripts/create-system-admin.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
