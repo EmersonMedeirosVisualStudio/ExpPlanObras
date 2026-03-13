@@ -13,9 +13,10 @@ export async function createTenantByAdmin(input: CreateTenantInput) {
   const { 
     name, slug, cnpj,
     companyEmail,
+    companyWhatsapp,
     link, street, number, neighborhood, city, state, cep, latitude, longitude,
     representativeName, representativeEmail, representativeCpf, representativePassword,
-    representativeWhatsapp, representativeAddress, representativeLocation
+    representativeWhatsapp
   } = input;
 
   const cleanSlug = validateSlug(slug);
@@ -35,6 +36,7 @@ export async function createTenantByAdmin(input: CreateTenantInput) {
         slug: cleanSlug,
         cnpj: cleanCNPJ,
         companyEmail,
+        companyWhatsapp,
         link,
         googleMapsLink: link,
         street,
@@ -66,8 +68,6 @@ export async function createTenantByAdmin(input: CreateTenantInput) {
                 name: representativeName,
                 password: hashedPassword,
                 whatsapp: representativeWhatsapp,
-                address: representativeAddress,
-                location: representativeLocation
             },
         });
     } else {

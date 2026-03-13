@@ -13,6 +13,7 @@ model Tenant {
   slug      String   @unique
   cnpj      String   @unique
   companyEmail String?
+  companyWhatsapp String?
   link      String?
   googleMapsLink String?
   street    String?

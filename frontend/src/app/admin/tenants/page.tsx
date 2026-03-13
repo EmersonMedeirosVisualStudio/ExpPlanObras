@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '@/lib/api';
 import { Loader2, Plus, Trash2, Edit2, CheckCircle, XCircle } from 'lucide-react';
 import { UserMenu } from '@/components/UserMenu';
@@ -41,6 +41,7 @@ function getApiErrorMessage(err: unknown) {
 }
 
 export default function AdminTenantsPage() {
+  const inputClass = 'mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-black placeholder:text-black placeholder:opacity-50';
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -53,6 +54,7 @@ export default function AdminTenantsPage() {
     slug: '',
     cnpj: '',
     companyEmail: '',
+    companyWhatsapp: '',
     link: '',
     street: '',
     number: '',
@@ -67,7 +69,6 @@ export default function AdminTenantsPage() {
     representativeCpf: '',
     representativePassword: '',
     representativeWhatsapp: '',
-    representativeAddress: '',
   });
 
   // Edit Form State
@@ -87,9 +88,57 @@ export default function AdminTenantsPage() {
   const [historyMessage, setHistoryMessage] = useState('');
   const [historyFiles, setHistoryFiles] = useState<FileList | null>(null);
 
+  const [linkLookupLoading, setLinkLookupLoading] = useState(false);
+  const lastResolvedLinkRef = useRef<string>('');
+
   useEffect(() => {
     fetchTenants();
   }, []);
+
+  const resolveFromLink = useCallback(async (link: string) => {
+    const v = String(link || '').trim();
+    if (v.length < 10) return;
+    setLinkLookupLoading(true);
+    try {
+      const res = await api.post('/api/admin/maps/resolve', { link: v });
+      const data = res.data as {
+        street?: string;
+        neighborhood?: string;
+        city?: string;
+        state?: string;
+        cep?: string;
+        latitude?: string;
+        longitude?: string;
+      };
+      setFormData((prev) => ({
+        ...prev,
+        street: data.street || prev.street,
+        neighborhood: data.neighborhood || prev.neighborhood,
+        city: data.city || prev.city,
+        state: data.state || prev.state,
+        cep: data.cep ? String(data.cep).replace(/\D/g, '').replace(/^(\d{5})(\d)/, '$1-$2') : prev.cep,
+        latitude: data.latitude || prev.latitude,
+        longitude: data.longitude || prev.longitude,
+      }));
+      lastResolvedLinkRef.current = v;
+    } catch (err: unknown) {
+      const msg = getApiErrorMessage(err) || 'Não foi possível buscar o endereço';
+      setError(msg);
+    } finally {
+      setLinkLookupLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showCreateModal) return;
+    const link = String(formData.link || '').trim();
+    if (link.length < 10) return;
+    if (link === lastResolvedLinkRef.current) return;
+    const t = window.setTimeout(() => {
+      resolveFromLink(link);
+    }, 800);
+    return () => window.clearTimeout(t);
+  }, [formData.link, resolveFromLink, showCreateModal]);
 
   const fetchTenants = async () => {
     try {
@@ -142,6 +191,7 @@ export default function AdminTenantsPage() {
           setFormData({
             name: '', slug: '', cnpj: '',
             companyEmail: '',
+            companyWhatsapp: '',
             link: '',
             street: '',
             number: '',
@@ -152,7 +202,7 @@ export default function AdminTenantsPage() {
             latitude: '',
             longitude: '',
             representativeName: '', representativeEmail: '', representativeCpf: '',
-            representativePassword: '', representativeWhatsapp: '', representativeAddress: ''
+            representativePassword: '', representativeWhatsapp: ''
           });
           fetchTenants();
       } catch (err: unknown) {
@@ -273,6 +323,17 @@ export default function AdminTenantsPage() {
             else if (rest.length <= 8) value = `(${ddd}) ${rest.substring(0, 4)}-${rest.substring(4)}`;
             else value = `(${ddd}) ${rest.substring(0, 5)}-${rest.substring(5)}`;
           }
+      } else if (name === 'companyWhatsapp') {
+          const digits = value.replace(/\D/g, '').substring(0, 11);
+          if (digits.length <= 2) {
+            value = digits;
+          } else {
+            const ddd = digits.substring(0, 2);
+            const rest = digits.substring(2);
+            if (rest.length <= 4) value = `(${ddd}) ${rest}`;
+            else if (rest.length <= 8) value = `(${ddd}) ${rest.substring(0, 4)}-${rest.substring(4)}`;
+            else value = `(${ddd}) ${rest.substring(0, 5)}-${rest.substring(5)}`;
+          }
       } else if (name === 'cep') {
           value = value.replace(/\D/g, '').substring(0, 8);
           if (value.length > 5) value = value.replace(/^(\d{5})(\d)/, '$1-$2');
@@ -287,8 +348,8 @@ export default function AdminTenantsPage() {
           const linkValue = String(value || '').trim();
           const atMatch = linkValue.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
           if (atMatch) {
-            if (!next.latitude) next.latitude = atMatch[1];
-            if (!next.longitude) next.longitude = atMatch[2];
+            next.latitude = atMatch[1];
+            next.longitude = atMatch[2];
           }
           const queryMatch = linkValue.match(/[?&](?:query|q)=([^&]+)/i);
           if (queryMatch) {
@@ -296,13 +357,13 @@ export default function AdminTenantsPage() {
               const decoded = decodeURIComponent(queryMatch[1].replace(/\+/g, ' ')).trim();
               if (decoded.length > 0) {
                 const parts = decoded.split(',').map((p) => p.trim()).filter((p) => p.length > 0);
-                if (parts.length > 0 && !next.street) next.street = parts[0];
-                if (parts.length >= 2 && !next.neighborhood) next.neighborhood = parts[1];
-                if (parts.length >= 3 && !next.city) next.city = parts[2];
+                if (parts.length > 0) next.street = next.street || parts[0];
+                if (parts.length >= 2) next.neighborhood = next.neighborhood || parts[1];
+                if (parts.length >= 3) next.city = next.city || parts[2];
                 const cepMatch = decoded.match(/\b(\d{5})-?(\d{3})\b/);
-                if (cepMatch && !next.cep) next.cep = `${cepMatch[1]}-${cepMatch[2]}`;
+                if (cepMatch) next.cep = next.cep || `${cepMatch[1]}-${cepMatch[2]}`;
                 const ufMatch = decoded.match(/\b([A-Z]{2})\b/);
-                if (ufMatch && !next.state) next.state = ufMatch[1];
+                if (ufMatch) next.state = next.state || ufMatch[1];
               }
             } catch {
             }
@@ -312,6 +373,8 @@ export default function AdminTenantsPage() {
         return next;
       });
   };
+
+  
 
   const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       setEditFormData({ ...editFormData, [e.target.name]: e.target.value });
@@ -483,50 +546,65 @@ export default function AdminTenantsPage() {
                         <div className="grid grid-cols-2 gap-4">
                             <div className="col-span-2">
                                 <label className="block text-sm font-medium text-gray-700">Nome da Empresa</label>
-                                <input name="name" required value={formData.name} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                                <input name="name" required value={formData.name} onChange={handleChange} className={inputClass} />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700">Slug (URL)</label>
-                                <input name="slug" required value={formData.slug} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                                <input name="slug" required value={formData.slug} onChange={handleChange} className={inputClass} placeholder="minha-empresa" />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700">CNPJ</label>
-                                <input name="cnpj" required value={formData.cnpj} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                                <input name="cnpj" required value={formData.cnpj} onChange={handleChange} className={inputClass} placeholder="00.000.000/0000-00" />
                             </div>
                             <div className="col-span-2">
                                 <label className="block text-sm font-medium text-gray-700">E-mail da Empresa</label>
-                                <input name="companyEmail" type="email" required value={formData.companyEmail} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                                <input name="companyEmail" type="email" required value={formData.companyEmail} onChange={handleChange} className={inputClass} placeholder="contato@empresa.com.br" />
                             </div>
                             <div className="col-span-2">
                                 <label className="block text-sm font-medium text-gray-700">Link (site ou referência)</label>
-                                <input name="link" value={formData.link} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                                <input name="link" value={formData.link} onChange={handleChange} className={inputClass} placeholder="Cole aqui o link do Google Maps" />
+                                <div className="mt-2 flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => resolveFromLink(formData.link)}
+                                    disabled={linkLookupLoading || String(formData.link || '').trim().length < 10}
+                                    className="px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-800 disabled:opacity-50 flex items-center gap-2"
+                                  >
+                                    {linkLookupLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                                    Buscar endereço
+                                  </button>
+                                </div>
                             </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
                                 <div className="col-span-2">
                                     <label className="block text-sm font-medium text-gray-700">Rua / Logradouro</label>
-                                    <input name="street" required value={formData.street} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                                    <input name="street" required value={formData.street} onChange={handleChange} className={inputClass} />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Número</label>
-                                    <input name="number" value={formData.number} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                                    <input name="number" value={formData.number} onChange={handleChange} className={inputClass} />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Bairro</label>
-                                    <input name="neighborhood" value={formData.neighborhood} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                                    <input name="neighborhood" value={formData.neighborhood} onChange={handleChange} className={inputClass} />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Cidade</label>
-                                    <input name="city" required value={formData.city} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                                    <input name="city" required value={formData.city} onChange={handleChange} className={inputClass} />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Estado (UF)</label>
-                                    <input name="state" required value={formData.state} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                                    <input name="state" required value={formData.state} onChange={handleChange} className={inputClass} placeholder="SP" />
                                 </div>
-                                <div className="col-span-2">
+                                <div>
                                     <label className="block text-sm font-medium text-gray-700">CEP</label>
-                                    <input name="cep" required value={formData.cep} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 max-w-xs" />
+                                    <input name="cep" required value={formData.cep} onChange={handleChange} className={inputClass} placeholder="00000-000" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">WhatsApp / Tel da Empresa</label>
+                                    <input name="companyWhatsapp" value={formData.companyWhatsapp} onChange={handleChange} className={inputClass} placeholder="(00) 00000-0000" />
                                 </div>
                         </div>
 
@@ -535,27 +613,23 @@ export default function AdminTenantsPage() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Nome Completo</label>
-                                    <input name="representativeName" required value={formData.representativeName} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                                    <input name="representativeName" required value={formData.representativeName} onChange={handleChange} className={inputClass} />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Email</label>
-                                    <input name="representativeEmail" type="email" required value={formData.representativeEmail} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                                    <input name="representativeEmail" type="email" required value={formData.representativeEmail} onChange={handleChange} className={inputClass} placeholder="login@empresa.com.br" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">CPF</label>
-                                    <input name="representativeCpf" required value={formData.representativeCpf} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                                    <input name="representativeCpf" required value={formData.representativeCpf} onChange={handleChange} className={inputClass} placeholder="000.000.000-00" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Senha</label>
-                                    <input name="representativePassword" type="password" required value={formData.representativePassword} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                                    <input name="representativePassword" type="password" required value={formData.representativePassword} onChange={handleChange} className={inputClass} />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Whatsapp</label>
-                                    <input name="representativeWhatsapp" value={formData.representativeWhatsapp} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Endereço</label>
-                                    <input name="representativeAddress" value={formData.representativeAddress} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                                    <input name="representativeWhatsapp" value={formData.representativeWhatsapp} onChange={handleChange} className={inputClass} placeholder="(00) 00000-0000" />
                                 </div>
                             </div>
                         </div>

@@ -6,6 +6,7 @@ export const createTenantSchema = z.object({
   slug: z.string().min(3),
   cnpj: z.string().min(14),
   companyEmail: z.string().email().optional(),
+  companyWhatsapp: z.string().optional(),
   link: z.string().optional(),
   street: z.string().optional(),
   number: z.string().optional(),
@@ -21,8 +22,6 @@ export const createTenantSchema = z.object({
   representativeCpf: z.string().min(11),
   representativePassword: z.string().min(8).regex(/^(?=.*[A-Za-z])(?=.*\d).+$/),
   representativeWhatsapp: z.string().optional(),
-  representativeAddress: z.string().optional(),
-  representativeLocation: z.string().optional(),
 });
 
 export const updateTenantSchema = z.object({
@@ -30,6 +29,7 @@ export const updateTenantSchema = z.object({
   slug: z.string().min(3).optional(),
   cnpj: z.string().min(14).optional(),
   companyEmail: z.string().email().optional(),
+  companyWhatsapp: z.string().optional(),
   link: z.string().optional(),
   street: z.string().optional(),
   number: z.string().optional(),

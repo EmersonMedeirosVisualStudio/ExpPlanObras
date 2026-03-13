@@ -59,7 +59,7 @@ export default function LoginPage() {
   const [name, setName] = useState('');
   const [tenantName, setTenantName] = useState('');
   const [tenantSlug, setTenantSlug] = useState('');
-  const [whatsapp, setWhatsapp] = useState('');
+  const [companyWhatsapp, setCompanyWhatsapp] = useState('');
   const [companyEmail, setCompanyEmail] = useState('');
   const [link, setLink] = useState('');
   const [street, setStreet] = useState('');
@@ -302,6 +302,7 @@ export default function LoginPage() {
           tenantSlug,
           cnpj: cnpj.replace(/\D/g, ''),
           companyEmail: companyEmail.length > 0 ? companyEmail : undefined,
+          companyWhatsapp: companyWhatsapp.replace(/\D/g, '').length > 0 ? companyWhatsapp : undefined,
           link,
           street,
           number,
@@ -311,7 +312,6 @@ export default function LoginPage() {
           cep: cep.replace(/\D/g, ''),
           latitude: latitude.length > 0 ? latitude : undefined,
           longitude: longitude.length > 0 ? longitude : undefined,
-          whatsapp,
           captchaToken: captchaToken.length > 0 ? captchaToken : undefined,
           googleToken: googleToken || undefined
         });
@@ -441,7 +441,7 @@ export default function LoginPage() {
                     name="name"
                     type="text"
                     required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
@@ -452,7 +452,7 @@ export default function LoginPage() {
                     name="email"
                     type="email"
                     required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                   />
@@ -463,7 +463,7 @@ export default function LoginPage() {
                     name="tenantName"
                     type="text"
                     required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                     value={tenantName}
                     onChange={(e) => setTenantName(e.target.value)}
                   />
@@ -474,7 +474,7 @@ export default function LoginPage() {
                     name="companyEmail"
                     type="email"
                     required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                     value={companyEmail}
                     onChange={(e) => setCompanyEmail(e.target.value)}
                   />
@@ -486,7 +486,7 @@ export default function LoginPage() {
                             name="tenantSlug"
                             type="text"
                             required
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                             placeholder="minha-empresa"
                             value={tenantSlug}
                             onChange={(e) => setTenantSlug(e.target.value)}
@@ -498,7 +498,7 @@ export default function LoginPage() {
                             name="cnpj"
                             type="text"
                             required
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                             placeholder="00.000.000/0000-00"
                             value={cnpj}
                             onChange={(e) => setCnpj(formatCnpj(e.target.value))}
@@ -521,7 +521,7 @@ export default function LoginPage() {
                     name="street"
                     type="text"
                     required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                     value={street}
                     onChange={(e) => setStreet(e.target.value)}
                   />
@@ -533,7 +533,7 @@ export default function LoginPage() {
                     <input
                       name="number"
                       type="text"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                       value={number}
                       onChange={(e) => setNumber(e.target.value)}
                     />
@@ -543,7 +543,7 @@ export default function LoginPage() {
                     <input
                       name="neighborhood"
                       type="text"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                       value={neighborhood}
                       onChange={(e) => setNeighborhood(e.target.value)}
                     />
@@ -557,7 +557,7 @@ export default function LoginPage() {
                       name="city"
                       type="text"
                       required
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
                     />
@@ -568,7 +568,7 @@ export default function LoginPage() {
                       name="state"
                       type="text"
                       required
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                       placeholder="SP"
                       value={state}
                       onChange={(e) => setState(e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2))}
@@ -583,21 +583,21 @@ export default function LoginPage() {
                       name="cep"
                       type="text"
                       required
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                       placeholder="00000-000"
                       value={cep}
                       onChange={(e) => setCep(formatCep(e.target.value))}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Whatsapp</label>
+                    <label className="block text-sm font-medium text-gray-700">WhatsApp / Tel da Empresa</label>
                     <input
-                      name="whatsapp"
+                      name="companyWhatsapp"
                       type="text"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                       placeholder="(00) 00000-0000"
-                      value={whatsapp}
-                      onChange={(e) => setWhatsapp(formatWhatsapp(e.target.value))}
+                      value={companyWhatsapp}
+                      onChange={(e) => setCompanyWhatsapp(formatWhatsapp(e.target.value))}
                     />
                   </div>
                 </div>
@@ -607,7 +607,7 @@ export default function LoginPage() {
                   <input
                     name="link"
                     type="text"
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                     value={link}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -624,7 +624,7 @@ export default function LoginPage() {
                 name="cpf"
                 type="text"
                 required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                 placeholder="000.000.000-00"
                 value={cpf}
                 onChange={(e) => setCpf(formatCpf(e.target.value))}
@@ -640,7 +640,7 @@ export default function LoginPage() {
                     name="email"
                     type="email"
                     required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                   />
@@ -655,7 +655,7 @@ export default function LoginPage() {
                 type="password"
                 autoComplete="current-password"
                 required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />

@@ -9,6 +9,7 @@ export const registerSchema = z.object({
   tenantSlug: z.string().min(3),
   cnpj: z.string().min(14),
   companyEmail: z.string().email().optional(),
+  companyWhatsapp: z.string().optional(),
   link: z.string().optional(),
   street: z.string().optional(),
   number: z.string().optional(),
