@@ -364,7 +364,7 @@ export default function LoginPage() {
                     name="name"
                     type="text"
                     required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
@@ -375,7 +375,7 @@ export default function LoginPage() {
                     name="email"
                     type="email"
                     required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                   />
@@ -386,7 +386,7 @@ export default function LoginPage() {
                     name="tenantName"
                     type="text"
                     required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                     value={tenantName}
                     onChange={(e) => setTenantName(e.target.value)}
                   />
@@ -398,7 +398,7 @@ export default function LoginPage() {
                             name="tenantSlug"
                             type="text"
                             required
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                             placeholder="minha-empresa"
                             value={tenantSlug}
                             onChange={(e) => setTenantSlug(e.target.value)}
@@ -410,7 +410,7 @@ export default function LoginPage() {
                             name="cnpj"
                             type="text"
                             required
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                             placeholder="00.000.000/0000-00"
                             value={cnpj}
                             onChange={(e) => setCnpj(formatCnpj(e.target.value))}
@@ -428,7 +428,7 @@ export default function LoginPage() {
                     name="street"
                     type="text"
                     required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                     value={street}
                     onChange={(e) => setStreet(e.target.value)}
                   />
@@ -440,7 +440,7 @@ export default function LoginPage() {
                     <input
                       name="number"
                       type="text"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                       value={number}
                       onChange={(e) => setNumber(e.target.value)}
                     />
@@ -450,7 +450,7 @@ export default function LoginPage() {
                     <input
                       name="neighborhood"
                       type="text"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                       value={neighborhood}
                       onChange={(e) => setNeighborhood(e.target.value)}
                     />
@@ -464,7 +464,7 @@ export default function LoginPage() {
                       name="city"
                       type="text"
                       required
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
                     />
@@ -475,7 +475,7 @@ export default function LoginPage() {
                       name="state"
                       type="text"
                       required
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                       placeholder="SP"
                       value={state}
                       onChange={(e) => setState(e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2))}
@@ -490,7 +490,7 @@ export default function LoginPage() {
                       name="cep"
                       type="text"
                       required
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                       placeholder="00000-000"
                       value={cep}
                       onChange={(e) => setCep(formatCep(e.target.value))}
@@ -501,7 +501,7 @@ export default function LoginPage() {
                     <input
                       name="whatsapp"
                       type="text"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                       placeholder="(00) 00000-0000"
                       value={whatsapp}
                       onChange={(e) => setWhatsapp(formatWhatsapp(e.target.value))}
@@ -514,7 +514,7 @@ export default function LoginPage() {
                   <input
                     name="link"
                     type="text"
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                     value={link}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -531,7 +531,7 @@ export default function LoginPage() {
                 name="cpf"
                 type="text"
                 required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                 placeholder="000.000.000-00"
                 value={cpf}
                 onChange={(e) => setCpf(formatCpf(e.target.value))}
@@ -547,7 +547,7 @@ export default function LoginPage() {
                     name="email"
                     type="email"
                     required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                   />
@@ -562,7 +562,7 @@ export default function LoginPage() {
                 type="password"
                 autoComplete="current-password"
                 required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
