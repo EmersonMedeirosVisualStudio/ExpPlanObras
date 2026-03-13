@@ -48,6 +48,7 @@ export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [addressError, setAddressError] = useState('');
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [googleEnabled, setGoogleEnabled] = useState(false);
 
@@ -70,10 +71,30 @@ export default function LoginPage() {
   const [cep, setCep] = useState('');
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
+  const [coordSource, setCoordSource] = useState<'MAPS' | 'CEP' | 'MANUAL' | ''>('');
+  const [addressEditedAfterMaps, setAddressEditedAfterMaps] = useState(false);
+  const [cityOptions, setCityOptions] = useState<string[]>([]);
+  const [stateSuggestions, setStateSuggestions] = useState<string[]>([]);
+  const [cepCandidates, setCepCandidates] = useState<string[]>([]);
+  const [mapsLoading, setMapsLoading] = useState(false);
+  const [cepLoading, setCepLoading] = useState(false);
+  const addressSnapshotRef = useRef<{ street: string; number: string; neighborhood: string; city: string; state: string; cep: string } | null>(null);
+  const UF_LIST = useRef([
+    'AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'
+  ]).current;
   const [captchaToken, setCaptchaToken] = useState('');
   const captchaWidgetIdRef = useRef<number | null>(null);
   const captchaLoadedRef = useRef(false);
   const hcaptchaSitekey = process.env.NEXT_PUBLIC_HCAPTCHA_SITEKEY;
+
+  const inputClass =
+    'mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50';
+  const label = (text: string, required?: boolean) => (
+    <label className="block text-sm font-medium text-black">
+      {text}
+      {required ? <span className="text-red-600"> *</span> : null}
+    </label>
+  );
 
   // Multi-tenant selection state
   const [showTenantSelection, setShowTenantSelection] = useState(false);
@@ -191,6 +212,72 @@ export default function LoginPage() {
     });
   }, [hcaptchaSitekey, isLogin]);
 
+  useEffect(() => {
+    if (isLogin) return;
+    const uf = String(state || '').toUpperCase();
+    if (uf.length !== 2 || !UF_LIST.includes(uf)) {
+      setCityOptions([]);
+      return;
+    }
+    api
+      .get(`/api/geo/ibge/municipios?uf=${encodeURIComponent(uf)}`)
+      .then((res) => {
+        const list = Array.isArray(res.data) ? (res.data as string[]) : [];
+        setCityOptions(list);
+        if (city.trim().length > 0 && !list.includes(city.trim())) {
+          setCity('');
+          setAddressError('Cidade não pertence ao estado informado. Selecione uma cidade da lista.');
+        }
+      })
+      .catch(() => {
+        setCityOptions([]);
+      });
+  }, [UF_LIST, api, city, isLogin, state]);
+
+  useEffect(() => {
+    if (isLogin) return;
+    if (state.trim().length > 0) {
+      setStateSuggestions([]);
+      return;
+    }
+    const q = city.trim();
+    if (q.length < 3) {
+      setStateSuggestions([]);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      api
+        .get(`/api/geo/ibge/search-city?name=${encodeURIComponent(q)}`)
+        .then((res) => {
+          const list = Array.isArray(res.data) ? (res.data as Array<{ city: string; uf: string }>) : [];
+          const ufs = Array.from(new Set(list.filter((x) => x.city.toLowerCase() === q.toLowerCase()).map((x) => x.uf)))
+            .filter((x) => x.length === 2)
+            .sort((a, b) => a.localeCompare(b));
+          setStateSuggestions(ufs);
+        })
+        .catch(() => setStateSuggestions([]));
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [api, city, isLogin, state]);
+
+  useEffect(() => {
+    if (isLogin) return;
+    if (coordSource !== 'MAPS') {
+      setAddressEditedAfterMaps(false);
+      return;
+    }
+    const snap = addressSnapshotRef.current;
+    if (!snap) return;
+    const edited =
+      snap.street !== street ||
+      snap.number !== number ||
+      snap.neighborhood !== neighborhood ||
+      snap.city !== city ||
+      snap.state !== state ||
+      snap.cep !== cep;
+    setAddressEditedAfterMaps(edited);
+  }, [city, coordSource, cep, isLogin, neighborhood, number, state, street]);
+
   const handleGoogle = () => {
     const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
     window.location.href = `${apiBase.replace(/\/$/, '')}/api/auth/google/start`;
@@ -229,32 +316,125 @@ export default function LoginPage() {
     return `(${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`;
   };
 
-  const parseFromLink = (raw: string) => {
-    const linkValue = String(raw || '').trim();
-    if (!linkValue) return;
-
-    const atMatch = linkValue.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
-    if (atMatch) {
-      setLatitude(atMatch[1]);
-      setLongitude(atMatch[2]);
+  const openLocation = () => {
+    const lat = Number(String(latitude || '').replace(',', '.'));
+    const lon = Number(String(longitude || '').replace(',', '.'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      setAddressError('Latitude/Longitude inválidas.');
+      return;
     }
+    window.open(`https://www.google.com/maps?q=${lat},${lon}`, '_blank', 'noopener,noreferrer');
+  };
 
-    const queryMatch = linkValue.match(/[?&](?:query|q)=([^&]+)/i);
-    if (queryMatch) {
-      try {
-        const decoded = decodeURIComponent(queryMatch[1].replace(/\+/g, ' ')).trim();
-        if (decoded.length > 0) {
-          const parts = decoded.split(',').map((p) => p.trim()).filter((p) => p.length > 0);
-          if (parts.length > 0 && street.length === 0) setStreet(parts[0]);
-          const cepMatch = decoded.match(/\b(\d{5})-?(\d{3})\b/);
-          if (cepMatch && cep.length === 0) setCep(formatCep(`${cepMatch[1]}${cepMatch[2]}`));
-          const ufMatch = decoded.match(/\b([A-Z]{2})\b/);
-          if (ufMatch && state.length === 0) setState(ufMatch[1]);
-          if (parts.length >= 2 && neighborhood.length === 0) setNeighborhood(parts[1]);
-          if (parts.length >= 3 && city.length === 0) setCity(parts[2]);
+  const resolveByMapsLink = async () => {
+    const v = String(link || '').trim();
+    if (v.length < 10) {
+      setAddressError('Informe um link do Google Maps.');
+      return;
+    }
+    setAddressError('');
+    setMapsLoading(true);
+    try {
+      const res = await api.post('/api/geo/maps/resolve', { link: v });
+      const data = res.data as {
+        street?: string;
+        number?: string;
+        neighborhood?: string;
+        city?: string;
+        state?: string;
+        cep?: string;
+        latitude?: string;
+        longitude?: string;
+      };
+      if (data.street) setStreet(data.street);
+      if (data.number) setNumber(data.number);
+      if (data.neighborhood) setNeighborhood(data.neighborhood);
+      if (data.city) setCity(data.city);
+      if (data.state) setState(String(data.state).toUpperCase().slice(0, 2));
+      if (data.cep) setCep(formatCep(String(data.cep)));
+      if (data.latitude) setLatitude(String(data.latitude));
+      if (data.longitude) setLongitude(String(data.longitude));
+      setCoordSource('MAPS');
+      addressSnapshotRef.current = {
+        street: data.street || street,
+        number: data.number || number,
+        neighborhood: data.neighborhood || neighborhood,
+        city: data.city || city,
+        state: data.state ? String(data.state).toUpperCase().slice(0, 2) : state,
+        cep: data.cep ? formatCep(String(data.cep)) : cep,
+      };
+      setAddressEditedAfterMaps(false);
+    } catch (err: unknown) {
+      setAddressError(getApiErrorMessage(err) || 'Não foi possível buscar a localização');
+    } finally {
+      setMapsLoading(false);
+    }
+  };
+
+  const resolveAddressByCep = async () => {
+    const clean = String(cep || '').replace(/\D/g, '');
+    if (clean.length !== 8) {
+      setAddressError('CEP inválido. Informe 8 dígitos.');
+      return;
+    }
+    setAddressError('');
+    setCepLoading(true);
+    try {
+      const res = await api.post('/api/geo/cep/resolve', { cep: clean });
+      const data = res.data as { street?: string; neighborhood?: string; city?: string; state?: string; cep?: string };
+      if (data.street) setStreet(data.street);
+      if (data.neighborhood) setNeighborhood(data.neighborhood);
+      if (data.city) setCity(data.city);
+      if (data.state) setState(String(data.state).toUpperCase().slice(0, 2));
+      if (data.cep) setCep(formatCep(String(data.cep)));
+
+      if (coordSource !== 'MAPS' && (latitude.trim().length === 0 || longitude.trim().length === 0)) {
+        const q = `${data.street || street}, ${number || ''}, ${data.neighborhood || neighborhood}, ${data.city || city} - ${data.state || state}, ${data.cep || clean}`;
+        const geo = await api.post('/api/geo/geocode', { query: q }).catch(() => null);
+        const lat = geo?.data?.latitude ? String(geo.data.latitude) : '';
+        const lon = geo?.data?.longitude ? String(geo.data.longitude) : '';
+        if (lat && lon) {
+          setLatitude(lat);
+          setLongitude(lon);
+          setCoordSource('CEP');
         }
-      } catch {
       }
+    } catch (err: unknown) {
+      setAddressError(getApiErrorMessage(err) || 'Não foi possível buscar o CEP');
+    } finally {
+      setCepLoading(false);
+    }
+  };
+
+  const searchCepByAddress = async () => {
+    const uf = state.trim().toUpperCase();
+    const c = city.trim();
+    const s = street.trim();
+    if (uf.length !== 2 || !UF_LIST.includes(uf)) {
+      setAddressError('Informe um estado (UF) válido.');
+      return;
+    }
+    if (c.length < 2 || s.length < 2) {
+      setAddressError('Informe rua e cidade para buscar o CEP.');
+      return;
+    }
+    setAddressError('');
+    setCepLoading(true);
+    try {
+      const res = await api.get(
+        `/api/geo/cep/search?uf=${encodeURIComponent(uf)}&city=${encodeURIComponent(c)}&street=${encodeURIComponent(s)}`
+      );
+      const list = Array.isArray(res.data) ? (res.data as string[]) : [];
+      setCepCandidates(list);
+      if (list.length === 1) {
+        setCep(formatCep(list[0]));
+      } else if (list.length === 0) {
+        setAddressError('CEP não encontrado para este endereço.');
+      }
+    } catch (err: unknown) {
+      setAddressError(getApiErrorMessage(err) || 'Não foi possível buscar o CEP');
+    } finally {
+      setCepLoading(false);
     }
   };
 
@@ -432,238 +612,197 @@ export default function LoginPage() {
         </div>
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="-space-y-px rounded-md shadow-sm space-y-2">
-            {!isLogin && (
-              <>
+          {!isLogin && (
+            <>
+              <div className="text-xs text-gray-700">Campos com * são obrigatórios.</div>
+              <fieldset className="border rounded-md p-4 space-y-3">
+                <legend className="px-2 text-sm font-semibold text-black">Dados da Empresa</legend>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Nome do Representante</label>
-                  <input
-                    name="name"
-                    type="text"
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </div>
-                 <div>
-                  <label className="block text-sm font-medium text-gray-700">E-mail do Representante (login)</label>
-                  <input
-                    name="email"
-                    type="email"
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Nome da Empresa</label>
-                  <input
-                    name="tenantName"
-                    type="text"
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                    value={tenantName}
-                    onChange={(e) => setTenantName(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">E-mail da Empresa</label>
-                  <input
-                    name="companyEmail"
-                    type="email"
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                    value={companyEmail}
-                    onChange={(e) => setCompanyEmail(e.target.value)}
-                  />
+                  {label('Nome da Empresa', true)}
+                  <input name="tenantName" type="text" required className={inputClass} value={tenantName} onChange={(e) => setTenantName(e.target.value)} />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Slug (URL)</label>
-                        <input
-                            name="tenantSlug"
-                            type="text"
-                            required
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                            placeholder="minha-empresa"
-                            value={tenantSlug}
-                            onChange={(e) => setTenantSlug(e.target.value)}
-                        />
+                  <div>
+                    {label('Slug (URL)', true)}
+                    <input name="tenantSlug" type="text" required className={inputClass} placeholder="minha-empresa" value={tenantSlug} onChange={(e) => setTenantSlug(e.target.value)} />
+                  </div>
+                  <div>
+                    {label('CNPJ', true)}
+                    <input name="cnpj" type="text" required className={inputClass} placeholder="00.000.000/0000-00" value={cnpj} onChange={(e) => setCnpj(formatCnpj(e.target.value))} />
+                  </div>
+                </div>
+                <div>
+                  {label('E-mail da Empresa', true)}
+                  <input name="companyEmail" type="email" required className={inputClass} placeholder="contato@empresa.com.br" value={companyEmail} onChange={(e) => setCompanyEmail(e.target.value)} />
+                </div>
+              </fieldset>
+
+              <fieldset className="border rounded-md p-4 space-y-3">
+                <legend className="px-2 text-sm font-semibold text-black">Endereço da Empresa</legend>
+                <div>
+                  {label('Link Google Maps')}
+                  <input name="link" type="text" className={inputClass} placeholder="Cole aqui o link do Google Maps" value={link} onChange={(e) => setLink(e.target.value)} />
+                  <div className="mt-2 flex justify-end">
+                    <button type="button" onClick={resolveByMapsLink} disabled={mapsLoading || String(link || '').trim().length < 10} className="px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-800 disabled:opacity-50 flex items-center gap-2">
+                      {mapsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Buscar localização
+                    </button>
+                  </div>
+                  {coordSource === 'MAPS' && (
+                    <div className="mt-2 text-xs text-gray-700">Coordenadas obtidas a partir do link do Google Maps.</div>
+                  )}
+                  {addressEditedAfterMaps && (
+                    <div className="mt-2 text-xs text-gray-700">
+                      Você alterou o endereço após usar o link. As coordenadas podem não corresponder exatamente. Use “Buscar localização” para atualizar.
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">CNPJ</label>
-                        <input
-                            name="cnpj"
-                            type="text"
-                            required
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                            placeholder="00.000.000/0000-00"
-                            value={cnpj}
-                            onChange={(e) => setCnpj(formatCnpj(e.target.value))}
-                        />
-                    </div>
+                  )}
+                </div>
+
+                <div>
+                  {label('Rua / Logradouro', true)}
+                  <input name="street" type="text" required className={inputClass} value={street} onChange={(e) => setStreet(e.target.value)} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    {label('Número')}
+                    <input name="number" type="text" className={inputClass} value={number} onChange={(e) => setNumber(e.target.value)} />
+                  </div>
+                  <div>
+                    {label('Bairro')}
+                    <input name="neighborhood" type="text" className={inputClass} value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    {label('Cidade', true)}
+                    <input list="city-options" name="city" type="text" required className={inputClass} value={city} onChange={(e) => setCity(e.target.value)} />
+                    <datalist id="city-options">
+                      {cityOptions.map((c) => (
+                        <option key={c} value={c} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div>
+                    {label('Estado (UF)', true)}
+                    <input list="uf-options" name="state" type="text" required className={inputClass} placeholder="SP" value={state} onChange={(e) => setState(e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2))} />
+                    <datalist id="uf-options">
+                      {UF_LIST.map((uf) => (
+                        <option key={uf} value={uf} />
+                      ))}
+                    </datalist>
+                    {stateSuggestions.length > 0 && (
+                      <div className="mt-2 text-xs text-gray-700">
+                        Estados com esta cidade: {stateSuggestions.join(', ')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    {label('CEP', true)}
+                    <input name="cep" type="text" required className={inputClass} placeholder="00000-000" value={cep} onChange={(e) => setCep(formatCep(e.target.value))} />
+                    {cepCandidates.length > 1 && (
+                      <select className={`${inputClass} mt-2`} value={cep.replace(/\\D/g, '')} onChange={(e) => setCep(formatCep(e.target.value))}>
+                        <option value="">Selecione um CEP</option>
+                        {cepCandidates.map((c) => (
+                          <option key={c} value={c}>
+                            {formatCep(c)}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  <div>
+                    {label('WhatsApp / Tel da Empresa')}
+                    <input name="companyWhatsapp" type="text" className={inputClass} placeholder="(00) 00000-0000" value={companyWhatsapp} onChange={(e) => setCompanyWhatsapp(formatWhatsapp(e.target.value))} />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 pt-2">
+                  <button type="button" onClick={resolveAddressByCep} disabled={cepLoading || String(cep || '').replace(/\\D/g, '').length !== 8} className="px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-800 disabled:opacity-50 flex items-center justify-center gap-2">
+                    {cepLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Busca Endereço por CEP
+                  </button>
+                  <button type="button" onClick={searchCepByAddress} disabled={cepLoading} className="px-4 py-2 border rounded text-black hover:bg-gray-50 disabled:opacity-50">
+                    Buscar CEP (por endereço)
+                  </button>
+                </div>
+              </fieldset>
+
+              <fieldset className="border rounded-md p-4 space-y-3">
+                <legend className="px-2 text-sm font-semibold text-black">Localização</legend>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    {label('Latitude')}
+                    <input name="latitude" type="text" className={inputClass} value={latitude} onChange={(e) => { setLatitude(e.target.value); setCoordSource('MANUAL'); }} />
+                  </div>
+                  <div>
+                    {label('Longitude')}
+                    <input name="longitude" type="text" className={inputClass} value={longitude} onChange={(e) => { setLongitude(e.target.value); setCoordSource('MANUAL'); }} />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <button type="button" onClick={openLocation} className="px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-800">
+                    Localização informada
+                  </button>
+                </div>
+                {coordSource === 'MAPS' && (
+                  <div className="text-xs text-gray-700">Coordenadas obtidas a partir do link do Google Maps.</div>
+                )}
+                {coordSource === 'CEP' && (
+                  <div className="text-xs text-gray-700">Coordenadas obtidas a partir do CEP/endereço.</div>
+                )}
+                {coordSource === 'MANUAL' && (
+                  <div className="text-xs text-gray-700">Coordenadas informadas manualmente.</div>
+                )}
+              </fieldset>
+
+              <fieldset className="border rounded-md p-4 space-y-3">
+                <legend className="px-2 text-sm font-semibold text-black">Dados do Representante</legend>
+                <div>
+                  {label('Nome do Representante', true)}
+                  <input name="name" type="text" required className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
+                </div>
+                <div>
+                  {label('CPF do Representante', true)}
+                  <input name="cpf" type="text" required className={inputClass} placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(formatCpf(e.target.value))} />
+                </div>
+                <div>
+                  {label('E-mail do Representante (login)', true)}
+                  <input name="email" type="email" required className={inputClass} value={email} onChange={(e) => setEmail(e.target.value)} />
+                </div>
+                <div>
+                  {label('Senha', true)}
+                  <input id="password" name="password" type="password" required className={inputClass} value={password} onChange={(e) => setPassword(e.target.value)} />
                 </div>
                 {hcaptchaSitekey && (
                   <div className="pt-2">
                     <div id="hcaptcha-container" />
                   </div>
                 )}
-              </>
-            )}
-            
-            {!isLogin && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Rua / Logradouro</label>
-                  <input
-                    name="street"
-                    type="text"
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                    value={street}
-                    onChange={(e) => setStreet(e.target.value)}
-                  />
-                </div>
+              </fieldset>
+            </>
+          )}
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Número</label>
-                    <input
-                      name="number"
-                      type="text"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                      value={number}
-                      onChange={(e) => setNumber(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Bairro</label>
-                    <input
-                      name="neighborhood"
-                      type="text"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                      value={neighborhood}
-                      onChange={(e) => setNeighborhood(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Cidade</label>
-                    <input
-                      name="city"
-                      type="text"
-                      required
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Estado (UF)</label>
-                    <input
-                      name="state"
-                      type="text"
-                      required
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                      placeholder="SP"
-                      value={state}
-                      onChange={(e) => setState(e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2))}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">CEP</label>
-                    <input
-                      name="cep"
-                      type="text"
-                      required
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                      placeholder="00000-000"
-                      value={cep}
-                      onChange={(e) => setCep(formatCep(e.target.value))}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">WhatsApp / Tel da Empresa</label>
-                    <input
-                      name="companyWhatsapp"
-                      type="text"
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                      placeholder="(00) 00000-0000"
-                      value={companyWhatsapp}
-                      onChange={(e) => setCompanyWhatsapp(formatWhatsapp(e.target.value))}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Link (site ou referência)</label>
-                  <input
-                    name="link"
-                    type="text"
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                    value={link}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setLink(v);
-                      parseFromLink(v);
-                    }}
-                  />
-                </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">CPF do Representante</label>
-              <input
-                id="cpf"
-                name="cpf"
-                type="text"
-                required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                placeholder="000.000.000-00"
-                value={cpf}
-                onChange={(e) => setCpf(formatCpf(e.target.value))}
-              />
+          {isLogin && (
+            <div className="space-y-3">
+              <div>
+                {label('Email', true)}
+                <input name="email" type="email" required className={inputClass} value={email} onChange={(e) => setEmail(e.target.value)} />
+              </div>
+              <div>
+                {label('Senha', true)}
+                <input id="password" name="password" type="password" autoComplete="current-password" required className={inputClass} value={password} onChange={(e) => setPassword(e.target.value)} />
+              </div>
             </div>
-              </>
-            )}
-            
-            {isLogin && (
-                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Email</label>
-                  <input
-                    name="email"
-                    type="email"
-                    required
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-            )}
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Senha</label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-black placeholder:text-black placeholder:opacity-50"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-          </div>
+          )}
 
           {error && (
             <div className="text-red-500 text-sm text-center bg-red-50 p-2 rounded">{error}</div>
+          )}
+          {!isLogin && addressError && (
+            <div className="text-red-500 text-sm text-center bg-red-50 p-2 rounded">{addressError}</div>
           )}
 
           <div>

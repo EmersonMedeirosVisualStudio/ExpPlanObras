@@ -42,11 +42,29 @@ function getApiErrorMessage(err: unknown) {
 
 export default function AdminTenantsPage() {
   const inputClass = 'mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 text-black placeholder:text-black placeholder:opacity-50';
+  const label = (text: string, required?: boolean) => (
+    <label className="block text-sm font-medium text-black">
+      {text}
+      {required ? <span className="text-red-600"> *</span> : null}
+    </label>
+  );
+  const UF_LIST = useRef([
+    'AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'
+  ]).current;
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [addressError, setAddressError] = useState('');
+  const [coordSource, setCoordSource] = useState<'MAPS' | 'CEP' | 'MANUAL' | ''>('');
+  const [addressEditedAfterMaps, setAddressEditedAfterMaps] = useState(false);
+  const [cityOptions, setCityOptions] = useState<string[]>([]);
+  const [stateSuggestions, setStateSuggestions] = useState<string[]>([]);
+  const [cepCandidates, setCepCandidates] = useState<string[]>([]);
+  const [mapsLoading, setMapsLoading] = useState(false);
+  const [cepLoading, setCepLoading] = useState(false);
+  const addressSnapshotRef = useRef<{ street: string; number: string; neighborhood: string; city: string; state: string; cep: string } | null>(null);
 
   // Create Form State
   const [formData, setFormData] = useState({
@@ -88,21 +106,97 @@ export default function AdminTenantsPage() {
   const [historyMessage, setHistoryMessage] = useState('');
   const [historyFiles, setHistoryFiles] = useState<FileList | null>(null);
 
-  const [linkLookupLoading, setLinkLookupLoading] = useState(false);
-  const lastResolvedLinkRef = useRef<string>('');
-
   useEffect(() => {
     fetchTenants();
   }, []);
 
-  const resolveFromLink = useCallback(async (link: string) => {
-    const v = String(link || '').trim();
-    if (v.length < 10) return;
-    setLinkLookupLoading(true);
+  useEffect(() => {
+    if (!showCreateModal) return;
+    const uf = String(formData.state || '').toUpperCase();
+    if (uf.length !== 2 || !UF_LIST.includes(uf)) {
+      setCityOptions([]);
+      return;
+    }
+    api
+      .get(`/api/geo/ibge/municipios?uf=${encodeURIComponent(uf)}`)
+      .then((res) => {
+        const list = Array.isArray(res.data) ? (res.data as string[]) : [];
+        setCityOptions(list);
+        if (formData.city.trim().length > 0 && !list.includes(formData.city.trim())) {
+          setFormData((prev) => ({ ...prev, city: '' }));
+          setAddressError('Cidade não pertence ao estado informado. Selecione uma cidade da lista.');
+        }
+      })
+      .catch(() => setCityOptions([]));
+  }, [UF_LIST, api, formData.city, formData.state, showCreateModal]);
+
+  useEffect(() => {
+    if (!showCreateModal) return;
+    if (formData.state.trim().length > 0) {
+      setStateSuggestions([]);
+      return;
+    }
+    const q = formData.city.trim();
+    if (q.length < 3) {
+      setStateSuggestions([]);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      api
+        .get(`/api/geo/ibge/search-city?name=${encodeURIComponent(q)}`)
+        .then((res) => {
+          const list = Array.isArray(res.data) ? (res.data as Array<{ city: string; uf: string }>) : [];
+          const ufs = Array.from(new Set(list.filter((x) => x.city.toLowerCase() === q.toLowerCase()).map((x) => x.uf)))
+            .filter((x) => x.length === 2)
+            .sort((a, b) => a.localeCompare(b));
+          setStateSuggestions(ufs);
+        })
+        .catch(() => setStateSuggestions([]));
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [api, formData.city, formData.state, showCreateModal]);
+
+  useEffect(() => {
+    if (!showCreateModal) return;
+    if (coordSource !== 'MAPS') {
+      setAddressEditedAfterMaps(false);
+      return;
+    }
+    const snap = addressSnapshotRef.current;
+    if (!snap) return;
+    const edited =
+      snap.street !== formData.street ||
+      snap.number !== formData.number ||
+      snap.neighborhood !== formData.neighborhood ||
+      snap.city !== formData.city ||
+      snap.state !== formData.state ||
+      snap.cep !== formData.cep;
+    setAddressEditedAfterMaps(edited);
+  }, [coordSource, formData, showCreateModal]);
+
+  const openLocation = () => {
+    const lat = Number(String(formData.latitude || '').replace(',', '.'));
+    const lon = Number(String(formData.longitude || '').replace(',', '.'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      setAddressError('Latitude/Longitude inválidas.');
+      return;
+    }
+    window.open(`https://www.google.com/maps?q=${lat},${lon}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const resolveByMapsLink = useCallback(async () => {
+    const v = String(formData.link || '').trim();
+    if (v.length < 10) {
+      setAddressError('Informe um link do Google Maps.');
+      return;
+    }
+    setAddressError('');
+    setMapsLoading(true);
     try {
-      const res = await api.post('/api/admin/maps/resolve', { link: v });
+      const res = await api.post('/api/geo/maps/resolve', { link: v });
       const data = res.data as {
         street?: string;
+        number?: string;
         neighborhood?: string;
         city?: string;
         state?: string;
@@ -113,32 +207,99 @@ export default function AdminTenantsPage() {
       setFormData((prev) => ({
         ...prev,
         street: data.street || prev.street,
+        number: data.number || prev.number,
         neighborhood: data.neighborhood || prev.neighborhood,
         city: data.city || prev.city,
-        state: data.state || prev.state,
+        state: data.state ? String(data.state).toUpperCase().slice(0, 2) : prev.state,
         cep: data.cep ? String(data.cep).replace(/\D/g, '').replace(/^(\d{5})(\d)/, '$1-$2') : prev.cep,
         latitude: data.latitude || prev.latitude,
         longitude: data.longitude || prev.longitude,
       }));
-      lastResolvedLinkRef.current = v;
+      setCoordSource('MAPS');
+      addressSnapshotRef.current = {
+        street: data.street || formData.street,
+        number: data.number || formData.number,
+        neighborhood: data.neighborhood || formData.neighborhood,
+        city: data.city || formData.city,
+        state: data.state ? String(data.state).toUpperCase().slice(0, 2) : formData.state,
+        cep: data.cep ? String(data.cep).replace(/\D/g, '').replace(/^(\d{5})(\d)/, '$1-$2') : formData.cep,
+      };
+      setAddressEditedAfterMaps(false);
     } catch (err: unknown) {
-      const msg = getApiErrorMessage(err) || 'Não foi possível buscar o endereço';
-      setError(msg);
+      setAddressError(getApiErrorMessage(err) || 'Não foi possível buscar a localização');
     } finally {
-      setLinkLookupLoading(false);
+      setMapsLoading(false);
     }
-  }, []);
+  }, [api, formData]);
 
-  useEffect(() => {
-    if (!showCreateModal) return;
-    const link = String(formData.link || '').trim();
-    if (link.length < 10) return;
-    if (link === lastResolvedLinkRef.current) return;
-    const t = window.setTimeout(() => {
-      resolveFromLink(link);
-    }, 800);
-    return () => window.clearTimeout(t);
-  }, [formData.link, resolveFromLink, showCreateModal]);
+  const resolveAddressByCep = useCallback(async () => {
+    const clean = String(formData.cep || '').replace(/\D/g, '');
+    if (clean.length !== 8) {
+      setAddressError('CEP inválido. Informe 8 dígitos.');
+      return;
+    }
+    setAddressError('');
+    setCepLoading(true);
+    try {
+      const res = await api.post('/api/geo/cep/resolve', { cep: clean });
+      const data = res.data as { street?: string; neighborhood?: string; city?: string; state?: string; cep?: string };
+      setFormData((prev) => ({
+        ...prev,
+        street: data.street || prev.street,
+        neighborhood: data.neighborhood || prev.neighborhood,
+        city: data.city || prev.city,
+        state: data.state ? String(data.state).toUpperCase().slice(0, 2) : prev.state,
+        cep: data.cep ? String(data.cep).replace(/\D/g, '').replace(/^(\d{5})(\d)/, '$1-$2') : prev.cep,
+      }));
+
+      if (coordSource !== 'MAPS' && (String(formData.latitude).trim().length === 0 || String(formData.longitude).trim().length === 0)) {
+        const q = `${data.street || formData.street}, ${formData.number || ''}, ${data.neighborhood || formData.neighborhood}, ${data.city || formData.city} - ${data.state || formData.state}, ${data.cep || clean}`;
+        const geo = await api.post('/api/geo/geocode', { query: q }).catch(() => null);
+        const lat = geo?.data?.latitude ? String(geo.data.latitude) : '';
+        const lon = geo?.data?.longitude ? String(geo.data.longitude) : '';
+        if (lat && lon) {
+          setFormData((prev) => ({ ...prev, latitude: lat, longitude: lon }));
+          setCoordSource('CEP');
+        }
+      }
+    } catch (err: unknown) {
+      setAddressError(getApiErrorMessage(err) || 'Não foi possível buscar o CEP');
+    } finally {
+      setCepLoading(false);
+    }
+  }, [api, coordSource, formData]);
+
+  const searchCepByAddress = useCallback(async () => {
+    const uf = String(formData.state || '').toUpperCase();
+    const c = String(formData.city || '').trim();
+    const s = String(formData.street || '').trim();
+    if (uf.length !== 2 || !UF_LIST.includes(uf)) {
+      setAddressError('Informe um estado (UF) válido.');
+      return;
+    }
+    if (c.length < 2 || s.length < 2) {
+      setAddressError('Informe rua e cidade para buscar o CEP.');
+      return;
+    }
+    setAddressError('');
+    setCepLoading(true);
+    try {
+      const res = await api.get(
+        `/api/geo/cep/search?uf=${encodeURIComponent(uf)}&city=${encodeURIComponent(c)}&street=${encodeURIComponent(s)}`
+      );
+      const list = Array.isArray(res.data) ? (res.data as string[]) : [];
+      setCepCandidates(list);
+      if (list.length === 1) {
+        setFormData((prev) => ({ ...prev, cep: String(list[0]).replace(/\D/g, '').replace(/^(\d{5})(\d)/, '$1-$2') }));
+      } else if (list.length === 0) {
+        setAddressError('CEP não encontrado para este endereço.');
+      }
+    } catch (err: unknown) {
+      setAddressError(getApiErrorMessage(err) || 'Não foi possível buscar o CEP');
+    } finally {
+      setCepLoading(false);
+    }
+  }, [UF_LIST, api, formData.city, formData.state, formData.street]);
 
   const fetchTenants = async () => {
     try {
@@ -181,13 +342,25 @@ export default function AdminTenantsPage() {
     }
   };
 
+  const closeCreateModal = () => {
+    setShowCreateModal(false);
+    setError('');
+    setAddressError('');
+    setCoordSource('');
+    setAddressEditedAfterMaps(false);
+    setCityOptions([]);
+    setStateSuggestions([]);
+    setCepCandidates([]);
+    addressSnapshotRef.current = null;
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
       e.preventDefault();
       setCreating(true);
       setError('');
       try {
           await api.post('/api/admin/tenants', formData);
-          setShowCreateModal(false);
+          closeCreateModal();
           setFormData({
             name: '', slug: '', cnpj: '',
             companyEmail: '',
@@ -341,36 +514,12 @@ export default function AdminTenantsPage() {
           value = value.toUpperCase().replace(/[^A-Z]/g, '').substring(0, 2);
       }
 
+      if (name === 'latitude' || name === 'longitude') {
+        setCoordSource('MANUAL');
+      }
+
       setFormData(prev => {
-        const next = { ...prev, [name]: value };
-
-        if (name === 'link') {
-          const linkValue = String(value || '').trim();
-          const atMatch = linkValue.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
-          if (atMatch) {
-            next.latitude = atMatch[1];
-            next.longitude = atMatch[2];
-          }
-          const queryMatch = linkValue.match(/[?&](?:query|q)=([^&]+)/i);
-          if (queryMatch) {
-            try {
-              const decoded = decodeURIComponent(queryMatch[1].replace(/\+/g, ' ')).trim();
-              if (decoded.length > 0) {
-                const parts = decoded.split(',').map((p) => p.trim()).filter((p) => p.length > 0);
-                if (parts.length > 0) next.street = next.street || parts[0];
-                if (parts.length >= 2) next.neighborhood = next.neighborhood || parts[1];
-                if (parts.length >= 3) next.city = next.city || parts[2];
-                const cepMatch = decoded.match(/\b(\d{5})-?(\d{3})\b/);
-                if (cepMatch) next.cep = next.cep || `${cepMatch[1]}-${cepMatch[2]}`;
-                const ufMatch = decoded.match(/\b([A-Z]{2})\b/);
-                if (ufMatch) next.state = next.state || ufMatch[1];
-              }
-            } catch {
-            }
-          }
-        }
-
-        return next;
+        return { ...prev, [name]: value };
       });
   };
 
@@ -543,101 +692,203 @@ export default function AdminTenantsPage() {
                 <div className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
                     <h2 className="text-xl font-bold mb-4">Nova Empresa</h2>
                     <form onSubmit={handleCreate} className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="col-span-2">
-                                <label className="block text-sm font-medium text-gray-700">Nome da Empresa</label>
+                        <div className="text-xs text-gray-700">Campos com * são obrigatórios.</div>
+                        <fieldset className="border rounded-md p-4 space-y-3">
+                            <legend className="px-2 text-sm font-semibold text-black">Dados da Empresa</legend>
+                            <div>
+                                {label('Nome da Empresa', true)}
                                 <input name="name" required value={formData.name} onChange={handleChange} className={inputClass} />
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Slug (URL)</label>
-                                <input name="slug" required value={formData.slug} onChange={handleChange} className={inputClass} placeholder="minha-empresa" />
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    {label('Slug (URL)', true)}
+                                    <input name="slug" required value={formData.slug} onChange={handleChange} className={inputClass} placeholder="minha-empresa" />
+                                </div>
+                                <div>
+                                    {label('CNPJ', true)}
+                                    <input name="cnpj" required value={formData.cnpj} onChange={handleChange} className={inputClass} placeholder="00.000.000/0000-00" />
+                                </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">CNPJ</label>
-                                <input name="cnpj" required value={formData.cnpj} onChange={handleChange} className={inputClass} placeholder="00.000.000/0000-00" />
-                            </div>
-                            <div className="col-span-2">
-                                <label className="block text-sm font-medium text-gray-700">E-mail da Empresa</label>
+                                {label('E-mail da Empresa', true)}
                                 <input name="companyEmail" type="email" required value={formData.companyEmail} onChange={handleChange} className={inputClass} placeholder="contato@empresa.com.br" />
                             </div>
-                            <div className="col-span-2">
-                                <label className="block text-sm font-medium text-gray-700">Link (site ou referência)</label>
+                            <div>
+                                {label('WhatsApp / Tel da Empresa')}
+                                <input name="companyWhatsapp" value={formData.companyWhatsapp} onChange={handleChange} className={inputClass} placeholder="(00) 00000-0000" />
+                            </div>
+                        </fieldset>
+
+                        <fieldset className="border rounded-md p-4 space-y-3">
+                            <legend className="px-2 text-sm font-semibold text-black">Endereço da Empresa</legend>
+                            <div>
+                                {label('Link Google Maps')}
                                 <input name="link" value={formData.link} onChange={handleChange} className={inputClass} placeholder="Cole aqui o link do Google Maps" />
                                 <div className="mt-2 flex justify-end">
                                   <button
                                     type="button"
-                                    onClick={() => resolveFromLink(formData.link)}
-                                    disabled={linkLookupLoading || String(formData.link || '').trim().length < 10}
+                                    onClick={resolveByMapsLink}
+                                    disabled={mapsLoading || String(formData.link || '').trim().length < 10}
                                     className="px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-800 disabled:opacity-50 flex items-center gap-2"
                                   >
-                                    {linkLookupLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-                                    Buscar endereço
+                                    {mapsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                                    Buscar localização
                                   </button>
                                 </div>
+                                {coordSource === 'MAPS' && (
+                                  <div className="mt-2 text-xs text-gray-700">Coordenadas obtidas a partir do link do Google Maps.</div>
+                                )}
+                                {addressEditedAfterMaps && (
+                                  <div className="mt-2 text-xs text-gray-700">
+                                    Você alterou o endereço após usar o link. As coordenadas podem não corresponder exatamente. Use “Buscar localização” para atualizar.
+                                  </div>
+                                )}
                             </div>
-                        </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                                <div className="col-span-2">
-                                    <label className="block text-sm font-medium text-gray-700">Rua / Logradouro</label>
-                                    <input name="street" required value={formData.street} onChange={handleChange} className={inputClass} />
-                                </div>
+                            <div>
+                                {label('Rua / Logradouro', true)}
+                                <input name="street" required value={formData.street} onChange={handleChange} className={inputClass} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Número</label>
+                                    {label('Número')}
                                     <input name="number" value={formData.number} onChange={handleChange} className={inputClass} />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Bairro</label>
+                                    {label('Bairro')}
                                     <input name="neighborhood" value={formData.neighborhood} onChange={handleChange} className={inputClass} />
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Cidade</label>
-                                    <input name="city" required value={formData.city} onChange={handleChange} className={inputClass} />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Estado (UF)</label>
-                                    <input name="state" required value={formData.state} onChange={handleChange} className={inputClass} placeholder="SP" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">CEP</label>
-                                    <input name="cep" required value={formData.cep} onChange={handleChange} className={inputClass} placeholder="00000-000" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">WhatsApp / Tel da Empresa</label>
-                                    <input name="companyWhatsapp" value={formData.companyWhatsapp} onChange={handleChange} className={inputClass} placeholder="(00) 00000-0000" />
-                                </div>
-                        </div>
-
-                        <div className="border-t pt-4 mt-4">
-                            <h3 className="text-lg font-medium mb-2">Dados do Representante</h3>
+                            </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Nome Completo</label>
+                                    {label('Cidade', true)}
+                                    <input list="admin-city-options" name="city" required value={formData.city} onChange={handleChange} className={inputClass} />
+                                    <datalist id="admin-city-options">
+                                      {cityOptions.map((c) => (
+                                        <option key={c} value={c} />
+                                      ))}
+                                    </datalist>
+                                </div>
+                                <div>
+                                    {label('Estado (UF)', true)}
+                                    <input list="admin-uf-options" name="state" required value={formData.state} onChange={handleChange} className={inputClass} placeholder="SP" />
+                                    <datalist id="admin-uf-options">
+                                      {UF_LIST.map((uf) => (
+                                        <option key={uf} value={uf} />
+                                      ))}
+                                    </datalist>
+                                    {stateSuggestions.length > 0 && (
+                                      <div className="mt-2 text-xs text-gray-700">
+                                        Estados com esta cidade: {stateSuggestions.join(', ')}
+                                      </div>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    {label('CEP', true)}
+                                    <input name="cep" required value={formData.cep} onChange={handleChange} className={inputClass} placeholder="00000-000" />
+                                    {cepCandidates.length > 1 && (
+                                      <select
+                                        className={`${inputClass} mt-2`}
+                                        value={String(formData.cep || '').replace(/\D/g, '')}
+                                        onChange={(e) =>
+                                          setFormData((prev) => ({
+                                            ...prev,
+                                            cep: String(e.target.value).replace(/\D/g, '').replace(/^(\d{5})(\d)/, '$1-$2'),
+                                          }))
+                                        }
+                                      >
+                                        <option value="">Selecione um CEP</option>
+                                        {cepCandidates.map((c) => (
+                                          <option key={c} value={c}>
+                                            {c.replace(/^(\d{5})(\d)/, '$1-$2')}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    )}
+                                </div>
+                                <div className="flex flex-col justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={resolveAddressByCep}
+                                    disabled={cepLoading || String(formData.cep || '').replace(/\D/g, '').length !== 8}
+                                    className="px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-800 disabled:opacity-50 flex items-center justify-center gap-2"
+                                  >
+                                    {cepLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                                    Busca Endereço por CEP
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={searchCepByAddress}
+                                    disabled={cepLoading}
+                                    className="px-4 py-2 border rounded text-black hover:bg-gray-50 disabled:opacity-50"
+                                  >
+                                    Buscar CEP (por endereço)
+                                  </button>
+                                </div>
+                            </div>
+                        </fieldset>
+
+                        <fieldset className="border rounded-md p-4 space-y-3">
+                          <legend className="px-2 text-sm font-semibold text-black">Localização</legend>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              {label('Latitude')}
+                              <input name="latitude" value={formData.latitude} onChange={handleChange} className={inputClass} />
+                            </div>
+                            <div>
+                              {label('Longitude')}
+                              <input name="longitude" value={formData.longitude} onChange={handleChange} className={inputClass} />
+                            </div>
+                          </div>
+                          <div className="flex justify-end">
+                            <button type="button" onClick={openLocation} className="px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-800">
+                              Localização informada
+                            </button>
+                          </div>
+                          {coordSource === 'MAPS' && (
+                            <div className="text-xs text-gray-700">Coordenadas obtidas a partir do link do Google Maps.</div>
+                          )}
+                          {coordSource === 'CEP' && (
+                            <div className="text-xs text-gray-700">Coordenadas obtidas a partir do CEP/endereço.</div>
+                          )}
+                          {coordSource === 'MANUAL' && (
+                            <div className="text-xs text-gray-700">Coordenadas informadas manualmente.</div>
+                          )}
+                        </fieldset>
+
+                        <fieldset className="border rounded-md p-4 space-y-3">
+                            <legend className="px-2 text-sm font-semibold text-black">Dados do Representante</legend>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="col-span-2">
+                                    {label('Nome Completo', true)}
                                     <input name="representativeName" required value={formData.representativeName} onChange={handleChange} className={inputClass} />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Email</label>
+                                    {label('E-mail (login)', true)}
                                     <input name="representativeEmail" type="email" required value={formData.representativeEmail} onChange={handleChange} className={inputClass} placeholder="login@empresa.com.br" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">CPF</label>
+                                    {label('CPF', true)}
                                     <input name="representativeCpf" required value={formData.representativeCpf} onChange={handleChange} className={inputClass} placeholder="000.000.000-00" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Senha</label>
+                                    {label('Senha', true)}
                                     <input name="representativePassword" type="password" required value={formData.representativePassword} onChange={handleChange} className={inputClass} />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Whatsapp</label>
+                                    {label('WhatsApp')}
                                     <input name="representativeWhatsapp" value={formData.representativeWhatsapp} onChange={handleChange} className={inputClass} placeholder="(00) 00000-0000" />
                                 </div>
                             </div>
-                        </div>
+                        </fieldset>
 
                         {error && <p className="text-red-500 text-sm">{error}</p>}
+                        {addressError && <p className="text-red-500 text-sm">{addressError}</p>}
 
                         <div className="flex justify-end space-x-3 pt-4">
-                            <button type="button" onClick={() => setShowCreateModal(false)} className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-50">Cancelar</button>
+                            <button type="button" onClick={closeCreateModal} className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-50">Cancelar</button>
                             <button type="submit" disabled={creating} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-500 disabled:opacity-50">
                                 {creating ? 'Salvando...' : 'Salvar'}
                             </button>

@@ -10,6 +10,7 @@ import billingRoutes from './modules/billing/billing.routes.js';
 import mercadoPagoWebhooks from './modules/webhooks/mercadopago.routes.js';
 import maintenanceRoutes from './modules/maintenance/maintenance.routes.js';
 import backupRoutes from './modules/backup/backup.routes.js';
+import geoRoutes from './modules/geo/geo.routes.js';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 
 dotenv.config();
@@ -37,6 +38,7 @@ server.register(jwt, {
 });
 
 server.register(authRoutes, { prefix: '/api/auth' });
+server.register(geoRoutes, { prefix: '/api/geo' });
 server.register(obraRoutes, { prefix: '/api/obras' });
 server.register(adminRoutes, { prefix: '/api/admin' });
 server.register(backupRoutes, { prefix: '/api/admin' });
