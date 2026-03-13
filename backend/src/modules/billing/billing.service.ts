@@ -186,6 +186,33 @@ export async function syncTenantFromPreapproval(preapprovalId: string) {
     data: update,
   });
 
+  // Atualizar Subscription dedicada, se existir (fallback cria se não existir)
+  const existingSub = await prisma.subscription.findFirst({ where: { tenantId } });
+  if (!existingSub) {
+    await prisma.subscription.create({
+      data: {
+        tenantId,
+        plan: (cfg.plan === 'ANNUAL' ? 'PRO' : 'PRO'),
+        status: update.subscriptionStatus || 'ACTIVE',
+        startedAt: new Date(),
+        expiresAt: paidUntil,
+        paymentProvider: 'MERCADOPAGO',
+        paymentId: String(data?.id || preapprovalId),
+      },
+    });
+  } else {
+    await prisma.subscription.update({
+      where: { id: existingSub.id },
+      data: {
+        status: update.subscriptionStatus || existingSub.status,
+        expiresAt: paidUntil,
+        paymentProvider: 'MERCADOPAGO',
+        paymentId: String(data?.id || preapprovalId),
+        updatedAt: new Date(),
+      },
+    });
+  }
+
   if (update.subscriptionStatus) {
     const msg =
       update.subscriptionStatus === 'ACTIVE'

@@ -1,11 +1,27 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
+
+declare global {
+  interface Window {
+    hcaptcha?: {
+      render: (
+        container: string,
+        opts: {
+          sitekey: string;
+          callback: (token: string) => void;
+          'expired-callback': () => void;
+          'error-callback': () => void;
+        }
+      ) => number;
+      reset: (widgetId?: number) => void;
+    };
+  }
+}
 
 type TenantOption = {
   tenantId: number;
@@ -44,6 +60,7 @@ export default function LoginPage() {
   const [tenantName, setTenantName] = useState('');
   const [tenantSlug, setTenantSlug] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
+  const [companyEmail, setCompanyEmail] = useState('');
   const [link, setLink] = useState('');
   const [street, setStreet] = useState('');
   const [number, setNumber] = useState('');
@@ -53,6 +70,10 @@ export default function LoginPage() {
   const [cep, setCep] = useState('');
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
+  const [captchaToken, setCaptchaToken] = useState('');
+  const captchaWidgetIdRef = useRef<number | null>(null);
+  const captchaLoadedRef = useRef(false);
+  const hcaptchaSitekey = process.env.NEXT_PUBLIC_HCAPTCHA_SITEKEY;
 
   // Multi-tenant selection state
   const [showTenantSelection, setShowTenantSelection] = useState(false);
@@ -120,6 +141,55 @@ export default function LoginPage() {
         setGoogleEnabled(false);
       });
   }, []);
+
+  useEffect(() => {
+    if (!hcaptchaSitekey) return;
+    if (isLogin) {
+      setCaptchaToken('');
+      if (window.hcaptcha && captchaWidgetIdRef.current !== null) {
+        try {
+          window.hcaptcha.reset(captchaWidgetIdRef.current);
+        } catch {
+        }
+      }
+      return;
+    }
+
+    const ensureScript = () =>
+      new Promise<void>((resolve) => {
+        if (captchaLoadedRef.current) return resolve();
+        const existing = document.querySelector('script[src^="https://hcaptcha.com/1/api.js"]');
+        if (existing) {
+          captchaLoadedRef.current = true;
+          return resolve();
+        }
+        const script = document.createElement('script');
+        script.src = 'https://hcaptcha.com/1/api.js?render=explicit';
+        script.async = true;
+        script.defer = true;
+        script.onload = () => {
+          captchaLoadedRef.current = true;
+          resolve();
+        };
+        document.body.appendChild(script);
+      });
+
+    ensureScript().then(() => {
+      const el = document.getElementById('hcaptcha-container');
+      if (!el) return;
+      if (!window.hcaptcha) return;
+      if (captchaWidgetIdRef.current !== null) return;
+      try {
+        captchaWidgetIdRef.current = window.hcaptcha.render('hcaptcha-container', {
+          sitekey: hcaptchaSitekey,
+          callback: (token: string) => setCaptchaToken(String(token || '')),
+          'expired-callback': () => setCaptchaToken(''),
+          'error-callback': () => setCaptchaToken(''),
+        });
+      } catch {
+      }
+    });
+  }, [hcaptchaSitekey, isLogin]);
 
   const handleGoogle = () => {
     const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
@@ -217,6 +287,11 @@ export default function LoginPage() {
         }
 
       } else {
+        if (hcaptchaSitekey && captchaToken.trim().length === 0) {
+          setError('Confirme o captcha para continuar.');
+          setLoading(false);
+          return;
+        }
         // Register
         await api.post('/api/auth/register', {
           email,
@@ -226,6 +301,7 @@ export default function LoginPage() {
           tenantName,
           tenantSlug,
           cnpj: cnpj.replace(/\D/g, ''),
+          companyEmail: companyEmail.length > 0 ? companyEmail : undefined,
           link,
           street,
           number,
@@ -236,6 +312,7 @@ export default function LoginPage() {
           latitude: latitude.length > 0 ? latitude : undefined,
           longitude: longitude.length > 0 ? longitude : undefined,
           whatsapp,
+          captchaToken: captchaToken.length > 0 ? captchaToken : undefined,
           googleToken: googleToken || undefined
         });
         
@@ -370,7 +447,7 @@ export default function LoginPage() {
                   />
                 </div>
                  <div>
-                  <label className="block text-sm font-medium text-gray-700">Email do Representante</label>
+                  <label className="block text-sm font-medium text-gray-700">E-mail do Representante (login)</label>
                   <input
                     name="email"
                     type="email"
@@ -389,6 +466,17 @@ export default function LoginPage() {
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
                     value={tenantName}
                     onChange={(e) => setTenantName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">E-mail da Empresa</label>
+                  <input
+                    name="companyEmail"
+                    type="email"
+                    required
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border text-gray-900 placeholder:text-gray-400"
+                    value={companyEmail}
+                    onChange={(e) => setCompanyEmail(e.target.value)}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -417,6 +505,11 @@ export default function LoginPage() {
                         />
                     </div>
                 </div>
+                {hcaptchaSitekey && (
+                  <div className="pt-2">
+                    <div id="hcaptcha-container" />
+                  </div>
+                )}
               </>
             )}
             

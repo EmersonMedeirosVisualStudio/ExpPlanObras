@@ -2,6 +2,7 @@ import prisma from "../../plugins/prisma.js";
 import { RegisterInput, LoginInput } from "./auth.schema.js";
 import bcrypt from "bcryptjs";
 import { FastifyInstance } from "fastify";
+import { normalizeEmail, validateCPF, validateCNPJ, validateCEP, validateSlug } from "../../utils/validators.js";
 
 function getTrialEndsAt() {
   const days = Number(process.env.TRIAL_DAYS || '30');
@@ -32,6 +33,7 @@ export async function registerUser(input: RegisterInput) {
     tenantName,
     tenantSlug,
     cnpj,
+    companyEmail,
     link,
     street,
     number,
@@ -48,6 +50,13 @@ export async function registerUser(input: RegisterInput) {
     oauthId,
   } = input as any;
 
+  // Normalizações e validações
+  const cleanEmail = normalizeEmail(email);
+  const cleanCPF = validateCPF(cpf);
+  const cleanCNPJ = validateCNPJ(cnpj);
+  const cleanSlug = validateSlug(tenantSlug);
+  const cleanCEP = cep ? validateCEP(cep) : undefined;
+
   const hashedPassword = await bcrypt.hash(password, 10);
 
   // Transaction to create Tenant and User
@@ -56,28 +65,31 @@ export async function registerUser(input: RegisterInput) {
     const tenant = await tx.tenant.create({
       data: {
         name: tenantName,
-        slug: tenantSlug,
-        cnpj: cnpj,
+        slug: cleanSlug,
+        cnpj: cleanCNPJ,
+        companyEmail,
         link,
+        googleMapsLink: link,
         street,
         number,
         neighborhood,
         city,
         state,
-        cep,
+        cep: cleanCEP,
         latitude,
         longitude,
         status: 'TEMPORARY',
-        subscriptionStatus: 'TRIAL',
+        subscriptionStatus: 'TRIAL', // legado
         trialEndsAt: getTrialEndsAt(),
+        trialExpiresAt: getTrialEndsAt(),
       },
     });
 
     // 2. Create User
     const user = await tx.user.create({
       data: {
-        email,
-        cpf,
+        email: cleanEmail,
+        cpf: cleanCPF,
         name,
         password: hashedPassword,
         whatsapp,
@@ -101,7 +113,18 @@ export async function registerUser(input: RegisterInput) {
       data: {
         tenantId: tenant.id,
         source: 'SYSTEM',
+        action: 'TENANT_CREATED',
         message: 'Empresa cadastrada. Status: TEMPORARY (fase experimental).',
+      },
+    });
+
+    await tx.subscription.create({
+      data: {
+        tenantId: tenant.id,
+        plan: 'TRIAL',
+        status: 'TRIAL',
+        startedAt: new Date(),
+        expiresAt: tenant.trialExpiresAt ?? getTrialEndsAt(),
       },
     });
 

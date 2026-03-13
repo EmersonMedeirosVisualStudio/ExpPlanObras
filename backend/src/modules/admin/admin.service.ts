@@ -2,6 +2,7 @@
 import prisma from "../../plugins/prisma.js";
 import { CreateTenantInput, UpdateTenantInput } from "./admin.schema.js";
 import bcrypt from "bcryptjs";
+import { normalizeEmail, validateCPF, validateCNPJ, validateCEP, validateSlug } from "../../utils/validators.js";
 
 function getTrialEndsAt() {
   const days = Number(process.env.TRIAL_DAYS || '30');
@@ -11,10 +12,18 @@ function getTrialEndsAt() {
 export async function createTenantByAdmin(input: CreateTenantInput) {
   const { 
     name, slug, cnpj,
+    companyEmail,
     link, street, number, neighborhood, city, state, cep, latitude, longitude,
     representativeName, representativeEmail, representativeCpf, representativePassword,
     representativeWhatsapp, representativeAddress, representativeLocation
   } = input;
+
+  const cleanSlug = validateSlug(slug);
+  const cleanCNPJ = validateCNPJ(cnpj);
+  const cleanCEP = cep ? validateCEP(cep) : undefined;
+  const cleanRepEmail = normalizeEmail(representativeEmail);
+  const cleanRepCPF = validateCPF(representativeCpf);
+  const cleanCompanyEmail = companyEmail ? normalizeEmail(companyEmail) : null;
 
   const hashedPassword = await bcrypt.hash(representativePassword, 10);
 
@@ -23,34 +32,37 @@ export async function createTenantByAdmin(input: CreateTenantInput) {
     const tenant = await tx.tenant.create({
       data: {
         name,
-        slug,
-        cnpj,
+        slug: cleanSlug,
+        cnpj: cleanCNPJ,
+        companyEmail,
         link,
+        googleMapsLink: link,
         street,
         number,
         neighborhood,
         city,
         state,
-        cep,
+        cep: cleanCEP,
         latitude,
         longitude,
         status: 'TEMPORARY',
         subscriptionStatus: 'TRIAL',
         trialEndsAt: getTrialEndsAt(),
+        trialExpiresAt: getTrialEndsAt(),
       },
     });
 
     // 2. Check if user already exists
     let user = await tx.user.findUnique({
-        where: { cpf: representativeCpf }
+        where: { cpf: cleanRepCPF }
     });
 
     if (!user) {
         // Create User if not exists
         user = await tx.user.create({
             data: {
-                email: representativeEmail,
-                cpf: representativeCpf,
+                email: cleanRepEmail,
+                cpf: cleanRepCPF,
                 name: representativeName,
                 password: hashedPassword,
                 whatsapp: representativeWhatsapp,
@@ -84,6 +96,26 @@ export async function createTenantByAdmin(input: CreateTenantInput) {
         });
     }
 
+    await tx.tenantHistoryEntry.create({
+      data: {
+        tenantId: tenant.id,
+        source: 'ADMIN',
+        action: 'TENANT_CREATED',
+        message: 'Empresa criada pelo administrador. Status: TEMPORARY.',
+        actorUserId: null
+      }
+    });
+
+    await tx.subscription.create({
+      data: {
+        tenantId: tenant.id,
+        plan: 'TRIAL',
+        status: 'TRIAL',
+        startedAt: new Date(),
+        expiresAt: tenant.trialExpiresAt ?? getTrialEndsAt(),
+      }
+    });
+
     return { tenant, user };
   });
 
@@ -98,7 +130,12 @@ export async function getAllTenants() {
             where: { role: 'ADMIN' },
             take: 1,
             include: { user: true }
-        }
+        },
+        subscriptions: {
+          take: 1,
+          orderBy: { startedAt: 'desc' },
+          select: { id: true, plan: true, status: true, expiresAt: true }
+        },
     }
   });
 }

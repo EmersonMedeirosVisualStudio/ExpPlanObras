@@ -13,8 +13,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 interface User {
-    name: string;
-    email: string;
+    name?: string | null;
+    email?: string | null;
     isSystemAdmin?: boolean;
 }
 
@@ -59,14 +59,19 @@ export function UserMenu() {
 
     if (!currentUser) return null;
 
+    const displayName =
+        (typeof currentUser.name === 'string' && currentUser.name.trim().length > 0 ? currentUser.name.trim() : '') ||
+        (typeof currentUser.email === 'string' && currentUser.email.trim().length > 0 ? currentUser.email.trim() : '') ||
+        'Usuário';
+
     return (
         <>
             <DropdownMenu>
                 <DropdownMenuTrigger className="flex items-center space-x-2 focus:outline-none">
                     <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold">
-                        {currentUser.name.charAt(0).toUpperCase()}
+                        {displayName.charAt(0).toUpperCase()}
                     </div>
-                    <span className="text-sm font-medium text-gray-700">{currentUser.name}</span>
+                    <span className="text-sm font-medium text-gray-700">{displayName}</span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
                     <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>

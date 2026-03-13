@@ -11,7 +11,9 @@ interface Tenant {
   name: string;
   slug: string;
   cnpj: string;
+  companyEmail?: string | null;
   status: string;
+  subscriptions?: Array<{ id: number; plan: string; status: string; expiresAt: string | null }>;
   users: { user: { name: string; email: string } }[];
 }
 
@@ -50,6 +52,7 @@ export default function AdminTenantsPage() {
     name: '',
     slug: '',
     cnpj: '',
+    companyEmail: '',
     link: '',
     street: '',
     number: '',
@@ -138,6 +141,7 @@ export default function AdminTenantsPage() {
           setShowCreateModal(false);
           setFormData({
             name: '', slug: '', cnpj: '',
+            companyEmail: '',
             link: '',
             street: '',
             number: '',
@@ -341,7 +345,9 @@ export default function AdminTenantsPage() {
                         <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">ID</th>
                         <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Empresa</th>
                         <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Assinatura</th>
                         <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">CNPJ</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">E-mail</th>
                         <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Representante</th>
                         <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Ações</th>
                     </tr>
@@ -369,8 +375,35 @@ export default function AdminTenantsPage() {
                                   {tenant.status === 'ACTIVE' ? 'Ativa' : tenant.status === 'TEMPORARY' ? 'Temporário' : 'Inativo'}
                                 </span>
                             </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                                {(() => {
+                                  const sub = tenant.subscriptions && tenant.subscriptions.length > 0 ? tenant.subscriptions[0] : null;
+                                  if (!sub) return <span className="text-sm text-gray-700">-</span>;
+                                  const label = `${sub.status}${sub.plan ? ` • ${sub.plan}` : ''}`;
+                                  const color =
+                                    sub.status === 'ACTIVE'
+                                      ? 'bg-green-100 text-green-800'
+                                      : sub.status === 'TRIAL'
+                                        ? 'bg-yellow-100 text-yellow-800'
+                                        : sub.status === 'PAST_DUE'
+                                          ? 'bg-orange-100 text-orange-800'
+                                          : 'bg-red-100 text-red-800';
+                                  const expires = sub.expiresAt ? new Date(sub.expiresAt).toLocaleDateString() : '';
+                                  return (
+                                    <div className="space-y-1">
+                                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${color}`}>
+                                        {label}
+                                      </span>
+                                      {expires && <div className="text-xs text-gray-700">Expira: {expires}</div>}
+                                    </div>
+                                  );
+                                })()}
+                            </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
                                 {tenant.cnpj}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
+                                {tenant.companyEmail || '-'}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
                                 {tenant.users[0]?.user.name || 'N/A'}
@@ -459,6 +492,10 @@ export default function AdminTenantsPage() {
                             <div>
                                 <label className="block text-sm font-medium text-gray-700">CNPJ</label>
                                 <input name="cnpj" required value={formData.cnpj} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
+                            </div>
+                            <div className="col-span-2">
+                                <label className="block text-sm font-medium text-gray-700">E-mail da Empresa</label>
+                                <input name="companyEmail" type="email" required value={formData.companyEmail} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2" />
                             </div>
                             <div className="col-span-2">
                                 <label className="block text-sm font-medium text-gray-700">Link (site ou referência)</label>

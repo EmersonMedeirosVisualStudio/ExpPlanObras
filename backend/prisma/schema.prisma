@@ -12,7 +12,9 @@ model Tenant {
   name      String
   slug      String   @unique
   cnpj      String   @unique // CPF/CNPJ da empresa
+  companyEmail String?
   link      String?
+  googleMapsLink String?
   street    String?
   number    String?
   neighborhood String?
@@ -21,9 +23,10 @@ model Tenant {
   cep       String?
   latitude  String?
   longitude String?
-  status    String   @default("TEMPORARY") // ACTIVE, TEMPORARY, INACTIVE
-  subscriptionStatus String @default("TRIAL") // TRIAL, ACTIVE, PAST_DUE, CANCELED
-  trialEndsAt DateTime?
+  status    String   @default("TEMPORARY") // ACTIVE, TEMPORARY, INACTIVE (empresa)
+  subscriptionStatus String @default("TRIAL") // legado
+  trialEndsAt DateTime? // legado
+  trialExpiresAt DateTime?
   paidUntil DateTime?
   billingProvider String?
   billingPlan String?
@@ -39,6 +42,7 @@ model Tenant {
   tarefas   Tarefa[]
   responsaveisTecnicos ResponsavelTecnico[]
   history   TenantHistoryEntry[]
+  subscriptions Subscription[]
 }
 
 model User {
@@ -68,6 +72,7 @@ model TenantHistoryEntry {
   id        Int      @id @default(autoincrement())
   tenantId  Int
   source    String
+  action    String?
   message   String
   actorUserId Int?
   createdAt DateTime @default(now())
@@ -91,6 +96,23 @@ model TenantHistoryAttachment {
   entry   TenantHistoryEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
 
   @@index([entryId])
+}
+
+model Subscription {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int
+  plan      String   // TRIAL, BASIC, PRO, ENTERPRISE
+  status    String   // TRIAL, ACTIVE, PAST_DUE, CANCELED, EXPIRED
+  startedAt DateTime
+  expiresAt DateTime?
+  paymentProvider String?
+  paymentId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
 model TenantUser {

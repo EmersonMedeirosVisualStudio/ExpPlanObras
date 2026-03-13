@@ -5,14 +5,44 @@ import { registerSchema, loginSchema } from './auth.schema.js';
 import { registerUser, loginUser, selectTenant, changePassword, loginUserByEmail } from './auth.service.js';
 import { authenticate } from '../../utils/authenticate.js';
 import prisma from '../../plugins/prisma.js';
+import { checkRateLimit, getClientIp } from '../../utils/rateLimit.js';
+import { normalizeEmail, onlyDigits } from '../../utils/validators.js';
+import { verifyHCaptcha } from '../../utils/captcha.js';
 
 export default async function authRoutes(server: FastifyInstance) {
   server.post(
     '/register',
     {
-      // schema: {
-      //   body: registerSchema,
-      // },
+      schema: {
+        body: registerSchema,
+      },
+      preHandler: [
+        async (request, reply) => {
+          const ip = getClientIp(request.headers as any, (request as any).ip);
+          const now = Date.now();
+          const rlIp = checkRateLimit({ key: `register:ip:${ip}`, limit: 5, windowMs: 60 * 60 * 1000, now });
+          if (!rlIp.ok) return reply.code(429).send({ message: 'Muitas tentativas. Tente novamente mais tarde.' });
+
+          const body = request.body as any;
+          const email = typeof body?.email === 'string' ? normalizeEmail(body.email) : '';
+          if (email) {
+            const rlEmail = checkRateLimit({ key: `register:email:${email}`, limit: 3, windowMs: 24 * 60 * 60 * 1000, now });
+            if (!rlEmail.ok) return reply.code(429).send({ message: 'Limite diário atingido para este e-mail.' });
+          }
+          const cpf = typeof body?.cpf === 'string' ? onlyDigits(body.cpf) : '';
+          if (cpf) {
+            const rlCpf = checkRateLimit({ key: `register:cpf:${cpf}`, limit: 1, windowMs: 24 * 60 * 60 * 1000, now });
+            if (!rlCpf.ok) return reply.code(429).send({ message: 'Limite de trial atingido para este CPF.' });
+          }
+
+          if (process.env.HCAPTCHA_SECRET) {
+            const captchaToken = typeof body?.captchaToken === 'string' ? body.captchaToken : '';
+            if (!captchaToken) return reply.code(400).send({ message: 'Captcha obrigatório' });
+            const verified = await verifyHCaptcha({ token: captchaToken, ip });
+            if (!verified.ok) return reply.code(400).send({ message: 'Captcha inválido' });
+          }
+        },
+      ],
     },
     async (request, reply) => {
       try {
@@ -156,9 +186,24 @@ export default async function authRoutes(server: FastifyInstance) {
   server.post(
     '/login',
     {
-      // schema: {
-      //   body: loginSchema,
-      // },
+      schema: {
+        body: loginSchema,
+      },
+      preHandler: [
+        async (request, reply) => {
+          const ip = getClientIp(request.headers as any, (request as any).ip);
+          const now = Date.now();
+          const rlIp = checkRateLimit({ key: `login:ip:${ip}`, limit: 25, windowMs: 10 * 60 * 1000, now });
+          if (!rlIp.ok) return reply.code(429).send({ message: 'Muitas tentativas. Tente novamente mais tarde.' });
+
+          const body = request.body as any;
+          const email = typeof body?.email === 'string' ? normalizeEmail(body.email) : '';
+          if (email) {
+            const rlEmail = checkRateLimit({ key: `login:email:${email}`, limit: 10, windowMs: 10 * 60 * 1000, now });
+            if (!rlEmail.ok) return reply.code(429).send({ message: 'Muitas tentativas para este e-mail. Tente novamente mais tarde.' });
+          }
+        },
+      ],
     },
     async (request, reply) => {
       try {
@@ -200,7 +245,7 @@ export default async function authRoutes(server: FastifyInstance) {
         schema: {
             body: z.object({
                 oldPassword: z.string(),
-                newPassword: z.string().min(6)
+                newPassword: z.string().min(8).regex(/^(?=.*[A-Za-z])(?=.*\d).+$/)
             })
         }
     },

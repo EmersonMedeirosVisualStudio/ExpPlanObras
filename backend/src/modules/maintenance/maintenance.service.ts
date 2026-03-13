@@ -68,3 +68,34 @@ export async function purgeExpiredTenants() {
 
   return { purged };
 }
+
+export async function expireTrials() {
+  const now = new Date();
+  const subs = await prisma.subscription.findMany({
+    where: {
+      status: 'TRIAL',
+      OR: [
+        { expiresAt: { lt: now } },
+      ],
+    } as any,
+    select: { id: true, tenantId: true },
+  });
+
+  let updated = 0;
+  for (const s of subs) {
+    await prisma.subscription.update({
+      where: { id: s.id },
+      data: { status: 'EXPIRED', updatedAt: now },
+    });
+    await prisma.tenantHistoryEntry.create({
+      data: {
+        tenantId: s.tenantId,
+        source: 'SYSTEM',
+        action: 'TRIAL_EXPIRED',
+        message: 'Trial expirado. Assinatura marcada como EXPIRED.',
+      },
+    });
+    updated += 1;
+  }
+  return { updated };
+}

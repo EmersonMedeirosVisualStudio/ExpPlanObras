@@ -4,10 +4,11 @@ export const registerSchema = z.object({
   name: z.string().min(3),
   email: z.string().email(),
   cpf: z.string().min(11),
-  password: z.string().min(6),
+  password: z.string().min(8).regex(/^(?=.*[A-Za-z])(?=.*\d).+$/),
   tenantName: z.string().min(3),
   tenantSlug: z.string().min(3),
   cnpj: z.string().min(14),
+  companyEmail: z.string().email().optional(),
   link: z.string().optional(),
   street: z.string().optional(),
   number: z.string().optional(),
@@ -20,6 +21,7 @@ export const registerSchema = z.object({
   whatsapp: z.string().optional(),
   address: z.string().optional(),
   location: z.string().optional(),
+  captchaToken: z.string().optional(),
 });
 
 export const loginSchema = z.object({

@@ -35,6 +35,7 @@ async function ensureDemoTenant(input: {
       name: input.tenant.name,
       slug: input.tenant.slug,
       cnpj: input.tenant.cnpj,
+      companyEmail: (input.tenant as any).companyEmail,
       link: input.tenant.link,
       street: input.tenant.street,
       number: input.tenant.number,
@@ -49,6 +50,7 @@ async function ensureDemoTenant(input: {
     update: {
       name: input.tenant.name,
       slug: input.tenant.slug,
+      companyEmail: (input.tenant as any).companyEmail,
       link: input.tenant.link,
       street: input.tenant.street,
       number: input.tenant.number,
@@ -101,6 +103,7 @@ async function main() {
         name: 'Construtora Alfa LTDA',
         slug: 'construtora-alfa',
         cnpj: '11222333000181',
+        companyEmail: 'contato@construtora-alfa.demo',
         link: 'https://maps.google.com/?q=Av.+Paulista,+1000,+Bela+Vista,+Sao+Paulo,+SP,+01310-100',
         street: 'Av. Paulista',
         number: '1000',
@@ -122,6 +125,7 @@ async function main() {
         name: 'Engenharia Beta ME',
         slug: 'engenharia-beta',
         cnpj: '22333444000190',
+        companyEmail: 'contato@engenharia-beta.demo',
         link: 'https://maps.google.com/?q=R.+das+Flores,+200,+Centro,+Belo+Horizonte,+MG,+30110-000',
         street: 'R. das Flores',
         number: '200',
@@ -152,4 +156,3 @@ main()
     process.exitCode = 1;
   })
   .finally(() => prisma.$disconnect());
-
