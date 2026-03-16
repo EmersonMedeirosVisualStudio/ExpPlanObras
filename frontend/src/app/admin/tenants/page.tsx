@@ -3,8 +3,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '@/lib/api';
-import { Loader2, Plus, Trash2, Edit2, CheckCircle, XCircle } from 'lucide-react';
+import { CheckCircle, Edit2, History, Loader2, Mail, MessageCircle, Plus, Trash2, XCircle } from 'lucide-react';
 import { UserMenu } from '@/components/UserMenu';
+import { buildSubscriptionReminder, getDaysLeft, normalizeWhatsappPhone } from '@/lib/subscriptionReminders';
 
 interface Tenant {
   id: number;
@@ -28,7 +29,7 @@ interface Tenant {
   trialEndsAt?: string | null;
   paidUntil?: string | null;
   subscriptions?: Array<{ id: number; plan: string; status: string; expiresAt: string | null }>;
-  users: { user: { name: string; email: string } }[];
+  users: { user: { name: string; email: string; whatsapp?: string | null } }[];
 }
 
 type TenantHistoryItem = {
@@ -65,6 +66,25 @@ export default function AdminTenantsPage() {
   const UF_LIST = useRef([
     'AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'
   ]).current;
+
+  const toMailto = (email: string, subject?: string, body?: string) => {
+    const e = String(email || '').trim();
+    if (!e) return '';
+    const qs = new URLSearchParams();
+    if (subject) qs.set('subject', subject);
+    if (body) qs.set('body', body);
+    const q = qs.toString();
+    return `mailto:${e}${q ? `?${q}` : ''}`;
+  };
+
+  const toWhatsappUrl = (phone: string, text?: string) => {
+    const n = normalizeWhatsappPhone(phone);
+    if (!n) return '';
+    const qs = new URLSearchParams();
+    if (text) qs.set('text', text);
+    const q = qs.toString();
+    return `https://wa.me/${n}${q ? `?${q}` : ''}`;
+  };
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -731,7 +751,7 @@ export default function AdminTenantsPage() {
       
       setCreating(true); // Reusing loading state
       try {
-          const payload: any = { ...editFormData };
+          const payload: Record<string, unknown> = { ...editFormData };
           if (typeof payload.slug === 'string' && payload.slug.trim().length === 0) delete payload.slug;
           if (typeof payload.companyWhatsapp === 'string' && payload.companyWhatsapp.trim().length === 0) delete payload.companyWhatsapp;
           if (typeof payload.link === 'string' && payload.link.trim().length === 0) delete payload.link;
@@ -741,8 +761,7 @@ export default function AdminTenantsPage() {
           if (typeof payload.trialEndsAt === 'string' && payload.trialEndsAt.trim().length === 0) delete payload.trialEndsAt;
           if (typeof payload.paidUntil === 'string' && payload.paidUntil.trim().length === 0) delete payload.paidUntil;
           await api.put(`/api/admin/tenants/${editingTenant.id}`, payload);
-          setShowEditModal(false);
-          setEditingTenant(null);
+          closeEditModal();
           fetchTenants();
       } catch (err: unknown) {
           alert(getApiErrorMessage(err) || 'Erro ao atualizar empresa');
@@ -848,7 +867,7 @@ export default function AdminTenantsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-[96rem] mx-auto">
         <div className="flex justify-between items-center mb-8">
             <h1 className="text-2xl font-bold text-gray-900">Administração de Empresas</h1>
             
@@ -865,18 +884,20 @@ export default function AdminTenantsPage() {
             </div>
         </div>
 
-        <div className="bg-white shadow-sm rounded-lg overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
+        <div className="bg-white shadow-sm rounded-lg overflow-x-auto">
+            <table className="min-w-[1700px] w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                     <tr>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">ID</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Empresa</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Assinatura</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">CNPJ</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">E-mail</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Representante</th>
-                        <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Ações</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">ID</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">Empresa</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">Assinatura</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">CNPJ</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">E-mail</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">WhatsApp Empresa</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">Representante</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">WhatsApp Rep.</th>
+                        <th className="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider whitespace-nowrap">Ações</th>
                     </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -930,70 +951,219 @@ export default function AdminTenantsPage() {
                                 {tenant.cnpj}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
-                                {tenant.companyEmail || '-'}
+                                {tenant.companyEmail ? (
+                                  <a
+                                    href={toMailto(tenant.companyEmail)}
+                                    className="text-blue-700 hover:text-blue-800 underline underline-offset-2"
+                                  >
+                                    {tenant.companyEmail}
+                                  </a>
+                                ) : (
+                                  '-'
+                                )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
+                                {tenant.companyWhatsapp ? (
+                                  <a
+                                    href={toWhatsappUrl(tenant.companyWhatsapp)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-blue-700 hover:text-blue-800 underline underline-offset-2"
+                                  >
+                                    {tenant.companyWhatsapp}
+                                  </a>
+                                ) : (
+                                  '-'
+                                )}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
                                 {tenant.users[0]?.user.name || 'N/A'}
                                 <br/>
-                                <span className="text-xs text-gray-700">{tenant.users[0]?.user.email}</span>
+                                {tenant.users[0]?.user.email ? (
+                                  <a
+                                    href={toMailto(tenant.users[0].user.email)}
+                                    className="text-xs text-blue-700 hover:text-blue-800 underline underline-offset-2"
+                                  >
+                                    {tenant.users[0].user.email}
+                                  </a>
+                                ) : (
+                                  <span className="text-xs text-gray-700">-</span>
+                                )}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                                <button
-                                    onClick={() => openHistory(tenant)}
-                                    className="text-gray-700 hover:text-gray-900"
-                                    title="Histórico"
-                                >
-                                    Hist
-                                </button>
-                                <button
-                                    onClick={() => handleGrantAccessDays(tenant, 30)}
-                                    className="text-gray-700 hover:text-gray-900"
-                                    title="Liberar 30 dias"
-                                >
-                                    30d
-                                </button>
-                                <button
-                                    onClick={() => handleGrantAccessDays(tenant, 60)}
-                                    className="text-gray-700 hover:text-gray-900"
-                                    title="Liberar 60 dias"
-                                >
-                                    60d
-                                </button>
-                                <button
-                                    onClick={() => handleGrantAccessDays(tenant, 90)}
-                                    className="text-gray-700 hover:text-gray-900"
-                                    title="Liberar 90 dias"
-                                >
-                                    90d
-                                </button>
-                                <button
-                                    onClick={() => handleGrantAccessDays(tenant, 365)}
-                                    className="text-gray-700 hover:text-gray-900"
-                                    title="Liberar 1 ano"
-                                >
-                                    1a
-                                </button>
-                                <button 
-                                    onClick={() => handleToggleStatus(tenant)}
-                                    className={`${tenant.status === 'INACTIVE' ? 'text-gray-500 hover:text-gray-700' : 'text-green-600 hover:text-green-900'}`}
-                                    title={tenant.status === 'INACTIVE' ? 'Ativar' : 'Desativar'}
-                                >
-                                    {tenant.status === 'INACTIVE' ? <XCircle className="w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
-                                </button>
-                                <button 
-                                    onClick={() => handleEdit(tenant)}
-                                    className="text-blue-600 hover:text-blue-900"
-                                    title="Editar"
-                                >
-                                    <Edit2 className="w-5 h-5" />
-                                </button>
-                                <button 
-                                    onClick={() => handleDelete(tenant.id)}
-                                    className="text-red-600 hover:text-red-900"
-                                    title="Excluir"
-                                >
-                                    <Trash2 className="w-5 h-5" />
-                                </button>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
+                                {tenant.users[0]?.user.whatsapp ? (
+                                  <a
+                                    href={toWhatsappUrl(tenant.users[0].user.whatsapp)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-blue-700 hover:text-blue-800 underline underline-offset-2"
+                                  >
+                                    {tenant.users[0].user.whatsapp}
+                                  </a>
+                                ) : (
+                                  '-'
+                                )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                {(() => {
+                                  const sub = tenant.subscriptions && tenant.subscriptions.length > 0 ? tenant.subscriptions[0] : null;
+                                  const expiresAt = sub?.expiresAt
+                                    ? new Date(sub.expiresAt)
+                                    : tenant.paidUntil
+                                      ? new Date(tenant.paidUntil)
+                                      : tenant.trialEndsAt
+                                        ? new Date(tenant.trialEndsAt)
+                                        : null;
+                                  const daysLeft = expiresAt ? getDaysLeft(expiresAt) : null;
+                                  const due = typeof daysLeft === 'number' && (daysLeft === 30 || daysLeft === 15 || daysLeft === 5);
+                                  const billingEmailParam = String(tenant.companyEmail || tenant.users?.[0]?.user?.email || '');
+                                  const billingCnpjParam = String(tenant.cnpj || '').replace(/\D+/g, '');
+                                  const billingUrlAnnual =
+                                    typeof window !== 'undefined'
+                                      ? `${window.location.origin}/billing/claim?cnpj=${encodeURIComponent(
+                                          billingCnpjParam
+                                        )}&email=${encodeURIComponent(billingEmailParam)}&plan=ANNUAL`
+                                      : '';
+                                  const billingUrlBiennial =
+                                    typeof window !== 'undefined'
+                                      ? `${window.location.origin}/billing/claim?cnpj=${encodeURIComponent(
+                                          billingCnpjParam
+                                        )}&email=${encodeURIComponent(billingEmailParam)}&plan=BIENNIAL`
+                                      : '';
+                                  const rep = tenant.users?.[0]?.user;
+                                  const recipientEmail = tenant.companyEmail || rep?.email || '';
+                                  const recipientWhatsapp = tenant.companyWhatsapp || rep?.whatsapp || '';
+                                  const kind =
+                                    sub?.status === 'TRIAL'
+                                      ? 'TRIAL'
+                                      : sub?.status === 'ACTIVE'
+                                        ? 'RENEWAL'
+                                        : sub?.status
+                                          ? 'REGULARIZE'
+                                          : tenant.subscriptionStatus === 'TRIAL'
+                                            ? 'TRIAL'
+                                            : tenant.subscriptionStatus === 'ACTIVE'
+                                              ? 'RENEWAL'
+                                              : tenant.subscriptionStatus
+                                                ? 'REGULARIZE'
+                                                : 'RENEWAL';
+                                  const emailMsg =
+                                    due && recipientEmail && expiresAt
+                                      ? buildSubscriptionReminder({
+                                          companyName: tenant.name,
+                                          representativeName: rep?.name || undefined,
+                                          expiresAt,
+                                          daysLeft,
+                                          kind,
+                                          billingUrls: [
+                                            { label: '1 ano', url: billingUrlAnnual },
+                                            { label: '2 anos', url: billingUrlBiennial },
+                                          ],
+                                          channel: 'EMAIL',
+                                        })
+                                      : null;
+                                  const whatsappMsg =
+                                    due && recipientWhatsapp && expiresAt
+                                      ? buildSubscriptionReminder({
+                                          companyName: tenant.name,
+                                          representativeName: rep?.name || undefined,
+                                          expiresAt,
+                                          daysLeft,
+                                          kind,
+                                          billingUrls: [
+                                            { label: '1 ano', url: billingUrlAnnual },
+                                            { label: '2 anos', url: billingUrlBiennial },
+                                          ],
+                                          channel: 'WHATSAPP',
+                                        })
+                                      : null;
+                                  const emailHref = emailMsg ? toMailto(recipientEmail, emailMsg.subject, emailMsg.body) : '';
+                                  const whatsappHref = whatsappMsg ? toWhatsappUrl(recipientWhatsapp, whatsappMsg) : '';
+
+                                  return (
+                                    <div className="flex items-center justify-end gap-6">
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => openHistory(tenant)}
+                                          className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50 inline-flex items-center gap-2"
+                                          title="Histórico"
+                                        >
+                                          <History className="w-4 h-4" />
+                                          Histórico
+                                        </button>
+                                      </div>
+
+                                      <div className="flex items-center gap-2">
+                                        <button type="button" onClick={() => handleGrantAccessDays(tenant, 30)} className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50" title="Liberar 30 dias">30 dias</button>
+                                        <button type="button" onClick={() => handleGrantAccessDays(tenant, 60)} className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50" title="Liberar 60 dias">60d</button>
+                                        <button type="button" onClick={() => handleGrantAccessDays(tenant, 90)} className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50" title="Liberar 90 dias">90d</button>
+                                        <button type="button" onClick={() => handleGrantAccessDays(tenant, 365)} className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50" title="Liberar 1 ano">1 ano</button>
+                                      </div>
+
+                                      <div className="flex items-center gap-2">
+                                        <a
+                                          href={billingUrlAnnual}
+                                          className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50"
+                                          title="Assinar (1 ano) - MercadoPago"
+                                        >
+                                          Assinar 1 ano
+                                        </a>
+                                        <a
+                                          href={billingUrlBiennial}
+                                          className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50"
+                                          title="Assinar (2 anos) - MercadoPago"
+                                        >
+                                          Assinar 2 anos
+                                        </a>
+                                      </div>
+
+                                      {(emailMsg || whatsappMsg) && (
+                                        <div className="flex items-center gap-2">
+                                          {emailMsg && (
+                                            <a
+                                              href={emailHref}
+                                              className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50 inline-flex items-center gap-2"
+                                              title={`Enviar e-mail (${daysLeft} dias antes)`}
+                                            >
+                                              <Mail className="w-4 h-4" />
+                                              {daysLeft}d
+                                            </a>
+                                          )}
+                                          {whatsappMsg && (
+                                            <a
+                                              href={whatsappHref}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50 inline-flex items-center gap-2"
+                                              title={`Enviar WhatsApp (${daysLeft} dias antes)`}
+                                            >
+                                              <MessageCircle className="w-4 h-4" />
+                                              {daysLeft}d
+                                            </a>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleStatus(tenant)}
+                                          className={`${tenant.status === 'INACTIVE' ? 'text-gray-600 hover:text-gray-800' : 'text-green-700 hover:text-green-900'} px-2 py-2`}
+                                          title={tenant.status === 'INACTIVE' ? 'Ativar' : 'Desativar'}
+                                        >
+                                          {tenant.status === 'INACTIVE' ? <XCircle className="w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
+                                        </button>
+                                        <button type="button" onClick={() => handleEdit(tenant)} className="text-blue-700 hover:text-blue-900 px-2 py-2" title="Editar">
+                                          <Edit2 className="w-5 h-5" />
+                                        </button>
+                                        <button type="button" onClick={() => handleDelete(tenant.id)} className="text-red-700 hover:text-red-900 px-2 py-2" title="Excluir">
+                                          <Trash2 className="w-5 h-5" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
                             </td>
                         </tr>
                     ))}
