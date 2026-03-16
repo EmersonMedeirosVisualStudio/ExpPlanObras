@@ -1081,8 +1081,8 @@ export default function AdminTenantsPage() {
                                   const whatsappHref = whatsappMsg ? toWhatsappUrl(recipientWhatsapp, whatsappMsg) : '';
 
                                   return (
-                                    <div className="flex items-center justify-end gap-6">
-                                      <div className="flex items-center gap-2">
+                                    <div className="flex items-center justify-end gap-8">
+                                      <div className="flex items-center gap-2 pr-6 border-r border-gray-200">
                                         <button
                                           type="button"
                                           onClick={() => openHistory(tenant)}
@@ -1095,7 +1095,7 @@ export default function AdminTenantsPage() {
                                       </div>
 
                                       <div className="flex items-center gap-2">
-                                        <button type="button" onClick={() => handleGrantAccessDays(tenant, 30)} className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50" title="Liberar 30 dias">30 dias</button>
+                                        <button type="button" onClick={() => handleGrantAccessDays(tenant, 30)} className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50" title="Liberar 30 dias">30d</button>
                                         <button type="button" onClick={() => handleGrantAccessDays(tenant, 60)} className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50" title="Liberar 60 dias">60d</button>
                                         <button type="button" onClick={() => handleGrantAccessDays(tenant, 90)} className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50" title="Liberar 90 dias">90d</button>
                                         <button type="button" onClick={() => handleGrantAccessDays(tenant, 365)} className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50" title="Liberar 1 ano">1 ano</button>
