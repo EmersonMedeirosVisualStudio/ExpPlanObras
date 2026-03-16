@@ -472,6 +472,16 @@ export default function LoginPage() {
           setLoading(false);
           return;
         }
+        if (password.length < 8) {
+          setError('Senha deve ter no mínimo 8 caracteres.');
+          setLoading(false);
+          return;
+        }
+        if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+          setError('Senha deve conter pelo menos 1 letra e 1 número.');
+          setLoading(false);
+          return;
+        }
         // Register
         await api.post('/api/auth/register', {
           email,
@@ -479,9 +489,9 @@ export default function LoginPage() {
           password,
           name,
           tenantName,
-          tenantSlug,
+          tenantSlug: tenantSlug.trim().length > 0 ? tenantSlug.trim() : undefined,
           cnpj: cnpj.replace(/\D/g, ''),
-          companyEmail: companyEmail.length > 0 ? companyEmail : undefined,
+          companyEmail,
           companyWhatsapp: companyWhatsapp.replace(/\D/g, '').length > 0 ? companyWhatsapp : undefined,
           link,
           street,
@@ -623,8 +633,8 @@ export default function LoginPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    {label('Slug (URL)', true)}
-                    <input name="tenantSlug" type="text" required className={inputClass} placeholder="minha-empresa" value={tenantSlug} onChange={(e) => setTenantSlug(e.target.value)} />
+                    {label('Slug (URL)')}
+                    <input name="tenantSlug" type="text" className={inputClass} placeholder="minha-empresa" value={tenantSlug} onChange={(e) => setTenantSlug(e.target.value)} />
                   </div>
                   <div>
                     {label('CNPJ', true)}
@@ -664,12 +674,12 @@ export default function LoginPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    {label('Número')}
-                    <input name="number" type="text" className={inputClass} value={number} onChange={(e) => setNumber(e.target.value)} />
+                    {label('Número', true)}
+                    <input name="number" type="text" required className={inputClass} value={number} onChange={(e) => setNumber(e.target.value)} />
                   </div>
                   <div>
-                    {label('Bairro')}
-                    <input name="neighborhood" type="text" className={inputClass} value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} />
+                    {label('Bairro', true)}
+                    <input name="neighborhood" type="text" required className={inputClass} value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} />
                   </div>
                 </div>
 

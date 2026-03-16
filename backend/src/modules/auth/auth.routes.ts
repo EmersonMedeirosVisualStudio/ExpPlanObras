@@ -245,7 +245,10 @@ export default async function authRoutes(server: FastifyInstance) {
         schema: {
             body: z.object({
                 oldPassword: z.string(),
-                newPassword: z.string().min(8).regex(/^(?=.*[A-Za-z])(?=.*\d).+$/)
+                newPassword: z
+                  .string()
+                  .min(8, { message: 'Senha deve ter no mínimo 8 caracteres' })
+                  .regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, { message: 'Senha deve conter pelo menos 1 letra e 1 número' })
             })
         }
     },

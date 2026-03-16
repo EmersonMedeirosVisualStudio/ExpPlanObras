@@ -3,6 +3,7 @@ import prisma from "../../plugins/prisma.js";
 import { CreateTenantInput, UpdateTenantInput } from "./admin.schema.js";
 import bcrypt from "bcryptjs";
 import { normalizeEmail, validateCPF, validateCNPJ, validateCEP, validateSlug } from "../../utils/validators.js";
+import { generateUniqueTenantSlug } from "../../utils/slug.js";
 
 function getTrialEndsAt() {
   const days = Number(process.env.TRIAL_DAYS || '30');
@@ -19,23 +20,23 @@ export async function createTenantByAdmin(input: CreateTenantInput) {
     representativeWhatsapp
   } = input;
 
-  const cleanSlug = validateSlug(slug);
   const cleanCNPJ = validateCNPJ(cnpj);
-  const cleanCEP = cep ? validateCEP(cep) : undefined;
+  const cleanCEP = validateCEP(cep);
   const cleanRepEmail = normalizeEmail(representativeEmail);
   const cleanRepCPF = validateCPF(representativeCpf);
-  const cleanCompanyEmail = companyEmail ? normalizeEmail(companyEmail) : null;
+  const cleanCompanyEmail = normalizeEmail(companyEmail);
 
   const hashedPassword = await bcrypt.hash(representativePassword, 10);
 
   const result = await prisma.$transaction(async (tx) => {
+    const cleanSlug = slug ? validateSlug(slug) : await generateUniqueTenantSlug(tx, name);
     // 1. Create Tenant
     const tenant = await tx.tenant.create({
       data: {
         name,
         slug: cleanSlug,
         cnpj: cleanCNPJ,
-        companyEmail,
+        companyEmail: cleanCompanyEmail,
         companyWhatsapp,
         link,
         googleMapsLink: link,

@@ -3,6 +3,7 @@ import { RegisterInput, LoginInput } from "./auth.schema.js";
 import bcrypt from "bcryptjs";
 import { FastifyInstance } from "fastify";
 import { normalizeEmail, validateCPF, validateCNPJ, validateCEP, validateSlug } from "../../utils/validators.js";
+import { generateUniqueTenantSlug } from "../../utils/slug.js";
 
 function getTrialEndsAt() {
   const days = Number(process.env.TRIAL_DAYS || '30');
@@ -55,20 +56,21 @@ export async function registerUser(input: RegisterInput) {
   const cleanEmail = normalizeEmail(email);
   const cleanCPF = validateCPF(cpf);
   const cleanCNPJ = validateCNPJ(cnpj);
-  const cleanSlug = validateSlug(tenantSlug);
-  const cleanCEP = cep ? validateCEP(cep) : undefined;
+  const cleanCompanyEmail = normalizeEmail(companyEmail);
+  const cleanCEP = validateCEP(cep);
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
   // Transaction to create Tenant and User
   const result = await prisma.$transaction(async (tx) => {
+    const cleanSlug = tenantSlug ? validateSlug(tenantSlug) : await generateUniqueTenantSlug(tx, tenantName);
     // 1. Create Tenant
     const tenant = await tx.tenant.create({
       data: {
         name: tenantName,
         slug: cleanSlug,
         cnpj: cleanCNPJ,
-        companyEmail,
+        companyEmail: cleanCompanyEmail,
         companyWhatsapp,
         link,
         googleMapsLink: link,
