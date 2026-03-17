@@ -19,7 +19,7 @@ export function getDaysLeft(expiresAt: Date, now = new Date()) {
   return Math.round(diffMs / (24 * 60 * 60 * 1000));
 }
 
-export function buildSubscriptionReminder(input: {
+type SubscriptionReminderBaseInput = {
   companyName: string;
   representativeName?: string;
   expiresAt: Date;
@@ -27,8 +27,15 @@ export function buildSubscriptionReminder(input: {
   kind: 'TRIAL' | 'RENEWAL' | 'REGULARIZE';
   billingUrl?: string;
   billingUrls?: Array<{ label: string; url: string }>;
-  channel: 'EMAIL' | 'WHATSAPP';
-}) {
+};
+
+type SubscriptionReminderEmail = { subject: string; body: string };
+
+export function buildSubscriptionReminder(input: SubscriptionReminderBaseInput & { channel: 'EMAIL' }): SubscriptionReminderEmail;
+export function buildSubscriptionReminder(input: SubscriptionReminderBaseInput & { channel: 'WHATSAPP' }): string;
+export function buildSubscriptionReminder(
+  input: SubscriptionReminderBaseInput & { channel: 'EMAIL' | 'WHATSAPP' }
+): SubscriptionReminderEmail | string {
   const dateBr = formatDateBR(input.expiresAt);
   const prefix = input.daysLeft === 30 ? '30 dias' : input.daysLeft === 15 ? '15 dias' : `${input.daysLeft} dias`;
   const who = input.representativeName && input.representativeName.trim().length > 0 ? input.representativeName.trim() : input.companyName;
