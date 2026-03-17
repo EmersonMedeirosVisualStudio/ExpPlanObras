@@ -1117,7 +1117,8 @@ export default function AdminTenantsPage() {
                                           channel: 'WHATSAPP',
                                         })
                                       : null;
-                                  const emailHref = emailMsg ? toMailto(recipientEmail, emailMsg.subject, emailMsg.body) : '';
+                                  const emailPayload = emailMsg && typeof emailMsg !== 'string' ? emailMsg : null;
+                                  const emailHref = emailPayload ? toMailto(recipientEmail, emailPayload.subject, emailPayload.body) : '';
                                   const whatsappHref = whatsappMsg ? toWhatsappUrl(recipientWhatsapp, whatsappMsg) : '';
 
                                   return (
@@ -1164,7 +1165,7 @@ export default function AdminTenantsPage() {
 
                                       {(emailMsg || whatsappMsg) && (
                                         <div className="flex items-center gap-2">
-                                          {emailMsg && (
+                                          {emailHref && (
                                             <a
                                               href={emailHref}
                                               className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50 inline-flex items-center gap-2"
