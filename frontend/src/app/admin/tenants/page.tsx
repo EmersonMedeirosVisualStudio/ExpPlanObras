@@ -28,6 +28,9 @@ interface Tenant {
   subscriptionStatus?: string | null;
   trialEndsAt?: string | null;
   paidUntil?: string | null;
+  gracePeriodEndsAt?: string | null;
+  billingProvider?: string | null;
+  billingPlan?: string | null;
   subscriptions?: Array<{ id: number; plan: string; status: string; expiresAt: string | null }>;
   users: { user: { name: string; email: string; whatsapp?: string | null } }[];
 }
@@ -631,6 +634,30 @@ export default function AdminTenantsPage() {
     }
   };
 
+  const revokeManualAccess = async (tenant: Tenant) => {
+    const isManual =
+      String(tenant.billingProvider || '').toUpperCase() === 'MANUAL' ||
+      String(tenant.billingPlan || '').toUpperCase().startsWith('MANUAL');
+    if (!isManual) {
+      alert('Só é possível revogar liberação manual.');
+      return;
+    }
+    const current = String(tenant.subscriptionStatus || '');
+    if (!['ACTIVE', 'TRIAL', 'GRACE_PERIOD'].includes(current)) {
+      alert('Não há liberação manual ativa para revogar.');
+      return;
+    }
+    if (!confirm(`Revogar a assinatura/liberação manual de "${tenant.name}"?`)) return;
+    const reason = prompt('Motivo da revogação:', 'Pagamento prometido não realizado');
+    if (reason === null) return;
+    try {
+      await api.post(`/api/admin/tenants/${tenant.id}/manual-revoke`, { reason: String(reason || '').trim() });
+      fetchTenants();
+    } catch (err: unknown) {
+      alert(getApiErrorMessage(err) || 'Erro ao revogar assinatura');
+    }
+  };
+
   const closeCreateModal = () => {
     setShowCreateModal(false);
     setError('');
@@ -1070,6 +1097,12 @@ export default function AdminTenantsPage() {
                                           billingCnpjParam
                                         )}&email=${encodeURIComponent(billingEmailParam)}&plan=BIENNIAL`
                                       : '';
+                                  const billingUrlClaim =
+                                    typeof window !== 'undefined'
+                                      ? `${window.location.origin}/billing/claim?cnpj=${encodeURIComponent(
+                                          billingCnpjParam
+                                        )}&email=${encodeURIComponent(billingEmailParam)}`
+                                      : '';
                                   const rep = tenant.users?.[0]?.user;
                                   const recipientEmail = tenant.companyEmail || rep?.email || '';
                                   const recipientWhatsapp = tenant.companyWhatsapp || rep?.whatsapp || '';
@@ -1144,22 +1177,27 @@ export default function AdminTenantsPage() {
                                         >
                                           Liberar acesso
                                         </button>
+                                        {(String(tenant.billingProvider || '').toUpperCase() === 'MANUAL' ||
+                                          String(tenant.billingPlan || '').toUpperCase().startsWith('MANUAL')) &&
+                                          ['ACTIVE', 'TRIAL', 'GRACE_PERIOD'].includes(String(tenant.subscriptionStatus || '')) && (
+                                            <button
+                                              type="button"
+                                              onClick={() => revokeManualAccess(tenant)}
+                                              className="px-3 py-2 border rounded text-red-700 hover:bg-red-50"
+                                              title="Revogar liberação manual"
+                                            >
+                                              Revogar
+                                            </button>
+                                          )}
                                       </div>
 
                                       <div className="flex items-center gap-2">
                                         <a
-                                          href={billingUrlAnnual}
+                                          href={billingUrlClaim}
                                           className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50"
-                                          title="Assinar (1 ano) - MercadoPago"
+                                          title="Assinar/regularizar - MercadoPago"
                                         >
-                                          Assinar 1 ano
-                                        </a>
-                                        <a
-                                          href={billingUrlBiennial}
-                                          className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50"
-                                          title="Assinar (2 anos) - MercadoPago"
-                                        >
-                                          Assinar 2 anos
+                                          Assinar
                                         </a>
                                       </div>
 

@@ -2,7 +2,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createTenantSchema, updateTenantSchema } from './admin.schema.js';
-import { acceptClaimAsAdmin, activateTenantSubscription, createTenantByAdmin, deleteTenant, getAllTenants, grantTenantAccessDays, manualGrantTenantAccess, updateTenant } from './admin.service.js';
+import { acceptClaimAsAdmin, activateTenantSubscription, createTenantByAdmin, deleteTenant, getAllTenants, grantTenantAccessDays, manualGrantTenantAccess, revokeManualTenantAccess, updateTenant } from './admin.service.js';
 import { checkSystemAdmin } from '../../utils/authenticate.js';
 import prisma from '../../plugins/prisma.js';
 
@@ -268,6 +268,41 @@ export default async function adminRoutes(server: FastifyInstance) {
         return reply.send(result);
       } catch (e: any) {
         return reply.code(400).send({ message: e?.message || 'Falha ao regularizar assinatura' });
+      }
+    }
+  );
+
+  server.post(
+    '/tenants/:id/manual-revoke',
+    {
+      schema: {
+        params: z.object({
+          id: z.coerce.number().int(),
+        }),
+        body: z.object({
+          reason: z.string().min(3),
+        }),
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = request.params as { id: number };
+        const { reason } = request.body as { reason: string };
+        const result = await revokeManualTenantAccess(id, { reason });
+        const actorUserId = (request.user as any)?.userId;
+        await prisma.tenantHistoryEntry.create({
+          data: {
+            tenantId: id,
+            source: 'ADMIN',
+            actorUserId: typeof actorUserId === 'number' ? actorUserId : null,
+            message: `Revogação manual. Motivo: ${result.reason}. ${String(result.before.status)}/${String(
+              result.before.subscriptionStatus
+            )} → ${String((result.tenant as any).status)}/${String((result.tenant as any).subscriptionStatus)}.`,
+          },
+        });
+        return reply.send(result.tenant);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Falha ao revogar assinatura' });
       }
     }
   );

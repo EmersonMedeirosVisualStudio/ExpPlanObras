@@ -253,6 +253,79 @@ export async function manualGrantTenantAccess(id: number, input: { reason: 'PAYM
   });
 }
 
+export async function revokeManualTenantAccess(id: number, input: { reason: string }) {
+  const reason = String(input.reason || '').trim();
+  if (!reason) throw new Error('Motivo obrigatório');
+
+  return prisma.$transaction(async (tx) => {
+    const tenant = await tx.tenant.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        subscriptionStatus: true,
+        trialEndsAt: true,
+        trialExpiresAt: true,
+        paidUntil: true,
+        gracePeriodEndsAt: true,
+        billingProvider: true,
+        billingPlan: true,
+      },
+    });
+    if (!tenant) throw new Error('Empresa não encontrada');
+
+    const provider = String(tenant.billingProvider || '').toUpperCase();
+    const plan = String(tenant.billingPlan || '').toUpperCase();
+    const isManual = provider === 'MANUAL' || plan.startsWith('MANUAL');
+    if (!isManual) throw new Error('Somente liberações manuais podem ser revogadas');
+
+    const currentSub = String(tenant.subscriptionStatus || 'NONE');
+    if (!['ACTIVE', 'TRIAL', 'GRACE_PERIOD'].includes(currentSub)) {
+      throw new Error('Não há liberação manual ativa para revogar');
+    }
+
+    const now = new Date();
+
+    const next =
+      currentSub === 'TRIAL'
+        ? {
+            subscriptionStatus: 'NONE',
+            trialEndsAt: null,
+            trialExpiresAt: null,
+            paidUntil: null,
+            gracePeriodEndsAt: null,
+          }
+        : {
+            subscriptionStatus: 'EXPIRED',
+            paidUntil: null,
+            gracePeriodEndsAt: null,
+          };
+
+    const updated = await tx.tenant.update({
+      where: { id },
+      data: {
+        ...next,
+        billingProvider: 'MANUAL',
+        billingPlan: 'MANUAL_REVOKED',
+      } as any,
+    });
+
+    await tx.subscription.create({
+      data: {
+        tenantId: id,
+        plan: 'MANUAL_REVOKED',
+        status: 'EXPIRED',
+        startedAt: now,
+        expiresAt: now,
+        paymentProvider: 'MANUAL',
+      },
+    });
+
+    return { tenant: updated, before: tenant, reason };
+  });
+}
+
 export async function acceptClaimAsAdmin(input: { cnpj: string; email: string; plan: 'ANNUAL' | 'BIENNIAL' }) {
   const plan = input.plan === 'BIENNIAL' ? 'BIENNIAL' : 'ANNUAL';
   const months = plan === 'BIENNIAL' ? 24 : 12;
