@@ -1,7 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import api from '@/lib/api';
 import { Loader2 } from 'lucide-react';
 
@@ -23,16 +22,24 @@ function getApiErrorMessage(err: unknown) {
 }
 
 export default function BillingClaimPage() {
-  const params = useSearchParams();
-  const cnpj = useMemo(() => normalizeCnpj(params.get('cnpj') || ''), [params]);
-  const email = useMemo(() => String(params.get('email') || '').trim(), [params]);
-  const plan = useMemo(() => String(params.get('plan') || 'ANNUAL').trim().toUpperCase(), [params]);
-
+  const [cnpj, setCnpj] = useState('');
+  const [email, setEmail] = useState('');
+  const [selectedPlan, setSelectedPlan] = useState<'ANNUAL' | 'BIENNIAL'>('ANNUAL');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const validPlan = plan === 'ANNUAL' || plan === 'BIENNIAL' ? plan : 'ANNUAL';
-  const [selectedPlan, setSelectedPlan] = useState<'ANNUAL' | 'BIENNIAL'>(validPlan);
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const c = normalizeCnpj(params.get('cnpj') || '');
+      const e = String(params.get('email') || '').trim();
+      const p = String(params.get('plan') || 'ANNUAL').trim().toUpperCase();
+      setCnpj(c);
+      setEmail(e);
+      setSelectedPlan(p === 'BIENNIAL' ? 'BIENNIAL' : 'ANNUAL');
+    } catch {
+    }
+  }, []);
 
   const start = async (p?: 'ANNUAL' | 'BIENNIAL') => {
     setError('');
