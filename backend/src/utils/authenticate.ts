@@ -49,10 +49,10 @@ export async function checkSystemAdmin(request: FastifyRequest, reply: FastifyRe
         });
 
         if (!user || !user.isSystemAdmin) {
-            reply.code(403).send({ message: 'Forbidden: System Admin access required' });
+            reply.code(403).send({ message: 'Acesso restrito: administrador do sistema necessário' });
             return;
         }
     } catch (err) {
-        reply.send(err);
+        reply.code(401).send({ message: 'Não autenticado' });
     }
 }

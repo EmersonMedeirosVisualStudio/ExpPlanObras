@@ -156,30 +156,92 @@ export async function updateTenant(id: number, input: UpdateTenantInput) {
 }
 
 export async function activateTenantSubscription(id: number, months: number) {
-  const paidUntil = new Date();
-  paidUntil.setMonth(paidUntil.getMonth() + months);
-  return prisma.tenant.update({
-    where: { id },
-    data: {
-      status: 'ACTIVE',
-      subscriptionStatus: 'ACTIVE',
-      paidUntil,
-    },
+  return prisma.$transaction(async (tx) => {
+    const tenant = await tx.tenant.findUnique({
+      where: { id },
+      select: { paidUntil: true, trialEndsAt: true },
+    });
+    if (!tenant) throw new Error('Empresa não encontrada');
+
+    const now = new Date();
+    const base = new Date(
+      Math.max(
+        now.getTime(),
+        tenant.paidUntil ? tenant.paidUntil.getTime() : 0,
+        tenant.trialEndsAt ? tenant.trialEndsAt.getTime() : 0
+      )
+    );
+    const paidUntil = new Date(base);
+    paidUntil.setMonth(paidUntil.getMonth() + months);
+
+    const updated = await tx.tenant.update({
+      where: { id },
+      data: {
+        status: 'ACTIVE',
+        subscriptionStatus: 'ACTIVE',
+        paidUntil,
+        billingProvider: 'MANUAL',
+        billingPlan: `MANUAL_${months}M`,
+      } as any,
+    });
+
+    await tx.subscription.create({
+      data: {
+        tenantId: id,
+        plan: `MANUAL_${months}M`,
+        status: 'ACTIVE',
+        startedAt: now,
+        expiresAt: paidUntil,
+        paymentProvider: 'MANUAL',
+      },
+    });
+
+    return updated;
   });
 }
 
 export async function grantTenantAccessDays(id: number, days: number) {
-  const paidUntil = new Date();
-  paidUntil.setDate(paidUntil.getDate() + days);
-  return prisma.tenant.update({
-    where: { id },
-    data: {
-      status: 'ACTIVE',
-      subscriptionStatus: 'ACTIVE',
-      paidUntil,
-      billingProvider: 'MANUAL',
-      billingPlan: `MANUAL_${days}D`,
-    } as any,
+  return prisma.$transaction(async (tx) => {
+    const tenant = await tx.tenant.findUnique({
+      where: { id },
+      select: { paidUntil: true, trialEndsAt: true },
+    });
+    if (!tenant) throw new Error('Empresa não encontrada');
+
+    const now = new Date();
+    const base = new Date(
+      Math.max(
+        now.getTime(),
+        tenant.paidUntil ? tenant.paidUntil.getTime() : 0,
+        tenant.trialEndsAt ? tenant.trialEndsAt.getTime() : 0
+      )
+    );
+    const paidUntil = new Date(base);
+    paidUntil.setDate(paidUntil.getDate() + days);
+
+    const updated = await tx.tenant.update({
+      where: { id },
+      data: {
+        status: 'ACTIVE',
+        subscriptionStatus: 'ACTIVE',
+        paidUntil,
+        billingProvider: 'MANUAL',
+        billingPlan: `MANUAL_${days}D`,
+      } as any,
+    });
+
+    await tx.subscription.create({
+      data: {
+        tenantId: id,
+        plan: `MANUAL_${days}D`,
+        status: 'ACTIVE',
+        startedAt: now,
+        expiresAt: paidUntil,
+        paymentProvider: 'MANUAL',
+      },
+    });
+
+    return updated;
   });
 }
 
