@@ -2,7 +2,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createTenantSchema, updateTenantSchema } from './admin.schema.js';
-import { activateTenantSubscription, createTenantByAdmin, deleteTenant, getAllTenants, grantTenantAccessDays, manualGrantTenantAccess, updateTenant } from './admin.service.js';
+import { acceptClaimAsAdmin, activateTenantSubscription, createTenantByAdmin, deleteTenant, getAllTenants, grantTenantAccessDays, manualGrantTenantAccess, updateTenant } from './admin.service.js';
 import { checkSystemAdmin } from '../../utils/authenticate.js';
 import prisma from '../../plugins/prisma.js';
 
@@ -238,6 +238,37 @@ export default async function adminRoutes(server: FastifyInstance) {
         },
       });
       return reply.send(tenant);
+    }
+  );
+
+  server.post(
+    '/tenants/claim-accept',
+    {
+      schema: {
+        body: z.object({
+          cnpj: z.string().min(14),
+          email: z.string().email(),
+          plan: z.enum(['ANNUAL', 'BIENNIAL']),
+        }),
+      },
+    },
+    async (request, reply) => {
+      try {
+        const body = request.body as { cnpj: string; email: string; plan: 'ANNUAL' | 'BIENNIAL' };
+        const result = await acceptClaimAsAdmin(body);
+        const actorUserId = (request.user as any)?.userId;
+        await prisma.tenantHistoryEntry.create({
+          data: {
+            tenantId: result.tenant.id,
+            source: 'ADMIN',
+            actorUserId: typeof actorUserId === 'number' ? actorUserId : null,
+            message: `Regularização por aceite do administrador. Plano: ${body.plan}. Status: ACTIVE. Válido até: ${new Date(result.paidUntil).toISOString()}.`,
+          },
+        });
+        return reply.send(result);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Falha ao regularizar assinatura' });
+      }
     }
   );
 

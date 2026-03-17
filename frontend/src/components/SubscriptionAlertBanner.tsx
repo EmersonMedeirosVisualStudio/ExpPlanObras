@@ -1,23 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 export function SubscriptionAlertBanner() {
-  const [message, setMessage] = useState('');
-
-  useEffect(() => {
+  const [message, setMessage] = useState(() => {
     try {
       const token = localStorage.getItem('token');
       const msg = localStorage.getItem('subscription_alert');
-      if (!token || !msg) {
-        setMessage('');
-        return;
-      }
-      setMessage(msg);
+      if (!token || !msg) return '';
+      return msg;
     } catch {
-      setMessage('');
+      return '';
     }
-  }, []);
+  });
 
   if (!message) return null;
 
@@ -40,4 +35,3 @@ export function SubscriptionAlertBanner() {
     </div>
   );
 }
-

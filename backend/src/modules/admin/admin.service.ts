@@ -253,6 +253,68 @@ export async function manualGrantTenantAccess(id: number, input: { reason: 'PAYM
   });
 }
 
+export async function acceptClaimAsAdmin(input: { cnpj: string; email: string; plan: 'ANNUAL' | 'BIENNIAL' }) {
+  const plan = input.plan === 'BIENNIAL' ? 'BIENNIAL' : 'ANNUAL';
+  const months = plan === 'BIENNIAL' ? 24 : 12;
+
+  return prisma.$transaction(async (tx) => {
+    const tenant = await tx.tenant.findUnique({
+      where: { cnpj: input.cnpj },
+      select: { id: true, companyEmail: true, paidUntil: true, gracePeriodEndsAt: true, trialEndsAt: true, users: { select: { user: { select: { email: true } } } } },
+    } as any);
+    if (!tenant) throw new Error('Empresa não encontrada');
+
+    const normalizedEmail = normalizeEmail(input.email);
+    const emails = new Set<string>();
+    if (tenant.companyEmail) emails.add(normalizeEmail(String(tenant.companyEmail)));
+    for (const u of (tenant as any).users || []) {
+      const e = u?.user?.email ? normalizeEmail(String(u.user.email)) : '';
+      if (e) emails.add(e);
+    }
+    if (emails.size > 0 && !emails.has(normalizedEmail)) {
+      throw new Error('E-mail não vinculado à empresa');
+    }
+
+    const now = new Date();
+    const base = new Date(
+      Math.max(
+        now.getTime(),
+        tenant.paidUntil ? new Date(tenant.paidUntil as any).getTime() : 0,
+        tenant.gracePeriodEndsAt ? new Date(tenant.gracePeriodEndsAt as any).getTime() : 0
+      )
+    );
+    const paidUntil = new Date(base);
+    paidUntil.setMonth(paidUntil.getMonth() + months);
+
+    const updated = await tx.tenant.update({
+      where: { id: tenant.id },
+      data: {
+        status: 'ACTIVE',
+        subscriptionStatus: 'ACTIVE',
+        paidUntil,
+        gracePeriodEndsAt: null,
+        trialEndsAt: null,
+        trialExpiresAt: null,
+        billingProvider: 'MANUAL',
+        billingPlan: `MANUAL_PAYMENT_${plan}`,
+      } as any,
+    });
+
+    await tx.subscription.create({
+      data: {
+        tenantId: tenant.id,
+        plan: `MANUAL_PAYMENT_${plan}`,
+        status: 'ACTIVE',
+        startedAt: now,
+        expiresAt: paidUntil,
+        paymentProvider: 'MANUAL',
+      },
+    });
+
+    return { tenant: updated, paidUntil };
+  });
+}
+
 export async function activateTenantSubscription(id: number, months: number) {
   return prisma.$transaction(async (tx) => {
     const tenant = await tx.tenant.findUnique({

@@ -35,8 +35,10 @@ api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const token = safeLocalStorage.getItem('token');
     if (token) {
-      config.headers = config.headers ?? {};
-      (config.headers as any).Authorization = `Bearer ${token}`;
+      config.headers = {
+        ...(config.headers ?? {}),
+        Authorization: `Bearer ${token}`,
+      };
     }
   }
   return config;

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { Loader2 } from 'lucide-react';
 
@@ -22,11 +23,14 @@ function getApiErrorMessage(err: unknown) {
 }
 
 export default function BillingClaimPage() {
+  const router = useRouter();
   const [cnpj, setCnpj] = useState('');
   const [email, setEmail] = useState('');
   const [selectedPlan, setSelectedPlan] = useState<'ANNUAL' | 'BIENNIAL'>('ANNUAL');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
+  const [adminAccepted, setAdminAccepted] = useState(false);
 
   useEffect(() => {
     try {
@@ -37,9 +41,27 @@ export default function BillingClaimPage() {
       setCnpj(c);
       setEmail(e);
       setSelectedPlan(p === 'BIENNIAL' ? 'BIENNIAL' : 'ANNUAL');
+      const rawUser = localStorage.getItem('user');
+      if (rawUser) {
+        const u = JSON.parse(rawUser) as { isSystemAdmin?: boolean } | null;
+        setIsSystemAdmin(Boolean(u?.isSystemAdmin));
+      } else {
+        setIsSystemAdmin(false);
+      }
     } catch {
     }
   }, []);
+
+  const back = () => {
+    try {
+      if (window.history.length > 1) {
+        router.back();
+        return;
+      }
+    } catch {
+    }
+    router.push('/login');
+  };
 
   const start = async (p?: 'ANNUAL' | 'BIENNIAL') => {
     setError('');
@@ -72,12 +94,48 @@ export default function BillingClaimPage() {
     }
   };
 
+  const acceptAsAdmin = async () => {
+    setError('');
+    if (!adminAccepted) {
+      setError('Confirme o aceite para continuar.');
+      return;
+    }
+    if (cnpj.length !== 14) {
+      setError('CNPJ inválido.');
+      return;
+    }
+    if (!email || !email.includes('@')) {
+      setError('E-mail inválido.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await api.post('/api/admin/tenants/claim-accept', {
+        cnpj,
+        email,
+        plan: selectedPlan,
+      });
+      router.push('/admin/tenants');
+    } catch (e: unknown) {
+      setError(getApiErrorMessage(e) || 'Falha ao regularizar assinatura.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-sm border space-y-4">
-        <div className="text-xl font-bold text-gray-900">Regularizar assinatura</div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xl font-bold text-gray-900">Regularizar assinatura</div>
+          <button type="button" onClick={back} className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50">
+            Voltar
+          </button>
+        </div>
         <div className="text-sm text-gray-700">
-          Ao continuar, você será redirecionado para o MercadoPago para iniciar/regularizar a assinatura.
+          {isSystemAdmin
+            ? 'Como administrador do sistema, você pode regularizar por aceite (sem MercadoPago).'
+            : 'Ao continuar, você será redirecionado para o MercadoPago para iniciar/regularizar a assinatura.'}
         </div>
 
         <div className="space-y-2 text-sm text-gray-800">
@@ -115,13 +173,20 @@ export default function BillingClaimPage() {
 
         <button
           type="button"
-          onClick={() => start()}
-          disabled={loading}
+          onClick={() => (isSystemAdmin ? acceptAsAdmin() : start())}
+          disabled={loading || (isSystemAdmin && !adminAccepted)}
           className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-500 disabled:opacity-50 flex items-center justify-center gap-2"
         >
           {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-          Ir para MercadoPago
+          {isSystemAdmin ? 'Aceitar e ativar' : 'Ir para MercadoPago'}
         </button>
+
+        {isSystemAdmin && (
+          <label className="flex items-center gap-2 text-sm text-gray-800">
+            <input type="checkbox" checked={adminAccepted} onChange={(e) => setAdminAccepted(e.target.checked)} />
+            Confirmo a regularização manual desta assinatura.
+          </label>
+        )}
       </div>
     </div>
   );
