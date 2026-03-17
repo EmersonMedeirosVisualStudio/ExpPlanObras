@@ -5,7 +5,7 @@ import { registerSchema, loginSchema } from './auth.schema.js';
 import { registerUser, loginUser, selectTenant, changePassword, loginUserByEmail } from './auth.service.js';
 import { authenticate } from '../../utils/authenticate.js';
 import prisma from '../../plugins/prisma.js';
-import { checkRateLimit, getClientIp } from '../../utils/rateLimit.js';
+import { addRateLimitHit, checkRateLimit, peekRateLimit, getClientIp } from '../../utils/rateLimit.js';
 import { normalizeEmail, onlyDigits } from '../../utils/validators.js';
 import { verifyHCaptcha } from '../../utils/captcha.js';
 
@@ -20,31 +20,43 @@ export default async function authRoutes(server: FastifyInstance) {
         async (request, reply) => {
           const ip = getClientIp(request.headers as any, (request as any).ip);
           const now = Date.now();
-          const rlIp = checkRateLimit({ key: `register:ip:${ip}`, limit: 5, windowMs: 60 * 60 * 1000, now });
+          const rlIp = peekRateLimit({ key: `register:ip:${ip}`, limit: 10, windowMs: 60 * 60 * 1000, now });
           if (!rlIp.ok) return reply.code(429).send({ message: 'Muitas tentativas. Tente novamente mais tarde.' });
 
           const body = request.body as any;
           const email = typeof body?.email === 'string' ? normalizeEmail(body.email) : '';
           if (email) {
-            const rlEmail = checkRateLimit({ key: `register:email:${email}`, limit: 3, windowMs: 24 * 60 * 60 * 1000, now });
+            const rlEmail = peekRateLimit({ key: `register:email:${email}`, limit: 10, windowMs: 24 * 60 * 60 * 1000, now });
             if (!rlEmail.ok) return reply.code(429).send({ message: 'Limite diário atingido para este e-mail.' });
           }
           const cpf = typeof body?.cpf === 'string' ? onlyDigits(body.cpf) : '';
           if (cpf) {
-            const rlCpf = checkRateLimit({ key: `register:cpf:${cpf}`, limit: 1, windowMs: 24 * 60 * 60 * 1000, now });
+            const rlCpf = peekRateLimit({ key: `register:cpf:${cpf}`, limit: 4, windowMs: 24 * 60 * 60 * 1000, now });
             if (!rlCpf.ok) return reply.code(429).send({ message: 'Limite de trial atingido para este CPF.' });
           }
 
           if (process.env.HCAPTCHA_SECRET) {
             const captchaToken = typeof body?.captchaToken === 'string' ? body.captchaToken : '';
-            if (!captchaToken) return reply.code(400).send({ message: 'Captcha obrigatório' });
+            if (!captchaToken) {
+              addRateLimitHit({ key: `register:ip:${ip}`, windowMs: 60 * 60 * 1000, now });
+              if (email) addRateLimitHit({ key: `register:email:${email}`, windowMs: 24 * 60 * 60 * 1000, now });
+              if (cpf) addRateLimitHit({ key: `register:cpf:${cpf}`, windowMs: 24 * 60 * 60 * 1000, now });
+              return reply.code(400).send({ message: 'Captcha obrigatório' });
+            }
             const verified = await verifyHCaptcha({ token: captchaToken, ip });
-            if (!verified.ok) return reply.code(400).send({ message: 'Captcha inválido' });
+            if (!verified.ok) {
+              addRateLimitHit({ key: `register:ip:${ip}`, windowMs: 60 * 60 * 1000, now });
+              if (email) addRateLimitHit({ key: `register:email:${email}`, windowMs: 24 * 60 * 60 * 1000, now });
+              if (cpf) addRateLimitHit({ key: `register:cpf:${cpf}`, windowMs: 24 * 60 * 60 * 1000, now });
+              return reply.code(400).send({ message: 'Captcha inválido' });
+            }
           }
         },
       ],
     },
     async (request, reply) => {
+      const ip = getClientIp(request.headers as any, (request as any).ip);
+      const now = Date.now();
       try {
         const body = request.body as any;
         if (typeof body?.googleToken === 'string' && body.googleToken.length > 0) {
@@ -59,6 +71,12 @@ export default async function authRoutes(server: FastifyInstance) {
         return reply.code(201).send({ message: 'User registered successfully', tenant, user });
       } catch (error: any) {
         server.log.error(error);
+        const body = request.body as any;
+        const email = typeof body?.email === 'string' ? normalizeEmail(body.email) : '';
+        const cpf = typeof body?.cpf === 'string' ? onlyDigits(body.cpf) : '';
+        addRateLimitHit({ key: `register:ip:${ip}`, windowMs: 60 * 60 * 1000, now });
+        if (email) addRateLimitHit({ key: `register:email:${email}`, windowMs: 24 * 60 * 60 * 1000, now });
+        if (cpf) addRateLimitHit({ key: `register:cpf:${cpf}`, windowMs: 24 * 60 * 60 * 1000, now });
         if (error.code === 'P2002') { // Prisma unique constraint violation
             return reply.code(409).send({ message: 'Email, CPF, CNPJ or Tenant Slug already exists' });
         }

@@ -57,6 +57,7 @@ export default function LoginPage() {
   const [cpf, setCpf] = useState('');
   const [cnpj, setCnpj] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [tenantName, setTenantName] = useState('');
   const [tenantSlug, setTenantSlug] = useState('');
@@ -216,6 +217,11 @@ export default function LoginPage() {
       }
     });
   }, [hcaptchaSitekey, isLogin]);
+
+  useEffect(() => {
+    if (isLogin) return;
+    setConfirmPassword('');
+  }, [isLogin]);
 
   useEffect(() => {
     if (isLogin) return;
@@ -484,6 +490,11 @@ export default function LoginPage() {
         }
         if (password.length < 8) {
           setError('Senha deve ter no mínimo 8 caracteres.');
+          setLoading(false);
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError('As senhas não conferem.');
           setLoading(false);
           return;
         }
@@ -805,6 +816,10 @@ export default function LoginPage() {
                 <div>
                   {label('Senha', true)}
                   <input id="password" name="password" type="password" required className={inputClass} value={password} onChange={(e) => setPassword(e.target.value)} />
+                </div>
+                <div>
+                  {label('Confirmar Senha', true)}
+                  <input name="confirmPassword" type="password" required className={inputClass} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
                 </div>
                 {hcaptchaSitekey && (
                   <div className="pt-2">
