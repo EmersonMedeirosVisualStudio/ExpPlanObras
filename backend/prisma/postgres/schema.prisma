@@ -24,11 +24,12 @@ model Tenant {
   cep       String?
   latitude  String?
   longitude String?
-  status    String   @default("TEMPORARY")
-  subscriptionStatus String @default("TRIAL") // legado
+  status    String   @default("INACTIVE") // ACTIVE, INACTIVE (operacional)
+  subscriptionStatus String @default("NONE") // NONE, TRIAL, ACTIVE, GRACE_PERIOD, EXPIRED (financeiro)
   trialEndsAt DateTime? // legado
   trialExpiresAt DateTime?
   paidUntil DateTime?
+  gracePeriodEndsAt DateTime?
   billingProvider String?
   billingPlan String?
   billingExternalId String?

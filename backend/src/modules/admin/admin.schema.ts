@@ -50,8 +50,8 @@ export const updateTenantSchema = z.object({
   cep: z.string().optional(),
   latitude: z.string().optional(),
   longitude: z.string().optional(),
-  status: z.enum(['ACTIVE', 'TEMPORARY', 'INACTIVE']).optional(),
-  subscriptionStatus: z.enum(['TRIAL', 'ACTIVE', 'PAST_DUE', 'CANCELED']).optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
+  subscriptionStatus: z.enum(['NONE', 'TRIAL', 'ACTIVE', 'GRACE_PERIOD', 'EXPIRED']).optional(),
   trialEndsAt: z.string().datetime().nullable().optional(),
   paidUntil: z.string().datetime().nullable().optional(),
 });

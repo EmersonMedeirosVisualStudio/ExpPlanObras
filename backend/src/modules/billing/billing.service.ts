@@ -173,12 +173,16 @@ export async function syncTenantFromPreapproval(preapprovalId: string) {
     update.subscriptionStatus = 'ACTIVE';
     update.status = 'ACTIVE';
     update.paidUntil = paidUntil;
+    update.gracePeriodEndsAt = null;
   } else if (status === 'pending') {
-    update.subscriptionStatus = 'PAST_DUE';
-    update.status = 'INACTIVE';
+    update.subscriptionStatus = 'NONE';
+    update.status = 'ACTIVE';
+    update.paidUntil = null;
+    update.gracePeriodEndsAt = null;
   } else if (status === 'cancelled' || status === 'cancelled_by_payer') {
-    update.subscriptionStatus = 'CANCELED';
-    update.status = 'INACTIVE';
+    update.subscriptionStatus = 'EXPIRED';
+    update.status = 'ACTIVE';
+    update.gracePeriodEndsAt = null;
   }
 
   await prisma.tenant.update({
@@ -188,14 +192,16 @@ export async function syncTenantFromPreapproval(preapprovalId: string) {
 
   // Atualizar Subscription dedicada, se existir (fallback cria se não existir)
   const existingSub = await prisma.subscription.findFirst({ where: { tenantId } });
+  const subStatus = update.subscriptionStatus === 'ACTIVE' ? 'ACTIVE' : update.subscriptionStatus === 'TRIAL' ? 'TRIAL' : 'EXPIRED';
+  const expiresAtValue = update.subscriptionStatus === 'ACTIVE' ? paidUntil : existingSub?.expiresAt || null;
   if (!existingSub) {
     await prisma.subscription.create({
       data: {
         tenantId,
         plan: (cfg.plan === 'ANNUAL' ? 'PRO' : 'PRO'),
-        status: update.subscriptionStatus || 'ACTIVE',
+        status: subStatus,
         startedAt: new Date(),
-        expiresAt: paidUntil,
+        expiresAt: expiresAtValue,
         paymentProvider: 'MERCADOPAGO',
         paymentId: String(data?.id || preapprovalId),
       },
@@ -204,8 +210,8 @@ export async function syncTenantFromPreapproval(preapprovalId: string) {
     await prisma.subscription.update({
       where: { id: existingSub.id },
       data: {
-        status: update.subscriptionStatus || existingSub.status,
-        expiresAt: paidUntil,
+        status: subStatus || existingSub.status,
+        expiresAt: expiresAtValue,
         paymentProvider: 'MERCADOPAGO',
         paymentId: String(data?.id || preapprovalId),
         updatedAt: new Date(),
@@ -217,10 +223,10 @@ export async function syncTenantFromPreapproval(preapprovalId: string) {
     const msg =
       update.subscriptionStatus === 'ACTIVE'
         ? `Assinatura ativada. Status: ACTIVE.`
-        : update.subscriptionStatus === 'PAST_DUE'
-          ? `Assinatura pendente/não paga. Status: INACTIVE.`
-          : update.subscriptionStatus === 'CANCELED'
-            ? `Assinatura cancelada. Status: INACTIVE.`
+        : update.subscriptionStatus === 'NONE'
+          ? `Assinatura pendente/não ativa. Status: NONE.`
+          : update.subscriptionStatus === 'EXPIRED'
+            ? `Assinatura expirada/cancelada. Status: EXPIRED.`
             : `Assinatura atualizada: ${String(update.subscriptionStatus)}.`;
     await prisma.tenantHistoryEntry.create({
       data: {

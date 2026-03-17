@@ -2,7 +2,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createTenantSchema, updateTenantSchema } from './admin.schema.js';
-import { createTenantByAdmin, getAllTenants, updateTenant, deleteTenant, activateTenantSubscription, grantTenantAccessDays } from './admin.service.js';
+import { activateTenantSubscription, createTenantByAdmin, deleteTenant, getAllTenants, grantTenantAccessDays, manualGrantTenantAccess, updateTenant } from './admin.service.js';
 import { checkSystemAdmin } from '../../utils/authenticate.js';
 import prisma from '../../plugins/prisma.js';
 
@@ -266,9 +266,60 @@ export default async function adminRoutes(server: FastifyInstance) {
           tenantId: id,
           source: 'ADMIN',
           actorUserId: typeof actorUserId === 'number' ? actorUserId : null,
-          message: `Liberação manual: acesso por ${days} dia(s). Status: ACTIVE.`,
+          message: `Liberação manual. Motivo: Pagamento confirmado. Prazo: ${days} dia(s). Status: ${String((tenant as any).subscriptionStatus || 'ACTIVE')}.`,
         },
       });
+      return reply.send(tenant);
+    }
+  );
+
+  server.post(
+    '/tenants/:id/manual-grant',
+    {
+      schema: {
+        params: z.object({
+          id: z.coerce.number().int(),
+        }),
+        body: z.object({
+          reason: z.enum(['PAYMENT', 'TRIAL_EXTENSION']),
+          days: z.coerce.number().int(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: number };
+      const { reason, days } = request.body as { reason: 'PAYMENT' | 'TRIAL_EXTENSION'; days: number };
+      const tenantBefore = await prisma.tenant.findUnique({
+        where: { id },
+        select: { status: true, subscriptionStatus: true, trialEndsAt: true, paidUntil: true, gracePeriodEndsAt: true },
+      });
+
+      const tenant = await manualGrantTenantAccess(id, { reason, days });
+      const actorUserId = (request.user as any)?.userId;
+
+      const reasonLabel = reason === 'PAYMENT' ? 'Pagamento confirmado' : 'Extensão do período de teste';
+      const beforeStatus = tenantBefore?.status ? String(tenantBefore.status) : '?';
+      const beforeSub = tenantBefore?.subscriptionStatus ? String(tenantBefore.subscriptionStatus) : '?';
+      const afterStatus = String((tenant as any).status || '');
+      const afterSub = String((tenant as any).subscriptionStatus || '');
+      const until =
+        reason === 'PAYMENT'
+          ? (tenant as any).paidUntil
+            ? new Date((tenant as any).paidUntil).toISOString()
+            : ''
+          : (tenant as any).trialEndsAt
+            ? new Date((tenant as any).trialEndsAt).toISOString()
+            : '';
+
+      await prisma.tenantHistoryEntry.create({
+        data: {
+          tenantId: id,
+          source: 'ADMIN',
+          actorUserId: typeof actorUserId === 'number' ? actorUserId : null,
+          message: `Liberação manual. Motivo: ${reasonLabel}. Prazo: ${days} dia(s). ${beforeStatus}/${beforeSub} → ${afterStatus}/${afterSub}${until ? `. Válido até: ${until}.` : '.'}`,
+        },
+      });
+
       return reply.send(tenant);
     }
   );

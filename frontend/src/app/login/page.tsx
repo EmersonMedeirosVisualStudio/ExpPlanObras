@@ -127,11 +127,16 @@ export default function LoginPage() {
       api
         .post('/api/auth/google/login', { googleToken: gt })
         .then((response) => {
-          const { token, user } = response.data;
+          const { token, user, subscriptionAlert } = response.data;
 
           if (token) {
             localStorage.setItem('token', token);
             localStorage.setItem('user', JSON.stringify(user));
+            if (typeof subscriptionAlert === 'string' && subscriptionAlert.trim().length > 0) {
+              localStorage.setItem('subscription_alert', subscriptionAlert);
+            } else {
+              localStorage.removeItem('subscription_alert');
+            }
             if (user.isSystemAdmin) {
               router.push('/admin/tenants');
             } else {
@@ -446,12 +451,17 @@ export default function LoginPage() {
     try {
       if (isLogin) {
         const response = await api.post('/api/auth/login', { email, password });
-        const { token, user } = response.data;
+        const { token, user, subscriptionAlert } = response.data;
 
         if (token) {
             // User has only one tenant, logged in directly
             localStorage.setItem('token', token);
             localStorage.setItem('user', JSON.stringify(user));
+            if (typeof subscriptionAlert === 'string' && subscriptionAlert.trim().length > 0) {
+              localStorage.setItem('subscription_alert', subscriptionAlert);
+            } else {
+              localStorage.removeItem('subscription_alert');
+            }
             if (user.isSystemAdmin) {
                 router.push('/admin/tenants');
             } else {
@@ -508,12 +518,17 @@ export default function LoginPage() {
         
         // Auto login after register
         const response = await api.post('/api/auth/login', { email, password });
-        const { token, user } = response.data;
+        const { token, user, subscriptionAlert } = response.data;
         
         // New users always have 1 tenant initially
         if (token) {
             localStorage.setItem('token', token);
             localStorage.setItem('user', JSON.stringify(user));
+            if (typeof subscriptionAlert === 'string' && subscriptionAlert.trim().length > 0) {
+              localStorage.setItem('subscription_alert', subscriptionAlert);
+            } else {
+              localStorage.removeItem('subscription_alert');
+            }
             router.push('/dashboard');
         } else {
             // Fallback just in case
@@ -537,6 +552,11 @@ export default function LoginPage() {
             tenantId
         });
         localStorage.setItem('token', response.data.token);
+        if (typeof response.data.subscriptionAlert === 'string' && response.data.subscriptionAlert.trim().length > 0) {
+          localStorage.setItem('subscription_alert', response.data.subscriptionAlert);
+        } else {
+          localStorage.removeItem('subscription_alert');
+        }
         // We need to fetch full user data again or just store basic info? 
         // For now, let's assume the previous user object is fine, or we update it.
         // But we don't have the full user object here if we only got tenants list.

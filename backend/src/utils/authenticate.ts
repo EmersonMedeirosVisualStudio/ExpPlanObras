@@ -1,12 +1,14 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../plugins/prisma.js';
 
-function isTrialExpired(tenant: { subscriptionStatus?: string | null; trialEndsAt?: Date | null }, now: Date) {
-  return (tenant.subscriptionStatus || 'TRIAL') === 'TRIAL' && !!tenant.trialEndsAt && tenant.trialEndsAt < now;
+function addDays(date: Date, days: number) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
 }
 
-function isPaidExpired(tenant: { subscriptionStatus?: string | null; paidUntil?: Date | null }, now: Date) {
-  return (tenant.subscriptionStatus || 'TRIAL') === 'ACTIVE' && !!tenant.paidUntil && tenant.paidUntil < now;
+function isTrialExpired(tenant: { subscriptionStatus?: string | null; trialEndsAt?: Date | null }, now: Date) {
+  return (tenant.subscriptionStatus || 'TRIAL') === 'TRIAL' && !!tenant.trialEndsAt && tenant.trialEndsAt < now;
 }
 
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
@@ -20,7 +22,7 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { status: true, subscriptionStatus: true, trialEndsAt: true, paidUntil: true }
+      select: { id: true, status: true, subscriptionStatus: true, trialEndsAt: true, paidUntil: true, gracePeriodEndsAt: true }
     });
 
     if (!tenant || tenant.status === 'INACTIVE') {
@@ -28,11 +30,82 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     }
 
     const now = new Date();
+    const subStatus = String(tenant.subscriptionStatus || 'NONE');
+    const graceDays = Number(process.env.GRACE_DAYS || '10');
+
+    if (subStatus === 'NONE') {
+      return reply.code(402).send({ message: 'Sem assinatura. Faça uma assinatura para reativação.' });
+    }
     if (isTrialExpired(tenant, now)) {
       return reply.code(402).send({ message: 'Período de teste expirou. Assinatura necessária' });
     }
-    if (isPaidExpired(tenant, now)) {
-      return reply.code(402).send({ message: 'Assinatura expirada. Renovação necessária' });
+
+    if (subStatus === 'ACTIVE') {
+      if (!tenant.paidUntil) {
+        return reply.code(402).send({ message: 'Assinatura inválida. Regularize para reativação.' });
+      }
+      if (tenant.paidUntil < now) {
+        const graceEndsAt = addDays(tenant.paidUntil, graceDays);
+        if (now <= graceEndsAt) {
+          if (tenant.subscriptionStatus !== 'GRACE_PERIOD' || !tenant.gracePeriodEndsAt) {
+            await prisma.tenant.update({
+              where: { id: tenant.id },
+              data: { subscriptionStatus: 'GRACE_PERIOD', gracePeriodEndsAt: graceEndsAt } as any,
+            });
+            await prisma.tenantHistoryEntry.create({
+              data: {
+                tenantId: tenant.id,
+                source: 'SYSTEM',
+                action: 'SUBSCRIPTION_GRACE_PERIOD',
+                message: `Assinatura vencida. Entrada automática em GRACE_PERIOD por ${graceDays} dia(s).`,
+                actorUserId: null,
+              },
+            });
+          }
+          return;
+        }
+        await prisma.tenant.update({
+          where: { id: tenant.id },
+          data: { subscriptionStatus: 'EXPIRED', gracePeriodEndsAt: null } as any,
+        });
+        await prisma.tenantHistoryEntry.create({
+          data: {
+            tenantId: tenant.id,
+            source: 'SYSTEM',
+            action: 'SUBSCRIPTION_EXPIRED',
+            message: 'Assinatura expirada após GRACE_PERIOD. Bloqueio automático.',
+            actorUserId: null,
+          },
+        });
+        return reply.code(402).send({ message: 'Assinatura expirada. Faça uma assinatura para reativação.' });
+      }
+      return;
+    }
+
+    if (subStatus === 'GRACE_PERIOD') {
+      const graceEndsAt =
+        tenant.gracePeriodEndsAt ||
+        (tenant.paidUntil ? addDays(tenant.paidUntil, graceDays) : addDays(now, -1));
+      if (now <= graceEndsAt) return;
+
+      await prisma.tenant.update({
+        where: { id: tenant.id },
+        data: { subscriptionStatus: 'EXPIRED', gracePeriodEndsAt: null } as any,
+      });
+      await prisma.tenantHistoryEntry.create({
+        data: {
+          tenantId: tenant.id,
+          source: 'SYSTEM',
+          action: 'SUBSCRIPTION_EXPIRED',
+          message: 'Assinatura expirada após GRACE_PERIOD. Bloqueio automático.',
+          actorUserId: null,
+        },
+      });
+      return reply.code(402).send({ message: 'Assinatura expirada. Faça uma assinatura para reativação.' });
+    }
+
+    if (subStatus === 'EXPIRED') {
+      return reply.code(402).send({ message: 'Assinatura expirada. Faça uma assinatura para reativação.' });
     }
   } catch (err: any) {
     return reply.code(401).send({ message: 'Não autenticado' });

@@ -6,21 +6,102 @@ import { normalizeEmail, validateCPF, validateCNPJ, validateCEP, validateSlug } 
 import { generateUniqueTenantSlug } from "../../utils/slug.js";
 
 function getTrialEndsAt() {
-  const days = Number(process.env.TRIAL_DAYS || '30');
+  const days = Number(process.env.TRIAL_DAYS || '60');
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 }
 
-function assertTenantActive(tenant: { status: string; subscriptionStatus?: string; trialEndsAt?: Date | null; paidUntil?: Date | null }) {
+function addDays(date: Date, days: number) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function getDaysLeft(expiresAt: Date, now = new Date()) {
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(expiresAt);
+  end.setHours(0, 0, 0, 0);
+  return Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+function buildSubscriptionAlert(tenant: {
+  subscriptionStatus?: string | null;
+  trialEndsAt?: Date | null;
+  paidUntil?: Date | null;
+  gracePeriodEndsAt?: Date | null;
+}) {
+  const now = new Date();
+  const status = String(tenant.subscriptionStatus || 'NONE');
+  const graceDays = Number(process.env.GRACE_DAYS || '10');
+
+  if (status === 'ACTIVE' && tenant.paidUntil) {
+    const daysLeft = getDaysLeft(tenant.paidUntil, now);
+    if (daysLeft === 15) return 'Sua assinatura vencerá em 15 dias. Regularize para evitar bloqueio do sistema.';
+    if (tenant.paidUntil < now) {
+      const graceEndsAt = addDays(tenant.paidUntil, graceDays);
+      if (now <= graceEndsAt) {
+        const gLeft = Math.max(0, getDaysLeft(graceEndsAt, now));
+        return `Sua assinatura está vencida. Você tem ${gLeft} dia(s) para regularizar.`;
+      }
+      return 'Assinatura expirada. Faça uma assinatura para reativação.';
+    }
+    return null;
+  }
+
+  if (status === 'TRIAL' && tenant.trialEndsAt) {
+    const daysLeft = getDaysLeft(tenant.trialEndsAt, now);
+    if (daysLeft === 10) return 'Seu período de teste termina em 10 dias.';
+    if (daysLeft === 5) return 'Seu período de teste termina em 5 dias.';
+    if (tenant.trialEndsAt < now) return 'Período de teste expirou. Faça uma assinatura para reativação.';
+    return null;
+  }
+
+  if (status === 'GRACE_PERIOD') {
+    const graceEndsAt =
+      tenant.gracePeriodEndsAt || (tenant.paidUntil ? addDays(tenant.paidUntil, graceDays) : addDays(now, -1));
+    if (now <= graceEndsAt) {
+      const gLeft = Math.max(0, getDaysLeft(graceEndsAt, now));
+      return `Sua assinatura está vencida. Você tem ${gLeft} dia(s) para regularizar.`;
+    }
+    return 'Assinatura expirada. Faça uma assinatura para reativação.';
+  }
+
+  if (status === 'EXPIRED') return 'Assinatura expirada. Faça uma assinatura para reativação.';
+  if (status === 'NONE') return 'Sem assinatura. Faça uma assinatura para reativação.';
+  return null;
+}
+
+function assertTenantActive(tenant: { status: string; subscriptionStatus?: string; trialEndsAt?: Date | null; paidUntil?: Date | null; gracePeriodEndsAt?: Date | null }) {
   if (tenant.status === 'INACTIVE') {
     throw new Error('Tenant inativo');
   }
   const now = new Date();
-  const subscriptionStatus = tenant.subscriptionStatus || 'TRIAL';
+  const subscriptionStatus = tenant.subscriptionStatus || 'NONE';
+  const graceDays = Number(process.env.GRACE_DAYS || '10');
+  if (subscriptionStatus === 'NONE') {
+    throw new Error('Sem assinatura. Faça uma assinatura para reativação.');
+  }
   if (subscriptionStatus === 'TRIAL' && tenant.trialEndsAt && tenant.trialEndsAt < now) {
     throw new Error('Período de teste expirou. Assinatura necessária');
   }
-  if (subscriptionStatus === 'ACTIVE' && tenant.paidUntil && tenant.paidUntil < now) {
-    throw new Error('Assinatura expirada. Renovação necessária');
+  if (subscriptionStatus === 'ACTIVE') {
+    if (!tenant.paidUntil) {
+      throw new Error('Assinatura inválida. Regularize para reativação.');
+    }
+    if (tenant.paidUntil < now) {
+      const graceEndsAt = addDays(tenant.paidUntil, graceDays);
+      if (now <= graceEndsAt) return;
+      throw new Error('Assinatura expirada. Faça uma assinatura para reativação.');
+    }
+  }
+  if (subscriptionStatus === 'GRACE_PERIOD') {
+    const graceEndsAt =
+      tenant.gracePeriodEndsAt || (tenant.paidUntil ? addDays(tenant.paidUntil, graceDays) : addDays(now, -1));
+    if (now <= graceEndsAt) return;
+    throw new Error('Assinatura expirada. Faça uma assinatura para reativação.');
+  }
+  if (subscriptionStatus === 'EXPIRED') {
+    throw new Error('Assinatura expirada. Faça uma assinatura para reativação.');
   }
 }
 
@@ -82,10 +163,12 @@ export async function registerUser(input: RegisterInput) {
         cep: cleanCEP,
         latitude,
         longitude,
-        status: 'TEMPORARY',
+        status: 'ACTIVE',
         subscriptionStatus: 'TRIAL', // legado
         trialEndsAt: getTrialEndsAt(),
         trialExpiresAt: getTrialEndsAt(),
+        paidUntil: null,
+        gracePeriodEndsAt: null,
       },
     });
 
@@ -118,7 +201,7 @@ export async function registerUser(input: RegisterInput) {
         tenantId: tenant.id,
         source: 'SYSTEM',
         action: 'TENANT_CREATED',
-        message: 'Empresa cadastrada. Status: TEMPORARY (fase experimental).',
+        message: 'Empresa cadastrada. Status: TRIAL.',
       },
     });
 
@@ -205,12 +288,29 @@ export async function loginUser(input: LoginInput, app: FastifyInstance) {
   if (user.tenants.length === 1) {
     selectedTenant = user.tenants[0];
     assertTenantActive(selectedTenant.tenant as any);
+    const subscriptionAlert = buildSubscriptionAlert(selectedTenant.tenant as any);
     token = app.jwt.sign({
       userId: user.id,
       tenantId: selectedTenant.tenantId,
       role: selectedTenant.role,
       email: user.email,
     });
+    return {
+      token,
+      subscriptionAlert,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        cpf: user.cpf,
+        tenants: user.tenants.map(t => ({
+          tenantId: t.tenantId,
+          role: t.role,
+          name: t.tenant.name,
+          slug: t.tenant.slug
+        }))
+      }
+    };
   }
 
   return { 
@@ -317,6 +417,7 @@ export async function selectTenant(userId: number, tenantId: number, app: Fastif
     }
 
     assertTenantActive(tenantUser.tenant as any);
+    const subscriptionAlert = buildSubscriptionAlert(tenantUser.tenant as any);
 
     const token = app.jwt.sign({
         userId: userId,
@@ -325,7 +426,7 @@ export async function selectTenant(userId: number, tenantId: number, app: Fastif
         email: tenantUser.user.email,
     });
 
-    return { token, user: tenantUser.user };
+    return { token, user: tenantUser.user, subscriptionAlert };
 }
 
 export async function changePassword(userId: number, oldPassword: string, newPassword: string) {

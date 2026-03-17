@@ -164,6 +164,13 @@ export default function AdminTenantsPage() {
   const [historyMessage, setHistoryMessage] = useState('');
   const [historyFiles, setHistoryFiles] = useState<FileList | null>(null);
 
+  const [showManualGrantModal, setShowManualGrantModal] = useState(false);
+  const [manualGrantTenant, setManualGrantTenant] = useState<Tenant | null>(null);
+  const [manualGrantReason, setManualGrantReason] = useState<'PAYMENT' | 'TRIAL_EXTENSION'>('PAYMENT');
+  const [manualGrantDays, setManualGrantDays] = useState<30 | 60 | 90 | 365>(90);
+  const [manualGrantLoading, setManualGrantLoading] = useState(false);
+  const [manualGrantError, setManualGrantError] = useState('');
+
   useEffect(() => {
     fetchTenants();
   }, []);
@@ -591,6 +598,39 @@ export default function AdminTenantsPage() {
     }
   };
 
+  const openManualGrant = (tenant: Tenant) => {
+    setManualGrantTenant(tenant);
+    setManualGrantReason('PAYMENT');
+    setManualGrantDays(90);
+    setManualGrantError('');
+    setShowManualGrantModal(true);
+  };
+
+  const closeManualGrant = () => {
+    setShowManualGrantModal(false);
+    setManualGrantTenant(null);
+    setManualGrantError('');
+    setManualGrantLoading(false);
+  };
+
+  const submitManualGrant = async () => {
+    if (!manualGrantTenant) return;
+    setManualGrantLoading(true);
+    setManualGrantError('');
+    try {
+      await api.post(`/api/admin/tenants/${manualGrantTenant.id}/manual-grant`, {
+        reason: manualGrantReason,
+        days: manualGrantDays,
+      });
+      closeManualGrant();
+      fetchTenants();
+    } catch (err: unknown) {
+      setManualGrantError(getApiErrorMessage(err) || 'Erro ao liberar acesso');
+    } finally {
+      setManualGrantLoading(false);
+    }
+  };
+
   const closeCreateModal = () => {
     setShowCreateModal(false);
     setError('');
@@ -915,12 +955,10 @@ export default function AdminTenantsPage() {
                                   className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                                     tenant.status === 'ACTIVE'
                                       ? 'bg-green-100 text-green-800'
-                                      : tenant.status === 'TEMPORARY'
-                                        ? 'bg-yellow-100 text-yellow-800'
-                                        : 'bg-red-100 text-red-800'
+                                      : 'bg-red-100 text-red-800'
                                   }`}
                                 >
-                                  {tenant.status === 'ACTIVE' ? 'Ativa' : tenant.status === 'TEMPORARY' ? 'Temporário' : 'Inativo'}
+                                  {tenant.status === 'ACTIVE' ? 'Ativa' : 'Inativo'}
                                 </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
@@ -933,9 +971,11 @@ export default function AdminTenantsPage() {
                                       ? 'bg-green-100 text-green-800'
                                       : sub.status === 'TRIAL'
                                         ? 'bg-yellow-100 text-yellow-800'
-                                        : sub.status === 'PAST_DUE'
+                                        : sub.status === 'GRACE_PERIOD'
                                           ? 'bg-orange-100 text-orange-800'
-                                          : 'bg-red-100 text-red-800';
+                                          : sub.status === 'NONE'
+                                            ? 'bg-gray-100 text-gray-800'
+                                            : 'bg-red-100 text-red-800';
                                   const expires = sub.expiresAt ? new Date(sub.expiresAt).toLocaleDateString() : '';
                                   return (
                                     <div className="space-y-1">
@@ -1095,10 +1135,14 @@ export default function AdminTenantsPage() {
                                       </div>
 
                                       <div className="flex items-center gap-2">
-                                        <button type="button" onClick={() => handleGrantAccessDays(tenant, 30)} className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50" title="Liberar 30 dias">30d</button>
-                                        <button type="button" onClick={() => handleGrantAccessDays(tenant, 60)} className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50" title="Liberar 60 dias">60d</button>
-                                        <button type="button" onClick={() => handleGrantAccessDays(tenant, 90)} className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50" title="Liberar 90 dias">90d</button>
-                                        <button type="button" onClick={() => handleGrantAccessDays(tenant, 365)} className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50" title="Liberar 1 ano">1 ano</button>
+                                        <button
+                                          type="button"
+                                          onClick={() => openManualGrant(tenant)}
+                                          className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50"
+                                          title="Liberar acesso (manual)"
+                                        >
+                                          Liberar acesso
+                                        </button>
                                       </div>
 
                                       <div className="flex items-center gap-2">
@@ -1563,7 +1607,6 @@ export default function AdminTenantsPage() {
                               {label('Status da Empresa')}
                               <select name="status" value={editFormData.status} onChange={handleEditChange} className={inputClass}>
                                 <option value="ACTIVE">Ativa</option>
-                                <option value="TEMPORARY">Temporário</option>
                                 <option value="INACTIVE">Inativo</option>
                               </select>
                             </div>
@@ -1571,10 +1614,11 @@ export default function AdminTenantsPage() {
                               {label('Status da Assinatura')}
                               <select name="subscriptionStatus" value={editFormData.subscriptionStatus} onChange={handleEditChange} className={inputClass}>
                                 <option value="">(não alterar)</option>
+                                <option value="NONE">NONE</option>
                                 <option value="TRIAL">TRIAL</option>
                                 <option value="ACTIVE">ACTIVE</option>
-                                <option value="PAST_DUE">PAST_DUE</option>
-                                <option value="CANCELED">CANCELED</option>
+                                <option value="GRACE_PERIOD">GRACE_PERIOD</option>
+                                <option value="EXPIRED">EXPIRED</option>
                               </select>
                             </div>
                           </div>
@@ -1698,6 +1742,81 @@ export default function AdminTenantsPage() {
             </div>
           </div>
         )}
+
+      {showManualGrantModal && manualGrantTenant && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">Liberar acesso</h2>
+              <button type="button" onClick={closeManualGrant} className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-50">
+                Fechar
+              </button>
+            </div>
+
+            <div className="text-sm text-gray-800 mb-4">
+              Empresa: <span className="font-semibold">{manualGrantTenant.name}</span>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <div className="text-sm font-medium text-gray-700 mb-2">Motivo</div>
+                <label className="flex items-center gap-2 text-sm text-gray-800">
+                  <input
+                    type="radio"
+                    name="manual-grant-reason"
+                    checked={manualGrantReason === 'PAYMENT'}
+                    onChange={() => setManualGrantReason('PAYMENT')}
+                  />
+                  Pagamento confirmado manualmente
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-800 mt-2">
+                  <input
+                    type="radio"
+                    name="manual-grant-reason"
+                    checked={manualGrantReason === 'TRIAL_EXTENSION'}
+                    onChange={() => setManualGrantReason('TRIAL_EXTENSION')}
+                  />
+                  Extensão do período de teste
+                </label>
+              </div>
+
+              <div>
+                <div className="text-sm font-medium text-gray-700 mb-2">Prazo</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {[30, 60, 90, 365].map((d) => (
+                    <label key={d} className="flex items-center gap-2 text-sm text-gray-800 border rounded px-3 py-2 hover:bg-gray-50">
+                      <input
+                        type="radio"
+                        name="manual-grant-days"
+                        checked={manualGrantDays === d}
+                        onChange={() => setManualGrantDays(d as 30 | 60 | 90 | 365)}
+                      />
+                      {d === 365 ? '1 ano' : `${d} dias`}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {manualGrantError && <div className="text-sm text-red-600">{manualGrantError}</div>}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={closeManualGrant} className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-50">
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={submitManualGrant}
+                  disabled={manualGrantLoading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-500 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {manualGrantLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Aplicar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );
