@@ -8,12 +8,35 @@ const api = axios.create({
   },
 });
 
+const safeLocalStorage = {
+  getItem(key: string) {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  setItem(key: string, value: string) {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+    }
+  },
+  removeItem(key: string) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+    }
+  },
+};
+
 // Intercept requests to add token
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('token');
+    const token = safeLocalStorage.getItem('token');
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      config.headers = config.headers ?? {};
+      (config.headers as any).Authorization = `Bearer ${token}`;
     }
   }
   return config;
@@ -26,7 +49,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       // Clear token and redirect to login if unauthorized
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('token');
+        safeLocalStorage.removeItem('token');
         window.location.href = '/login';
       }
     }
@@ -34,10 +57,10 @@ api.interceptors.response.use(
       if (typeof window !== 'undefined') {
         const message = error.response?.data?.message;
         if (typeof message === 'string' && message.length > 0) {
-          localStorage.setItem('auth_error', message);
+          safeLocalStorage.setItem('auth_error', message);
         }
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        safeLocalStorage.removeItem('token');
+        safeLocalStorage.removeItem('user');
         window.location.href = '/login';
       }
     }
