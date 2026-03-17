@@ -1,5 +1,5 @@
 
-import axios from 'axios';
+import axios, { AxiosHeaders } from 'axios';
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333',
@@ -30,15 +30,23 @@ const safeLocalStorage = {
   },
 };
 
+function isAxiosHeaders(value: unknown): value is AxiosHeaders {
+  return typeof value === 'object' && value !== null && 'set' in value && typeof (value as { set?: unknown }).set === 'function';
+}
+
 // Intercept requests to add token
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const token = safeLocalStorage.getItem('token');
     if (token) {
-      config.headers = {
-        ...(config.headers ?? {}),
-        Authorization: `Bearer ${token}`,
-      };
+      if (!config.headers) {
+        config.headers = new AxiosHeaders();
+      }
+      if (isAxiosHeaders(config.headers)) {
+        config.headers.set('Authorization', `Bearer ${token}`);
+      } else {
+        (config.headers as Record<string, unknown>)['Authorization'] = `Bearer ${token}`;
+      }
     }
   }
   return config;
