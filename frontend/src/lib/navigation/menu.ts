@@ -53,13 +53,13 @@ export const MENU_ITEMS: MenuItem[] = [
   {
     label: 'SST',
     children: [
-      { label: 'Painel SST', path: '/dashboard/sst/painel', permission: PERMISSIONS.SST_VIEW },
-      { label: 'Fichas', path: '/dashboard/sst/fichas', permission: PERMISSIONS.SST_VIEW },
-      { label: 'Checklists', path: '/dashboard/sst/checklists', permission: PERMISSIONS.SST_VIEW },
-      { label: 'EPI', path: '/dashboard/sst/epi', permission: PERMISSIONS.SST_VIEW },
+      { label: 'Painel SST', path: '/dashboard/sst/painel', permission: PERMISSIONS.SST_PAINEL_VIEW },
+      { label: 'Fichas', path: '/dashboard/sst/fichas', permission: PERMISSIONS.SST_EPI_VIEW },
+      { label: 'Checklists', path: '/dashboard/sst/checklists', permission: PERMISSIONS.SST_CHECKLISTS_VIEW },
+      { label: 'EPI', path: '/dashboard/sst/epi', permission: PERMISSIONS.SST_EPI_VIEW },
     ],
   },
-  { label: 'Equipamentos e Ferramentas', path: '/dashboard/equipamentos', permission: PERMISSIONS.EQUIPAMENTOS_VIEW },
+  { label: 'Equipamentos e Ferramentas', path: '/dashboard/equipamentos', permission: PERMISSIONS.OBRAS_VIEW },
   { label: 'Relatórios', path: '/dashboard/relatorios', permission: PERMISSIONS.DASHBOARD_VIEW },
   { label: 'Organograma', path: '/dashboard/organograma', permission: PERMISSIONS.ORGANOGRAMA_VIEW },
   {
@@ -73,7 +73,7 @@ export const MENU_ITEMS: MenuItem[] = [
     label: 'Configuração da Empresa',
     children: [
       { label: 'Representante da Empresa', path: '/dashboard/config/representante', permission: PERMISSIONS.REPRESENTANTE_VIEW },
-      { label: 'Encarregado do Sistema da Empresa', path: '/dashboard/config/encarregado-sistema', permission: PERMISSIONS.REPRESENTANTE_VIEW },
+      { label: 'Encarregado do Sistema da Empresa', path: '/dashboard/config/encarregado-sistema', permission: PERMISSIONS.ENCARREGADO_SISTEMA_VIEW },
     ],
   },
 ];
