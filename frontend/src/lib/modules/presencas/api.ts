@@ -1,0 +1,50 @@
+import type { PresencaDetalheDTO, PresencaItemDTO, PresencaCabecalhoDTO, StatusPresenca, TipoLocalPresenca } from './types';
+
+type ApiResponse<T> = { success: boolean; message?: string; data: T; meta?: Record<string, unknown> };
+
+async function api<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const res = await fetch(input, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+    cache: 'no-store',
+  });
+  const json = (await res.json().catch(() => null)) as ApiResponse<T> | null;
+  if (!res.ok || !json?.success) throw new Error(json?.message || 'Erro na requisição');
+  return json.data;
+}
+
+export const PresencasApi = {
+  listar: (params?: { status?: StatusPresenca | ''; data?: string | '' }) => {
+    const sp = new URLSearchParams();
+    if (params?.status) sp.set('status', params.status);
+    if (params?.data) sp.set('data', params.data);
+    const qs = sp.toString();
+    return api<PresencaCabecalhoDTO[]>(`/api/v1/rh/presencas${qs ? `?${qs}` : ''}`);
+  },
+
+  criar: (payload: { tipoLocal: TipoLocalPresenca; idObra?: number | null; idUnidade?: number | null; dataReferencia: string; turno?: string; observacao?: string | null }) =>
+    api<{ id: number }>(`/api/v1/rh/presencas`, { method: 'POST', body: JSON.stringify(payload) }),
+
+  obter: (id: number) => api<PresencaDetalheDTO>(`/api/v1/rh/presencas/${id}`),
+
+  upsertItem: (idPresenca: number, payload: Partial<PresencaItemDTO> & { idFuncionario: number; situacaoPresenca: string }) =>
+    api<{ id: number }>(`/api/v1/rh/presencas/${idPresenca}/itens`, { method: 'POST', body: JSON.stringify(payload) }),
+
+  assinarItem: (
+    idPresencaItem: number,
+    payload: {
+      idFuncionarioSignatario: number;
+      tipoAssinatura: string;
+      pin?: string;
+      latitude?: number;
+      longitude?: number;
+      hashDocumento?: string;
+      arquivoAssinaturaUrl?: string;
+      observacao?: string;
+      metadataJson?: unknown;
+    }
+  ) => api<{ idAssinatura: number }>(`/api/v1/rh/presencas/itens/${idPresencaItem}/assinar`, { method: 'POST', body: JSON.stringify(payload) }),
+
+  acao: (idPresenca: number, payload: { acao: 'FECHAR' | 'ENVIAR_RH' | 'RECEBER_RH' | 'REJEITAR_RH'; motivo?: string }) =>
+    api<{ id: number; status: StatusPresenca }>(`/api/v1/rh/presencas/${idPresenca}/acoes`, { method: 'POST', body: JSON.stringify(payload) }),
+};

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { Loader2 } from 'lucide-react';
+import { PERMISSIONS, PROFILE_CODES, type Permission, type ProfileCode } from '@/lib/auth/permissions';
 
 declare global {
   interface Window {
@@ -41,6 +42,206 @@ function getApiErrorMessage(err: unknown) {
   if (!('message' in data)) return undefined;
   const message = (data as { message?: unknown }).message;
   return typeof message === 'string' ? message : undefined;
+}
+
+function setCookie(name: string, value: string, maxAgeSeconds: number) {
+  const encoded = encodeURIComponent(value);
+  const secure = typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${name}=${encoded}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax${secure}`;
+}
+
+function permissionsForProfile(profile: ProfileCode): Permission[] {
+  if (profile === PROFILE_CODES.CEO) {
+    return [
+      PERMISSIONS.DASHBOARD_VIEW,
+      PERMISSIONS.DASHBOARD_CEO_VIEW,
+      PERMISSIONS.DASHBOARD_EXECUTIVO_VIEW,
+      PERMISSIONS.DASHBOARD_USUARIO_PERSONALIZAR,
+      PERMISSIONS.OBRAS_VIEW,
+      PERMISSIONS.MAPA_OBRAS_VIEW,
+      PERMISSIONS.ORGANOGRAMA_VIEW,
+      PERMISSIONS.SST_PAINEL_VIEW,
+      PERMISSIONS.SST_PAINEL_EXECUTIVO_VIEW,
+      PERMISSIONS.CONFIG_EMPRESA_VIEW,
+      PERMISSIONS.CONFIG_EMPRESA_EDIT,
+      PERMISSIONS.REPRESENTANTE_VIEW,
+      PERMISSIONS.REPRESENTANTE_EDIT,
+      PERMISSIONS.ENCARREGADO_SISTEMA_VIEW,
+      PERMISSIONS.ENCARREGADO_SISTEMA_EDIT,
+    ];
+  }
+  if (profile === PROFILE_CODES.REPRESENTANTE_EMPRESA) {
+    return [
+      PERMISSIONS.DASHBOARD_VIEW,
+      PERMISSIONS.OBRAS_VIEW,
+      PERMISSIONS.MAPA_OBRAS_VIEW,
+      PERMISSIONS.CONFIG_EMPRESA_VIEW,
+      PERMISSIONS.CONFIG_EMPRESA_EDIT,
+      PERMISSIONS.REPRESENTANTE_VIEW,
+      PERMISSIONS.REPRESENTANTE_EDIT,
+      PERMISSIONS.ENCARREGADO_SISTEMA_VIEW,
+      PERMISSIONS.ENCARREGADO_SISTEMA_EDIT,
+    ];
+  }
+  if (profile === PROFILE_CODES.ENCARREGADO_SISTEMA_EMPRESA) {
+    return [
+      PERMISSIONS.GOVERNANCA_VIEW,
+      PERMISSIONS.GOVERNANCA_USUARIOS_CRUD,
+      PERMISSIONS.GOVERNANCA_PERFIS_CRUD,
+      PERMISSIONS.GOVERNANCA_ABRANGENCIA_CRUD,
+      PERMISSIONS.BACKUP_VIEW,
+      PERMISSIONS.BACKUP_EDIT,
+      PERMISSIONS.BACKUP_RESTORE_REQUEST,
+    ];
+  }
+  if (profile === PROFILE_CODES.DIRETOR) {
+    return [
+      PERMISSIONS.DASHBOARD_VIEW,
+      PERMISSIONS.DASHBOARD_EXECUTIVO_VIEW,
+      PERMISSIONS.DASHBOARD_DIRETOR_VIEW,
+      PERMISSIONS.DASHBOARD_USUARIO_PERSONALIZAR,
+      PERMISSIONS.OBRAS_VIEW,
+      PERMISSIONS.MAPA_OBRAS_VIEW,
+      PERMISSIONS.ORGANOGRAMA_VIEW,
+      PERMISSIONS.SST_PAINEL_VIEW,
+      PERMISSIONS.SST_PAINEL_EXECUTIVO_VIEW,
+    ];
+  }
+  if (profile === PROFILE_CODES.GERENTE_RH) {
+    return [
+      PERMISSIONS.DASHBOARD_VIEW,
+      PERMISSIONS.RH_FUNCIONARIOS_VIEW,
+      PERMISSIONS.RH_FUNCIONARIOS_ENDOSSAR,
+      PERMISSIONS.RH_HORAS_EXTRAS_VIEW,
+      PERMISSIONS.RH_HORAS_EXTRAS_PROCESSAR,
+      PERMISSIONS.RH_PRESENCAS_VIEW,
+      PERMISSIONS.RH_PRESENCAS_RECEBER,
+      PERMISSIONS.RH_ASSINATURAS_EXECUTAR,
+      PERMISSIONS.SST_PAINEL_VIEW,
+      PERMISSIONS.SST_EPI_VIEW,
+      PERMISSIONS.SST_CHECKLISTS_VIEW,
+      PERMISSIONS.SST_NC_VIEW,
+      PERMISSIONS.ORGANOGRAMA_VIEW,
+    ];
+  }
+  if (profile === PROFILE_CODES.ADMIN_RH) {
+    return [
+      PERMISSIONS.DASHBOARD_VIEW,
+      PERMISSIONS.RH_FUNCIONARIOS_VIEW,
+      PERMISSIONS.RH_FUNCIONARIOS_CRUD,
+      PERMISSIONS.RH_FUNCIONARIOS_ENDOSSAR,
+      PERMISSIONS.RH_HORAS_EXTRAS_VIEW,
+      PERMISSIONS.RH_HORAS_EXTRAS_CRUD,
+      PERMISSIONS.RH_HORAS_EXTRAS_PROCESSAR,
+      PERMISSIONS.RH_PRESENCAS_VIEW,
+      PERMISSIONS.RH_PRESENCAS_CRUD,
+      PERMISSIONS.RH_PRESENCAS_FECHAR,
+      PERMISSIONS.RH_PRESENCAS_ENVIAR,
+      PERMISSIONS.RH_PRESENCAS_RECEBER,
+      PERMISSIONS.RH_ASSINATURAS_EXECUTAR,
+      PERMISSIONS.SST_PAINEL_VIEW,
+      PERMISSIONS.SST_EPI_VIEW,
+      PERMISSIONS.SST_CHECKLISTS_VIEW,
+      PERMISSIONS.SST_NC_VIEW,
+      PERMISSIONS.ORGANOGRAMA_VIEW,
+    ];
+  }
+  if (profile === PROFILE_CODES.SST_TECNICO) {
+    return [
+      PERMISSIONS.DASHBOARD_VIEW,
+      PERMISSIONS.SST_PAINEL_VIEW,
+      PERMISSIONS.SST_EPI_VIEW,
+      PERMISSIONS.SST_EPI_CRUD,
+      PERMISSIONS.SST_EPI_ENTREGA,
+      PERMISSIONS.SST_EPI_DEVOLUCAO,
+      PERMISSIONS.SST_EPI_INSPECAO,
+      PERMISSIONS.SST_EPI_ASSINAR,
+      PERMISSIONS.SST_TECNICOS_VIEW,
+      PERMISSIONS.SST_TECNICOS_CRUD,
+      PERMISSIONS.SST_CHECKLISTS_VIEW,
+      PERMISSIONS.SST_CHECKLISTS_CRUD,
+      PERMISSIONS.SST_CHECKLISTS_EXECUTAR,
+      PERMISSIONS.SST_CHECKLISTS_FINALIZAR,
+      PERMISSIONS.SST_CHECKLISTS_ASSINAR,
+      PERMISSIONS.SST_NC_VIEW,
+      PERMISSIONS.SST_NC_CRUD,
+      PERMISSIONS.SST_NC_TRATAR,
+      PERMISSIONS.SST_NC_VALIDAR,
+      PERMISSIONS.SST_NC_ENCERRAR,
+      PERMISSIONS.SST_TREINAMENTOS_VIEW,
+      PERMISSIONS.SST_TREINAMENTOS_CRUD,
+      PERMISSIONS.SST_TREINAMENTOS_EXECUTAR,
+      PERMISSIONS.SST_TREINAMENTOS_ASSINAR,
+      PERMISSIONS.SST_TREINAMENTOS_FINALIZAR,
+      PERMISSIONS.SST_TREINAMENTOS_CERTIFICAR,
+      PERMISSIONS.SST_ACIDENTES_VIEW,
+      PERMISSIONS.SST_ACIDENTES_CRUD,
+      PERMISSIONS.SST_ACIDENTES_INVESTIGAR,
+      PERMISSIONS.SST_ACIDENTES_VALIDAR,
+      PERMISSIONS.SST_ACIDENTES_ENCERRAR,
+      PERMISSIONS.SST_ACIDENTES_CAT,
+    ];
+  }
+  return [PERMISSIONS.DASHBOARD_VIEW];
+}
+
+function setAuthSession(input: {
+  token: string;
+  user: unknown;
+  subscriptionAlert?: string | null;
+  tenantId?: number;
+}) {
+  localStorage.setItem('token', input.token);
+  localStorage.setItem('user', JSON.stringify(input.user));
+  if (typeof input.subscriptionAlert === 'string' && input.subscriptionAlert.trim().length > 0) {
+    localStorage.setItem('subscription_alert', input.subscriptionAlert);
+  } else {
+    localStorage.removeItem('subscription_alert');
+  }
+
+  const userObj = (typeof input.user === 'object' && input.user !== null ? (input.user as Record<string, unknown>) : {}) as Record<string, unknown>;
+  const tenantsRaw = userObj['tenants'];
+  const firstTenant = Array.isArray(tenantsRaw) && tenantsRaw.length > 0 ? (tenantsRaw[0] as Record<string, unknown>) : null;
+  const tenantRole = typeof (firstTenant && firstTenant['role']) === 'string' ? String(firstTenant && firstTenant['role']).toUpperCase() : '';
+  const userEmail = String(userObj['email'] || '').toLowerCase();
+
+  const profiles: ProfileCode[] =
+    tenantRole === 'ADMIN'
+      ? [PROFILE_CODES.CEO]
+      : userEmail.includes('encarregado')
+        ? [PROFILE_CODES.ENCARREGADO_SISTEMA_EMPRESA]
+        : userEmail.includes('sst')
+          ? [PROFILE_CODES.SST_TECNICO]
+        : userEmail.includes('adminrh')
+          ? [PROFILE_CODES.ADMIN_RH]
+          : userEmail.includes('rh')
+            ? [PROFILE_CODES.GERENTE_RH]
+        : [PROFILE_CODES.DIRETOR];
+
+  const stored = localStorage.getItem('active_profile') as ProfileCode | null;
+  const activeProfile = stored && profiles.includes(stored) ? stored : profiles[0];
+  localStorage.setItem('available_profiles', JSON.stringify(profiles));
+  localStorage.setItem('active_profile', activeProfile);
+
+  const tenantId =
+    typeof input.tenantId === 'number'
+      ? input.tenantId
+      : firstTenant && typeof firstTenant['tenantId'] !== 'undefined'
+        ? Number(firstTenant['tenantId'])
+        : 0;
+
+  const expUser = {
+    id: Number(userObj['id'] || 0),
+    tenantId,
+    nome: String(userObj['name'] || ''),
+    email: String(userObj['email'] || ''),
+    perfis: profiles,
+    permissoes: Array.from(new Set(profiles.flatMap((p) => permissionsForProfile(p)))),
+    abrangencia: { empresa: true, diretorias: [], obras: [], unidades: [] },
+  };
+
+  setCookie('exp_user', JSON.stringify(expUser), 7 * 24 * 60 * 60);
+  setCookie('exp_token', input.token, 7 * 24 * 60 * 60);
 }
 
 export default function LoginPage() {
@@ -131,19 +332,17 @@ export default function LoginPage() {
           const { token, user, subscriptionAlert } = response.data;
 
           if (token) {
-            localStorage.setItem('token', token);
-            localStorage.setItem('user', JSON.stringify(user));
-            if (typeof subscriptionAlert === 'string' && subscriptionAlert.trim().length > 0) {
-              localStorage.setItem('subscription_alert', subscriptionAlert);
-            } else {
-              localStorage.removeItem('subscription_alert');
-            }
+            setAuthSession({ token, user, subscriptionAlert });
             if (user.isSystemAdmin) {
               router.push('/admin/tenants');
             } else {
               router.push('/dashboard');
             }
           } else if (user.tenants && user.tenants.length > 0) {
+            try {
+              localStorage.setItem('pending_user', JSON.stringify(user));
+            } catch {
+            }
             setUserId(user.id);
             setAvailableTenants(user.tenants);
             setShowTenantSelection(true);
@@ -461,13 +660,7 @@ export default function LoginPage() {
 
         if (token) {
             // User has only one tenant, logged in directly
-            localStorage.setItem('token', token);
-            localStorage.setItem('user', JSON.stringify(user));
-            if (typeof subscriptionAlert === 'string' && subscriptionAlert.trim().length > 0) {
-              localStorage.setItem('subscription_alert', subscriptionAlert);
-            } else {
-              localStorage.removeItem('subscription_alert');
-            }
+            setAuthSession({ token, user, subscriptionAlert });
             if (user.isSystemAdmin) {
                 router.push('/admin/tenants');
             } else {
@@ -475,6 +668,10 @@ export default function LoginPage() {
             }
         } else if (user.tenants && user.tenants.length > 0) {
             // Multiple tenants, show selection
+            try {
+              localStorage.setItem('pending_user', JSON.stringify(user));
+            } catch {
+            }
             setUserId(user.id);
             setAvailableTenants(user.tenants);
             setShowTenantSelection(true);
@@ -533,13 +730,7 @@ export default function LoginPage() {
         
         // New users always have 1 tenant initially
         if (token) {
-            localStorage.setItem('token', token);
-            localStorage.setItem('user', JSON.stringify(user));
-            if (typeof subscriptionAlert === 'string' && subscriptionAlert.trim().length > 0) {
-              localStorage.setItem('subscription_alert', subscriptionAlert);
-            } else {
-              localStorage.removeItem('subscription_alert');
-            }
+            setAuthSession({ token, user, subscriptionAlert });
             router.push('/dashboard');
         } else {
             // Fallback just in case
@@ -562,11 +753,19 @@ export default function LoginPage() {
             userId,
             tenantId
         });
-        localStorage.setItem('token', response.data.token);
-        if (typeof response.data.subscriptionAlert === 'string' && response.data.subscriptionAlert.trim().length > 0) {
-          localStorage.setItem('subscription_alert', response.data.subscriptionAlert);
-        } else {
-          localStorage.removeItem('subscription_alert');
+        let pending: unknown = null;
+        try {
+          const raw = localStorage.getItem('pending_user');
+          pending = raw ? JSON.parse(raw) : null;
+        } catch {
+        }
+        if (!pending) {
+          pending = { id: userId, email, name };
+        }
+        setAuthSession({ token: response.data.token, user: pending, subscriptionAlert: response.data.subscriptionAlert, tenantId });
+        try {
+          localStorage.removeItem('pending_user');
+        } catch {
         }
         // We need to fetch full user data again or just store basic info? 
         // For now, let's assume the previous user object is fine, or we update it.

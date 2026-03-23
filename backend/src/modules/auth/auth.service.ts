@@ -196,6 +196,19 @@ export async function registerUser(input: RegisterInput) {
       },
     });
 
+    await tx.empresaRepresentante.create({
+      data: {
+        tenantId: tenant.id,
+        funcionarioId: null,
+        nomeRepresentante: name,
+        cpf: cleanCPF,
+        email: cleanEmail,
+        ativo: true,
+        dataInicio: new Date(),
+        dataFim: null,
+      },
+    });
+
     await tx.tenantHistoryEntry.create({
       data: {
         tenantId: tenant.id,

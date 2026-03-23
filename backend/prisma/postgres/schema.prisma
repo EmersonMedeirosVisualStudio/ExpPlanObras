@@ -115,13 +115,21 @@ model TenantUser {
   tenantId  Int
   userId    Int
   role      String   @default("USER")
+  login     String?
+  ativo     Boolean  @default(true)
+  bloqueado Boolean  @default(false)
+  ultimoAcesso DateTime?
+  funcionarioId Int?
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  funcionario Funcionario? @relation(fields: [funcionarioId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@unique([tenantId, userId])
+  @@unique([tenantId, login])
   @@index([userId])
   @@index([tenantId])
+  @@index([funcionarioId])
 }
 
 model Obra {
@@ -261,4 +269,346 @@ model Pagamento {
   createdAt DateTime @default(now())
   @@index([obraId])
   @@index([medicaoId])
+}
+
+// --- Sprint 0 (Fundação): Governança, Organograma, Funcionários, Backup e Dashboards ---
+
+model Unidade {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int
+  codigo     String
+  nome       String
+  tipoUnidade String
+  ativo      Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId])
+}
+
+model Funcionario {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int
+  matricula      String
+  nomeCompleto   String
+  cpf            String
+  email          String?
+  telefone       String?
+  cargo          String?
+  funcaoPrincipal String?
+  statusFuncional String  @default("ATIVO")
+  dataAdmissao   DateTime?
+  ativo          Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, matricula])
+  @@unique([tenantId, cpf])
+  @@index([tenantId])
+}
+
+model FuncionarioLotacao {
+  id           Int      @id @default(autoincrement())
+  funcionarioId Int
+  tipoLotacao  String
+  obraId       Int?
+  unidadeId    Int?
+  dataInicio   DateTime
+  dataFim      DateTime?
+  atual        Boolean  @default(true)
+  observacao   String?
+  createdAt    DateTime @default(now())
+
+  funcionario  Funcionario @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
+  obra         Obra?       @relation(fields: [obraId], references: [id], onDelete: SetNull)
+  unidade      Unidade?    @relation(fields: [unidadeId], references: [id], onDelete: SetNull)
+
+  @@index([funcionarioId])
+  @@index([obraId])
+  @@index([unidadeId])
+}
+
+model OrganizacaoSetor {
+  id         Int     @id @default(autoincrement())
+  tenantId   Int
+  nomeSetor  String
+  tipoSetor  String
+  setorPaiId Int?
+  ativo      Boolean @default(true)
+
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  setorPai   OrganizacaoSetor? @relation("SetorPai", fields: [setorPaiId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([setorPaiId])
+}
+
+model OrganizacaoCargo {
+  id        Int     @id @default(autoincrement())
+  tenantId  Int
+  nomeCargo String
+  ativo     Boolean @default(true)
+
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, nomeCargo])
+  @@index([tenantId])
+}
+
+model OrganogramaPosicao {
+  id            Int     @id @default(autoincrement())
+  tenantId      Int
+  setorId       Int
+  cargoId       Int
+  tituloExibicao String
+  ativo         Boolean @default(true)
+
+  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  setor         OrganizacaoSetor @relation(fields: [setorId], references: [id], onDelete: Cascade)
+  cargo         OrganizacaoCargo @relation(fields: [cargoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([setorId])
+  @@index([cargoId])
+}
+
+model OrganogramaVinculo {
+  id                  Int     @id @default(autoincrement())
+  posicaoSuperiorId   Int
+  posicaoSubordinadaId Int
+  ativo               Boolean @default(true)
+
+  posicaoSuperior     OrganogramaPosicao @relation("VinculoSuperior", fields: [posicaoSuperiorId], references: [id], onDelete: Cascade)
+  posicaoSubordinada  OrganogramaPosicao @relation("VinculoSubordinada", fields: [posicaoSubordinadaId], references: [id], onDelete: Cascade)
+
+  @@unique([posicaoSuperiorId, posicaoSubordinadaId])
+  @@index([posicaoSuperiorId])
+  @@index([posicaoSubordinadaId])
+}
+
+model FuncionarioPosicao {
+  id           Int      @id @default(autoincrement())
+  funcionarioId Int
+  posicaoId    Int
+  dataInicio   DateTime
+  dataFim      DateTime?
+  vigente      Boolean  @default(true)
+
+  funcionario  Funcionario       @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
+  posicao      OrganogramaPosicao @relation(fields: [posicaoId], references: [id], onDelete: Cascade)
+
+  @@index([funcionarioId])
+  @@index([posicaoId])
+}
+
+model EmpresaRepresentante {
+  id               Int      @id @default(autoincrement())
+  tenantId         Int
+  funcionarioId    Int?
+  nomeRepresentante String
+  cpf              String
+  email            String?
+  ativo            Boolean  @default(true)
+  dataInicio       DateTime
+  dataFim          DateTime?
+
+  tenant           Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  funcionario      Funcionario? @relation(fields: [funcionarioId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([funcionarioId])
+  @@index([cpf])
+}
+
+model EmpresaEncarregadoSistema {
+  id                      Int      @id @default(autoincrement())
+  tenantId                Int
+  funcionarioId           Int
+  userId                  Int?
+  definidoPorRepresentanteId Int
+  ativo                   Boolean  @default(true)
+  dataInicio              DateTime
+  dataFim                 DateTime?
+  solicitouSaida          Boolean  @default(false)
+  dataSolicitacaoSaida    DateTime?
+  motivoSolicitacaoSaida  String?
+
+  tenant                  Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  funcionario             Funcionario          @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
+  user                    User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  definidoPorRepresentante EmpresaRepresentante @relation(fields: [definidoPorRepresentanteId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([funcionarioId])
+  @@index([userId])
+  @@index([definidoPorRepresentanteId])
+}
+
+model Perfil {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int?
+  tenantScope String
+  tipoPerfil String
+  codigo     String
+  nome       String
+  ativo      Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant     Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantScope, codigo])
+  @@index([tenantId])
+  @@index([tipoPerfil])
+}
+
+model PerfilPermissao {
+  id        Int     @id @default(autoincrement())
+  perfilId  Int
+  modulo    String
+  janela    String
+  acao      String
+  permitido Boolean @default(true)
+
+  perfil    Perfil  @relation(fields: [perfilId], references: [id], onDelete: Cascade)
+
+  @@index([perfilId])
+  @@index([modulo])
+}
+
+model UsuarioPerfil {
+  id       Int     @id @default(autoincrement())
+  userId   Int
+  perfilId Int
+  ativo    Boolean @default(true)
+
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  perfil   Perfil @relation(fields: [perfilId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, perfilId])
+  @@index([userId])
+  @@index([perfilId])
+}
+
+model UsuarioAbrangencia {
+  id             Int     @id @default(autoincrement())
+  userId         Int
+  tipoAbrangencia String
+  obraId         Int?
+  unidadeId      Int?
+  ativo          Boolean @default(true)
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  obra           Obra?    @relation(fields: [obraId], references: [id], onDelete: SetNull)
+  unidade        Unidade? @relation(fields: [unidadeId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([obraId])
+  @@index([unidadeId])
+}
+
+model BackupPoliticaTenant {
+  id              Int      @id @default(autoincrement())
+  tenantId        Int
+  periodicidade   String
+  horaExecucao    String
+  diaSemana       Int?
+  retencaoDias    Int      @default(30)
+  ativo           Boolean  @default(true)
+  configuradoPorUserId Int
+  configuradoEm   DateTime @default(now())
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  configuradoPor  User     @relation(fields: [configuradoPorUserId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([configuradoPorUserId])
+}
+
+model BackupExecucaoTenant {
+  id              Int      @id @default(autoincrement())
+  politicaId      Int
+  tenantId        Int
+  dataHoraInicio  DateTime
+  dataHoraFim     DateTime?
+  status          String
+  referenciaArquivo String?
+  hashArquivo     String?
+  observacao      String?
+
+  politica        BackupPoliticaTenant @relation(fields: [politicaId], references: [id], onDelete: Cascade)
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([politicaId])
+}
+
+model BackupRestauracaoTenant {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int
+  pontoReferencia String
+  motivo         String
+  status         String
+  solicitadoEm   DateTime @default(now())
+  solicitadoPorUserId Int?
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  solicitadoPor  User?    @relation(fields: [solicitadoPorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([solicitadoPorUserId])
+  @@index([status])
+}
+
+model DashboardLayoutUsuario {
+  id            Int     @id @default(autoincrement())
+  userId        Int
+  nomeLayout    String  @default("PADRAO")
+  tipoDashboard String
+  ativo         Boolean @default(true)
+
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tipoDashboard])
+}
+
+model DashboardWidgetUsuario {
+  id             Int     @id @default(autoincrement())
+  layoutId       Int
+  codigoWidget   String
+  posicaoX       Int     @default(0)
+  posicaoY       Int     @default(0)
+  largura        Int     @default(4)
+  altura         Int     @default(2)
+  ativo          Boolean @default(true)
+
+  layout         DashboardLayoutUsuario @relation(fields: [layoutId], references: [id], onDelete: Cascade)
+
+  @@index([layoutId])
+  @@index([codigoWidget])
+}
+
+model AuditoriaEvento {
+  id            Int      @id @default(autoincrement())
+  tenantId      Int
+  userId        Int?
+  entidade      String
+  idRegistro    String
+  acao          String
+  dadosAnteriores Json?
+  dadosNovos    Json?
+  createdAt     DateTime @default(now())
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([entidade])
 }

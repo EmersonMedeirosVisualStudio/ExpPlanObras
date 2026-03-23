@@ -37,6 +37,16 @@ export function UserMenu() {
     const handleLogout = () => {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
+        localStorage.removeItem('subscription_alert');
+        localStorage.removeItem('pending_user');
+        try {
+            localStorage.removeItem('active_profile');
+            localStorage.removeItem('available_profiles');
+            localStorage.removeItem('active_context');
+        } catch {
+        }
+        document.cookie = 'exp_user=; Path=/; Max-Age=0; SameSite=Lax';
+        document.cookie = 'exp_token=; Path=/; Max-Age=0; SameSite=Lax';
         router.push('/login');
     };
 
