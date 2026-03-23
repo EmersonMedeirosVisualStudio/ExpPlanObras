@@ -6,9 +6,10 @@ import { PERMISSIONS } from '@/lib/auth/permissions';
 
 export const runtime = 'nodejs';
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const idAcidente = Number(params.id);
+    const { id } = await params;
+    const idAcidente = Number(id);
     const body = await req.json();
 
     if (!body.acao) return fail(422, 'Ação obrigatória');

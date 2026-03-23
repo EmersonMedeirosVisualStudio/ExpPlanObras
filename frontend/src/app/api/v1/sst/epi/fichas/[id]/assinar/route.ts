@@ -7,11 +7,12 @@ import { PERMISSIONS } from '@/lib/auth/permissions';
 
 export const runtime = 'nodejs';
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const conn = await db.getConnection();
   try {
     const current = await requireApiPermission(PERMISSIONS.SST_EPI_ASSINAR);
-    const idFicha = Number(params.id);
+    const { id } = await params;
+    const idFicha = Number(id);
     const body = await req.json();
 
     const tipoSignatario = String(body?.tipoSignatario || '').toUpperCase();
@@ -115,4 +116,3 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     conn.release();
   }
 }
-

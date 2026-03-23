@@ -6,10 +6,11 @@ import { PERMISSIONS } from '@/lib/auth/permissions';
 
 export const runtime = 'nodejs';
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const current = await requireApiPermission(PERMISSIONS.SST_TREINAMENTOS_EXECUTAR);
-    const idTurma = Number(params.id);
+    const { id } = await params;
+    const idTurma = Number(id);
     const body = await req.json();
 
     if (!body.tipoParticipante) return fail(422, 'Tipo do participante obrigatório');

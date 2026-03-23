@@ -6,11 +6,12 @@ import { PERMISSIONS } from '@/lib/auth/permissions';
 
 export const runtime = 'nodejs';
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const current = await requireApiPermission(PERMISSIONS.SST_EPI_INSPECAO);
     const body = await req.json();
-    const idItem = Number(params.id);
+    const { id } = await params;
+    const idItem = Number(id);
 
     if (!body.dataInspecao) return fail(422, 'dataInspecao é obrigatória');
     const resultado = String(body.resultado || '').trim().toUpperCase();
@@ -43,4 +44,3 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return handleApiError(e);
   }
 }
-

@@ -6,11 +6,12 @@ import { PERMISSIONS } from '@/lib/auth/permissions';
 
 export const runtime = 'nodejs';
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const current = await requireApiPermission(PERMISSIONS.SST_EPI_DEVOLUCAO);
     const body = await req.json();
-    const idItem = Number(params.id);
+    const { id } = await params;
+    const idItem = Number(id);
 
     if (!body.dataDevolucao) return fail(422, 'Data de devolução obrigatória');
 
@@ -55,4 +56,3 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return handleApiError(e);
   }
 }
-

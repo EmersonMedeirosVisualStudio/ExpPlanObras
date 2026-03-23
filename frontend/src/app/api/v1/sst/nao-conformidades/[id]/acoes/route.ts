@@ -6,10 +6,11 @@ import { PERMISSIONS } from '@/lib/auth/permissions';
 
 export const runtime = 'nodejs';
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const current = await requireApiPermission(PERMISSIONS.SST_NC_TRATAR);
-    const idNc = Number(params.id);
+    const { id } = await params;
+    const idNc = Number(id);
     const body = await req.json();
 
     if (!body.descricaoAcao || !body.tipoResponsavel) {
@@ -53,4 +54,3 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return handleApiError(e);
   }
 }
-

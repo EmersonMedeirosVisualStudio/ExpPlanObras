@@ -15,11 +15,12 @@ async function obterProfissionalSstDoUsuario(tenantId: number, idFuncionario: nu
 
 export const runtime = 'nodejs';
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const conn = await db.getConnection();
   try {
     const current = await requireApiPermission(PERMISSIONS.SST_ACIDENTES_INVESTIGAR);
-    const idAcidente = Number(params.id);
+    const { id } = await params;
+    const idAcidente = Number(id);
     const body = await req.json();
 
     const profissional = await obterProfissionalSstDoUsuario(current.tenantId, current.idFuncionario || null);

@@ -6,10 +6,11 @@ import { PERMISSIONS } from '@/lib/auth/permissions';
 
 export const runtime = 'nodejs';
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const current = await requireApiPermission(PERMISSIONS.SST_TECNICOS_CRUD);
-    const id = Number(params.id);
+    const { id } = await params;
+    const idTecnico = Number(id);
     const body = await req.json();
 
     if (!body.tipoProfissional) return fail(422, 'Tipo profissional obrigatório');
@@ -28,4 +29,3 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     return handleApiError(e);
   }
 }
-

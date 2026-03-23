@@ -6,9 +6,10 @@ import { PERMISSIONS } from '@/lib/auth/permissions';
 
 export const runtime = 'nodejs';
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const idPresenca = Number(params.id);
+    const { id } = await params;
+    const idPresenca = Number(id);
     const body = await req.json();
     const acao = body.acao;
 

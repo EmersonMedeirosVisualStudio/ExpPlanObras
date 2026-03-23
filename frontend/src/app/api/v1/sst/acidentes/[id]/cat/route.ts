@@ -6,10 +6,11 @@ import { PERMISSIONS } from '@/lib/auth/permissions';
 
 export const runtime = 'nodejs';
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const current = await requireApiPermission(PERMISSIONS.SST_ACIDENTES_CAT);
-    const idAcidente = Number(params.id);
+    const { id } = await params;
+    const idAcidente = Number(id);
     const body = await req.json();
 
     if (!body.tipoCat || !body.dataEmissao || !body.emitidaPorTipo) return fail(422, 'Campos obrigatórios não informados');
@@ -44,4 +45,3 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return handleApiError(e);
   }
 }
-

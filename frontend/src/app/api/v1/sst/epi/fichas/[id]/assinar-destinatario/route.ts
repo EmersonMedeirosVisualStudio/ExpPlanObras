@@ -7,12 +7,13 @@ import { PERMISSIONS } from '@/lib/auth/permissions';
 
 export const runtime = 'nodejs';
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const conn = await db.getConnection();
   try {
     const current = await requireApiPermission(PERMISSIONS.SST_EPI_ASSINAR);
     const body = await req.json();
-    const idFicha = Number(params.id);
+    const { id } = await params;
+    const idFicha = Number(id);
 
     const [rows]: any = await conn.query(`SELECT * FROM sst_epi_fichas WHERE id_ficha_epi = ? AND tenant_id = ?`, [idFicha, current.tenantId]);
     if (!rows.length) return fail(404, 'Ficha não encontrada');
@@ -93,4 +94,3 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     conn.release();
   }
 }
-

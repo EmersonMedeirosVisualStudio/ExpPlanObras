@@ -6,11 +6,12 @@ import { PERMISSIONS } from '@/lib/auth/permissions';
 
 export const runtime = 'nodejs';
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const current = await requireApiPermission(PERMISSIONS.RH_PRESENCAS_CRUD);
     const body = await req.json();
-    const idPresenca = Number(params.id);
+    const { id } = await params;
+    const idPresenca = Number(id);
 
     if (!current.idFuncionario) return fail(403, 'Usuário sem vínculo com funcionário');
     if (!body.idFuncionario || !body.situacaoPresenca) return fail(422, 'Funcionário e situação são obrigatórios');
