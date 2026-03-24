@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     const filename = buildDashboardExportFilename(body.contexto, body.formato);
     if (body.formato === 'XLSX') {
       const buf = await renderXlsx(data);
-      const bodyOut = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+      const bodyOut = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
       return new Response(bodyOut, {
         status: 200,
         headers: {
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     }
 
     const pdf = await renderPdf(data);
-    const pdfOut = pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength);
+    const pdfOut = new Uint8Array(pdf.buffer, pdf.byteOffset, pdf.byteLength);
     return new Response(pdfOut, {
       status: 200,
       headers: {
