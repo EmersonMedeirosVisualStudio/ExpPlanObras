@@ -6,6 +6,7 @@ import { buildEmailTemplate } from '@/lib/notifications/email/template-registry'
 import type { NotificationEmailTemplateKey } from '@/lib/notifications/email/types';
 import { createHash } from 'crypto';
 import { publishRealtimeEvent } from '@/lib/realtime/publish';
+import type { DashboardExportContexto } from '@/lib/modules/dashboard-export/types';
 
 export const runtime = 'nodejs';
 
@@ -216,7 +217,14 @@ export async function POST(req: Request) {
         }
 
         const ownerUserId = Number(ag.ownerUserId);
-        const provider = DASHBOARD_EXPORT_PROVIDERS[String(ag.contexto) as any];
+        const contextoRaw = String(ag.contexto || '');
+        if (!(contextoRaw in DASHBOARD_EXPORT_PROVIDERS)) {
+          await markExecucao({ tenantId, execucaoId, status: 'ERRO', mensagem: 'Contexto não suportado', final: true });
+          await updateAgendamentoUltimaExecucao({ tenantId, agendamentoId, status: 'ERRO' });
+          continue;
+        }
+        const contexto = contextoRaw as DashboardExportContexto;
+        const provider = DASHBOARD_EXPORT_PROVIDERS[contexto];
         if (!provider) {
           await markExecucao({ tenantId, execucaoId, status: 'ERRO', mensagem: 'Contexto não suportado', final: true });
           await updateAgendamentoUltimaExecucao({ tenantId, agendamentoId, status: 'ERRO' });
@@ -242,7 +250,7 @@ export async function POST(req: Request) {
         const files = await executarExport({
           tenantId,
           userId: ownerUserId,
-          contexto: String(ag.contexto) as any,
+          contexto,
           filtros,
           formato: String(ag.formato) as any,
         });
