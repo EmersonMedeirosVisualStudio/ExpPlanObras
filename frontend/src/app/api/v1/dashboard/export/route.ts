@@ -14,10 +14,10 @@ export async function POST(req: NextRequest) {
   try {
     const current = await requireApiPermission(PERMISSIONS.DASHBOARD_EXPORTAR);
     const body = (await req.json()) as DashboardExportRequestDTO;
-    if (!body?.contexto || !body?.formato) return fail('contexto e formato são obrigatórios', 422);
+    if (!body?.contexto || !body?.formato) return fail(422, 'contexto e formato são obrigatórios');
 
     const provider = DASHBOARD_EXPORT_PROVIDERS[body.contexto];
-    if (!provider) return fail('Contexto não suportado', 400);
+    if (!provider) return fail(400, 'Contexto não suportado');
 
     await requireApiPermission(provider.requiredPermission);
 
