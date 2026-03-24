@@ -1,8 +1,9 @@
 import type { DashboardExportContexto, DashboardExportDataDTO, DashboardExportFiltrosDTO } from './types';
+import type { Permission } from '@/lib/auth/permissions';
 
 export type DashboardExportProvider = {
   contexto: DashboardExportContexto;
-  requiredPermission: string;
+  requiredPermission: Permission;
   build: (args: {
     tenantId: number;
     userId: number;
