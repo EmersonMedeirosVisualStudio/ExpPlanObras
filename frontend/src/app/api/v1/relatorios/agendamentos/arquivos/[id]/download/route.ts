@@ -28,10 +28,11 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
     const contentType =
       formato === 'PDF' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-    return new Response(row.blob as Buffer, {
+    const bytes = new Uint8Array(row.blob as Buffer);
+    const blob = new Blob([bytes], { type: contentType });
+    return new Response(blob, {
       status: 200,
       headers: {
-        'Content-Type': contentType,
         'Content-Disposition': `attachment; filename="${String(row.nome || 'relatorio')}"`,
       },
     });
@@ -39,4 +40,3 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
     return handleApiError(e);
   }
 }
-
