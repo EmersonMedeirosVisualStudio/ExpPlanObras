@@ -77,25 +77,36 @@ function buildResumoRows(data: DashboardExportDataDTO): Row[] {
   return rows;
 }
 
-function buildSeriesRows(series: any[]): Row[] {
-  const keys = Array.from(
-    series.reduce((set, s) => {
-      for (const k of Object.keys(s || {})) set.add(k);
-      return set;
-    }, new Set<string>())
-  );
-  const rows: Row[] = [keys];
-  for (const s of series) rows.push(keys.map((k) => (s as any)[k] ?? ''));
+function buildSeriesRows(series: DashboardExportDataDTO['series']): Row[] {
+  const set = new Set<string>();
+  for (const s of series || []) {
+    for (const k of Object.keys(s || {})) set.add(k);
+  }
+  const keys: string[] = Array.from(set);
+  const idxRef = keys.indexOf('referencia');
+  if (idxRef > 0) keys.unshift(keys.splice(idxRef, 1)[0]);
+
+  const header: Row = keys;
+  const rows: Row[] = [header];
+  for (const s of series || []) {
+    const r: Row = keys.map((k) => {
+      const v = (s as any)[k];
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'string' || typeof v === 'number') return v;
+      return String(v);
+    });
+    rows.push(r);
+  }
   return rows;
 }
 
 export async function renderXlsx(data: DashboardExportDataDTO): Promise<Buffer> {
   const sheets: { name: string; rows: Row[] }[] = [];
   sheets.push({ name: 'Resumo', rows: buildResumoRows(data) });
-  if (data.series?.length) sheets.push({ name: 'Series', rows: buildSeriesRows(data.series as any[]) });
+  if (data.series?.length) sheets.push({ name: 'Series', rows: buildSeriesRows(data.series) });
   if (data.tabelas?.length) {
     for (const t of data.tabelas) {
-      const rows: Row[] = [t.colunas, ...(t.linhas as any[])];
+      const rows: Row[] = [t.colunas, ...(t.linhas as Row[])];
       sheets.push({ name: normalizeSheetName(t.titulo), rows });
     }
   }
