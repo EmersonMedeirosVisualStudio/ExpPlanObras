@@ -19,6 +19,8 @@ import {
 export type PermissionCode =
   | 'DASHBOARD_CEO_VIEW'
   | 'DASHBOARD_GERENTE_VIEW'
+  | 'DASHBOARD_RH_VIEW'
+  | 'DASHBOARD_SUPRIMENTOS_VIEW'
   | 'OBRAS_VIEW'
   | 'CONTRATOS_VIEW'
   | 'ORCAMENTO_VIEW'
@@ -45,6 +47,7 @@ export type MenuItem = {
 export const MENU: MenuItem[] = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', permission: 'DASHBOARD_CEO_VIEW' },
   { label: 'Dashboard Gerente', icon: LayoutDashboard, path: '/dashboard/gerente', permission: 'DASHBOARD_GERENTE_VIEW' },
+  { label: 'Painel RH', icon: Users, path: '/dashboard/rh/painel', permission: 'DASHBOARD_RH_VIEW' },
   {
     label: 'Obras',
     icon: Briefcase,
@@ -81,6 +84,7 @@ export const MENU: MenuItem[] = [
     icon: Package,
     permission: 'SUPRIMENTOS_VIEW',
     children: [
+      { label: 'Painel Suprimentos', path: '/dashboard/suprimentos/painel', permission: 'DASHBOARD_SUPRIMENTOS_VIEW' },
       { label: 'Solicitações', path: '/dashboard/suprimentos/solicitacoes' },
       { label: 'Cotações', path: '/dashboard/suprimentos/cotacoes' },
       { label: 'Compras', path: '/dashboard/suprimentos/compras' },

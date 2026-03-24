@@ -3,6 +3,7 @@
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { useMemo, useState } from "react";
 import { UserMenu } from "@/components/UserMenu";
+import { NotificationBell } from "@/components/layout/NotificationBell";
 
 function safeGet(key: string) {
   try {
@@ -90,7 +91,8 @@ export function AppHeader({ user }: { user: CurrentUser }) {
         </div>
       </div>
 
-      <div className="ml-6">
+      <div className="ml-6 flex items-center gap-3">
+        <NotificationBell />
         <UserMenu />
       </div>
     </header>

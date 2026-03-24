@@ -9,11 +9,12 @@ export const runtime = 'nodejs';
 
 export async function GET(_req: NextRequest) {
   try {
-    const current = await requireApiPermission(PERMISSIONS.DASHBOARD_GERENTE_VIEW);
+    const current = await requireApiPermission(PERMISSIONS.DASHBOARD_VIEW);
     const scope = await getDashboardScope(current);
 
     let obras: any[] = [];
     let unidades: any[] = [];
+    let almoxarifados: any[] = [];
 
     if (scope.empresaTotal) {
       const [obrasRows]: any = await db.query(
@@ -39,6 +40,21 @@ export async function GET(_req: NextRequest) {
 
       obras = obrasRows as any[];
       unidades = unidadesRows as any[];
+
+      try {
+        const [almoxRows]: any = await db.query(
+          `
+          SELECT id_almoxarifado AS id, nome
+          FROM almoxarifados
+          WHERE tenant_id = ? AND ativo = 1
+          ORDER BY nome
+          `,
+          [current.tenantId]
+        );
+        almoxarifados = almoxRows as any[];
+      } catch {
+        almoxarifados = [];
+      }
     } else {
       if (scope.obras.length) {
         const ids = inClause(scope.obras);
@@ -71,15 +87,50 @@ export async function GET(_req: NextRequest) {
         );
         unidades = unidadesRows as any[];
       }
+
+      if (scope.obras.length || scope.unidades.length) {
+        try {
+          const obraIds = scope.obras.length ? inClause(scope.obras) : null;
+          const unidadeIds = scope.unidades.length ? inClause(scope.unidades) : null;
+
+          const parts: string[] = [];
+          const params: any[] = [current.tenantId];
+
+          if (obraIds) {
+            parts.push(`(tipo_local = 'OBRA' AND id_obra IN ${obraIds.sql})`);
+            params.push(...obraIds.params);
+          }
+          if (unidadeIds) {
+            parts.push(`(tipo_local = 'UNIDADE' AND id_unidade IN ${unidadeIds.sql})`);
+            params.push(...unidadeIds.params);
+          }
+
+          if (parts.length) {
+            const [almoxRows]: any = await db.query(
+              `
+              SELECT id_almoxarifado AS id, nome
+              FROM almoxarifados
+              WHERE tenant_id = ? AND ativo = 1
+                AND (${parts.join(' OR ')})
+              ORDER BY nome
+              `,
+              params
+            );
+            almoxarifados = almoxRows as any[];
+          }
+        } catch {
+          almoxarifados = [];
+        }
+      }
     }
 
     return ok({
       empresaTotal: scope.empresaTotal,
       obras,
       unidades,
+      almoxarifados,
     });
   } catch (e) {
     return handleApiError(e);
   }
 }
-

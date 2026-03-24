@@ -1,91 +1,215 @@
-import { PERMISSIONS, type Permission } from '@/lib/auth/permissions';
-import type { CurrentUser } from '@/lib/auth/current-user';
+import { PERMISSIONS } from '@/lib/auth/permissions';
+import type { MenuSectionConfig } from './types';
 
-export type MenuItem = {
-  label: string;
-  path?: string;
-  permission?: Permission;
-  children?: MenuItem[];
-};
-
-export const MENU_ITEMS: MenuItem[] = [
-  { label: 'Dashboard', path: '/dashboard', permission: PERMISSIONS.DASHBOARD_VIEW },
-  { label: 'Dashboard Gerente', path: '/dashboard/gerente', permission: PERMISSIONS.DASHBOARD_GERENTE_VIEW },
+export const APP_MENU: MenuSectionConfig[] = [
   {
-    label: 'Obras',
-    children: [
-      { label: 'Cadastro de Obras', path: '/dashboard/obras', permission: PERMISSIONS.OBRAS_VIEW },
-      { label: 'Mapa das Obras', path: '/dashboard/obras/mapa', permission: PERMISSIONS.MAPA_OBRAS_VIEW },
-      { label: 'Documentos/Fotos', path: '/dashboard/obras/documentos', permission: PERMISSIONS.OBRAS_VIEW },
+    key: 'principal',
+    label: 'Principal',
+    ordem: 1,
+    items: [
+      {
+        key: 'dashboard-ceo',
+        label: 'Dashboard CEO',
+        href: '/dashboard/ceo',
+        icon: 'layout-dashboard',
+        permission: PERMISSIONS.DASHBOARD_CEO_VIEW,
+        scopeTypes: ['EMPRESA', 'DIRETORIA'],
+        homePriority: 1,
+      },
+      {
+        key: 'dashboard-diretor',
+        label: 'Dashboard Diretor',
+        href: '/dashboard/diretor',
+        icon: 'bar-chart-3',
+        permission: PERMISSIONS.DASHBOARD_DIRETOR_VIEW,
+        scopeTypes: ['DIRETORIA'],
+        homePriority: 2,
+      },
+      {
+        key: 'dashboard-gerente',
+        label: 'Dashboard Gerente',
+        href: '/dashboard/gerente',
+        icon: 'briefcase',
+        permission: PERMISSIONS.DASHBOARD_GERENTE_VIEW,
+        scopeTypes: ['EMPRESA', 'DIRETORIA', 'OBRA', 'UNIDADE'],
+        homePriority: 3,
+      },
+      {
+        key: 'dashboard-executivo',
+        label: 'Dashboard Executivo',
+        href: '/dashboard',
+        icon: 'layout-dashboard',
+        permission: PERMISSIONS.DASHBOARD_EXECUTIVO_VIEW,
+        scopeTypes: ['EMPRESA', 'DIRETORIA'],
+        homePriority: 4,
+      },
+      {
+        key: 'painel-engenharia',
+        label: 'Painel Engenharia',
+        href: '/dashboard/engenharia/painel',
+        icon: 'hammer',
+        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+        scopeTypes: ['EMPRESA', 'DIRETORIA', 'OBRA', 'UNIDADE'],
+        homePriority: 13,
+      },
+      {
+        key: 'notificacoes',
+        label: 'Notificações',
+        href: '/dashboard/notificacoes',
+        icon: 'bell',
+        permission: PERMISSIONS.NOTIFICACOES_VIEW,
+        homePriority: 9999,
+      },
     ],
   },
-  { label: 'Contratos', path: '/dashboard/contratos', permission: PERMISSIONS.OBRAS_VIEW },
   {
-    label: 'Orçamento e Planejamento',
-    children: [
-      { label: 'Planilhas', path: '/dashboard/orcamento/planilhas', permission: PERMISSIONS.OBRAS_VIEW },
-      { label: 'Planejamento', path: '/dashboard/orcamento/planejamento', permission: PERMISSIONS.OBRAS_VIEW },
-      { label: 'Cronograma', path: '/dashboard/orcamento/cronograma', permission: PERMISSIONS.OBRAS_VIEW },
-      { label: 'LOB', path: '/dashboard/orcamento/lob', permission: PERMISSIONS.OBRAS_VIEW },
+    key: 'rh',
+    label: 'RH',
+    ordem: 2,
+    items: [
+      {
+        key: 'painel-rh',
+        label: 'Painel RH',
+        href: '/dashboard/rh/painel',
+        icon: 'users',
+        permission: PERMISSIONS.DASHBOARD_RH_VIEW,
+        homePriority: 10,
+      },
+      {
+        key: 'funcionarios',
+        label: 'Funcionários',
+        href: '/dashboard/rh/funcionarios',
+        icon: 'id-card',
+        permission: PERMISSIONS.RH_FUNCIONARIOS_VIEW,
+      },
+      {
+        key: 'presencas',
+        label: 'Presenças',
+        href: '/dashboard/rh/presencas',
+        icon: 'clipboard-check',
+        permission: PERMISSIONS.RH_PRESENCAS_VIEW,
+      },
     ],
   },
   {
-    label: 'Execução',
-    children: [
-      { label: 'Diário de Obra', path: '/dashboard/execucao/diario', permission: PERMISSIONS.OBRAS_VIEW },
-      { label: 'Medições', path: '/dashboard/execucao/medicoes', permission: PERMISSIONS.OBRAS_VIEW },
-    ],
-  },
-  {
-    label: 'Suprimentos',
-    children: [
-      { label: 'Solicitações', path: '/dashboard/suprimentos/solicitacoes', permission: PERMISSIONS.OBRAS_VIEW },
-      { label: 'Cotações', path: '/dashboard/suprimentos/cotacoes', permission: PERMISSIONS.OBRAS_VIEW },
-      { label: 'Compras', path: '/dashboard/suprimentos/compras', permission: PERMISSIONS.OBRAS_VIEW },
-      { label: 'Estoque', path: '/dashboard/suprimentos/estoque', permission: PERMISSIONS.OBRAS_VIEW },
-      { label: 'Logística', path: '/dashboard/suprimentos/logistica', permission: PERMISSIONS.OBRAS_VIEW },
-    ],
-  },
-  {
-    label: 'Pessoas e RH',
-    children: [{ label: 'Funcionários', path: '/dashboard/rh/funcionarios', permission: PERMISSIONS.FUNCIONARIOS_VIEW }],
-  },
-  {
+    key: 'sst',
     label: 'SST',
-    children: [
-      { label: 'Painel SST', path: '/dashboard/sst/painel', permission: PERMISSIONS.SST_PAINEL_VIEW },
-      { label: 'Fichas', path: '/dashboard/sst/fichas', permission: PERMISSIONS.SST_EPI_VIEW },
-      { label: 'Checklists', path: '/dashboard/sst/checklists', permission: PERMISSIONS.SST_CHECKLISTS_VIEW },
-      { label: 'EPI', path: '/dashboard/sst/epi', permission: PERMISSIONS.SST_EPI_VIEW },
+    ordem: 3,
+    items: [
+      {
+        key: 'painel-sst',
+        label: 'Painel SST',
+        href: '/dashboard/sst/painel',
+        icon: 'shield',
+        permission: PERMISSIONS.SST_PAINEL_VIEW,
+        homePriority: 11,
+      },
+      {
+        key: 'epi',
+        label: 'EPI',
+        href: '/dashboard/sst/epi',
+        icon: 'hard-hat',
+        permission: PERMISSIONS.SST_EPI_VIEW,
+      },
+      {
+        key: 'tecnicos',
+        label: 'Técnicos SST',
+        href: '/dashboard/sst/tecnicos',
+        icon: 'stethoscope',
+        permission: PERMISSIONS.SST_TECNICOS_VIEW,
+      },
+      {
+        key: 'checklists',
+        label: 'Checklists SST',
+        href: '/dashboard/sst/checklists',
+        icon: 'list-checks',
+        permission: PERMISSIONS.SST_CHECKLISTS_VIEW,
+      },
+      {
+        key: 'nao-conformidades',
+        label: 'Não Conformidades',
+        href: '/dashboard/sst/nao-conformidades',
+        icon: 'triangle-alert',
+        permission: PERMISSIONS.SST_NC_VIEW,
+      },
+      {
+        key: 'treinamentos',
+        label: 'Treinamentos',
+        href: '/dashboard/sst/treinamentos',
+        icon: 'graduation-cap',
+        permission: PERMISSIONS.SST_TREINAMENTOS_VIEW,
+      },
+      {
+        key: 'acidentes',
+        label: 'Acidentes',
+        href: '/dashboard/sst/acidentes',
+        icon: 'ambulance',
+        permission: PERMISSIONS.SST_ACIDENTES_VIEW,
+      },
     ],
   },
-  { label: 'Equipamentos e Ferramentas', path: '/dashboard/equipamentos', permission: PERMISSIONS.OBRAS_VIEW },
-  { label: 'Relatórios', path: '/dashboard/relatorios', permission: PERMISSIONS.DASHBOARD_VIEW },
-  { label: 'Organograma', path: '/dashboard/organograma', permission: PERMISSIONS.ORGANOGRAMA_VIEW },
   {
-    label: 'Administração da Empresa',
-    children: [
-      { label: 'Governança de Usuários e Perfis', path: '/dashboard/admin/governanca', permission: PERMISSIONS.GOVERNANCA_VIEW },
-      { label: 'Backup e Segurança', path: '/dashboard/admin/backup', permission: PERMISSIONS.BACKUP_VIEW },
+    key: 'suprimentos',
+    label: 'Suprimentos',
+    ordem: 4,
+    items: [
+      {
+        key: 'painel-suprimentos',
+        label: 'Painel Suprimentos',
+        href: '/dashboard/suprimentos/painel',
+        icon: 'package',
+        permission: PERMISSIONS.DASHBOARD_SUPRIMENTOS_VIEW,
+        homePriority: 12,
+      },
     ],
   },
   {
-    label: 'Configuração da Empresa',
-    children: [
-      { label: 'Representante da Empresa', path: '/dashboard/config/representante', permission: PERMISSIONS.REPRESENTANTE_VIEW },
-      { label: 'Encarregado do Sistema da Empresa', path: '/dashboard/config/encarregado-sistema', permission: PERMISSIONS.ENCARREGADO_SISTEMA_VIEW },
+    key: 'administracao',
+    label: 'Administração',
+    ordem: 6,
+    items: [
+      { key: 'organograma', label: 'Organograma', href: '/dashboard/organograma', icon: 'network', permission: PERMISSIONS.ORGANOGRAMA_VIEW },
+      {
+        key: 'backup',
+        label: 'Backup e Segurança',
+        href: '/dashboard/admin/backup',
+        icon: 'database-backup',
+        permission: PERMISSIONS.BACKUP_VIEW,
+      },
+      {
+        key: 'admin-notificacoes',
+        label: 'Notificações (Admin)',
+        children: [
+          {
+            key: 'admin-notificacoes-fila',
+            label: 'Fila de E-mails',
+            href: '/dashboard/admin/notificacoes/email-fila',
+            icon: 'mail',
+            permission: PERMISSIONS.NOTIFICACOES_EMAIL_FILA_VIEW,
+          },
+          {
+            key: 'admin-notificacoes-templates',
+            label: 'Templates',
+            href: '/dashboard/admin/notificacoes/templates',
+            icon: 'file-text',
+            permission: PERMISSIONS.NOTIFICACOES_TEMPLATES_ADMIN,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'relatorios',
+    label: 'Relatórios',
+    ordem: 5,
+    items: [
+      {
+        key: 'relatorios-agendados',
+        label: 'Relatórios Agendados',
+        href: '/dashboard/relatorios/agendados',
+        icon: 'calendar-clock',
+        permission: PERMISSIONS.RELATORIOS_AGENDADOS_VIEW,
+      },
     ],
   },
 ];
-
-export function filterMenuByPermission(items: MenuItem[], user: CurrentUser): MenuItem[] {
-  return items
-    .map((item) => {
-      const children = item.children ? filterMenuByPermission(item.children, user) : undefined;
-      const hasItemPermission = item.permission ? user.permissoes.includes(item.permission) : true;
-      const hasVisibleChildren = Boolean(children?.length);
-      if (hasItemPermission || hasVisibleChildren) return { ...item, children };
-      return null;
-    })
-    .filter(Boolean) as MenuItem[];
-}

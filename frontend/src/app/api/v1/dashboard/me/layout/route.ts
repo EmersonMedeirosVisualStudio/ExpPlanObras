@@ -22,6 +22,40 @@ const DEFAULTS: Record<string, any[]> = {
     { widgetCodigo: 'FINANCEIRO_GERENTE', ordemExibicao: 2, largura: 6, altura: 1, visivel: true },
     { widgetCodigo: 'ALERTAS_GERENTE', ordemExibicao: 3, largura: 6, altura: 1, visivel: true },
   ],
+  RH: [
+    { widgetCodigo: 'CARDS_RH', ordemExibicao: 1, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'MOVIMENTACAO_RH', ordemExibicao: 2, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'ALERTAS_RH', ordemExibicao: 3, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'SERIES_RH', ordemExibicao: 4, largura: 12, altura: 1, visivel: true },
+  ],
+  SST: [
+    { widgetCodigo: 'CARDS_SST', ordemExibicao: 1, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'ALERTAS_SST', ordemExibicao: 2, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'SERIES_SST', ordemExibicao: 3, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'RANKING_SST', ordemExibicao: 4, largura: 12, altura: 1, visivel: true },
+  ],
+  SUPRIMENTOS: [
+    { widgetCodigo: 'CARDS_SUPRIMENTOS', ordemExibicao: 1, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'ALERTAS_SUPRIMENTOS', ordemExibicao: 2, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'SERIES_SUPRIMENTOS', ordemExibicao: 3, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'ESTOQUE_CRITICO', ordemExibicao: 4, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'COMPRAS_ANDAMENTO', ordemExibicao: 5, largura: 12, altura: 1, visivel: true },
+  ],
+  ENGENHARIA: [
+    { widgetCodigo: 'CARDS_ENGENHARIA', ordemExibicao: 1, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'ALERTAS_ENGENHARIA', ordemExibicao: 2, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'SERIES_ENGENHARIA', ordemExibicao: 3, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'OBRAS_RISCO', ordemExibicao: 4, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'MEDICOES_PENDENTES', ordemExibicao: 5, largura: 12, altura: 1, visivel: true },
+  ],
+  HOME: [
+    { widgetCodigo: 'BEM_VINDO', ordemExibicao: 1, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'ATALHOS_RAPIDOS', ordemExibicao: 2, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'PENDENCIAS_MODULOS', ordemExibicao: 3, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'NOTIFICACOES', ordemExibicao: 4, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'FAVORITOS', ordemExibicao: 5, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'RECENTES', ordemExibicao: 6, largura: 6, altura: 1, visivel: true },
+  ],
 };
 
 export async function GET(req: NextRequest) {

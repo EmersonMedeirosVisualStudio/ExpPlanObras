@@ -12,9 +12,9 @@ export async function getDashboardScope(current: { id: number; tenantId: number 
     `
     SELECT ua.tipo_abrangencia, ua.id_obra, ua.id_unidade, ua.id_setor_diretoria
     FROM usuario_abrangencias ua
-    WHERE ua.id_usuario = ? AND ua.ativo = 1
+    WHERE ua.tenant_id = ? AND ua.id_usuario = ? AND ua.ativo = 1
     `,
-    [current.id]
+    [current.tenantId, current.id]
   );
 
   const scope: DashboardScope = { empresaTotal: false, diretorias: [], obras: [], unidades: [] };
@@ -37,4 +37,3 @@ export function inClause(values: number[]) {
   if (!values.length) return { sql: '(NULL)', params: [] as number[] };
   return { sql: `(${values.map(() => '?').join(',')})`, params: values };
 }
-

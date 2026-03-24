@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { Loader2 } from 'lucide-react';
@@ -1038,6 +1039,11 @@ export default function LoginPage() {
               <div>
                 {label('Senha', true)}
                 <input id="password" name="password" type="password" autoComplete="current-password" required className={inputClass} value={password} onChange={(e) => setPassword(e.target.value)} />
+              </div>
+              <div className="text-right">
+                <Link href="/esqueci-senha" className="text-sm font-medium text-blue-600 hover:text-blue-500">
+                  Esqueci minha senha
+                </Link>
               </div>
             </div>
           )}

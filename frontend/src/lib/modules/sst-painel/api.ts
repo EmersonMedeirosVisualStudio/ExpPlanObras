@@ -11,22 +11,20 @@ async function api<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> 
   return json.data;
 }
 
-type PainelFiltro = {
-  tipoLocal?: 'OBRA' | 'UNIDADE';
-  idObra?: number;
-  idUnidade?: number;
-};
-
-function qs(f?: PainelFiltro) {
+function qs(f?: { idObra?: number | null; idUnidade?: number | null }) {
   const p = new URLSearchParams();
-  if (f?.tipoLocal) p.set('tipoLocal', f.tipoLocal);
   if (f?.idObra) p.set('idObra', String(f.idObra));
   if (f?.idUnidade) p.set('idUnidade', String(f.idUnidade));
   return p.toString() ? `?${p.toString()}` : '';
 }
 
 export const SstPainelApi = {
-  resumo: (f?: PainelFiltro) => api<any>(`/api/v1/sst/painel/resumo${qs(f)}`),
-  alertas: (f?: PainelFiltro) => api<any[]>(`/api/v1/sst/painel/alertas${qs(f)}`),
-  series: (f?: PainelFiltro) => api<any>(`/api/v1/sst/painel/series${qs(f)}`),
+  filtros: () => api<any>('/api/v1/dashboard/me/filtros'),
+  resumo: (f?: { idObra?: number | null; idUnidade?: number | null }) => api<any>(`/api/v1/sst/painel/resumo${qs(f)}`),
+  alertas: (f?: { idObra?: number | null; idUnidade?: number | null }) => api<any[]>(`/api/v1/sst/painel/alertas${qs(f)}`),
+  series: (f?: { idObra?: number | null; idUnidade?: number | null }) => api<any>(`/api/v1/sst/painel/series${qs(f)}`),
+  ranking: (f?: { idObra?: number | null; idUnidade?: number | null }) => api<any[]>(`/api/v1/sst/painel/ranking${qs(f)}`),
+  obterLayout: () => api<any>('/api/v1/dashboard/me/layout?dashboard=SST'),
+  salvarLayout: (payload: any) => api('/api/v1/dashboard/me/layout', { method: 'PUT', body: JSON.stringify(payload) }),
 };
+

@@ -1,0 +1,201 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
+import { NavigationApi } from "@/lib/navigation/api";
+import { HomeApi } from "@/lib/home/api";
+import type { MenuBadgesMapDTO, MenuItemDTO, MenuSectionDTO } from "@/lib/navigation/types";
+import { useRealtimeEvent } from "@/lib/realtime/hooks";
+
+function isActive(pathname: string, item: MenuItemDTO): boolean {
+  if (item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`))) return true;
+  if (item.matchStartsWith?.some((p) => pathname.startsWith(p))) return true;
+  return (item.children ?? []).some((child) => isActive(pathname, child));
+}
+
+function BadgePill({ badge }: { badge: NonNullable<MenuBadgesMapDTO[string]> }) {
+  const color =
+    badge.tone === "DANGER"
+      ? "bg-red-100 text-red-700"
+      : badge.tone === "WARNING"
+        ? "bg-amber-100 text-amber-700"
+        : badge.tone === "INFO"
+          ? "bg-blue-100 text-blue-700"
+          : "bg-slate-100 text-slate-700";
+
+  const value = badge.value > 99 ? "99+" : String(badge.value);
+
+  return (
+    <span
+      title={badge.tooltip}
+      className={`inline-flex min-w-[1.5rem] items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold ${color} ${
+        badge.pulse ? "animate-pulse" : ""
+      }`}
+    >
+      {badge.label || value}
+    </span>
+  );
+}
+
+function MenuNode({ item, pathname, badges }: { item: MenuItemDTO; pathname: string; badges: MenuBadgesMapDTO }) {
+  const active = isActive(pathname, item);
+  const [open, setOpen] = useState(active);
+  const badge = badges[item.key];
+
+  return (
+    <div className="space-y-1">
+      {item.href ? (
+        <Link
+          href={item.href}
+          className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
+            active ? "bg-blue-50 font-medium text-blue-700" : "text-slate-700 hover:bg-slate-50"
+          }`}
+        >
+          <span>{item.label}</span>
+          {badge ? <BadgePill badge={badge} /> : null}
+        </Link>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm ${
+            active ? "bg-blue-50 font-medium text-blue-700" : "text-slate-700 hover:bg-slate-50"
+          }`}
+        >
+          <span>{item.label}</span>
+          {badge ? <BadgePill badge={badge} /> : null}
+        </button>
+      )}
+
+      {item.children?.length ? (
+        <div className={`ml-3 space-y-1 border-l pl-3 ${open ? "" : "hidden"}`}>
+          {item.children.map((child) => (
+            <MenuNode key={child.key} item={child} pathname={pathname} badges={badges} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function flattenItems(items: MenuItemDTO[], out: Map<string, MenuItemDTO>) {
+  for (const it of items) {
+    out.set(it.key, it);
+    if (it.children?.length) flattenItems(it.children, out);
+  }
+}
+
+export function SidebarNav({ secoes, initialBadges = {} }: { secoes: MenuSectionDTO[]; initialBadges?: MenuBadgesMapDTO }) {
+  const pathname = usePathname();
+  const [badges, setBadges] = useState<MenuBadgesMapDTO>(initialBadges);
+  const [favoritos, setFavoritos] = useState<string[]>([]);
+  const itemsMap = useMemo(() => {
+    const m = new Map<string, MenuItemDTO>();
+    for (const s of secoes) flattenItems(s.items, m);
+    return m;
+  }, [secoes]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function carregar() {
+      try {
+        const data = await NavigationApi.obterBadges();
+        if (active) setBadges(data);
+      } catch {}
+    }
+
+    carregar();
+    const id = window.setInterval(carregar, 60000);
+
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  useRealtimeEvent("menu", "menu.badges.refresh", async () => {
+    try {
+      const data = await NavigationApi.obterBadges();
+      setBadges(data);
+    } catch {}
+  });
+  useRealtimeEvent("notifications", "notification.new", async () => {
+    try {
+      const data = await NavigationApi.obterBadges();
+      setBadges(data);
+    } catch {}
+  });
+  useRealtimeEvent("notifications", "notification.read", async () => {
+    try {
+      const data = await NavigationApi.obterBadges();
+      setBadges(data);
+    } catch {}
+  });
+
+  useEffect(() => {
+    let active = true;
+    HomeApi.obterFavoritos()
+      .then((rows) => {
+        if (active) setFavoritos(rows.map((r) => r.menuKey));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function toggleFavorito(menuKey: string) {
+    const novo = favoritos.includes(menuKey) ? favoritos.filter((k) => k !== menuKey) : [...favoritos, menuKey];
+    setFavoritos(novo);
+    const dedup = Array.from(new Set(novo));
+    await HomeApi.salvarFavoritos(dedup.map((menuKey, idx) => ({ menuKey, ordem: idx })));
+  }
+
+  return (
+    <aside className="w-72 border-r bg-white">
+      <div className="p-4 text-lg font-semibold">Sistema</div>
+
+      <nav className="space-y-6 p-4">
+        {favoritos.length ? (
+          <div key="favoritos">
+            <div className="mb-2 text-xs font-semibold uppercase text-slate-500">Favoritos</div>
+            <div className="space-y-1">
+              {favoritos
+                .map((k) => itemsMap.get(k))
+                .filter((it): it is MenuItemDTO => !!it && !!it.href)
+                .map((it) => {
+                  const active = pathname === it.href || pathname.startsWith(`${it.href}/`);
+                  const badge = badges[it.key];
+                  return (
+                    <Link
+                      key={`fav-${it.key}`}
+                      href={it.href!}
+                      className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
+                        active ? "bg-blue-50 font-medium text-blue-700" : "text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span>{it.label}</span>
+                      {badge ? <BadgePill badge={badge} /> : null}
+                    </Link>
+                  );
+                })}
+            </div>
+          </div>
+        ) : null}
+        {secoes.map((secao) => (
+          <div key={secao.key}>
+            <div className="mb-2 text-xs font-semibold uppercase text-slate-500">{secao.label}</div>
+
+            <div className="space-y-1">
+              {secao.items.map((item) => (
+                <MenuNode key={item.key} item={item} pathname={pathname} badges={badges} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </nav>
+    </aside>
+  );
+}
