@@ -6,8 +6,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "postinstall": "prisma generate --schema=./prisma/schema.prisma",
-    "create-system-admin": "tsx scripts/create-system-admin.ts",
+    "prisma:generate": "prisma generate --schema=./prisma/postgres/schema.prisma",
+    "prisma:migrate:deploy": "prisma migrate deploy --schema=./prisma/postgres/schema.prisma",
+    "postinstall": "npm run prisma:generate",
+    "create-system-admin": "npm run prisma:generate && tsx scripts/create-system-admin.ts",
     "seed-demo-tenants": "tsx scripts/seed-demo-tenants.ts",
     "build": "tsc",
     "start": "node dist/server.js",

@@ -45,6 +45,18 @@ model Tenant {
   responsaveisTecnicos ResponsavelTecnico[]
   history   TenantHistoryEntry[]
   subscriptions Subscription[]
+  unidades  Unidade[]
+  funcionarios Funcionario[]
+  organizacaoSetores OrganizacaoSetor[]
+  organizacaoCargos OrganizacaoCargo[]
+  organogramaPosicoes OrganogramaPosicao[]
+  empresaRepresentantes EmpresaRepresentante[]
+  empresaEncarregadosSistema EmpresaEncarregadoSistema[]
+  perfis Perfil[]
+  backupPoliticas BackupPoliticaTenant[]
+  backupExecucoes BackupExecucaoTenant[]
+  backupRestauracoes BackupRestauracaoTenant[]
+  auditoriaEventos AuditoriaEvento[]
 }
 
 model User {
@@ -68,6 +80,13 @@ model User {
 
   tenants   TenantUser[]
   tenantHistoryEntries TenantHistoryEntry[]
+  usuarioPerfis UsuarioPerfil[]
+  usuarioAbrangencias UsuarioAbrangencia[]
+  empresaEncarregadosSistema EmpresaEncarregadoSistema[]
+  backupPoliticasConfiguradas BackupPoliticaTenant[]
+  backupRestauracoesSolicitadas BackupRestauracaoTenant[]
+  dashboardLayouts DashboardLayoutUsuario[]
+  auditoriaEventos AuditoriaEvento[]
 }
 
 model TenantHistoryEntry {
@@ -173,6 +192,8 @@ model Obra {
   medicoes  Medicao[]
   pagamentos Pagamento[]
   responsaveis ResponsavelObra[]
+  usuarioAbrangencias UsuarioAbrangencia[]
+  funcionarioLotacoes FuncionarioLotacao[]
 
   @@index([tenantId])
 }
@@ -323,6 +344,8 @@ model Unidade {
   updatedAt  DateTime @updatedAt
 
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  funcionarioLotacoes FuncionarioLotacao[]
+  usuarioAbrangencias UsuarioAbrangencia[]
 
   @@unique([tenantId, codigo])
   @@index([tenantId])
@@ -345,6 +368,11 @@ model Funcionario {
   updatedAt      DateTime @updatedAt
 
   tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lotacoes       FuncionarioLotacao[]
+  posicoes       FuncionarioPosicao[]
+  usuarios       TenantUser[]
+  representacoes EmpresaRepresentante[]
+  encarregosSistema EmpresaEncarregadoSistema[]
 
   @@unique([tenantId, matricula])
   @@unique([tenantId, cpf])
@@ -382,6 +410,7 @@ model OrganizacaoSetor {
 
   tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   setorPai   OrganizacaoSetor? @relation("SetorPai", fields: [setorPaiId], references: [id], onDelete: SetNull)
+  setoresFilhos OrganizacaoSetor[] @relation("SetorPai")
 
   @@index([tenantId])
   @@index([setorPaiId])
@@ -410,6 +439,9 @@ model OrganogramaPosicao {
   tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   setor         OrganizacaoSetor @relation(fields: [setorId], references: [id], onDelete: Cascade)
   cargo         OrganizacaoCargo @relation(fields: [cargoId], references: [id], onDelete: Cascade)
+  vinculosComoSuperior OrganogramaVinculo[] @relation("VinculoSuperior")
+  vinculosComoSubordinada OrganogramaVinculo[] @relation("VinculoSubordinada")
+  funcionarioPosicoes FuncionarioPosicao[]
 
   @@index([tenantId])
   @@index([setorId])
@@ -458,6 +490,7 @@ model EmpresaRepresentante {
 
   tenant           Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   funcionario      Funcionario? @relation(fields: [funcionarioId], references: [id], onDelete: SetNull)
+  encarregadosSistema EmpresaEncarregadoSistema[]
 
   @@index([tenantId])
   @@index([funcionarioId])
@@ -500,6 +533,8 @@ model Perfil {
   updatedAt  DateTime @updatedAt
 
   tenant     Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  permissoes PerfilPermissao[]
+  usuarios   UsuarioPerfil[]
 
   @@unique([tenantScope, codigo])
   @@index([tenantId])
@@ -564,6 +599,7 @@ model BackupPoliticaTenant {
 
   tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   configuradoPor  User     @relation(fields: [configuradoPorUserId], references: [id], onDelete: Cascade)
+  execucoes       BackupExecucaoTenant[]
 
   @@index([tenantId])
   @@index([configuradoPorUserId])
@@ -612,6 +648,7 @@ model DashboardLayoutUsuario {
   ativo         Boolean @default(true)
 
   user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  widgets       DashboardWidgetUsuario[]
 
   @@index([userId])
   @@index([tipoDashboard])
