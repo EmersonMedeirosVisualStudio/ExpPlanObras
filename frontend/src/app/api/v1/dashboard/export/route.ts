@@ -31,7 +31,8 @@ export async function POST(req: NextRequest) {
     const filename = buildDashboardExportFilename(body.contexto, body.formato);
     if (body.formato === 'XLSX') {
       const buf = await renderXlsx(data);
-      return new Response(buf, {
+      const bodyOut = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+      return new Response(bodyOut, {
         status: 200,
         headers: {
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -41,7 +42,8 @@ export async function POST(req: NextRequest) {
     }
 
     const pdf = await renderPdf(data);
-    return new Response(pdf, {
+    const pdfOut = pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength);
+    return new Response(pdfOut, {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
