@@ -393,7 +393,6 @@ export async function getSearchSuggestions(args: { tenantId: number; userId: num
   let favoritos: GlobalSearchResultDTO[] = [];
   let atalhos: GlobalSearchResultDTO[] = [];
   try {
-    const permsSet = new Set(permissions);
     const scopeTypes = [
       scope.empresaTotal ? 'EMPRESA' : null,
       ...(scope.diretorias?.length ? ['DIRETORIA'] : []),
@@ -454,7 +453,6 @@ export async function getSearchSuggestions(args: { tenantId: number; userId: num
           if (String(r.tipo) === 'MENU' && r.menuKey) {
             const it = byKey.get(String(r.menuKey));
             if (!it) return null;
-            if (it.permission && !permsSet.has(it.permission)) return null;
             return {
               id: `atalho:menu:${it.key}`,
               type: 'ATALHO' as const,
