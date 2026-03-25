@@ -45,6 +45,12 @@ function parseTime(hhmmss: string) {
   return { h, m, s };
 }
 
+function normalizeTipoLocal(v: unknown): 'OBRA' | 'UNIDADE' | 'DIRETORIA' | 'EMPRESA' | null {
+  const s = v ? String(v).toUpperCase() : '';
+  if (s === 'OBRA' || s === 'UNIDADE' || s === 'DIRETORIA' || s === 'EMPRESA') return s;
+  return null;
+}
+
 export function calcularProximaExecucaoAutomacao(args: {
   recorrencia: AutomacaoRecorrencia;
   horarioExecucao: string;
@@ -177,7 +183,7 @@ export async function listarModelos(tenantId: number): Promise<TarefaRecorrenteM
     id: Number(r.id),
     nome: String(r.nome),
     modulo: String(r.modulo),
-    tipoLocal: r.tipoLocal ? String(r.tipoLocal) : null,
+    tipoLocal: normalizeTipoLocal(r.tipoLocal),
     idObra: r.idObra !== null ? Number(r.idObra) : null,
     idUnidade: r.idUnidade !== null ? Number(r.idUnidade) : null,
     idDiretoria: r.idDiretoria !== null ? Number(r.idDiretoria) : null,
