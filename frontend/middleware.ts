@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
-  const isProtected = request.nextUrl.pathname.startsWith('/dashboard');
+  const isProtected = request.nextUrl.pathname.startsWith('/dashboard') || request.nextUrl.pathname.startsWith('/portal');
   const hasSession = request.cookies.has('exp_user');
 
   if (isProtected && !hasSession) {
@@ -13,6 +13,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*'],
+  matcher: ['/dashboard/:path*', '/portal/:path*'],
 };
-
