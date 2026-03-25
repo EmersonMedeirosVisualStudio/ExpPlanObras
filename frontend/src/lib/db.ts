@@ -27,7 +27,7 @@ function getPool(): mysql.Pool {
 }
 
 export const db = {
-  query: (...args: any[]) => getPool().query(...args),
-  execute: (...args: any[]) => getPool().execute(...args),
-  getConnection: (...args: any[]) => getPool().getConnection(...args),
+  query: (sql: any, values?: any) => getPool().query(sql, values),
+  execute: (sql: any, values?: any) => getPool().execute(sql, values),
+  getConnection: () => getPool().getConnection(),
 } as any;
