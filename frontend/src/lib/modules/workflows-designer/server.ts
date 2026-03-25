@@ -2,7 +2,16 @@ import { db } from '@/lib/db';
 import { ApiError } from '@/lib/api/http';
 import type { WorkflowModeloDTO } from '@/lib/modules/workflows/types';
 import { criarModelo, obterModeloDetalhe } from '@/lib/modules/workflows/server';
-import type { WorkflowDesignerGraphDTO, WorkflowDesignerRascunhoDTO, WorkflowDesignerSimulationResult, WorkflowDesignerValidationResult } from './types';
+import type {
+  WorkflowDesignerActionDTO,
+  WorkflowDesignerEdgeDTO,
+  WorkflowDesignerFieldDTO,
+  WorkflowDesignerGraphDTO,
+  WorkflowDesignerNodeDTO,
+  WorkflowDesignerRascunhoDTO,
+  WorkflowDesignerSimulationResult,
+  WorkflowDesignerValidationResult,
+} from './types';
 import { compileDesignerGraphToWorkflowModeloSave } from './compiler';
 import { simulateDesignerGraph } from './simulator';
 import { normalizeGraph, validateDesignerGraph } from './validator';
@@ -470,7 +479,7 @@ export async function duplicarModeloComoRascunho(tenantId: number, userId: numbe
     const detalhe = await obterModeloDetalhe(tenantId, modeloId);
     modelo = detalhe.modelo;
     if (!designerGraph) {
-      const nodes = detalhe.estados.map((e, idx) => ({
+      const nodes: WorkflowDesignerNodeDTO[] = detalhe.estados.map((e, idx) => ({
         id: `n_${e.chaveEstado}`,
         type:
           e.tipoEstado === 'INICIAL'
@@ -484,10 +493,54 @@ export async function duplicarModeloComoRascunho(tenantId: number, userId: numbe
                   : 'STEP',
         position: { x: 60 + idx * 220, y: 120 },
         data: { key: e.chaveEstado, label: e.nomeEstado, color: e.corHex ?? null, slaHoras: e.slaHoras ?? null, exigeResponsavel: e.exigeResponsavel },
-      })) as any[];
+      }));
 
       const byKeyToId = new Map(nodes.map((n) => [String(n.data.key).toUpperCase(), String(n.id)] as const));
-      const edges = detalhe.transicoes.map((t, idx) => ({
+
+      const mapCampo = (c: any): WorkflowDesignerFieldDTO => ({
+        key: String(c.chaveCampo),
+        label: String(c.labelCampo),
+        type:
+          c.tipoCampo === 'TEXTO'
+            ? 'TEXT'
+            : c.tipoCampo === 'TEXTO_LONGO'
+              ? 'TEXTAREA'
+              : c.tipoCampo === 'NUMERO'
+                ? 'NUMBER'
+                : c.tipoCampo === 'DATA'
+                  ? 'DATE'
+                  : c.tipoCampo === 'BOOLEAN'
+                    ? 'BOOLEAN'
+                    : c.tipoCampo === 'SELECT'
+                      ? 'SELECT'
+                      : 'JSON',
+        required: Boolean(c.obrigatorio),
+        order: Number(c.ordemExibicao || 0),
+        options: (c.opcoes as any) || undefined,
+        validation: (c.validacao as any) || undefined,
+        defaultValue: (c.valorPadrao as any) || undefined,
+      });
+
+      const mapAction = (a: any): WorkflowDesignerActionDTO => ({
+        type:
+          a.tipoAcao === 'NOTIFICAR'
+            ? 'NOTIFY'
+            : a.tipoAcao === 'EMAIL'
+              ? 'EMAIL'
+              : a.tipoAcao === 'REALTIME'
+                ? 'REALTIME'
+                : a.tipoAcao === 'CRIAR_APROVACAO'
+                  ? 'CREATE_APPROVAL'
+                  : a.tipoAcao === 'CRIAR_TAREFA'
+                    ? 'CREATE_TASK'
+                    : a.tipoAcao === 'ATUALIZAR_CAMPO_ENTIDADE'
+                      ? 'UPDATE_ENTITY_FIELD'
+                      : 'CALL_HANDLER',
+        order: Number(a.ordemExecucao || 0),
+        config: a.configuracao || undefined,
+      });
+
+      const edges: WorkflowDesignerEdgeDTO[] = detalhe.transicoes.map((t, idx) => ({
         id: `e_${idx + 1}_${t.chaveTransicao}`,
         source: byKeyToId.get(String((t as any).estadoOrigemChave || '').toUpperCase()) || nodes[0]?.id,
         target: byKeyToId.get(String((t as any).estadoDestinoChave || '').toUpperCase()) || nodes[nodes.length - 1]?.id,
@@ -501,47 +554,8 @@ export async function duplicarModeloComoRascunho(tenantId: number, userId: numbe
           exigeAssinatura: t.exigeAssinatura,
           permiteEmLote: t.permiteEmLote,
           condition: (t.condicao ? ({ ...(t.condicao as any) } as Record<string, unknown>) : null) as any,
-          fields: (t.campos || []).map((c) => ({
-            key: c.chaveCampo,
-            label: c.labelCampo,
-            type:
-              c.tipoCampo === 'TEXTO'
-                ? 'TEXT'
-                : c.tipoCampo === 'TEXTO_LONGO'
-                  ? 'TEXTAREA'
-                  : c.tipoCampo === 'NUMERO'
-                    ? 'NUMBER'
-                    : c.tipoCampo === 'DATA'
-                      ? 'DATE'
-                      : c.tipoCampo === 'BOOLEAN'
-                        ? 'BOOLEAN'
-                        : c.tipoCampo === 'SELECT'
-                          ? 'SELECT'
-                          : 'JSON',
-            required: c.obrigatorio,
-            order: c.ordemExibicao,
-            options: (c.opcoes as any) || undefined,
-            validation: (c.validacao as any) || undefined,
-            defaultValue: (c.valorPadrao as any) || undefined,
-          })),
-          actions: (t.acoes || []).map((a: any) => ({
-            type:
-              a.tipoAcao === 'NOTIFICAR'
-                ? 'NOTIFY'
-                : a.tipoAcao === 'EMAIL'
-                  ? 'EMAIL'
-                  : a.tipoAcao === 'REALTIME'
-                    ? 'REALTIME'
-                    : a.tipoAcao === 'CRIAR_APROVACAO'
-                      ? 'CREATE_APPROVAL'
-                      : a.tipoAcao === 'CRIAR_TAREFA'
-                        ? 'CREATE_TASK'
-                        : a.tipoAcao === 'ATUALIZAR_CAMPO_ENTIDADE'
-                          ? 'UPDATE_ENTITY_FIELD'
-                          : 'CALL_HANDLER',
-            order: a.ordemExecucao || 0,
-            config: a.configuracao || undefined,
-          })),
+          fields: (t.campos || []).map(mapCampo),
+          actions: (t.acoes || []).map(mapAction),
         },
       }));
 
