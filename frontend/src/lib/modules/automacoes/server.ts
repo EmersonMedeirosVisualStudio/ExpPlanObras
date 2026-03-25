@@ -15,7 +15,7 @@ import type {
 import { PENDENCIA_PROVIDERS } from './providers';
 import { findUserIdsByPermission, resolveResponsavelUserIds } from './resolve-responsavel';
 import { upsertNotificationEvent, assignNotificationRecipient } from '@/lib/notifications/service';
-import type { AlertSignal } from '@/lib/alerts/types';
+import type { AlertModule, AlertSignal } from '@/lib/alerts/types';
 
 function nowIso() {
   return new Date().toISOString().slice(0, 19).replace('T', ' ');
@@ -49,6 +49,15 @@ function normalizeTipoLocal(v: unknown): 'OBRA' | 'UNIDADE' | 'DIRETORIA' | 'EMP
   const s = v ? String(v).toUpperCase() : '';
   if (s === 'OBRA' || s === 'UNIDADE' || s === 'DIRETORIA' || s === 'EMPRESA') return s;
   return null;
+}
+
+function normalizeAlertModule(v: unknown): AlertModule {
+  const s = v ? String(v).toUpperCase() : '';
+  if (s === 'RH') return 'RH';
+  if (s === 'SST') return 'SST';
+  if (s === 'SUPRIMENTOS' || s === 'SUP') return 'SUPRIMENTOS';
+  if (s === 'ENGENHARIA' || s === 'ENG') return 'ENGENHARIA';
+  return 'ADMIN';
 }
 
 export function calcularProximaExecucaoAutomacao(args: {
@@ -888,7 +897,7 @@ export async function processarCobrancasPendentes(args: { tenantId: number; user
         const sevRaw = String(r.severidade || 'MEDIA');
         const severity = sevRaw === 'CRITICA' ? 'CRITICAL' : sevRaw === 'ALTA' ? 'DANGER' : sevRaw === 'MEDIA' ? 'WARNING' : 'INFO';
         const signal: AlertSignal = {
-          module: String(r.modulo),
+          module: normalizeAlertModule(r.modulo),
           key: 'SLA_PENDENCIA',
           dedupeKey: `sla.ocorrencia.${id}`,
           severity,
