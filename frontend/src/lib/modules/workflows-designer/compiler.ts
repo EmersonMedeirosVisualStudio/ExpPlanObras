@@ -2,6 +2,9 @@ import type { WorkflowModeloSaveDTO } from '@/lib/modules/workflows/types';
 import type { WorkflowDesignerGraphDTO, WorkflowDesignerNodeDTO } from './types';
 import { normalizeGraph, validateDesignerGraph } from './validator';
 
+type WorkflowCampoTipo = NonNullable<NonNullable<WorkflowModeloSaveDTO['transicoes'][number]['campos']>[number]>['tipoCampo'];
+type WorkflowAcaoTipo = NonNullable<NonNullable<WorkflowModeloSaveDTO['transicoes'][number]['acoes']>[number]>['tipoAcao'];
+
 function mapNodeTypeToWorkflowTipoEstado(nodeType: string): WorkflowModeloSaveDTO['estados'][number]['tipoEstado'] {
   if (nodeType === 'START') return 'INICIAL';
   if (nodeType === 'END_SUCCESS') return 'FINAL_SUCESSO';
@@ -10,7 +13,7 @@ function mapNodeTypeToWorkflowTipoEstado(nodeType: string): WorkflowModeloSaveDT
   return 'INTERMEDIARIO';
 }
 
-function mapFieldTypeToWorkflowTipoCampo(t: string): WorkflowModeloSaveDTO['transicoes'][number]['campos'][number]['tipoCampo'] {
+function mapFieldTypeToWorkflowTipoCampo(t: string): WorkflowCampoTipo {
   if (t === 'TEXT') return 'TEXTO';
   if (t === 'TEXTAREA') return 'TEXTO_LONGO';
   if (t === 'NUMBER') return 'NUMERO';
@@ -20,7 +23,7 @@ function mapFieldTypeToWorkflowTipoCampo(t: string): WorkflowModeloSaveDTO['tran
   return 'JSON';
 }
 
-function mapActionTypeToWorkflowTipoAcao(t: string): WorkflowModeloSaveDTO['transicoes'][number]['acoes'][number]['tipoAcao'] {
+function mapActionTypeToWorkflowTipoAcao(t: string): WorkflowAcaoTipo {
   if (t === 'NOTIFY') return 'NOTIFICAR';
   if (t === 'EMAIL') return 'EMAIL';
   if (t === 'REALTIME') return 'REALTIME';
