@@ -500,7 +500,7 @@ export async function duplicarModeloComoRascunho(tenantId: number, userId: numbe
           exigeParecer: t.exigeParecer,
           exigeAssinatura: t.exigeAssinatura,
           permiteEmLote: t.permiteEmLote,
-          condition: t.condicao || null,
+          condition: (t.condicao ? ({ ...(t.condicao as any) } as Record<string, unknown>) : null) as any,
           fields: (t.campos || []).map((c) => ({
             key: c.chaveCampo,
             label: c.labelCampo,
