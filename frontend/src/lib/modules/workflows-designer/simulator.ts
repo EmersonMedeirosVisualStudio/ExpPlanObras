@@ -37,7 +37,7 @@ export function simulateDesignerGraph(inputGraph: unknown, contexto: Record<stri
   const maxSteps = Math.max(10, nodes.length * 4);
 
   for (let i = 0; i < maxSteps && current; i++) {
-    const nodeId = String(current.id);
+    const nodeId: string = String(current.id);
     simulatedPath.push({ nodeId, nodeKey: String(current.data?.key || '').trim(), nodeLabel: String(current.data?.label || '').trim() });
 
     if (isFinalNodeType(String(current.type))) break;
