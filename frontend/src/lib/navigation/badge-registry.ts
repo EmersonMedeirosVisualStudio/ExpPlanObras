@@ -418,11 +418,184 @@ export const adminMenuBadgeProvider: MenuBadgeProvider = {
   },
 };
 
+export const automacoesMenuBadgeProvider: MenuBadgeProvider = {
+  key: 'automacoes',
+  requiredPermissions: [PERMISSIONS.AUTOMACOES_VIEW],
+  async build(ctx) {
+    const tarefasPendentes = await safeTotal(
+      `
+      SELECT COUNT(*) AS total
+      FROM automacoes_tarefas_instancias t
+      WHERE t.tenant_id = ?
+        AND t.id_usuario_atribuido = ?
+        AND t.status_tarefa IN ('PENDENTE','ATRASADA','EM_ANDAMENTO')
+      `,
+      [ctx.tenantId, ctx.userId]
+    );
+
+    const ocorrenciasCriticas = await safeTotal(
+      `
+      SELECT COUNT(*) AS total
+      FROM automacoes_pendencias_ocorrencias o
+      WHERE o.tenant_id = ?
+        AND o.id_usuario_responsavel_atual = ?
+        AND o.status_ocorrencia IN ('ABERTA','ALERTADA','ESCALADA')
+        AND o.severidade IN ('ALTA','CRITICA')
+      `,
+      [ctx.tenantId, ctx.userId]
+    );
+
+    const total = tarefasPendentes + ocorrenciasCriticas;
+    return {
+      automacoes: total ? { value: total, tone: 'WARNING', tooltip: 'Pendências e tarefas automáticas' } : undefined,
+    };
+  },
+};
+
+export const aprovacoesMenuBadgeProvider: MenuBadgeProvider = {
+  key: 'aprovacoes',
+  requiredPermissions: [PERMISSIONS.APROVACOES_VIEW],
+  async build(ctx) {
+    const pendentes = await safeTotal(
+      `
+      SELECT COUNT(*) AS total
+      FROM aprovacoes_solicitacoes_etapas_aprovadores a
+      INNER JOIN aprovacoes_solicitacoes_etapas e ON e.id_aprovacao_solicitacao_etapa = a.id_aprovacao_solicitacao_etapa
+      INNER JOIN aprovacoes_solicitacoes s ON s.id_aprovacao_solicitacao = e.id_aprovacao_solicitacao
+      WHERE a.tenant_id = ?
+        AND a.id_usuario_aprovador = ?
+        AND a.status_aprovador = 'PENDENTE'
+        AND s.status_solicitacao IN ('PENDENTE','EM_ANALISE')
+      `,
+      [ctx.tenantId, ctx.userId]
+    );
+
+    return {
+      aprovacoes: pendentes ? { value: pendentes, tone: 'WARNING', tooltip: 'Aprovações pendentes', pulse: true } : undefined,
+    };
+  },
+};
+
+export const workflowsMenuBadgeProvider: MenuBadgeProvider = {
+  key: 'workflows',
+  requiredPermissions: [PERMISSIONS.WORKFLOWS_VIEW],
+  async build(ctx) {
+    const tarefasPendentes = await safeTotal(
+      `
+      SELECT COUNT(*) AS total
+      FROM workflows_instancias_tarefas t
+      WHERE t.tenant_id = ?
+        AND t.id_usuario_responsavel = ?
+        AND t.status_tarefa = 'PENDENTE'
+      `,
+      [ctx.tenantId, ctx.userId]
+    );
+
+    const instanciasVencidas = await safeTotal(
+      `
+      SELECT COUNT(*) AS total
+      FROM workflows_instancias i
+      WHERE i.tenant_id = ?
+        AND i.status_instancia = 'ATIVA'
+        AND i.vencimento_etapa_em IS NOT NULL
+        AND i.vencimento_etapa_em < NOW()
+      `,
+      [ctx.tenantId]
+    );
+
+    const total = tarefasPendentes + instanciasVencidas;
+
+    return {
+      workflows: total ? { value: total, tone: instanciasVencidas ? 'DANGER' : 'WARNING', tooltip: 'Workflows pendentes/vencidos', pulse: !!instanciasVencidas } : undefined,
+    };
+  },
+};
+
+export const documentosMenuBadgeProvider: MenuBadgeProvider = {
+  key: 'documentos',
+  requiredPermissions: [PERMISSIONS.DOCUMENTOS_VIEW],
+  async build(ctx) {
+    const pendentes = await safeTotal(
+      `
+      SELECT COUNT(*) AS total
+      FROM documentos_fluxos_assinatura f
+      INNER JOIN documentos_versoes v ON v.id_documento_versao = f.id_documento_versao
+      INNER JOIN documentos_registros d ON d.id_documento_registro = v.id_documento_registro
+      WHERE f.tenant_id = ?
+        AND f.id_usuario_signatario = ?
+        AND f.status_fluxo = 'DISPONIVEL'
+        AND d.status_documento IN ('EM_ASSINATURA','ATIVO')
+      `,
+      [ctx.tenantId, ctx.userId]
+    );
+
+    return {
+      documentos: pendentes ? { value: pendentes, tone: 'WARNING', tooltip: 'Documentos aguardando sua assinatura', pulse: true } : undefined,
+    };
+  },
+};
+
+export const portalGestorMenuBadgeProvider: MenuBadgeProvider = {
+  key: 'portal-gestor',
+  requiredPermissions: [PERMISSIONS.PORTAL_GESTOR_VIEW],
+  async build(ctx) {
+    const { obras, unidades } = resolveScope(ctx);
+    const fNc = buildMixedFilter(obras, unidades, 'nc.id_obra', 'nc.id_unidade');
+    const fSolic = buildMixedFilter(obras, unidades, 's.id_obra_origem', 's.id_unidade_origem');
+    const fChecklist = buildMixedFilter(obras, unidades, 'e.id_obra', 'e.id_unidade');
+
+    const ncsCriticas = await safeTotal(
+      `
+      SELECT COUNT(*) AS total
+      FROM sst_nao_conformidades nc
+      WHERE nc.tenant_id = ?
+        AND nc.status_nc IN ('ABERTA','EM_TRATAMENTO','AGUARDANDO_VALIDACAO')
+        AND nc.severidade IN ('ALTA','CRITICA')
+        ${fNc.sql}
+      `,
+      [ctx.tenantId, ...fNc.params]
+    );
+
+    const solicitacoesUrgentes = await safeTotal(
+      `
+      SELECT COUNT(*) AS total
+      FROM solicitacao_material s
+      WHERE s.tenant_id = ?
+        AND s.regime_urgencia IN ('URGENTE', 'EMERGENCIAL')
+        AND s.status_solicitacao NOT IN ('RECEBIDA', 'CANCELADA')
+        ${fSolic.sql}
+      `,
+      [ctx.tenantId, ...fSolic.params]
+    );
+
+    const checklistsAtrasados = await safeTotal(
+      `
+      SELECT COUNT(*) AS total
+      FROM sst_checklists_execucoes e
+      WHERE e.tenant_id = ?
+        AND e.status_execucao <> 'FINALIZADA'
+        AND e.data_referencia < CURDATE()
+        ${fChecklist.sql}
+      `,
+      [ctx.tenantId, ...fChecklist.params]
+    );
+
+    const total = ncsCriticas + solicitacoesUrgentes + checklistsAtrasados;
+    return {
+      'portal-gestor': total ? { value: total, tone: ncsCriticas ? 'DANGER' : 'WARNING', tooltip: 'Pendências críticas (escopo)', pulse: !!ncsCriticas } : undefined,
+    };
+  },
+};
+
 export const MENU_BADGE_PROVIDERS: MenuBadgeProvider[] = [
   rhMenuBadgeProvider,
   sstMenuBadgeProvider,
   suprimentosMenuBadgeProvider,
   engenhariaMenuBadgeProvider,
   adminMenuBadgeProvider,
+  automacoesMenuBadgeProvider,
+  aprovacoesMenuBadgeProvider,
+  workflowsMenuBadgeProvider,
+  documentosMenuBadgeProvider,
+  portalGestorMenuBadgeProvider,
 ];
-

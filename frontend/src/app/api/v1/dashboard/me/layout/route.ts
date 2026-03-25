@@ -56,12 +56,21 @@ const DEFAULTS: Record<string, any[]> = {
     { widgetCodigo: 'FAVORITOS', ordemExibicao: 5, largura: 6, altura: 1, visivel: true },
     { widgetCodigo: 'RECENTES', ordemExibicao: 6, largura: 6, altura: 1, visivel: true },
   ],
+  PORTAL_GESTOR: [
+    { widgetCodigo: 'RESUMO_LOCAL', ordemExibicao: 1, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'EQUIPE_HOJE', ordemExibicao: 2, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'PENDENCIAS_CRITICAS', ordemExibicao: 3, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'AGENDA_OPERACIONAL', ordemExibicao: 4, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'ATALHOS_CAMPO', ordemExibicao: 5, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'STATUS_SST_LOCAL', ordemExibicao: 6, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'SUPRIMENTOS_LOCAL', ordemExibicao: 7, largura: 6, altura: 1, visivel: true },
+  ],
 };
 
 export async function GET(req: NextRequest) {
   try {
     const current = await requireApiPermission(PERMISSIONS.DASHBOARD_USUARIO_PERSONALIZAR);
-    const dashboard = (req.nextUrl.searchParams.get('dashboard') || 'DIRETOR').toUpperCase();
+    const dashboard = (req.nextUrl.searchParams.get('contexto') || req.nextUrl.searchParams.get('dashboard') || 'DIRETOR').toUpperCase();
 
     const [layoutRows]: any = await db.query(
       `SELECT *
@@ -112,7 +121,8 @@ export async function PUT(req: NextRequest) {
     const current = await requireApiPermission(PERMISSIONS.DASHBOARD_USUARIO_PERSONALIZAR);
     const body = await req.json();
 
-    if (!body.dashboardCodigo || !Array.isArray(body.widgets)) {
+    const dashboardCodigo = String(body.contexto || body.dashboardCodigo || '').toUpperCase();
+    if (!dashboardCodigo || !Array.isArray(body.widgets)) {
       return fail(422, 'dashboardCodigo e widgets são obrigatórios');
     }
 
@@ -123,7 +133,7 @@ export async function PUT(req: NextRequest) {
        FROM dashboard_layouts_usuario
        WHERE tenant_id = ? AND id_usuario = ? AND dashboard_codigo = ? AND ativo = 1
        LIMIT 1`,
-      [current.tenantId, current.id, body.dashboardCodigo]
+      [current.tenantId, current.id, dashboardCodigo]
     );
 
     let idLayout = layoutRows[0]?.id_dashboard_layout;
@@ -133,7 +143,7 @@ export async function PUT(req: NextRequest) {
         `INSERT INTO dashboard_layouts_usuario
          (tenant_id, id_usuario, dashboard_codigo, nome_layout, padrao, ativo)
          VALUES (?, ?, ?, 'Padrão', 1, 1)`,
-        [current.tenantId, current.id, body.dashboardCodigo]
+        [current.tenantId, current.id, dashboardCodigo]
       );
       idLayout = insert.insertId;
     }

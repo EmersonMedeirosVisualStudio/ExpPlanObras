@@ -16,8 +16,10 @@ export async function GET() {
           modulo,
           recebe_no_app AS recebeNoApp,
           recebe_email AS recebeEmail,
+          recebe_push AS recebePush,
           modo_email AS modoEmail,
           somente_criticas_email AS somenteCriticasEmail,
+          somente_criticas_push AS somenteCriticasPush,
           horario_digesto AS horarioDigesto,
           timezone,
           ativo
@@ -34,8 +36,10 @@ export async function GET() {
           modulo: m,
           recebeNoApp: true,
           recebeEmail: false,
+          recebePush: false,
           modoEmail: 'IMEDIATO',
           somenteCriticasEmail: true,
+          somenteCriticasPush: true,
           horarioDigesto: null,
           timezone: null,
           ativo: true,
@@ -56,33 +60,67 @@ export async function POST(req: Request) {
     try {
       for (const pref of body) {
         if (!pref?.modulo) continue;
-        await db.execute(
-          `
-          INSERT INTO notificacoes_preferencias_usuario
-            (tenant_id, id_usuario, modulo, recebe_no_app, recebe_email, modo_email, somente_criticas_email, horario_digesto, timezone, ativo)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-            recebe_no_app = VALUES(recebe_no_app),
-            recebe_email = VALUES(recebe_email),
-            modo_email = VALUES(modo_email),
-            somente_criticas_email = VALUES(somente_criticas_email),
-            horario_digesto = VALUES(horario_digesto),
-            timezone = VALUES(timezone),
-            ativo = VALUES(ativo)
-          `,
-          [
-            user.tenantId,
-            user.id,
-            String(pref.modulo),
-            pref.recebeNoApp ? 1 : 0,
-            pref.recebeEmail ? 1 : 0,
-            String(pref.modoEmail || 'IMEDIATO'),
-            pref.somenteCriticasEmail ? 1 : 0,
-            pref.horarioDigesto ? String(pref.horarioDigesto) : null,
-            pref.timezone ? String(pref.timezone) : null,
-            pref.ativo ? 1 : 0,
-          ]
-        );
+        try {
+          await db.execute(
+            `
+            INSERT INTO notificacoes_preferencias_usuario
+              (tenant_id, id_usuario, modulo, recebe_no_app, recebe_email, recebe_push, modo_email, somente_criticas_email, somente_criticas_push, horario_digesto, timezone, ativo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              recebe_no_app = VALUES(recebe_no_app),
+              recebe_email = VALUES(recebe_email),
+              recebe_push = VALUES(recebe_push),
+              modo_email = VALUES(modo_email),
+              somente_criticas_email = VALUES(somente_criticas_email),
+              somente_criticas_push = VALUES(somente_criticas_push),
+              horario_digesto = VALUES(horario_digesto),
+              timezone = VALUES(timezone),
+              ativo = VALUES(ativo)
+            `,
+            [
+              user.tenantId,
+              user.id,
+              String(pref.modulo),
+              pref.recebeNoApp ? 1 : 0,
+              pref.recebeEmail ? 1 : 0,
+              pref.recebePush ? 1 : 0,
+              String(pref.modoEmail || 'IMEDIATO'),
+              pref.somenteCriticasEmail ? 1 : 0,
+              pref.somenteCriticasPush ? 1 : 0,
+              pref.horarioDigesto ? String(pref.horarioDigesto) : null,
+              pref.timezone ? String(pref.timezone) : null,
+              pref.ativo ? 1 : 0,
+            ]
+          );
+        } catch {
+          await db.execute(
+            `
+            INSERT INTO notificacoes_preferencias_usuario
+              (tenant_id, id_usuario, modulo, recebe_no_app, recebe_email, modo_email, somente_criticas_email, horario_digesto, timezone, ativo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              recebe_no_app = VALUES(recebe_no_app),
+              recebe_email = VALUES(recebe_email),
+              modo_email = VALUES(modo_email),
+              somente_criticas_email = VALUES(somente_criticas_email),
+              horario_digesto = VALUES(horario_digesto),
+              timezone = VALUES(timezone),
+              ativo = VALUES(ativo)
+            `,
+            [
+              user.tenantId,
+              user.id,
+              String(pref.modulo),
+              pref.recebeNoApp ? 1 : 0,
+              pref.recebeEmail ? 1 : 0,
+              String(pref.modoEmail || 'IMEDIATO'),
+              pref.somenteCriticasEmail ? 1 : 0,
+              pref.horarioDigesto ? String(pref.horarioDigesto) : null,
+              pref.timezone ? String(pref.timezone) : null,
+              pref.ativo ? 1 : 0,
+            ]
+          );
+        }
       }
     } catch {}
 

@@ -15,6 +15,7 @@ export async function GET(_req: NextRequest) {
     let obras: any[] = [];
     let unidades: any[] = [];
     let almoxarifados: any[] = [];
+    let diretorias: any[] = [];
 
     if (scope.empresaTotal) {
       const [obrasRows]: any = await db.query(
@@ -40,6 +41,21 @@ export async function GET(_req: NextRequest) {
 
       obras = obrasRows as any[];
       unidades = unidadesRows as any[];
+
+      try {
+        const [dirRows]: any = await db.query(
+          `
+          SELECT id_setor AS id, nome_setor AS nome
+          FROM organizacao_setores
+          WHERE tenant_id = ? AND ativo = 1
+          ORDER BY nome_setor
+          `,
+          [current.tenantId]
+        );
+        diretorias = dirRows as any[];
+      } catch {
+        diretorias = [];
+      }
 
       try {
         const [almoxRows]: any = await db.query(
@@ -88,6 +104,26 @@ export async function GET(_req: NextRequest) {
         unidades = unidadesRows as any[];
       }
 
+      if (scope.diretorias.length) {
+        try {
+          const ids = inClause(scope.diretorias);
+          const [dirRows]: any = await db.query(
+            `
+            SELECT id_setor AS id, nome_setor AS nome
+            FROM organizacao_setores
+            WHERE tenant_id = ?
+              AND id_setor IN ${ids.sql}
+              AND ativo = 1
+            ORDER BY nome_setor
+            `,
+            [current.tenantId, ...ids.params]
+          );
+          diretorias = dirRows as any[];
+        } catch {
+          diretorias = [];
+        }
+      }
+
       if (scope.obras.length || scope.unidades.length) {
         try {
           const obraIds = scope.obras.length ? inClause(scope.obras) : null;
@@ -126,6 +162,7 @@ export async function GET(_req: NextRequest) {
 
     return ok({
       empresaTotal: scope.empresaTotal,
+      diretorias,
       obras,
       unidades,
       almoxarifados,

@@ -3,6 +3,7 @@ import { publishMenuRefreshForUser, publishNotificationNewForUser } from '@/lib/
 import type { AlertSignal, AlertCollectContext } from '@/lib/alerts/types';
 import { ALERT_PROVIDERS } from '@/lib/alerts/registry';
 import { enqueueImmediateEmailForEvent } from '@/lib/notifications/email/service';
+import { enqueuePushForRecipient } from '@/lib/notifications/push/service';
 
 function nowIso() {
   return new Date().toISOString().slice(0, 19).replace('T', ' ');
@@ -98,6 +99,7 @@ export async function assignNotificationRecipient(args: { tenantId: number; even
     const inserted = Number(res?.affectedRows || 0) > 0;
     if (inserted) {
       await enqueueImmediateEmailForEvent({ tenantId, userId, eventId });
+      await enqueuePushForRecipient({ tenantId, userId, eventId });
       await publishNotificationNewForUser(tenantId, userId, eventId);
       await publishMenuRefreshForUser(tenantId, userId);
     }

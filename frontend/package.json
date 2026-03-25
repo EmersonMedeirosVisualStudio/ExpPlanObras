@@ -22,10 +22,14 @@
     "lucide-react": "^0.577.0",
     "mysql2": "^3.14.3",
     "next": "16.1.6",
+    "@xyflow/react": "^12.8.4",
+    "pdf-lib": "^1.17.1",
+    "@capacitor/core": "^6.1.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-leaflet": "^5.0.0",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -35,6 +39,10 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "@types/web-push": "^3.6.4",
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/ios": "^6.1.2"
   }
 }

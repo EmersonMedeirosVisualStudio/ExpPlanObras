@@ -7,11 +7,32 @@ import { NavigationApi } from "@/lib/navigation/api";
 import { HomeApi } from "@/lib/home/api";
 import type { MenuBadgesMapDTO, MenuItemDTO, MenuSectionDTO } from "@/lib/navigation/types";
 import { useRealtimeEvent } from "@/lib/realtime/hooks";
+import * as LucideIcons from "lucide-react";
+import type { ComponentType } from "react";
 
 function isActive(pathname: string, item: MenuItemDTO): boolean {
   if (item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`))) return true;
   if (item.matchStartsWith?.some((p) => pathname.startsWith(p))) return true;
   return (item.children ?? []).some((child) => isActive(pathname, child));
+}
+
+type SidebarIconProps = { className?: string };
+
+function toPascalCaseIconName(icon: string): string {
+  return String(icon)
+    .trim()
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("");
+}
+
+function resolveIconComponent(icon?: string): ComponentType<SidebarIconProps> | null {
+  const raw = String(icon || "").trim();
+  if (!raw) return null;
+  const pascal = toPascalCaseIconName(raw);
+  const icons = LucideIcons as unknown as Record<string, ComponentType<SidebarIconProps> | undefined>;
+  return icons[pascal] ?? (LucideIcons.Circle as unknown as ComponentType<SidebarIconProps>);
 }
 
 function BadgePill({ badge }: { badge: NonNullable<MenuBadgesMapDTO[string]> }) {
@@ -42,6 +63,7 @@ function MenuNode({ item, pathname, badges }: { item: MenuItemDTO; pathname: str
   const active = isActive(pathname, item);
   const [open, setOpen] = useState(active);
   const badge = badges[item.key];
+  const Icon = resolveIconComponent(item.icon);
 
   return (
     <div className="space-y-1">
@@ -52,7 +74,10 @@ function MenuNode({ item, pathname, badges }: { item: MenuItemDTO; pathname: str
             active ? "bg-blue-50 font-medium text-blue-700" : "text-slate-700 hover:bg-slate-50"
           }`}
         >
-          <span>{item.label}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            {Icon ? <Icon className="h-4 w-4 shrink-0 opacity-80" /> : null}
+            <span className="truncate">{item.label}</span>
+          </span>
           {badge ? <BadgePill badge={badge} /> : null}
         </Link>
       ) : (
@@ -63,7 +88,10 @@ function MenuNode({ item, pathname, badges }: { item: MenuItemDTO; pathname: str
             active ? "bg-blue-50 font-medium text-blue-700" : "text-slate-700 hover:bg-slate-50"
           }`}
         >
-          <span>{item.label}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            {Icon ? <Icon className="h-4 w-4 shrink-0 opacity-80" /> : null}
+            <span className="truncate">{item.label}</span>
+          </span>
           {badge ? <BadgePill badge={badge} /> : null}
         </button>
       )}
@@ -168,6 +196,7 @@ export function SidebarNav({ secoes, initialBadges = {} }: { secoes: MenuSection
                 .map((it) => {
                   const active = pathname === it.href || pathname.startsWith(`${it.href}/`);
                   const badge = badges[it.key];
+                  const Icon = resolveIconComponent(it.icon);
                   return (
                     <Link
                       key={`fav-${it.key}`}
@@ -176,7 +205,10 @@ export function SidebarNav({ secoes, initialBadges = {} }: { secoes: MenuSection
                         active ? "bg-blue-50 font-medium text-blue-700" : "text-slate-700 hover:bg-slate-50"
                       }`}
                     >
-                      <span>{it.label}</span>
+                      <span className="flex min-w-0 items-center gap-2">
+                        {Icon ? <Icon className="h-4 w-4 shrink-0 opacity-80" /> : null}
+                        <span className="truncate">{it.label}</span>
+                      </span>
                       {badge ? <BadgePill badge={badge} /> : null}
                     </Link>
                   );

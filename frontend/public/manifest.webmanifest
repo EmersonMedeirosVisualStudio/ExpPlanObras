@@ -1,0 +1,18 @@
+{
+  "name": "ExpPlan Obras",
+  "short_name": "ExpPlan",
+  "start_url": "/dashboard/inicio",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f172a",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
+

@@ -3,6 +3,7 @@ import { audit } from '@/lib/api/audit';
 import { ApiError, created, handleApiError, ok } from '@/lib/api/http';
 import { requireCurrentEncarregado } from '@/lib/api/encarregado-authz';
 import { PERMISSIONS } from '@/lib/auth/permissions';
+import { criarSolicitacaoAprovacao, enviarSolicitacaoAprovacao } from '@/lib/modules/aprovacoes/server';
 
 export const runtime = 'nodejs';
 
@@ -54,6 +55,21 @@ export async function POST(req: Request) {
       acao: 'SOLICITAR_RESTAURACAO',
       dadosNovos: body,
     });
+
+    try {
+      const solicitacao = await criarSolicitacaoAprovacao({
+        tenantId: user.tenantId,
+        entidadeTipo: 'BACKUP_RESTAURACAO',
+        entidadeId: Number(result.insertId),
+        userId: user.id,
+        idModelo: null,
+      });
+      await enviarSolicitacaoAprovacao({ tenantId: user.tenantId, solicitacaoId: solicitacao.id, userId: user.id });
+      await db.execute(`UPDATE backup_restauracao_solicitacoes SET status = 'EM_ANALISE' WHERE tenant_id = ? AND id_backup_restauracao = ?`, [
+        user.tenantId,
+        Number(result.insertId),
+      ]);
+    } catch {}
 
     return created({ id: result.insertId }, 'Solicitação de restauração registrada.');
   } catch (error) {
