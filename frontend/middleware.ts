@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
   const isProtected = request.nextUrl.pathname.startsWith('/dashboard') || request.nextUrl.pathname.startsWith('/portal');
-  const hasSession = request.cookies.has('exp_user');
+  const hasSession = request.cookies.has('exp_user') || request.cookies.has('exp_token');
 
   if (isProtected && !hasSession) {
     return NextResponse.redirect(new URL('/login', request.url));
