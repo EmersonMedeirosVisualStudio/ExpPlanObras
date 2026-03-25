@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { GlobalSearchApi } from "@/lib/search/api";
-import type { GlobalSearchResultDTO, GlobalSearchSuggestResponseDTO } from "@/lib/search/types";
+import type { GlobalSearchResultDTO, GlobalSearchResultType, GlobalSearchSuggestResponseDTO } from "@/lib/search/types";
 
 function useDebouncedValue<T>(value: T, delayMs: number) {
   const [v, setV] = useState(value);
@@ -37,10 +37,11 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     if (!q) {
       const s = suggest;
       const merged: GlobalSearchResultDTO[] = [];
-      if (s?.favoritos?.length) merged.push(...s.favoritos.map((x) => ({ ...x, type: "FAVORITO" })));
-      if (s?.recentes?.length) merged.push(...s.recentes.map((x) => ({ ...x, type: "RECENTE" })));
-      if (s?.atalhos?.length) merged.push(...s.atalhos.map((x) => ({ ...x, type: "ATALHO" })));
-      if (s?.acoes?.length) merged.push(...s.acoes.map((x) => ({ ...x, type: "ACAO" })));
+      const withType = (x: GlobalSearchResultDTO, type: GlobalSearchResultType): GlobalSearchResultDTO => ({ ...x, type });
+      if (s?.favoritos?.length) merged.push(...s.favoritos.map((x) => withType(x, "FAVORITO")));
+      if (s?.recentes?.length) merged.push(...s.recentes.map((x) => withType(x, "RECENTE")));
+      if (s?.atalhos?.length) merged.push(...s.atalhos.map((x) => withType(x, "ATALHO")));
+      if (s?.acoes?.length) merged.push(...s.acoes.map((x) => withType(x, "ACAO")));
       return merged.slice(0, 30);
     }
     return results.slice(0, 30);
