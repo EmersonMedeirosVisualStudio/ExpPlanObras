@@ -4,7 +4,7 @@ import "@xyflow/react/dist/style.css";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import ReactFlow, { addEdge, Background, Controls, MiniMap, type Connection, type Edge, type Node, useEdgesState, useNodesState } from "@xyflow/react";
+import { ReactFlow, addEdge, Background, Controls, MiniMap, type Connection, type Edge, type Node, useEdgesState, useNodesState } from "@xyflow/react";
 import { WorkflowsDesignerApi } from "@/lib/modules/workflows-designer/api";
 import type { WorkflowDesignerEdgeDTO, WorkflowDesignerGraphDTO, WorkflowDesignerNodeDTO, WorkflowDesignerSimulationResult, WorkflowDesignerValidationResult } from "@/lib/modules/workflows-designer/types";
 
