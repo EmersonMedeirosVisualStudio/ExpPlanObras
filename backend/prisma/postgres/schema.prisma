@@ -372,6 +372,7 @@ model OrganizacaoSetor {
   tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   setorPai   OrganizacaoSetor? @relation("SetorPai", fields: [setorPaiId], references: [id], onDelete: SetNull)
   setoresFilhos OrganizacaoSetor[] @relation("SetorPai")
+  posicoes   OrganogramaPosicao[]
 
   @@index([tenantId])
   @@index([setorPaiId])
@@ -384,6 +385,7 @@ model OrganizacaoCargo {
   ativo     Boolean @default(true)
 
   tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  posicoes  OrganogramaPosicao[]
 
   @@unique([tenantId, nomeCargo])
   @@index([tenantId])

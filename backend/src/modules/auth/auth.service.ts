@@ -295,14 +295,11 @@ export async function loginUser(input: LoginInput, app: FastifyInstance) {
   // If only 1, generate token immediately.
   // If > 1, return NO token but return tenants list. Frontend prompts selection.
   
-  let token = null;
-  let selectedTenant = null;
-
   if (user.tenants.length === 1) {
-    selectedTenant = user.tenants[0];
+    const selectedTenant = user.tenants[0];
     assertTenantActive(selectedTenant.tenant as any);
     const subscriptionAlert = buildSubscriptionAlert(selectedTenant.tenant as any);
-    token = app.jwt.sign({
+    const token = app.jwt.sign({
       userId: user.id,
       tenantId: selectedTenant.tenantId,
       role: selectedTenant.role,
@@ -327,7 +324,7 @@ export async function loginUser(input: LoginInput, app: FastifyInstance) {
   }
 
   return { 
-    token, 
+    token: null, 
     user: { 
       id: user.id, 
       email: user.email, 
@@ -380,11 +377,10 @@ export async function loginUserByEmail(email: string, app: FastifyInstance) {
     };
   }
 
-  let token = null;
-  let selectedTenant = null;
+  let token: string | null = null;
 
   if (user.tenants.length === 1) {
-    selectedTenant = user.tenants[0];
+    const selectedTenant = user.tenants[0];
     assertTenantActive(selectedTenant.tenant as any);
     token = app.jwt.sign({
       userId: user.id,
