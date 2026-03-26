@@ -13,6 +13,7 @@ import backupRoutes from './modules/backup/backup.routes.js';
 import geoRoutes from './modules/geo/geo.routes.js';
 import v1Routes from './modules/v1/v1.routes.js';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
+import prisma from './plugins/prisma.js';
 
 dotenv.config();
 
@@ -50,6 +51,16 @@ server.register(maintenanceRoutes, { prefix: '/api/maintenance' });
 
 server.get('/health', async (request, reply) => {
   return { status: 'ok' };
+});
+
+server.get('/health/db', async (request, reply) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return { status: 'ok', db: 'ok' };
+  } catch (e: any) {
+    request.log.error(e);
+    return reply.code(500).send({ status: 'error', db: 'error' });
+  }
 });
 
 const start = async () => {
