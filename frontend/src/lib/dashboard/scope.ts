@@ -1,4 +1,4 @@
-import { db } from '@/lib/db';
+import type { CurrentUser } from '@/lib/auth/current-user';
 
 export type DashboardScope = {
   empresaTotal: boolean;
@@ -7,7 +7,20 @@ export type DashboardScope = {
   unidades: number[];
 };
 
-export async function getDashboardScope(current: { id: number; tenantId: number }): Promise<DashboardScope> {
+export async function getDashboardScope(current: CurrentUser | { id: number; tenantId: number; abrangencia?: any }): Promise<DashboardScope> {
+  // Use scope from session cookie if available (Vercel compatible)
+  if ('abrangencia' in current && current.abrangencia) {
+    const ab = current.abrangencia;
+    return {
+      empresaTotal: !!ab.empresa,
+      diretorias: Array.isArray(ab.diretorias) ? ab.diretorias.map(Number) : [],
+      obras: Array.isArray(ab.obras) ? ab.obras.map(Number) : [],
+      unidades: Array.isArray(ab.unidades) ? ab.unidades.map(Number) : [],
+    };
+  }
+
+  // Fallback for API routes or edge cases (not recommended for SSR on Vercel)
+  const { db } = await import('@/lib/db');
   const [rows]: any = await db.query(
     `
     SELECT ua.tipo_abrangencia, ua.id_obra, ua.id_unidade, ua.id_setor_diretoria
