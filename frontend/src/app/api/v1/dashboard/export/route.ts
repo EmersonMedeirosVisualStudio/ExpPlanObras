@@ -7,6 +7,7 @@ import { buildDashboardExportFilename } from '@/lib/modules/dashboard-export/bui
 import { DASHBOARD_EXPORT_PROVIDERS } from '@/lib/modules/dashboard-export/registry';
 import { renderXlsx } from '@/lib/modules/dashboard-export/render-xlsx';
 import { renderPdf } from '@/lib/modules/dashboard-export/render-pdf';
+import { renderCsv } from '@/lib/modules/dashboard-export/render-csv';
 
 export const runtime = 'nodejs';
 
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest) {
     if (!provider) return fail(400, 'Contexto não suportado');
 
     await requireApiPermission(provider.requiredPermission);
+    if (body.formato === 'CSV') await requireApiPermission(PERMISSIONS.EXPORT_CSV);
 
     const data = await provider.build({
       tenantId: current.tenantId,
@@ -33,6 +35,17 @@ export async function POST(req: NextRequest) {
       const buf = await renderXlsx(data);
       const bytes = new Uint8Array(buf);
       const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      return new Response(blob, {
+        status: 200,
+        headers: {
+          'Content-Disposition': `attachment; filename="${filename}"`,
+        },
+      });
+    }
+
+    if (body.formato === 'CSV') {
+      const bytes = renderCsv(data);
+      const blob = new Blob([bytes], { type: 'text/csv; charset=utf-8' });
       return new Response(blob, {
         status: 200,
         headers: {

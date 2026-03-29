@@ -11,9 +11,9 @@ type Props = {
 };
 
 export function DashboardExportButtons({ contexto, filtros, incluirWidgets }: Props) {
-  const [loading, setLoading] = useState<"PDF" | "XLSX" | null>(null);
+  const [loading, setLoading] = useState<"PDF" | "XLSX" | "CSV" | null>(null);
 
-  async function baixar(formato: "PDF" | "XLSX") {
+  async function baixar(formato: "PDF" | "XLSX" | "CSV") {
     try {
       setLoading(formato);
       await DashboardExportApi.baixar({
@@ -37,7 +37,9 @@ export function DashboardExportButtons({ contexto, filtros, incluirWidgets }: Pr
       <button className="rounded-lg border px-3 py-2 text-sm" onClick={() => baixar("XLSX")} disabled={!!loading}>
         {loading === "XLSX" ? "Gerando Excel..." : "Exportar Excel"}
       </button>
+      <button className="rounded-lg border px-3 py-2 text-sm" onClick={() => baixar("CSV")} disabled={!!loading}>
+        {loading === "CSV" ? "Gerando CSV..." : "Exportar CSV"}
+      </button>
     </div>
   );
 }
-

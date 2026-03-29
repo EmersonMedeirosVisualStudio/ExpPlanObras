@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DashboardEngenhariaApi } from "@/lib/modules/dashboard-engenharia/api";
 import { DashboardExportButtons } from "@/components/dashboard/DashboardExportButtons";
 import { useRealtimeEvent } from "@/lib/realtime/hooks";
+import type { DashboardEngenhariaCronogramaAcompanhamentoDTO } from "@/lib/modules/dashboard-engenharia/types";
 
 type Option = { id: number; nome: string };
 
@@ -17,6 +18,7 @@ export default function DashboardEngenhariaClient() {
   const [series, setSeries] = useState<any[]>([]);
   const [obrasRisco, setObrasRisco] = useState<any[]>([]);
   const [medicoes, setMedicoes] = useState<any[]>([]);
+  const [cronograma, setCronograma] = useState<DashboardEngenhariaCronogramaAcompanhamentoDTO | null>(null);
   const [layout, setLayout] = useState<any>({ dashboardCodigo: "ENGENHARIA", widgets: [] });
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +50,16 @@ export default function DashboardEngenhariaClient() {
       setSeries(s);
       setObrasRisco(or);
       setMedicoes(mp);
+      if (filtroQuery.idObra) {
+        try {
+          const c = await DashboardEngenhariaApi.cronogramaAcompanhamento({ idObra: filtroQuery.idObra });
+          setCronograma(c);
+        } catch {
+          setCronograma(null);
+        }
+      } else {
+        setCronograma(null);
+      }
     } catch (e: any) {
       setError(e?.message || "Erro ao carregar dados do painel.");
     }
@@ -276,6 +288,73 @@ export default function DashboardEngenhariaClient() {
           ) : (
             <div className="text-sm text-slate-500">Sem medições pendentes.</div>
           )}
+        </section>
+      )}
+
+      {widgetsVisiveis.some((w: any) => w.widgetCodigo === "CRONOGRAMA_ACOMPANHAMENTO") && (
+        <section className="rounded-xl border bg-white p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="mb-1 text-lg font-semibold">Acompanhamento do cronograma</h2>
+              <div className="text-sm text-slate-600">
+                {idObra ? (
+                  <>
+                    Obra selecionada: <span className="font-medium">#{idObra}</span>
+                  </>
+                ) : (
+                  "Selecione uma obra para ver o cronograma e a execução."
+                )}
+              </div>
+            </div>
+            {cronograma?.numeroContrato ? (
+              <div className="text-sm text-slate-600">
+                Contrato: <span className="font-medium">{cronograma.numeroContrato}</span>
+              </div>
+            ) : null}
+          </div>
+
+          {cronograma?.warnings?.length ? (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              {cronograma.warnings.join(" ")}
+            </div>
+          ) : null}
+
+          {idObra && cronograma?.meses?.length ? (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-slate-500">
+                    <th className="py-2">Mês</th>
+                    <th className="py-2">Planejado (%)</th>
+                    <th className="py-2">Executado físico (%)</th>
+                    <th className="py-2">Executado financeiro (%)</th>
+                    <th className="py-2">Medido mês</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cronograma.meses.map((m) => (
+                    <tr key={m.competencia} className="border-t">
+                      <td className="py-2">{m.competencia}</td>
+                      <td className="py-2">
+                        {m.planejado.percentualAcumulado == null ? "-" : `${Math.round(m.planejado.percentualAcumulado * 100)}%`}
+                      </td>
+                      <td className="py-2">
+                        {m.executado.percentualQuantidadeAcumulado == null ? "-" : `${Math.round(m.executado.percentualQuantidadeAcumulado * 100)}%`}
+                      </td>
+                      <td className="py-2">
+                        {m.executado.percentualFinanceiroAcumulado == null ? "-" : `${Math.round(m.executado.percentualFinanceiroAcumulado * 100)}%`}
+                      </td>
+                      <td className="py-2">
+                        {Number(m.executado.valorMedidoMes || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : idObra ? (
+            <div className="mt-4 text-sm text-slate-500">Sem cronograma cadastrado ou sem meses no cronograma.</div>
+          ) : null}
         </section>
       )}
     </div>

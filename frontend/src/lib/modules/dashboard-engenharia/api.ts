@@ -3,6 +3,7 @@ import type {
   DashboardEngenhariaAlertaDTO,
   DashboardEngenhariaMedicaoDTO,
   DashboardEngenhariaObraRiscoDTO,
+  DashboardEngenhariaCronogramaAcompanhamentoDTO,
   DashboardEngenhariaResumoDTO,
   DashboardEngenhariaSerieDTO,
 } from './types';
@@ -37,7 +38,8 @@ export const DashboardEngenhariaApi = {
   series: (params?: FiltroParams) => api<DashboardEngenhariaSerieDTO[]>(`/api/v1/dashboard/engenharia/series${qs(params)}`),
   obrasRisco: (params?: FiltroParams) => api<DashboardEngenhariaObraRiscoDTO[]>(`/api/v1/dashboard/engenharia/obras-risco${qs(params)}`),
   medicoesPendentes: (params?: FiltroParams) => api<DashboardEngenhariaMedicaoDTO[]>(`/api/v1/dashboard/engenharia/medicoes-pendentes${qs(params)}`),
+  cronogramaAcompanhamento: (params: { idObra: number }) =>
+    api<DashboardEngenhariaCronogramaAcompanhamentoDTO>(`/api/v1/dashboard/engenharia/cronograma-acompanhamento?idObra=${params.idObra}`),
   obterLayout: () => api<any>('/api/v1/dashboard/me/layout?dashboard=ENGENHARIA'),
   salvarLayout: (payload: any) => api('/api/v1/dashboard/me/layout', { method: 'PUT', body: JSON.stringify(payload) }),
 };
-

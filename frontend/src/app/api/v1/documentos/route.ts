@@ -10,7 +10,18 @@ export async function GET(req: Request) {
     const current = await requireApiPermission(PERMISSIONS.DOCUMENTOS_VIEW);
     const { searchParams } = new URL(req.url);
     const limit = searchParams.get('limit') ? Number(searchParams.get('limit')) : undefined;
-    const data = await listarDocumentos(current.tenantId, { limit });
+    const entidadeTipo = searchParams.get('entidadeTipo') ? String(searchParams.get('entidadeTipo')).trim() : null;
+    const entidadeId = searchParams.get('entidadeId') ? Number(searchParams.get('entidadeId')) : null;
+    const categoriaPrefix = searchParams.get('categoriaPrefix') ? String(searchParams.get('categoriaPrefix')).trim() : null;
+    const incluirObrasDoContrato = searchParams.get('incluirObrasDoContrato') === '1';
+
+    const data = await listarDocumentos(current.tenantId, {
+      limit,
+      entidadeTipo,
+      entidadeId,
+      categoriaPrefix,
+      incluirObrasDoContrato,
+    });
     return ok(data);
   } catch (e) {
     return handleApiError(e);

@@ -12,6 +12,14 @@ import maintenanceRoutes from './modules/maintenance/maintenance.routes.js';
 import backupRoutes from './modules/backup/backup.routes.js';
 import geoRoutes from './modules/geo/geo.routes.js';
 import v1Routes from './modules/v1/v1.routes.js';
+import securityFieldsRoutes from './modules/security-fields/security-fields.routes.js';
+import documentosQualificadosRoutes from './modules/documentos-qualificados/documentos-qualificados.routes.js';
+import governancaDadosRoutes from './modules/governanca-dados/governanca.routes.js';
+import retencaoRoutes from './modules/retencao/retencao.routes.js';
+import observabilidadeRoutes from './modules/observabilidade/observabilidade.routes.js';
+import playbooksRoutes from './modules/playbooks/playbooks.routes.js';
+import continuidadeRoutes from './modules/continuidade/continuidade.routes.js';
+import grcRoutes from './modules/grc/grc.routes.js';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 import prisma from './plugins/prisma.js';
 
@@ -48,6 +56,14 @@ server.register(backupRoutes, { prefix: '/api/admin' });
 server.register(billingRoutes, { prefix: '/api/billing' });
 server.register(mercadoPagoWebhooks, { prefix: '/api/webhooks' });
 server.register(maintenanceRoutes, { prefix: '/api/maintenance' });
+server.register(securityFieldsRoutes, { prefix: '/api/v1/security/fields' });
+server.register(documentosQualificadosRoutes, { prefix: '/api/v1/documentos/qualificados' });
+server.register(governancaDadosRoutes, { prefix: '/api/v1/governanca-dados' });
+server.register(retencaoRoutes, { prefix: '/api/v1/retencao' });
+server.register(observabilidadeRoutes, { prefix: '/api/v1/observabilidade' });
+server.register(playbooksRoutes, { prefix: '/api/v1/observabilidade' });
+server.register(continuidadeRoutes, { prefix: '/api/v1/continuidade' });
+server.register(grcRoutes, { prefix: '/api/v1/grc' });
 
 server.get('/health', async (request, reply) => {
   return { status: 'ok' };

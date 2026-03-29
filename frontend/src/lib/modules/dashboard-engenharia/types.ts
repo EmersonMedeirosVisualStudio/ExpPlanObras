@@ -61,3 +61,33 @@ export type DashboardEngenhariaMedicaoDTO = {
   atrasoDias: number;
 };
 
+export type DashboardEngenhariaCronogramaAcompanhamentoMesDTO = {
+  competencia: string;
+  planejado: {
+    percentualMes: number | null;
+    percentualAcumulado: number | null;
+    quantidadePlanejada: number | null;
+    valorPlanejado: number | null;
+  };
+  executado: {
+    valorMedidoMes: number;
+    valorMedidoAcumulado: number;
+    percentualFinanceiroMes: number | null;
+    percentualFinanceiroAcumulado: number | null;
+    quantidadeExecutadaMes: number | null;
+    quantidadeExecutadaAcumulada: number | null;
+    percentualQuantidadeMes: number | null;
+    percentualQuantidadeAcumulado: number | null;
+  };
+};
+
+export type DashboardEngenhariaCronogramaAcompanhamentoDTO = {
+  idObra: number;
+  idContrato: number;
+  numeroContrato: string;
+  valorContratado: number;
+  criterioAvanco: 'QNT_UN_SERV' | 'HORAS_HOMEM';
+  execucaoFinanceiraNivel: 'OBRA' | 'CONTRATO';
+  meses: DashboardEngenhariaCronogramaAcompanhamentoMesDTO[];
+  warnings: string[];
+};

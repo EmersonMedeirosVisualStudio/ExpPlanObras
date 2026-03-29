@@ -2,23 +2,30 @@
 
 import { useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { MENU } from '@/lib/menuConfig';
+import { APP_MENU } from '@/lib/navigation/menu';
+import type { MenuItemConfig } from '@/lib/navigation/types';
 
-function findLabel(path: string) {
-  const stack = [...MENU];
-  while (stack.length > 0) {
-    const item = stack.shift()!;
-    if (item.path === path) return item.label;
-    if (item.children) stack.push(...item.children);
+function flatten(items: MenuItemConfig[], out: Map<string, string>) {
+  for (const it of items) {
+    if (it.href) out.set(it.href, it.label);
+    if (it.children?.length) flatten(it.children, out);
   }
-  return null;
+}
+
+function buildPathLabelMap(): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const sec of APP_MENU) flatten(sec.items, map);
+  return map;
 }
 
 export default function DashboardCatchAllPage() {
   const params = useParams<{ slug?: string[] }>();
   const slug = Array.isArray(params?.slug) ? params.slug : [];
   const path = `/dashboard/${slug.join('/')}`;
-  const title = useMemo(() => findLabel(path) || slug[slug.length - 1]?.replace(/-/g, ' ') || 'Dashboard', [path, slug]);
+  const title = useMemo(() => {
+    const labelMap = buildPathLabelMap();
+    return labelMap.get(path) || slug[slug.length - 1]?.replace(/-/g, ' ') || 'Dashboard';
+  }, [path, slug]);
 
   return (
     <div className="max-w-5xl">
@@ -30,4 +37,3 @@ export default function DashboardCatchAllPage() {
     </div>
   );
 }
-

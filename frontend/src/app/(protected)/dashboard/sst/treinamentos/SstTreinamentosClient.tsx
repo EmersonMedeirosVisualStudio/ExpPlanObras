@@ -8,6 +8,7 @@ export default function SstTreinamentosClient() {
   const [modelos, setModelos] = useState<any[]>([]);
   const [turmas, setTurmas] = useState<any[]>([]);
   const [detalhe, setDetalhe] = useState<any | null>(null);
+  const [aptosConsulta, setAptosConsulta] = useState<{ codigoServico: string; rows: any[] } | null>(null);
 
   async function carregar() {
     const [m, t] = await Promise.all([SstTreinamentosApi.listarModelos(), SstTreinamentosApi.listarTurmas()]);
@@ -94,6 +95,28 @@ export default function SstTreinamentosClient() {
     await carregar();
   }
 
+  async function definirServicosModelo(m: any) {
+    const atual = await SstTreinamentosApi.listarServicosModelo(m.id).catch(() => []);
+    const raw = prompt(
+      `Serviços vinculados ao treinamento (códigos, separados por vírgula).\n\nEx.: SER-0001, SER-0002\n\nAtual: ${(Array.isArray(atual) ? atual : []).join(', ')}`,
+      (Array.isArray(atual) ? atual : []).join(', ')
+    );
+    if (raw == null) return;
+    const codigos = raw
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+    await SstTreinamentosApi.salvarServicosModelo(m.id, { codigos });
+    alert('Serviços atualizados.');
+  }
+
+  async function consultarAptos() {
+    const codigoServico = (prompt('Código do serviço (SER-0001):') || '').trim().toUpperCase();
+    if (!codigoServico) return;
+    const rows = await SstTreinamentosApi.listarAptosPorServico(codigoServico);
+    setAptosConsulta({ codigoServico, rows: Array.isArray(rows) ? rows : [] });
+  }
+
   useEffect(() => {
     carregar();
   }, []);
@@ -105,6 +128,9 @@ export default function SstTreinamentosClient() {
         <div className="flex gap-2">
           <button onClick={novoModelo} className="rounded-lg bg-slate-700 px-4 py-2 text-white">
             Novo modelo
+          </button>
+          <button onClick={consultarAptos} className="rounded-lg border px-4 py-2">
+            Aptos por serviço
           </button>
           <button onClick={novaTurma} className="rounded-lg bg-blue-600 px-4 py-2 text-white">
             Nova turma
@@ -118,9 +144,19 @@ export default function SstTreinamentosClient() {
           <div className="space-y-2">
             {modelos.map((m) => (
               <div key={m.id} className="rounded border p-3">
-                <div className="font-medium">{m.nomeTreinamento}</div>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-medium">{m.nomeTreinamento}</div>
+                    <div className="text-sm text-slate-500">
+                      {m.tipoTreinamento} • {m.normaReferencia || "-"} • {m.validadeMeses ? `${m.validadeMeses}m` : "sem validade"}
+                    </div>
+                  </div>
+                  <button onClick={() => definirServicosModelo(m)} className="rounded border px-3 py-1.5 text-xs">
+                    Serviços
+                  </button>
+                </div>
                 <div className="text-sm text-slate-500">
-                  {m.tipoTreinamento} • {m.normaReferencia || "-"} • {m.validadeMeses ? `${m.validadeMeses}m` : "sem validade"}
+                  ID {m.id}
                 </div>
               </div>
             ))}
@@ -193,6 +229,44 @@ export default function SstTreinamentosClient() {
           </div>
         </section>
       )}
+
+      {aptosConsulta ? (
+        <section className="rounded-xl border bg-white p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="font-semibold">Aptos para {aptosConsulta.codigoServico}</h2>
+            <button className="rounded border px-3 py-1.5 text-xs" type="button" onClick={() => setAptosConsulta(null)}>
+              Fechar
+            </button>
+          </div>
+          <div className="overflow-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-left">
+                <tr>
+                  <th className="px-3 py-2">Funcionário</th>
+                  <th className="px-3 py-2">Validade</th>
+                </tr>
+              </thead>
+              <tbody>
+                {aptosConsulta.rows.map((r: any) => (
+                  <tr key={r.idFuncionario} className="border-t">
+                    <td className="px-3 py-2">
+                      {r.funcionarioNome} <span className="text-xs text-slate-500">#{r.idFuncionario}</span>
+                    </td>
+                    <td className="px-3 py-2">{r.validadeAteMax === "2999-12-31" ? "sem validade" : r.validadeAteMax || "-"}</td>
+                  </tr>
+                ))}
+                {!aptosConsulta.rows.length ? (
+                  <tr>
+                    <td colSpan={2} className="px-3 py-6 text-center text-slate-500">
+                      Nenhum apto encontrado.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

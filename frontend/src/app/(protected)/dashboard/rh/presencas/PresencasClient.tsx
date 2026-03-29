@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { PresencasApi } from '@/lib/modules/presencas/api';
-import type { PresencaCabecalhoDTO, PresencaDetalheDTO, PresencaItemDTO, SituacaoPresenca, TipoLocalPresenca } from '@/lib/modules/presencas/types';
+import type {
+  PresencaCabecalhoDTO,
+  PresencaDetalheDTO,
+  PresencaItemDTO,
+  PresencaProducaoItemDTO,
+  SituacaoPresenca,
+  TipoLocalPresenca,
+} from '@/lib/modules/presencas/types';
 import { FuncionariosApi } from '@/lib/modules/funcionarios/api';
 import type { FuncionarioResumoDTO } from '@/lib/modules/funcionarios/types';
 
@@ -27,6 +34,10 @@ export default function PresencasClient() {
   const [itemForm, setItemForm] = useState({ idFuncionario: '', situacaoPresenca: 'PRESENTE', horaEntrada: '', horaSaida: '', minutosAtraso: '0', minutosHoraExtra: '0', descricaoTarefaDia: '' });
   const [itemError, setItemError] = useState('');
 
+  const [producao, setProducao] = useState<PresencaProducaoItemDTO[]>([]);
+  const [modalProducao, setModalProducao] = useState(false);
+  const [producaoDraft, setProducaoDraft] = useState<Record<number, { quantidade: string; unidade: string; servicos: string }>>({});
+
   async function carregarLista() {
     try {
       setLoading(true);
@@ -45,6 +56,36 @@ export default function PresencasClient() {
       setError(null);
       const d = await PresencasApi.obter(id);
       setDetail(d);
+      try {
+        const p = await PresencasApi.obterProducao(id);
+        setProducao(Array.isArray(p) ? p : []);
+        const next: Record<number, { quantidade: string; unidade: string; servicos: string }> = {};
+        for (const it of Array.isArray(p) ? p : []) {
+          next[it.idPresencaItem] = {
+            quantidade: String(it.quantidadeExecutada ?? 0),
+            unidade: it.unidadeMedida || '',
+            servicos: Array.isArray(it.servicos)
+              ? it.servicos
+                  .map((s: any) => {
+                    if (typeof s === 'string') return s;
+                    const codigo = String(s?.codigoServico ?? '').trim();
+                    const codigoCentroCusto = s?.codigoCentroCusto ? String(s.codigoCentroCusto).trim().toUpperCase() : null;
+                    const qtd = s?.quantidade == null ? null : Number(String(s.quantidade).replace(',', '.'));
+                    if (!codigo) return '';
+                    const prefixo = codigoCentroCusto ? `${codigo}:${codigoCentroCusto}` : codigo;
+                    if (qtd == null || !Number.isFinite(qtd)) return codigo;
+                    return `${prefixo}=${qtd}`;
+                  })
+                  .filter(Boolean)
+                  .join(', ')
+              : '',
+          };
+        }
+        setProducaoDraft(next);
+      } catch {
+        setProducao([]);
+        setProducaoDraft({});
+      }
     } catch (e: any) {
       setError(e?.message || 'Erro ao carregar ficha.');
     }
@@ -140,6 +181,47 @@ export default function PresencasClient() {
     }
   }
 
+  async function salvarProducao() {
+    if (!selectedId) return;
+    try {
+      setError(null);
+      function parseServicos(raw: string) {
+        const out: Array<string | { codigoServico: string; codigoCentroCusto?: string | null; quantidade: number | null }> = [];
+        const parts = raw
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        for (const p of parts) {
+          const [left, right] = p.includes('=') ? p.split('=') : [p, null];
+          const leftTrim = String(left || '').trim();
+          if (!leftTrim) continue;
+          const [codigoParte, ccParte] = leftTrim.includes(':') ? leftTrim.split(':') : [leftTrim, null];
+          const codigoServico = String(codigoParte || '').trim().toUpperCase();
+          if (!codigoServico) continue;
+          const codigoCentroCusto = ccParte != null ? String(ccParte).trim().toUpperCase() : null;
+          const q = right != null ? Number(String(right).trim().replace(',', '.')) : NaN;
+          out.push({
+            codigoServico,
+            codigoCentroCusto: codigoCentroCusto || null,
+            quantidade: Number.isFinite(q) ? q : null,
+          });
+        }
+        return out.length ? out : null;
+      }
+      const itens = Object.entries(producaoDraft).map(([idPresencaItem, v]) => ({
+        idPresencaItem: Number(idPresencaItem),
+        quantidadeExecutada: Number(String(v.quantidade || '0').trim().replace(',', '.')),
+        unidadeMedida: v.unidade ? v.unidade : null,
+        servicos: v.servicos ? parseServicos(v.servicos) : null,
+      }));
+      await PresencasApi.salvarProducao(selectedId, { itens });
+      setModalProducao(false);
+      await carregarDetalhe(selectedId);
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao salvar produção.');
+    }
+  }
+
   if (loading) return <div className="rounded-xl border bg-white p-6">Carregando presenças...</div>;
 
   return (
@@ -220,6 +302,9 @@ export default function PresencasClient() {
                 <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => setModalItem(true)}>
                   Adicionar/atualizar item
                 </button>
+                <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => setModalProducao(true)}>
+                  Produção
+                </button>
                 <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => acaoFicha('FECHAR')}>
                   Fechar
                 </button>
@@ -290,6 +375,84 @@ export default function PresencasClient() {
           )}
         </section>
       </div>
+
+      {modalProducao && detail && (
+        <Modal title="Produção diária" onClose={() => setModalProducao(false)}>
+          <div className="text-sm text-slate-600">Informe quantidade executada e vincule serviços (opcional).</div>
+          <div className="mt-3 overflow-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-left">
+                <tr>
+                  <th className="px-3 py-2">Funcionário</th>
+                  <th className="px-3 py-2">Quantidade</th>
+                  <th className="px-3 py-2">Unidade</th>
+                  <th className="px-3 py-2">Serviços (códigos)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {producao.map((it) => (
+                  <tr key={it.idPresencaItem} className="border-t">
+                    <td className="px-3 py-2">{it.funcionarioNome}</td>
+                    <td className="px-3 py-2">
+                      <input
+                        className="input w-28"
+                        value={producaoDraft[it.idPresencaItem]?.quantidade ?? '0'}
+                        onChange={(e) =>
+                          setProducaoDraft((prev) => ({
+                            ...prev,
+                            [it.idPresencaItem]: { quantidade: e.target.value, unidade: prev[it.idPresencaItem]?.unidade ?? '', servicos: prev[it.idPresencaItem]?.servicos ?? '' },
+                          }))
+                        }
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        className="input w-24"
+                        value={producaoDraft[it.idPresencaItem]?.unidade ?? ''}
+                        onChange={(e) =>
+                          setProducaoDraft((prev) => ({
+                            ...prev,
+                            [it.idPresencaItem]: { quantidade: prev[it.idPresencaItem]?.quantidade ?? '0', unidade: e.target.value, servicos: prev[it.idPresencaItem]?.servicos ?? '' },
+                          }))
+                        }
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        className="input w-full"
+                        placeholder="SER-0001, SER-0002"
+                        value={producaoDraft[it.idPresencaItem]?.servicos ?? ''}
+                        onChange={(e) =>
+                          setProducaoDraft((prev) => ({
+                            ...prev,
+                            [it.idPresencaItem]: { quantidade: prev[it.idPresencaItem]?.quantidade ?? '0', unidade: prev[it.idPresencaItem]?.unidade ?? '', servicos: e.target.value },
+                          }))
+                        }
+                      />
+                    </td>
+                  </tr>
+                ))}
+                {producao.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-3 py-6 text-center text-slate-500">
+                      Sem itens para lançar produção.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={() => setModalProducao(false)}>
+              Cancelar
+            </button>
+            <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white" type="button" onClick={salvarProducao}>
+              Salvar
+            </button>
+          </div>
+        </Modal>
+      )}
 
       {modalNova && (
         <Modal title="Nova ficha" onClose={() => setModalNova(false)}>

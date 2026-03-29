@@ -147,6 +147,13 @@ export const APP_MENU: MenuSectionConfig[] = [
         icon: 'clipboard-check',
         permission: PERMISSIONS.RH_PRESENCAS_VIEW,
       },
+      {
+        key: 'produtividade',
+        label: 'Produtividade (Obra)',
+        href: '/dashboard/rh/produtividade',
+        icon: 'line-chart',
+        permission: PERMISSIONS.DASHBOARD_RH_VIEW,
+      },
     ],
   },
   {
@@ -207,9 +214,72 @@ export const APP_MENU: MenuSectionConfig[] = [
     ],
   },
   {
+    key: 'engenharia',
+    label: 'Engenharia',
+    ordem: 4,
+    items: [
+      {
+        key: 'engenharia-obras',
+        label: 'Obras',
+        href: '/dashboard/engenharia/obras',
+        icon: 'construction',
+        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+      },
+      {
+        key: 'engenharia-orcamentos',
+        label: 'Orçamentos',
+        href: '/dashboard/engenharia/orcamentos',
+        icon: 'calculator',
+        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+      },
+      {
+        key: 'engenharia-licitacoes',
+        label: 'Licitações',
+        href: '/dashboard/engenharia/licitacoes',
+        icon: 'file-search',
+        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+      },
+      {
+        key: 'centros-custo',
+        label: 'Centros de Custo',
+        href: '/dashboard/engenharia/cadastros/centros-custo',
+        icon: 'layers',
+        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+      },
+      {
+        key: 'config-apropriacao',
+        label: 'Config. Apropriação',
+        href: '/dashboard/engenharia/configuracoes/apropriacao',
+        icon: 'sliders',
+        permission: PERMISSIONS.CONFIG_EMPRESA_VIEW,
+      },
+      {
+        key: 'contrapartes',
+        label: 'Contrapartes',
+        href: '/dashboard/engenharia/contrapartes',
+        icon: 'handshake',
+        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+      },
+      {
+        key: 'contratos-locacao',
+        label: 'Contratos (Locação/Serviço)',
+        href: '/dashboard/engenharia/contratos-locacao',
+        icon: 'file-text',
+        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+      },
+      {
+        key: 'ativos',
+        label: 'Equipamentos e Ferramentas',
+        href: '/dashboard/engenharia/ativos',
+        icon: 'wrench',
+        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+      },
+    ],
+  },
+  {
     key: 'suprimentos',
     label: 'Suprimentos',
-    ordem: 4,
+    ordem: 5,
     items: [
       {
         key: 'painel-suprimentos',
@@ -222,9 +292,23 @@ export const APP_MENU: MenuSectionConfig[] = [
     ],
   },
   {
+    key: 'fiscalizacao',
+    label: 'Fiscalização',
+    ordem: 6,
+    items: [
+      {
+        key: 'painel-fiscalizacao',
+        label: 'Painel Fiscalização',
+        href: '/dashboard/fiscalizacao/painel',
+        icon: 'clipboard-check',
+        permission: PERMISSIONS.DASHBOARD_FISCALIZACAO_VIEW,
+      },
+    ],
+  },
+  {
     key: 'administracao',
     label: 'Administração',
-    ordem: 6,
+    ordem: 7,
     items: [
       { key: 'organograma', label: 'Organograma', href: '/dashboard/organograma', icon: 'network', permission: PERMISSIONS.ORGANOGRAMA_VIEW },
       {
@@ -268,6 +352,58 @@ export const APP_MENU: MenuSectionConfig[] = [
         href: '/dashboard/admin/analytics',
         icon: 'chart-column',
         permission: PERMISSIONS.ANALYTICS_VIEW,
+      },
+      {
+        key: 'governanca-dados',
+        label: 'Governança de Dados',
+        href: '/dashboard/admin/governanca-dados',
+        icon: 'database',
+        permission: PERMISSIONS.DATA_CATALOG_VIEW,
+      },
+      {
+        key: 'retencao',
+        label: 'Retenção e Legal Hold',
+        href: '/dashboard/admin/retencao',
+        icon: 'archive',
+        permission: PERMISSIONS.RETENCAO_VIEW,
+      },
+      {
+        key: 'observabilidade',
+        label: 'Observabilidade',
+        icon: 'activity',
+        permission: PERMISSIONS.OBSERVABILIDADE_VIEW,
+        children: [
+          { key: 'observabilidade-timeline', label: 'Timeline', href: '/dashboard/admin/observabilidade', icon: 'activity', permission: PERMISSIONS.OBSERVABILIDADE_EVENTOS_VIEW },
+          { key: 'observabilidade-playbooks', label: 'Playbooks', href: '/dashboard/admin/observabilidade/playbooks', icon: 'workflow', permission: PERMISSIONS.PLAYBOOKS_VIEW },
+          { key: 'observabilidade-compliance', label: 'Compliance', href: '/dashboard/admin/observabilidade/compliance', icon: 'scale', permission: PERMISSIONS.INCIDENT_RESPONSE_COMPLIANCE_VIEW },
+        ],
+      },
+      {
+        key: 'continuidade',
+        label: 'Continuidade',
+        href: '/dashboard/admin/continuidade',
+        icon: 'shield-check',
+        permission: PERMISSIONS.BCP_VIEW,
+        children: [
+          { key: 'continuidade-planos', label: 'Planos', href: '/dashboard/admin/continuidade', icon: 'shield-check', permission: PERMISSIONS.BCP_VIEW },
+          { key: 'continuidade-dr', label: 'DR', href: '/dashboard/admin/continuidade/dr', icon: 'database-backup', permission: PERMISSIONS.DR_VIEW },
+          { key: 'continuidade-crises', label: 'Crises', href: '/dashboard/admin/continuidade/crises', icon: 'alert-triangle', permission: PERMISSIONS.CRISE_VIEW },
+        ],
+      },
+      {
+        key: 'grc',
+        label: 'GRC',
+        href: '/dashboard/admin/grc',
+        icon: 'shield-alert',
+        permission: PERMISSIONS.GRC_VIEW,
+        children: [
+          { key: 'grc-hub', label: 'Visão Geral', href: '/dashboard/admin/grc', icon: 'shield-alert', permission: PERMISSIONS.GRC_VIEW },
+          { key: 'grc-riscos', label: 'Riscos', href: '/dashboard/admin/grc/riscos', icon: 'alert-triangle', permission: PERMISSIONS.GRC_RISCOS_VIEW },
+          { key: 'grc-controles', label: 'Controles', href: '/dashboard/admin/grc/controles', icon: 'check-check', permission: PERMISSIONS.GRC_CONTROLES_VIEW },
+          { key: 'grc-auditorias', label: 'Auditorias', href: '/dashboard/admin/grc/auditorias', icon: 'clipboard-list', permission: PERMISSIONS.GRC_AUDITORIAS_VIEW },
+          { key: 'grc-achados', label: 'Achados', href: '/dashboard/admin/grc/achados', icon: 'file-warning', permission: PERMISSIONS.GRC_ACHADOS_VIEW },
+          { key: 'grc-planos-acao', label: 'Planos de Ação', href: '/dashboard/admin/grc/planos-acao', icon: 'clipboard-check', permission: PERMISSIONS.GRC_PLANOS_ACAO_VIEW },
+        ],
       },
       {
         key: 'seguranca-politicas',

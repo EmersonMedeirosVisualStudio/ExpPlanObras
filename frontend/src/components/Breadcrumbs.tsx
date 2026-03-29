@@ -3,18 +3,22 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMemo } from 'react';
-import { MENU } from '@/lib/menuConfig';
+import { APP_MENU } from '@/lib/navigation/menu';
+import type { MenuSectionConfig, MenuItemConfig } from '@/lib/navigation/types';
 
 type Crumb = { label: string; href: string };
 
-function findLabelByPath(path: string): string | null {
-  const stack = [...MENU];
-  while (stack.length > 0) {
-    const item = stack.shift()!;
-    if (item.path === path) return item.label;
-    if (item.children) stack.push(...item.children);
+function flatten(items: MenuItemConfig[], out: Map<string, string>) {
+  for (const it of items) {
+    if (it.href) out.set(it.href, it.label);
+    if (it.children?.length) flatten(it.children, out);
   }
-  return null;
+}
+
+function buildPathLabelMap(): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const sec of APP_MENU) flatten(sec.items, map);
+  return map;
 }
 
 export function Breadcrumbs() {
@@ -23,11 +27,12 @@ export function Breadcrumbs() {
   const crumbs = useMemo<Crumb[]>(() => {
     const parts = pathname.split('/').filter(Boolean);
     const list: Crumb[] = [];
+    const labelMap = buildPathLabelMap();
     let acc = '';
     for (const p of parts) {
       acc += `/${p}`;
       if (!acc.startsWith('/dashboard')) continue;
-      const label = findLabelByPath(acc) || p.replace(/-/g, ' ');
+      const label = labelMap.get(acc) || p.replace(/-/g, ' ');
       list.push({ label, href: acc });
     }
     return list;
@@ -50,4 +55,3 @@ export function Breadcrumbs() {
     </nav>
   );
 }
-

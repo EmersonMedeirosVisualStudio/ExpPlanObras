@@ -5,6 +5,8 @@ import { authenticate } from '../../utils/authenticate.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { normalizeEmail, onlyDigits } from '../../utils/validators.js';
+import { loadSubjectContext } from '../security-fields/service.js';
+import { sanitizeResourceObject } from '../security-fields/sanitizer.js';
 
 type ApiSuccess<T> = { success: true; message?: string; data: T; meta?: any };
 type ApiError = { success: false; message: string; errors?: Record<string, string[]> };
@@ -183,8 +185,13 @@ export default async function v1Routes(server: FastifyInstance) {
       select: { id: true, source: true, action: true, message: true, createdAt: true },
     });
 
+    const subject = await loadSubjectContext({ tenantId: ctx.tenantId, userId: ctx.userId });
+    const safeRepresentative = representativeData
+      ? await sanitizeResourceObject(representativeData, { tenantId: ctx.tenantId, userId: ctx.userId, resource: 'EMPRESA_REPRESENTANTE', action: 'VIEW', entityId: representativeData.id, exportacao: false }, subject)
+      : null;
+
     return ok(reply, {
-      representante: representativeData,
+      representante: safeRepresentative,
       encarregadoSistema: encarregadoData,
       historico: historico.map((h) => ({
         id: h.id,

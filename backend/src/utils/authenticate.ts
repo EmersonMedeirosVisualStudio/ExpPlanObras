@@ -19,6 +19,8 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
 
     const tenantId = user?.tenantId;
     if (typeof tenantId !== 'number') return;
+    const userId = user?.userId;
+    if (typeof userId !== 'number') return;
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -106,6 +108,32 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
 
     if (subStatus === 'EXPIRED') {
       return reply.code(402).send({ message: 'Assinatura expirada. Faça uma assinatura para reativação.' });
+    }
+
+    const tu = await prisma.tenantUser.findUnique({
+      where: { tenantId_userId: { tenantId, userId } },
+      select: { id: true, ativo: true, bloqueado: true, bloqueadoAteEm: true, tokenRevokedBefore: true },
+    });
+    if (!tu || !tu.ativo) {
+      return reply.code(403).send({ message: 'Acesso negado' });
+    }
+
+    if (tu.bloqueado) {
+      if (tu.bloqueadoAteEm && tu.bloqueadoAteEm <= now) {
+        await prisma.tenantUser.update({ where: { id: tu.id }, data: { bloqueado: false, bloqueadoAteEm: null } });
+      } else {
+        return reply.code(403).send({ message: 'Usuário bloqueado' });
+      }
+    }
+
+    if (tu.tokenRevokedBefore) {
+      const iat = typeof user?.iat === 'number' ? user.iat : null;
+      if (iat) {
+        const issuedAt = new Date(iat * 1000);
+        if (issuedAt < tu.tokenRevokedBefore) {
+          return reply.code(401).send({ message: 'Reautenticação necessária' });
+        }
+      }
     }
   } catch (err: any) {
     return reply.code(401).send({ message: 'Não autenticado' });

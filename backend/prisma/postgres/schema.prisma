@@ -137,6 +137,8 @@ model TenantUser {
   login     String?
   ativo     Boolean  @default(true)
   bloqueado Boolean  @default(false)
+  bloqueadoAteEm DateTime?
+  tokenRevokedBefore DateTime?
   ultimoAcesso DateTime?
   funcionarioId Int?
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -218,8 +220,34 @@ model Documento {
   tenantId  Int
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
   uploadedAt DateTime @default(now())
+  versoes   DocumentoVersao[]
   @@index([tenantId])
   @@index([obraId])
+}
+
+model DocumentoVersao {
+  id                         Int      @id @default(autoincrement())
+  tenantId                    Int
+  documentoId                 Int
+  numeroVersao                Int      @default(1)
+  urlOriginal                 String
+  urlAssinado                 String?
+  hashSha256Original          String?
+  hashSha256Assinado          String?
+  tipoAssinaturaFinal         String?
+  assinaturaQualificadaConcluida Boolean @default(false)
+  verificacaoAssinaturaStatus String?
+  verificacaoAssinaturaEm     DateTime?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  tenant                      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  documento                   Documento @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  solicitacoesAssinatura      DocumentoAssinaturaSolicitacao[]
+
+  @@unique([documentoId, numeroVersao])
+  @@index([tenantId])
+  @@index([documentoId])
 }
 
 model Tarefa {
@@ -633,6 +661,235 @@ model DashboardWidgetUsuario {
   @@index([codigoWidget])
 }
 
+model SecurityFieldPolicy {
+  id                 Int      @id @default(autoincrement())
+  tenantId            Int
+  recurso             String
+  acao                String
+  caminhoCampo        String
+  efeitoCampo         String
+  estrategiaMascara   String?
+  prioridade          Int      @default(0)
+  condicaoJson        Json?
+  ativo               Boolean  @default(true)
+  criadoPorUserId     Int
+  atualizadoPorUserId Int
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  criadoPor           User     @relation("SecurityFieldPolicyCriadoPor", fields: [criadoPorUserId], references: [id], onDelete: Cascade)
+  atualizadoPor       User     @relation("SecurityFieldPolicyAtualizadoPor", fields: [atualizadoPorUserId], references: [id], onDelete: Cascade)
+  alvos               SecurityFieldPolicyTarget[]
+
+  @@index([tenantId])
+  @@index([tenantId, recurso, acao])
+  @@index([criadoPorUserId])
+  @@index([atualizadoPorUserId])
+}
+
+model SecurityFieldPolicyTarget {
+  id           Int      @id @default(autoincrement())
+  policyId     Int
+  tipoAlvo     String
+  userId       Int?
+  perfilCodigo String?
+  permissao    String?
+  ativo        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  policy       SecurityFieldPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId])
+  @@index([tipoAlvo])
+  @@index([userId])
+  @@index([perfilCodigo])
+}
+
+model SecuritySensitiveDataAudit {
+  id            Int      @id @default(autoincrement())
+  tenantId      Int
+  userId        Int
+  recurso       String
+  acao          String
+  entidadeId    Int?
+  caminhoCampo  String
+  resultadoCampo String
+  exportacao    Boolean  @default(false)
+  motivoCodigo  String?
+  contextoJson  Json?
+  createdAt     DateTime @default(now())
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, createdAt])
+  @@index([tenantId, recurso, acao, createdAt])
+}
+
+model DocumentoAssinaturaProvedor {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int
+  nome       String
+  codigo     String
+  tipo       String
+  ambiente   String   @default("SANDBOX")
+  baseUrl    String
+  clientId   String?
+  clientSecretCriptografado String?
+  apiKeyCriptografada String?
+  configuracaoJson Json?
+  ativo      Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  solicitacoes DocumentoAssinaturaSolicitacao[]
+
+  @@unique([tenantId, codigo, ambiente])
+  @@index([tenantId])
+  @@index([tenantId, tipo])
+}
+
+model DocumentoAssinaturaSolicitacao {
+  id                   Int      @id @default(autoincrement())
+  tenantId             Int
+  documentoId          Int
+  versaoId             Int
+  provedorId           Int
+  tipoAssinatura       String
+  statusSolicitacao    String   @default("RASCUNHO")
+  providerEnvelopeId   String?
+  providerDocumentId   String?
+  providerStatus       String?
+  exigeTodosSignatarios Boolean @default(true)
+  callbackToken        String?
+  linkAssinaturaExterno String?
+  enviadoEm            DateTime?
+  concluidoEm          DateTime?
+  expiraEm             DateTime?
+  solicitanteUserId    Int
+  motivoErro           String?
+  metadataJson         Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  documento            Documento @relation(fields: [documentoId], references: [id], onDelete: Cascade)
+  versao               DocumentoVersao @relation(fields: [versaoId], references: [id], onDelete: Cascade)
+  provedor             DocumentoAssinaturaProvedor @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+  solicitante          User     @relation(fields: [solicitanteUserId], references: [id], onDelete: Cascade)
+  signatarios          DocumentoAssinaturaSolicitacaoSignatario[]
+  artefatos            DocumentoAssinaturaArtefato[]
+  evidencias           DocumentoAssinaturaEvidencia[]
+  callbacks            DocumentoAssinaturaCallback[]
+
+  @@index([tenantId])
+  @@index([tenantId, statusSolicitacao])
+  @@index([tenantId, documentoId])
+  @@index([tenantId, versaoId])
+  @@index([tenantId, provedorId])
+  @@index([tenantId, solicitanteUserId])
+}
+
+model DocumentoAssinaturaSolicitacaoSignatario {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int
+  solicitacaoId  Int
+  ordemAssinatura Int
+  tipoSignatario String
+  userId         Int?
+  nomeSignatario String
+  emailSignatario String
+  documentoSignatario String?
+  papelSignatario String
+  assinaturaObrigatoria Boolean @default(true)
+  statusSignatario String @default("PENDENTE")
+  providerSignerId String?
+  autenticacaoExigida String?
+  assinadoEm     DateTime?
+  motivoRejeicao String?
+  metadataJson   Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  solicitacao    DocumentoAssinaturaSolicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([solicitacaoId])
+  @@index([tenantId, statusSignatario])
+  @@index([userId])
+}
+
+model DocumentoAssinaturaArtefato {
+  id            Int      @id @default(autoincrement())
+  tenantId      Int
+  solicitacaoId Int
+  tipoArtefato  String
+  nomeArquivo   String
+  mimeType      String
+  tamanhoBytes  Int?
+  hashSha256    String
+  storagePath   String?
+  url           String?
+  data          Bytes?
+  metadataJson  Json?
+  createdAt     DateTime @default(now())
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  solicitacao   DocumentoAssinaturaSolicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([solicitacaoId])
+  @@index([tenantId, tipoArtefato])
+}
+
+model DocumentoAssinaturaEvidencia {
+  id            Int      @id @default(autoincrement())
+  tenantId      Int
+  solicitacaoId Int
+  signatarioId  Int?
+  tipoEvidencia String
+  valorTexto    String?
+  valorJson     Json?
+  hashReferencia String?
+  createdAt     DateTime @default(now())
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  solicitacao   DocumentoAssinaturaSolicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  signatario    DocumentoAssinaturaSolicitacaoSignatario? @relation(fields: [signatarioId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([solicitacaoId])
+  @@index([signatarioId])
+  @@index([tenantId, tipoEvidencia])
+}
+
+model DocumentoAssinaturaCallback {
+  id            Int      @id @default(autoincrement())
+  tenantId      Int
+  solicitacaoId Int?
+  provedorId    Int
+  providerEvento String
+  providerRequestId String?
+  payloadJson   Json
+  statusProcessamento String @default("PENDENTE")
+  mensagemResultado String?
+  recebidoEm    DateTime @default(now())
+  processadoEm  DateTime?
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  solicitacao   DocumentoAssinaturaSolicitacao? @relation(fields: [solicitacaoId], references: [id], onDelete: SetNull)
+  provedor      DocumentoAssinaturaProvedor @relation(fields: [provedorId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([provedorId])
+  @@index([solicitacaoId])
+  @@index([tenantId, statusProcessamento, recebidoEm])
+}
+
 model AuditoriaEvento {
   id            Int      @id @default(autoincrement())
   tenantId      Int
@@ -650,4 +907,1409 @@ model AuditoriaEvento {
   @@index([tenantId])
   @@index([userId])
   @@index([entidade])
+}
+
+model GovernancaDadoDominio {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int
+  codigoDominio      String
+  nomeDominio        String
+  descricaoDominio   String?
+  ativo              Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ativos             GovernancaDadoAtivo[]
+
+  @@unique([tenantId, codigoDominio])
+  @@index([tenantId])
+}
+
+model GovernancaDadoAtivo {
+  id                    Int      @id @default(autoincrement())
+  tenantId              Int
+  dominioId             Int?
+  tipoAtivo             String
+  codigoAtivo           String
+  nomeAtivo             String
+  descricaoAtivo        String?
+  origemSistema         String?
+  schemaNome            String?
+  objetoNome            String?
+  datasetKey            String?
+  ownerNegocioUserId    Int?
+  ownerTecnicoUserId    Int?
+  stewardUserId         Int?
+  custodianteUserId     Int?
+  classificacaoGlobal   String   @default("INTERNO")
+  criticidadeNegocio    String   @default("MEDIA")
+  slaFreshnessMinutos   Int?
+  statusAtivo           String   @default("ATIVO")
+  metadataJson          Json?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dominio               GovernancaDadoDominio? @relation(fields: [dominioId], references: [id], onDelete: SetNull)
+  ownerNegocio          User?    @relation("GovernancaOwnerNegocio", fields: [ownerNegocioUserId], references: [id], onDelete: SetNull)
+  ownerTecnico          User?    @relation("GovernancaOwnerTecnico", fields: [ownerTecnicoUserId], references: [id], onDelete: SetNull)
+  steward               User?    @relation("GovernancaSteward", fields: [stewardUserId], references: [id], onDelete: SetNull)
+  custodiante           User?    @relation("GovernancaCustodiante", fields: [custodianteUserId], references: [id], onDelete: SetNull)
+  campos                GovernancaDadoAtivoCampo[]
+  lineageOrigem         GovernancaDadoLineageRelacao[] @relation("LineageOrigem")
+  lineageDestino        GovernancaDadoLineageRelacao[] @relation("LineageDestino")
+  regrasQualidade       GovernancaDadoQualidadeRegra[]
+  qualidadeIssues       GovernancaDadoQualidadeIssue[]
+
+  @@unique([tenantId, codigoAtivo])
+  @@index([tenantId])
+  @@index([dominioId])
+}
+
+model GovernancaDadoAtivoCampo {
+  id                      Int      @id @default(autoincrement())
+  ativoId                 Int
+  caminhoCampo            String
+  nomeCampoExibicao       String
+  tipoDado                String
+  descricaoCampo          String?
+  classificacaoCampo      String   @default("INTERNO")
+  pii                     Boolean  @default(false)
+  campoChave              Boolean  @default(false)
+  campoObrigatorio        Boolean  @default(false)
+  campoMascaravel         Boolean  @default(false)
+  estrategiaMascaraPadrao String?
+  origemCampo             String?
+  ativo                   Boolean  @default(true)
+  metadataJson            Json?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  ativoRef                GovernancaDadoAtivo @relation(fields: [ativoId], references: [id], onDelete: Cascade)
+
+  @@unique([ativoId, caminhoCampo])
+  @@index([ativoId])
+}
+
+model GovernancaDadoGlossario {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int
+  termo              String
+  definicao          String
+  formulaNegocio     String?
+  exemplosJson       Json?
+  dominioId          Int?
+  ownerUserId        Int?
+  ativo              Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dominio            GovernancaDadoDominio? @relation(fields: [dominioId], references: [id], onDelete: SetNull)
+  ownerRef           User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, termo])
+  @@index([tenantId])
+  @@index([dominioId])
+}
+
+model GovernancaDadoLineageRelacao {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int
+  ativoOrigemId      Int
+  ativoDestinoId     Int
+  tipoRelacao        String
+  nivelRelacao       String   @default("ATIVO")
+  campoOrigem        String?
+  campoDestino       String?
+  transformacaoResumo String?
+  pipelineNome       String?
+  ativo              Boolean  @default(true)
+  createdAt          DateTime @default(now())
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ativoOrigem        GovernancaDadoAtivo @relation("LineageOrigem", fields: [ativoOrigemId], references: [id], onDelete: Cascade)
+  ativoDestino       GovernancaDadoAtivo @relation("LineageDestino", fields: [ativoDestinoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([ativoOrigemId])
+  @@index([ativoDestinoId])
+}
+
+model GovernancaDadoQualidadeRegra {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int
+  ativoId            Int
+  caminhoCampo       String?
+  nomeRegra          String
+  tipoRegra          String
+  severidade         String   @default("MEDIA")
+  configuracaoJson   Json
+  thresholdOk        Decimal? @db.Decimal(10, 4)
+  thresholdAlerta    Decimal? @db.Decimal(10, 4)
+  ativo              Boolean  @default(true)
+  criadoPorUserId    Int
+  atualizadoPorUserId Int
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ativoRef           GovernancaDadoAtivo @relation(fields: [ativoId], references: [id], onDelete: Cascade)
+  createdBy          User     @relation("GovQualidadeCriadoPor", fields: [criadoPorUserId], references: [id], onDelete: Cascade)
+  updatedBy          User     @relation("GovQualidadeAtualizadoPor", fields: [atualizadoPorUserId], references: [id], onDelete: Cascade)
+  execucoes          GovernancaDadoQualidadeExecucao[]
+
+  @@index([tenantId])
+  @@index([ativoId])
+}
+
+model GovernancaDadoQualidadeExecucao {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int
+  regraId            Int
+  statusExecucao     String   @default("PENDENTE")
+  valorApurado       Decimal? @db.Decimal(18, 4)
+  thresholdOk        Decimal? @db.Decimal(10, 4)
+  thresholdAlerta    Decimal? @db.Decimal(10, 4)
+  totalRegistros     Int?
+  totalInconsistencias Int?
+  amostraJson        Json?
+  mensagemResultado  String?
+  executadoEm        DateTime @default(now())
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  regra              GovernancaDadoQualidadeRegra @relation(fields: [regraId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([regraId])
+}
+
+model GovernancaDadoQualidadeIssue {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int
+  ativoId            Int
+  regraId            Int?
+  tituloIssue        String
+  descricaoIssue     String?
+  severidade         String
+  statusIssue        String   @default("ABERTA")
+  responsavelUserId  Int?
+  primeiraOcorrenciaEm DateTime
+  ultimaOcorrenciaEm DateTime
+  resolvidaEm        DateTime?
+  metadataJson       Json?
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ativoRef           GovernancaDadoAtivo @relation(fields: [ativoId], references: [id], onDelete: Cascade)
+  regraRef           GovernancaDadoQualidadeRegra? @relation(fields: [regraId], references: [id], onDelete: SetNull)
+  responsavelRef     User?    @relation(fields: [responsavelUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([ativoId])
+  @@index([regraId])
+  @@index([responsavelUserId])
+}
+
+model GovernancaRetencaoPolitica {
+  id                      Int      @id @default(autoincrement())
+  tenantId                Int
+  codigoPolitica          String
+  nomePolitica            String
+  recurso                 String
+  categoriaRecurso        String?
+  eventoBase              String
+  periodoValor            Int
+  periodoUnidade          String
+  acaoFinal               String
+  exigeAprovacaoDescarte  Boolean  @default(true)
+  respeitaBackupTtl       Boolean  @default(true)
+  anonimizarCamposJson    Json?
+  condicaoJson            Json?
+  prioridade              Int      @default(0)
+  ativo                   Boolean  @default(true)
+  criadoPorUserId         Int
+  atualizadoPorUserId     Int
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  tenant                  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  criadoPor               User     @relation("GovernancaRetencaoPoliticaCriadoPor", fields: [criadoPorUserId], references: [id], onDelete: Cascade)
+  atualizadoPor           User     @relation("GovernancaRetencaoPoliticaAtualizadoPor", fields: [atualizadoPorUserId], references: [id], onDelete: Cascade)
+  itens                   GovernancaRetencaoItem[]
+
+  @@unique([tenantId, codigoPolitica])
+  @@index([tenantId])
+  @@index([tenantId, recurso, ativo])
+}
+
+model GovernancaRetencaoItem {
+  id                      Int      @id @default(autoincrement())
+  tenantId                Int
+  recurso                 String
+  entidadeId              Int
+  categoriaRecurso        String?
+  politicaAplicadaId      Int?
+  statusRetencao          String   @default("ATIVO")
+  dataEventoBase          DateTime
+  elegivelArquivamentoEm  DateTime?
+  elegivelDescarteEm      DateTime?
+  backupTtlAteEm          DateTime?
+  holdAtivo               Boolean  @default(false)
+  totalHoldsAtivos        Int      @default(0)
+  storagePathPrincipal    String?
+  hashReferencia          String?
+  tamanhoBytes            Int?
+  confidencialidade       String?
+  metadataJson            Json?
+  ultimoProcessamentoEm   DateTime?
+  descartadoEm            DateTime?
+  expurgadoEm             DateTime?
+  atualizadoEmOrigem      DateTime?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  tenant                  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  politicaAplicada        GovernancaRetencaoPolitica? @relation(fields: [politicaAplicadaId], references: [id], onDelete: SetNull)
+  holds                   GovernancaLegalHoldItem[]
+  lotes                   GovernancaDescarteLoteItem[]
+
+  @@unique([tenantId, recurso, entidadeId])
+  @@index([tenantId, statusRetencao, elegivelDescarteEm])
+  @@index([tenantId, holdAtivo, elegivelDescarteEm])
+}
+
+model GovernancaLegalHold {
+  id               Int      @id @default(autoincrement())
+  tenantId         Int
+  codigoHold       String
+  tituloHold       String
+  motivoHold       String
+  tipoHold         String
+  statusHold       String   @default("ATIVO")
+  criteriaJson     Json?
+  criadorUserId    Int
+  liberadorUserId  Int?
+  createdAt        DateTime @default(now())
+  liberadoEm       DateTime?
+  updatedAt        DateTime @updatedAt
+
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  criador          User     @relation("GovernancaLegalHoldCriador", fields: [criadorUserId], references: [id], onDelete: Cascade)
+  liberador        User?    @relation("GovernancaLegalHoldLiberador", fields: [liberadorUserId], references: [id], onDelete: SetNull)
+  itens            GovernancaLegalHoldItem[]
+
+  @@unique([tenantId, codigoHold])
+  @@index([tenantId])
+  @@index([tenantId, statusHold])
+}
+
+model GovernancaLegalHoldItem {
+  id                Int      @id @default(autoincrement())
+  tenantId          Int
+  legalHoldId       Int
+  retencaoItemId    Int
+  recurso           String
+  entidadeId        Int
+  aplicadoEm        DateTime @default(now())
+  removidoEm        DateTime?
+  ativo             Boolean  @default(true)
+  metadataJson      Json?
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  legalHold         GovernancaLegalHold @relation(fields: [legalHoldId], references: [id], onDelete: Cascade)
+  retencaoItem      GovernancaRetencaoItem @relation(fields: [retencaoItemId], references: [id], onDelete: Cascade)
+
+  @@unique([legalHoldId, retencaoItemId])
+  @@index([tenantId])
+  @@index([legalHoldId])
+  @@index([retencaoItemId])
+}
+
+model GovernancaDescarteLote {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int
+  nomeLote           String
+  tipoExecucao       String
+  statusLote         String   @default("RASCUNHO")
+  criadorUserId      Int
+  aprovadorUserId    Int?
+  executorUserId     Int?
+  totalItens         Int      @default(0)
+  totalAnonimizados  Int      @default(0)
+  totalDescartados   Int      @default(0)
+  totalExpurgados    Int      @default(0)
+  totalErros         Int      @default(0)
+  observacao         String?
+  aprovadoEm         DateTime?
+  iniciadoEm         DateTime?
+  finalizadoEm       DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  criador            User     @relation("GovernancaDescarteLoteCriador", fields: [criadorUserId], references: [id], onDelete: Cascade)
+  aprovador          User?    @relation("GovernancaDescarteLoteAprovador", fields: [aprovadorUserId], references: [id], onDelete: SetNull)
+  executor           User?    @relation("GovernancaDescarteLoteExecutor", fields: [executorUserId], references: [id], onDelete: SetNull)
+  itens              GovernancaDescarteLoteItem[]
+
+  @@index([tenantId])
+  @@index([tenantId, statusLote])
+}
+
+model GovernancaDescarteLoteItem {
+  id                Int      @id @default(autoincrement())
+  tenantId          Int
+  loteId            Int
+  retencaoItemId    Int
+  recurso           String
+  entidadeId        Int
+  acaoPlanejada     String
+  statusItem        String   @default("PENDENTE")
+  hashAntes         String?
+  hashDepois        String?
+  storagePathAntes  String?
+  evidenceJson      Json?
+  mensagemResultado String?
+  processadoEm      DateTime?
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lote              GovernancaDescarteLote @relation(fields: [loteId], references: [id], onDelete: Cascade)
+  retencaoItem      GovernancaRetencaoItem @relation(fields: [retencaoItemId], references: [id], onDelete: Cascade)
+
+  @@unique([loteId, retencaoItemId])
+  @@index([tenantId])
+  @@index([loteId])
+  @@index([retencaoItemId])
+}
+
+model GovernancaRetencaoAuditoria {
+  id                Int      @id @default(autoincrement())
+  tenantId          Int
+  recurso           String
+  entidadeId        Int?
+  retencaoItemId    Int?
+  tipoEvento        String
+  descricaoEvento   String
+  userId            Int?
+  metadataJson      Json?
+  createdAt         DateTime @default(now())
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  retencaoItem      GovernancaRetencaoItem? @relation(fields: [retencaoItemId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, tipoEvento, createdAt])
+}
+
+model GovernancaPiiScan {
+  id                  Int      @id @default(autoincrement())
+  tenantId            Int
+  tipoScan            String
+  alvoTipo            String
+  alvoChave           String
+  statusScan          String   @default("PENDENTE")
+  totalItens          Int      @default(0)
+  totalSuspeitos      Int      @default(0)
+  executadoPorUserId  Int
+  iniciadoEm          DateTime @default(now())
+  finalizadoEm        DateTime?
+  resultadoResumoJson Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  executadoPor        User     @relation("GovernancaPiiScanExecutadoPor", fields: [executadoPorUserId], references: [id], onDelete: Cascade)
+  resultados          GovernancaPiiScanResultado[]
+
+  @@index([tenantId])
+  @@index([tenantId, statusScan, iniciadoEm])
+}
+
+model GovernancaPiiScanResultado {
+  id                  Int      @id @default(autoincrement())
+  tenantId            Int
+  scanId              Int
+  ativoId             Int?
+  campoId             Int?
+  tipoDetectado       String
+  nivelConfianca      String
+  statusResultado     String
+  amostraMascarada    String?
+  regraDetector       String?
+  sugestaoClassificacao String?
+  metadataJson        Json?
+  createdAt           DateTime @default(now())
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scan                GovernancaPiiScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  ativo               GovernancaDadoAtivo? @relation(fields: [ativoId], references: [id], onDelete: SetNull)
+  campo               GovernancaDadoAtivoCampo? @relation(fields: [campoId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([scanId])
+  @@index([ativoId])
+  @@index([campoId])
+}
+
+model GovernancaClassificacaoSugestao {
+  id                  Int      @id @default(autoincrement())
+  tenantId            Int
+  ativoId             Int
+  campoId             Int?
+  origemSugestao      String
+  classificacaoSugerida String
+  categoriaSugerida   String?
+  scoreConfianca      Decimal? @db.Decimal(5, 2)
+  statusSugestao      String   @default("PENDENTE")
+  avaliadoPorUserId   Int?
+  avaliadoEm          DateTime?
+  createdAt           DateTime @default(now())
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ativo               GovernancaDadoAtivo @relation(fields: [ativoId], references: [id], onDelete: Cascade)
+  campo               GovernancaDadoAtivoCampo? @relation(fields: [campoId], references: [id], onDelete: SetNull)
+  avaliadoPor         User?    @relation("GovernancaClassificacaoAvaliadoPor", fields: [avaliadoPorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, statusSugestao])
+  @@index([ativoId])
+  @@index([campoId])
+}
+
+model GovernancaDadosAuditoria {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int
+  tipoEvento  String
+  recursoTipo String
+  recursoId   Int?
+  detalhesJson Json?
+  userId      Int?
+  ip          String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, tipoEvento, createdAt])
+}
+
+model ObservabilidadeEvento {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int
+  eventId            String   @default(uuid())
+  categoria          String
+  subcategoria       String?
+  nomeEvento         String
+  severidade         String
+  resultado          String
+  origemTipo         String
+  origemChave        String?
+  modulo             String?
+  entidadeTipo       String?
+  entidadeId         Int?
+  actorTipo          String?
+  actorUserId        Int?
+  actorEmail         String?
+  targetTipo         String?
+  targetId           Int?
+  requestId          String?
+  correlationId      String?
+  sessionId          String?
+  traceId            String?
+  ip                 String?
+  userAgent          String?
+  rota               String?
+  metodoHttp         String?
+  statusHttp         Int?
+  payloadRedactedJson Json?
+  labelsJson         Json?
+  ocorridoEm         DateTime @default(now())
+  createdAt          DateTime @default(now())
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor              User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  alertasEventos     ObservabilidadeAlertaEvento[]
+  incidentesEventos  ObservabilidadeIncidenteEvento[]
+
+  @@index([tenantId, ocorridoEm])
+  @@index([tenantId, categoria, severidade, ocorridoEm])
+  @@index([tenantId, actorUserId, ocorridoEm])
+  @@index([tenantId, entidadeTipo, entidadeId, ocorridoEm])
+  @@index([tenantId, correlationId])
+  @@index([tenantId, requestId])
+}
+
+model ObservabilidadeRegra {
+  id                     Int      @id @default(autoincrement())
+  tenantId               Int
+  nome                   String
+  descricao              String?
+  tipoRegra              String
+  categoriaAlvo          String?
+  filtroJson             Json?
+  janelaMinutos          Int      @default(5)
+  limiarValor            Int?
+  agrupamentoJson        Json?
+  severidadeAlerta       String   @default("WARNING")
+  geraIncidenteAutomatico Boolean @default(false)
+  notificarJson          Json?
+  ativo                  Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  alertas                ObservabilidadeAlerta[]
+
+  @@index([tenantId])
+  @@index([tenantId, ativo])
+}
+
+model ObservabilidadeAlerta {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int
+  regraId            Int
+  titulo             String
+  descricao          String?
+  severidade         String
+  statusAlerta       String   @default("ABERTO")
+  dedupeKey          String?
+  primeiroEventoEm   DateTime @default(now())
+  ultimoEventoEm     DateTime @default(now())
+  totalEventos       Int      @default(1)
+  responsavelUserId  Int?
+  metadataJson       Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  regra              ObservabilidadeRegra @relation(fields: [regraId], references: [id], onDelete: Cascade)
+  responsavel        User?    @relation(fields: [responsavelUserId], references: [id], onDelete: SetNull)
+  eventos            ObservabilidadeAlertaEvento[]
+  incidentes         ObservabilidadeIncidente[]
+
+  @@index([tenantId])
+  @@index([tenantId, statusAlerta, updatedAt])
+}
+
+model ObservabilidadeAlertaEvento {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int
+  alertaId  Int
+  eventoId  Int
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  alerta    ObservabilidadeAlerta @relation(fields: [alertaId], references: [id], onDelete: Cascade)
+  evento    ObservabilidadeEvento @relation(fields: [eventoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([alertaId])
+  @@index([eventoId])
+}
+
+model ObservabilidadeIncidente {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int
+  alertaOrigemId     Int?
+  tipoIncidente      String
+  titulo             String
+  descricao          String?
+  criticidade        String
+  statusIncidente    String   @default("ABERTO")
+  ownerUserId        Int?
+  slaRespostaEm      DateTime?
+  slaResolucaoEm     DateTime?
+  resolvidoEm        DateTime?
+  causaRaiz          String?
+  impactoResumo      String?
+  acoesTomadasJson   Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  alertaOrigem       ObservabilidadeAlerta? @relation(fields: [alertaOrigemId], references: [id], onDelete: SetNull)
+  owner              User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+  eventos            ObservabilidadeIncidenteEvento[]
+
+  @@index([tenantId])
+  @@index([tenantId, statusIncidente, updatedAt])
+}
+
+model ObservabilidadeIncidenteEvento {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int
+  incidenteId Int
+  eventoId   Int
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  incidente  ObservabilidadeIncidente @relation(fields: [incidenteId], references: [id], onDelete: Cascade)
+  evento     ObservabilidadeEvento @relation(fields: [eventoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([incidenteId])
+  @@index([eventoId])
+}
+
+model ObservabilidadeDestinoExterno {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int
+  nome               String
+  tipoDestino        String
+  configCriptografada String?
+  filtroJson         Json?
+  ativo              Boolean  @default(true)
+  ultimaEntregaEm    DateTime?
+  ultimoErro         String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, ativo])
+}
+
+model ObservabilidadePlaybook {
+  id               Int      @id @default(autoincrement())
+  tenantId          Int
+  codigo            String
+  nome              String
+  descricao         String?
+  categoria         String?
+  modoExecucao      String
+  gatilhoTipo       String
+  filtroEventoJson  Json?
+  filtroAlertaJson  Json?
+  filtroIncidenteJson Json?
+  riscoPadrao       String   @default("BAIXO")
+  politicaAprovacao String   @default("EXIGE_SE_RISCO_ALTO")
+  ativo             Boolean  @default(true)
+  ordemPrioridade   Int      @default(1000)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  passos            ObservabilidadePlaybookPasso[]
+  execucoes         ObservabilidadePlaybookExecucao[]
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId])
+  @@index([tenantId, ativo])
+  @@index([tenantId, gatilhoTipo, ativo])
+}
+
+model ObservabilidadePlaybookPasso {
+  id                 Int      @id @default(autoincrement())
+  tenantId            Int
+  playbookId          Int
+  ordemExecucao       Int
+  tipoAcao            String
+  nomePasso           String
+  descricao           String?
+  configuracaoJson    Json?
+  timeoutSegundos     Int?
+  continuaEmErro      Boolean  @default(false)
+  reversivel          Boolean  @default(false)
+  acaoCompensacaoJson Json?
+  riscoAcao           String   @default("BAIXO")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  playbook            ObservabilidadePlaybook @relation(fields: [playbookId], references: [id], onDelete: Cascade)
+  execucoesPassos     ObservabilidadePlaybookExecucaoPasso[]
+
+  @@index([tenantId])
+  @@index([playbookId])
+  @@unique([playbookId, ordemExecucao])
+}
+
+model ObservabilidadePlaybookExecucao {
+  id                Int      @id @default(autoincrement())
+  tenantId           Int
+  playbookId         Int
+  alertaId           Int?
+  incidenteId        Int?
+  eventoOrigemId     Int?
+  modoExecucao       String
+  statusExecucao     String
+  chaveIdempotencia  String
+  aprovacaoExigida   Boolean  @default(false)
+  aprovadoPorUserId  Int?
+  aprovadoEm         DateTime?
+  iniciadoEm         DateTime?
+  finalizadoEm       DateTime?
+  resultadoResumoJson Json?
+  executadoPorUserId Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  playbook           ObservabilidadePlaybook @relation(fields: [playbookId], references: [id], onDelete: Cascade)
+  alerta             ObservabilidadeAlerta? @relation(fields: [alertaId], references: [id], onDelete: SetNull)
+  incidente          ObservabilidadeIncidente? @relation(fields: [incidenteId], references: [id], onDelete: SetNull)
+  eventoOrigem       ObservabilidadeEvento? @relation(fields: [eventoOrigemId], references: [id], onDelete: SetNull)
+  aprovadoPor        User?    @relation(fields: [aprovadoPorUserId], references: [id], onDelete: SetNull)
+  executadoPor       User?    @relation(fields: [executadoPorUserId], references: [id], onDelete: SetNull)
+  passos             ObservabilidadePlaybookExecucaoPasso[]
+
+  @@unique([tenantId, chaveIdempotencia])
+  @@index([tenantId])
+  @@index([playbookId])
+  @@index([tenantId, statusExecucao, updatedAt])
+}
+
+model ObservabilidadePlaybookExecucaoPasso {
+  id               Int      @id @default(autoincrement())
+  tenantId          Int
+  execucaoId        Int
+  passoId           Int
+  ordemExecucao     Int
+  statusPasso       String
+  iniciadoEm        DateTime?
+  finalizadoEm      DateTime?
+  entradaRedactedJson Json?
+  saidaRedactedJson Json?
+  erroResumo        String?
+  rollbackResultadoJson Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  execucao          ObservabilidadePlaybookExecucao @relation(fields: [execucaoId], references: [id], onDelete: Cascade)
+  passo             ObservabilidadePlaybookPasso @relation(fields: [passoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([execucaoId])
+  @@index([passoId])
+  @@unique([execucaoId, ordemExecucao])
+}
+
+model ObservabilidadeIncidenteTimeline {
+  id              Int      @id @default(autoincrement())
+  tenantId         Int
+  incidenteId      Int
+  tipoEventoTimeline String
+  titulo           String
+  descricao        String?
+  autorUserId      Int?
+  metadataJson     Json?
+  criadoEm         DateTime @default(now())
+
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  incidente        ObservabilidadeIncidente @relation(fields: [incidenteId], references: [id], onDelete: Cascade)
+  autor            User?    @relation(fields: [autorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([incidenteId])
+  @@index([tenantId, incidenteId, criadoEm])
+}
+
+model ObservabilidadeCasoCompliance {
+  id               Int      @id @default(autoincrement())
+  tenantId          Int
+  incidenteId       Int?
+  tipoCaso          String
+  statusCaso        String
+  criticidade       String
+  ownerUserId       Int?
+  prazoRespostaEm   DateTime?
+  prazoConclusaoEm  DateTime?
+  parecerFinal      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  incidente         ObservabilidadeIncidente? @relation(fields: [incidenteId], references: [id], onDelete: SetNull)
+  owner             User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+  evidencias        ObservabilidadeCasoComplianceEvidencia[]
+
+  @@index([tenantId])
+  @@index([tenantId, statusCaso, updatedAt])
+}
+
+model ObservabilidadeCasoComplianceEvidencia {
+  id             Int      @id @default(autoincrement())
+  tenantId        Int
+  casoId          Int
+  tipoEvidencia   String
+  referenciaTipo  String?
+  referenciaId    Int?
+  descricao       String?
+  arquivoPath     String?
+  hashSha256      String?
+  metadataJson    Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  caso            ObservabilidadeCasoCompliance @relation(fields: [casoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([casoId])
+}
+
+model BcpPlano {
+  id           Int      @id @default(autoincrement())
+  tenantId     Int
+  codigo       String
+  nome         String
+  descricao    String?
+  tipoPlano    String
+  modulo       String?
+  criticidade  String
+  rtoMinutos   Int
+  rpoMinutos   Int
+  ownerUserId  Int?
+  aprovadoPor  Int?
+  aprovadoEm   DateTime?
+  ativo        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner        User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+  aprovador    User?    @relation(fields: [aprovadoPor], references: [id], onDelete: SetNull)
+  ativos       BcpPlanoAtivoCritico[]
+  vinculos     BcpPlanoRunbook[]
+  testes       BcpTeste[]
+  drExecucoes  DrExecucaoRecuperacao[]
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, tipoPlano, ativo])
+}
+
+model BcpPlanoAtivoCritico {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int
+  planoId        Int
+  tipoAtivo      String
+  chaveAtivo     String
+  nomeAtivo      String
+  criticidade    String
+  rtoMinutos     Int
+  rpoMinutos     Int
+  ownerUserId    Int?
+  dependenciasJson Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plano          BcpPlano @relation(fields: [planoId], references: [id], onDelete: Cascade)
+  owner          User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([planoId])
+}
+
+model BcpRunbook {
+  id           Int      @id @default(autoincrement())
+  tenantId     Int
+  codigo       String
+  nome         String
+  descricao    String?
+  categoria    String?
+  modoExecucao String
+  ativo        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  passos       BcpRunbookPasso[]
+  vinculos     BcpPlanoRunbook[]
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, ativo])
+}
+
+model BcpRunbookPasso {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int
+  runbookId      Int
+  ordemExecucao  Int
+  titulo         String
+  descricao      String?
+  tipoPasso      String
+  obrigatorio    Boolean  @default(true)
+  responsavelTipo String?
+  timeoutMinutos Int?
+  configuracaoJson Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  runbook        BcpRunbook @relation(fields: [runbookId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([runbookId])
+  @@unique([runbookId, ordemExecucao])
+}
+
+model BcpPlanoRunbook {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int
+  planoId        Int
+  runbookId      Int
+  ordemPrioridade Int     @default(1000)
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plano          BcpPlano @relation(fields: [planoId], references: [id], onDelete: Cascade)
+  runbook        BcpRunbook @relation(fields: [runbookId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@unique([planoId, runbookId])
+}
+
+model BcpTeste {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int
+  planoId        Int
+  tipoTeste      String
+  statusTeste    String
+  agendadoPara   DateTime?
+  executadoEm    DateTime?
+  resultado      String?
+  scoreProntidao Int?
+  relatorioJson  Json?
+  executadoPor   Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plano          BcpPlano @relation(fields: [planoId], references: [id], onDelete: Cascade)
+  executor       User?    @relation(fields: [executadoPor], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([planoId])
+}
+
+model DrExecucaoRecuperacao {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int
+  planoId            Int
+  origemTipo         String
+  referenciaOrigem   String?
+  tipoRecuperacao    String
+  statusExecucao     String
+  aprovacaoExigida   Boolean  @default(false)
+  aprovadoPor        Int?
+  iniciadoEm         DateTime?
+  finalizadoEm       DateTime?
+  resultadoResumoJson Json?
+  rtoRealMinutos     Int?
+  rpoRealMinutos     Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plano              BcpPlano @relation(fields: [planoId], references: [id], onDelete: Cascade)
+  aprovador          User?    @relation(fields: [aprovadoPor], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([planoId])
+  @@index([tenantId, statusExecucao, updatedAt])
+}
+
+model CriseRegistro {
+  id                Int      @id @default(autoincrement())
+  tenantId          Int
+  codigo            String
+  titulo            String
+  descricao         String?
+  tipoCrise         String
+  severidade        String
+  statusCrise       String
+  incidenteOrigemId Int?
+  planoAcionadoId   Int?
+  comandanteUserId  Int?
+  abertaEm          DateTime?
+  encerradaEm       DateTime?
+  impactoJson       Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  comandante        User?    @relation(fields: [comandanteUserId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, statusCrise, updatedAt])
+}
+
+model CriseWarRoomParticipante {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int
+  criseId     Int
+  usuarioId   Int
+  papel       String
+  entrouEm    DateTime?
+  saiuEm      DateTime?
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  crise       CriseRegistro @relation(fields: [criseId], references: [id], onDelete: Cascade)
+  usuario     User     @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([criseId])
+}
+
+model CriseTimeline {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int
+  criseId     Int
+  tipoEvento  String
+  titulo      String
+  descricao   String?
+  autorUserId Int?
+  metadataJson Json?
+  criadoEm    DateTime @default(now())
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  crise       CriseRegistro @relation(fields: [criseId], references: [id], onDelete: Cascade)
+  autor       User?    @relation(fields: [autorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([criseId])
+  @@index([tenantId, criseId, criadoEm])
+}
+
+model CriseComunicacao {
+  id                Int      @id @default(autoincrement())
+  tenantId          Int
+  criseId           Int
+  tipoComunicacao   String
+  canal             String
+  destinatariosJson Json?
+  assunto           String?
+  mensagemRedacted  String?
+  statusEnvio       String
+  enviadoPor        Int?
+  enviadoEm         DateTime?
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  crise             CriseRegistro @relation(fields: [criseId], references: [id], onDelete: Cascade)
+  remetente         User?    @relation(fields: [enviadoPor], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([criseId])
+}
+
+model GrcRisco {
+  id          Int      @id @default(autoincrement())
+  tenantId     Int
+  codigo       String
+  titulo       String
+  descricao    String?
+  categoriaRisco String
+  modulo       String?
+  processoNegocio String?
+  entidadeTipo String?
+  entidadeId   Int?
+  ownerUserId  Int?
+  statusRisco  String
+  impactoInerente String
+  probabilidadeInerente String
+  scoreInerente Int
+  impactoResidual String?
+  probabilidadeResidual String?
+  scoreResidual Int?
+  apetiteScore  Int?
+  toleranciaScore Int?
+  origemRisco   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner        User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+  avaliacoes   GrcRiscoAvaliacao[]
+  riscosControles GrcRiscoControle[]
+  achados      GrcAchado[]
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, statusRisco])
+  @@index([tenantId, categoriaRisco])
+}
+
+model GrcRiscoAvaliacao {
+  id          Int      @id @default(autoincrement())
+  tenantId     Int
+  riscoId      Int
+  tipoAvaliacao String
+  impacto      String
+  probabilidade String
+  score        Int
+  justificativa String?
+  avaliadoPor  Int?
+  avaliadoEm   DateTime @default(now())
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  risco        GrcRisco @relation(fields: [riscoId], references: [id], onDelete: Cascade)
+  avaliador    User?    @relation(fields: [avaliadoPor], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([riscoId])
+}
+
+model GrcControle {
+  id          Int      @id @default(autoincrement())
+  tenantId     Int
+  codigo       String
+  nome         String
+  descricao    String?
+  categoriaControle String?
+  tipoControle String
+  automacaoControle String
+  frequenciaExecucao String?
+  ownerUserId  Int?
+  executorTipo String?
+  evidenciaObrigatoria Boolean @default(false)
+  ativo        Boolean @default(true)
+  criticidade  String
+  objetivoControle String?
+  procedimentoExecucao String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner        User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+  testes       GrcControleTeste[]
+  riscosControles GrcRiscoControle[]
+  achados      GrcAchado[]
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, ativo])
+}
+
+model GrcRiscoControle {
+  id          Int      @id @default(autoincrement())
+  tenantId     Int
+  riscoId      Int
+  controleId   Int
+  papelControle String
+  pesoMitigacao Int @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  risco        GrcRisco @relation(fields: [riscoId], references: [id], onDelete: Cascade)
+  controle     GrcControle @relation(fields: [controleId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@unique([riscoId, controleId])
+}
+
+model GrcControleTeste {
+  id          Int      @id @default(autoincrement())
+  tenantId     Int
+  controleId   Int
+  tipoTeste    String
+  periodoReferencia String?
+  amostraJson  Json?
+  resultadoTeste String
+  falhasIdentificadas String?
+  efetividadeScore Int?
+  executadoPor Int?
+  executadoEm DateTime @default(now())
+  revisorUserId Int?
+  revisadoEm DateTime?
+  conclusao   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  controle    GrcControle @relation(fields: [controleId], references: [id], onDelete: Cascade)
+  executor    User?    @relation(fields: [executadoPor], references: [id], onDelete: SetNull)
+  revisor     User?    @relation(fields: [revisorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([controleId])
+}
+
+model GrcAuditoria {
+  id          Int      @id @default(autoincrement())
+  tenantId     Int
+  codigo       String
+  nome         String
+  tipoAuditoria String
+  statusAuditoria String
+  escopoDescricao String?
+  ownerUserId  Int?
+  auditorLiderUserId Int?
+  dataInicioPlanejada DateTime?
+  dataFimPlanejada DateTime?
+  dataInicioReal DateTime?
+  dataFimReal   DateTime?
+  opiniaoFinal  String?
+  ratingFinal   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner        User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+  auditorLider User?    @relation(fields: [auditorLiderUserId], references: [id], onDelete: SetNull)
+  itensEscopo  GrcAuditoriaItemEscopo[]
+  achados      GrcAchado[]
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, statusAuditoria])
+}
+
+model GrcAuditoriaItemEscopo {
+  id          Int      @id @default(autoincrement())
+  tenantId     Int
+  auditoriaId  Int
+  tipoItem     String
+  referenciaId Int?
+  descricao    String?
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  auditoria    GrcAuditoria @relation(fields: [auditoriaId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([auditoriaId])
+}
+
+model GrcAchado {
+  id          Int      @id @default(autoincrement())
+  tenantId     Int
+  auditoriaId  Int?
+  riscoId      Int?
+  controleId   Int?
+  incidenteId  Int?
+  criseId      Int?
+  titulo       String
+  descricao    String?
+  gravidade    String
+  statusAchado String
+  causaRaiz    String?
+  impactoResumo String?
+  recomendacao String?
+  ownerUserId  Int?
+  prazoTratativaEm DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  auditoria    GrcAuditoria? @relation(fields: [auditoriaId], references: [id], onDelete: SetNull)
+  risco        GrcRisco? @relation(fields: [riscoId], references: [id], onDelete: SetNull)
+  controle     GrcControle? @relation(fields: [controleId], references: [id], onDelete: SetNull)
+  owner        User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+  planosAcao   GrcPlanoAcao[]
+
+  @@index([tenantId])
+  @@index([tenantId, statusAchado])
+  @@index([tenantId, gravidade])
+}
+
+model GrcPlanoAcao {
+  id          Int      @id @default(autoincrement())
+  tenantId     Int
+  origemTipo   String
+  origemId     Int
+  titulo       String
+  descricao    String?
+  statusPlano  String
+  criticidade  String
+  ownerUserId  Int?
+  aprovadorUserId Int?
+  dataLimite   DateTime?
+  concluidoEm  DateTime?
+  resultadoEsperado String?
+  criterioAceite String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner        User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+  aprovador    User?    @relation(fields: [aprovadorUserId], references: [id], onDelete: SetNull)
+  itens        GrcPlanoAcaoItem[]
+  evidencias   GrcEvidencia[]
+
+  @@index([tenantId])
+  @@index([tenantId, statusPlano])
+}
+
+model GrcPlanoAcaoItem {
+  id          Int      @id @default(autoincrement())
+  tenantId     Int
+  planoAcaoId  Int
+  ordemExecucao Int
+  titulo       String
+  descricao    String?
+  statusItem   String
+  responsavelUserId Int?
+  dataLimite   DateTime?
+  concluidoEm  DateTime?
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  planoAcao    GrcPlanoAcao @relation(fields: [planoAcaoId], references: [id], onDelete: Cascade)
+  responsavel  User?    @relation(fields: [responsavelUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([planoAcaoId])
+  @@unique([planoAcaoId, ordemExecucao])
+}
+
+model GrcEvidencia {
+  id          Int      @id @default(autoincrement())
+  tenantId     Int
+  referenciaTipo String
+  referenciaId Int
+  tipoEvidencia String
+  titulo       String?
+  descricao    String?
+  arquivoPath  String?
+  hashSha256   String?
+  coletadoPor  Int?
+  coletadoEm   DateTime @default(now())
+  metadataJson Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  coletor      User?    @relation(fields: [coletadoPor], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, referenciaTipo, referenciaId])
+}
+
+model GrcControleMetrica {
+  id          Int      @id @default(autoincrement())
+  tenantId     Int
+  controleId   Int
+  chaveMetrica String
+  bucketInicio DateTime
+  bucketFim    DateTime
+  valorNumero  Float?
+  limiteAlerta Float?
+  limiteCritico Float?
+  statusMetrica String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  controle     GrcControle @relation(fields: [controleId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, chaveMetrica, bucketInicio])
+}
+
+model GrcMatrizRiscoSnapshot {
+  id          Int      @id @default(autoincrement())
+  tenantId     Int
+  periodoRef  String
+  categoriaRisco String
+  quantidadeBaixo Int
+  quantidadeMedio Int
+  quantidadeAlto Int
+  quantidadeCritico Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, periodoRef])
 }

@@ -1,6 +1,6 @@
 export type DashboardExportContexto = 'CEO' | 'DIRETOR' | 'GERENTE' | 'RH' | 'SST' | 'SUPRIMENTOS' | 'ENGENHARIA';
 
-export type DashboardExportFormato = 'PDF' | 'XLSX';
+export type DashboardExportFormato = 'PDF' | 'XLSX' | 'CSV';
 
 export type DashboardExportFiltrosDTO = {
   idObra?: number;
@@ -30,4 +30,3 @@ export type DashboardExportDataDTO = {
   series?: { referencia: string; [key: string]: string | number }[];
   tabelas?: DashboardExportSectionTableDTO[];
 };
-

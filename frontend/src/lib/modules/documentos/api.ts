@@ -28,7 +28,19 @@ function qs(params?: Record<string, string | number | boolean | undefined | null
 }
 
 export const DocumentosApi = {
-  listar: (params?: { limit?: number }) => api<DocumentoRegistroDTO[]>(`/api/v1/documentos${qs(params)}`),
+  listar: (params?: {
+    limit?: number;
+    entidadeTipo?: string | null;
+    entidadeId?: number | null;
+    categoriaPrefix?: string | null;
+    incluirObrasDoContrato?: boolean;
+  }) =>
+    api<DocumentoRegistroDTO[]>(
+      `/api/v1/documentos${qs({
+        ...params,
+        incluirObrasDoContrato: params?.incluirObrasDoContrato ? 1 : 0,
+      })}`
+    ),
   criar: (body: DocumentoCriarDTO) =>
     api<{ id: number }>('/api/v1/documentos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   obter: (id: number) => api<DocumentoDetalheDTO>(`/api/v1/documentos/${id}`),

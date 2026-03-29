@@ -1,4 +1,12 @@
-import type { PresencaDetalheDTO, PresencaItemDTO, PresencaCabecalhoDTO, StatusPresenca, TipoLocalPresenca } from './types';
+import type {
+  PresencaDetalheDTO,
+  PresencaItemDTO,
+  PresencaCabecalhoDTO,
+  PresencaProducaoItemDTO,
+  ProdutividadeLinhaDTO,
+  StatusPresenca,
+  TipoLocalPresenca,
+} from './types';
 
 type ApiResponse<T> = { success: boolean; message?: string; data: T; meta?: Record<string, unknown> };
 
@@ -47,4 +55,14 @@ export const PresencasApi = {
 
   acao: (idPresenca: number, payload: { acao: 'FECHAR' | 'ENVIAR_RH' | 'RECEBER_RH' | 'REJEITAR_RH'; motivo?: string }) =>
     api<{ id: number; status: StatusPresenca }>(`/api/v1/rh/presencas/${idPresenca}/acoes`, { method: 'POST', body: JSON.stringify(payload) }),
+
+  obterProducao: (idPresenca: number) => api<PresencaProducaoItemDTO[]>(`/api/v1/rh/presencas/${idPresenca}/producao`),
+
+  salvarProducao: (idPresenca: number, payload: { itens: Array<{ idPresencaItem: number; quantidadeExecutada: number; unidadeMedida?: string | null; servicos?: string[] | null }> }) =>
+    api<{ idPresenca: number }>(`/api/v1/rh/presencas/${idPresenca}/producao`, { method: 'PUT', body: JSON.stringify(payload) }),
+
+  equipeObra: (idObra: number) => api<any[]>(`/api/v1/rh/obras/equipe?idObra=${idObra}`),
+
+  produtividadeObra: (params: { idObra: number; competencia: string }) =>
+    api<ProdutividadeLinhaDTO[]>(`/api/v1/rh/obras/produtividade?idObra=${params.idObra}&competencia=${encodeURIComponent(params.competencia)}`),
 };

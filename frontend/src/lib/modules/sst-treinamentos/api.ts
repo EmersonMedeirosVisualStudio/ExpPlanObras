@@ -23,4 +23,8 @@ export const SstTreinamentosApi = {
     api<any>(`/api/v1/sst/treinamentos/participantes/${idParticipante}/assinar`, { method: 'POST', body: JSON.stringify(payload) }),
   finalizarTurma: (idTurma: number, payload: any) => api<any>(`/api/v1/sst/treinamentos/turmas/${idTurma}/finalizar`, { method: 'POST', body: JSON.stringify(payload) }),
   listarVencimentos: () => api<any[]>('/api/v1/sst/treinamentos/vencimentos'),
+  listarServicosModelo: (idTreinamentoModelo: number) => api<string[]>(`/api/v1/sst/treinamentos/modelos/${idTreinamentoModelo}/servicos`),
+  salvarServicosModelo: (idTreinamentoModelo: number, payload: { codigos: string[] }) =>
+    api<any>(`/api/v1/sst/treinamentos/modelos/${idTreinamentoModelo}/servicos`, { method: 'PUT', body: JSON.stringify(payload) }),
+  listarAptosPorServico: (codigoServico: string) => api<any[]>(`/api/v1/sst/treinamentos/aptos?codigoServico=${encodeURIComponent(codigoServico)}`),
 };

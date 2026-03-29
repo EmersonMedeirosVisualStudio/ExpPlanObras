@@ -102,8 +102,54 @@ async function addHistorico(args: { tenantId: number; documentoId: number; versa
   );
 }
 
-export async function listarDocumentos(tenantId: number, args: { limit?: number | null } = {}): Promise<DocumentoRegistroDTO[]> {
+export async function listarDocumentos(
+  tenantId: number,
+  args: {
+    limit?: number | null;
+    entidadeTipo?: string | null;
+    entidadeId?: number | null;
+    categoriaPrefix?: string | null;
+    incluirObrasDoContrato?: boolean;
+  } = {}
+): Promise<DocumentoRegistroDTO[]> {
   const limit = Math.min(200, Math.max(1, Number(args.limit || 50)));
+  const entidadeTipo = args.entidadeTipo ? String(args.entidadeTipo).trim().toUpperCase() : null;
+  const entidadeId = args.entidadeId !== undefined && args.entidadeId !== null ? Number(args.entidadeId) : null;
+  const categoriaPrefix = args.categoriaPrefix ? String(args.categoriaPrefix).trim().toUpperCase() : null;
+  const incluirObrasDoContrato = args.incluirObrasDoContrato ? true : false;
+
+  const where: string[] = ['tenant_id = ?'];
+  const params: any[] = [tenantId];
+
+  if (categoriaPrefix) {
+    where.push('categoria_documento LIKE ?');
+    params.push(`${categoriaPrefix}%`);
+  }
+
+  if (entidadeTipo && entidadeId && Number.isFinite(entidadeId) && entidadeId > 0) {
+    if (incluirObrasDoContrato && entidadeTipo === 'CONTRATO') {
+      where.push(
+        `
+        (
+          (entidade_tipo = 'CONTRATO' AND entidade_id = ?)
+          OR
+          (entidade_tipo = 'OBRA' AND entidade_id IN (
+            SELECT o.id_obra
+            FROM obras o
+            WHERE o.tenant_id = ? AND o.id_contrato = ?
+          ))
+        )
+        `.trim()
+      );
+      params.push(entidadeId, tenantId, entidadeId);
+    } else {
+      where.push('entidade_tipo = ? AND entidade_id = ?');
+      params.push(entidadeTipo, entidadeId);
+    }
+  } else if (entidadeTipo || entidadeId) {
+    throw new ApiError(422, 'Filtro de entidade inválido. Informe entidadeTipo e entidadeId.');
+  }
+
   const [rows]: any = await db.query(
     `
     SELECT
@@ -118,11 +164,11 @@ export async function listarDocumentos(tenantId: number, args: { limit?: number 
       criado_em AS criadoEm,
       atualizado_em AS atualizadoEm
     FROM documentos_registros
-    WHERE tenant_id = ?
+    WHERE ${where.join(' AND ')}
     ORDER BY id_documento_registro DESC
     LIMIT ?
     `,
-    [tenantId, limit]
+    [...params, limit]
   );
   return (rows as any[]).map((r) => ({
     id: Number(r.id),

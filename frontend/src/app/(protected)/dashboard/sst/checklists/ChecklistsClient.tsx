@@ -10,6 +10,7 @@ export default function ChecklistsClient() {
 
   const [modelos, setModelos] = useState<SstChecklistModeloDTO[]>([]);
   const [execucoes, setExecucoes] = useState<SstChecklistExecucaoDTO[]>([]);
+  const [programacoes, setProgramacoes] = useState<any[]>([]);
   const [selectedExecucaoId, setSelectedExecucaoId] = useState<number | null>(null);
   const [detail, setDetail] = useState<SstChecklistExecucaoDetalheDTO | null>(null);
 
@@ -19,9 +20,12 @@ export default function ChecklistsClient() {
     try {
       setLoading(true);
       setError(null);
-      const [ms, es] = await Promise.all([SstApi.listarModelos(), SstApi.listarExecucoes()]);
+      const [ms, es, psRes] = await Promise.all([SstApi.listarModelos(), SstApi.listarExecucoes(), fetch('/api/v1/sst/checklists/programacoes', { cache: 'no-store' })]);
       setModelos(Array.isArray(ms) ? ms : []);
       setExecucoes(Array.isArray(es) ? es : []);
+      const psJson = await psRes.json().catch(() => null);
+      if (psRes.ok && psJson?.success) setProgramacoes(Array.isArray(psJson.data) ? psJson.data : []);
+      else setProgramacoes([]);
     } catch (e: any) {
       setError(e?.message || 'Erro ao carregar checklists.');
     } finally {
@@ -60,6 +64,46 @@ export default function ChecklistsClient() {
       await carregar();
     } catch (e: any) {
       setError(e?.message || 'Erro ao criar modelo.');
+    }
+  }
+
+  async function criarModelosPadrao() {
+    const okConfirm = confirm('Criar modelos padrão (Execução, Equipamentos e Qualidade)?\n\nIsso não apaga nada e é seguro repetir.');
+    if (!okConfirm) return;
+    try {
+      setError(null);
+      const res = await fetch('/api/v1/sst/checklists/modelos/padroes', { method: 'POST' });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.message || 'Erro ao criar modelos padrão.');
+      await carregar();
+      alert(`Modelos padrão: ${json?.criados ?? 0} criados, ${json?.existentes ?? 0} já existiam.`);
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao criar modelos padrão.');
+    }
+  }
+
+  async function programarPadroes() {
+    const okConfirm = confirm('Programar checklists recorrentes padrão para um local?\n\nIsso cria programações (DIÁRIO/SEMANAL) e alimenta alertas de checklists atrasados.');
+    if (!okConfirm) return;
+
+    const tipoLocal = (prompt('Tipo local (OBRA/UNIDADE):') || '').trim().toUpperCase();
+    if (tipoLocal !== 'OBRA' && tipoLocal !== 'UNIDADE') return;
+    const idRef = Number(prompt(`ID da ${tipoLocal === 'OBRA' ? 'obra' : 'unidade'}:`) || '');
+    if (!Number.isFinite(idRef) || idRef <= 0) return;
+    const dataInicioVigencia = (prompt('Início vigência (YYYY-MM-DD):') || new Date().toISOString().slice(0, 10)).trim();
+
+    try {
+      setError(null);
+      const payload: any = { tipoLocal, dataInicioVigencia };
+      if (tipoLocal === 'OBRA') payload.idObra = idRef;
+      if (tipoLocal === 'UNIDADE') payload.idUnidade = idRef;
+      const res = await fetch('/api/v1/sst/checklists/programacoes/padroes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || 'Erro ao programar padrões.');
+      await carregar();
+      alert(`Programações: ${json?.data?.criados ?? 0} criadas, ${json?.data?.existentes ?? 0} já existiam.`);
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao programar padrões.');
     }
   }
 
@@ -134,6 +178,12 @@ export default function ChecklistsClient() {
         <div className="flex gap-2 flex-wrap">
           <button onClick={novoModelo} className="rounded-lg border px-4 py-2 text-sm" type="button">
             Novo modelo
+          </button>
+          <button onClick={criarModelosPadrao} className="rounded-lg border px-4 py-2 text-sm" type="button">
+            Modelos padrão
+          </button>
+          <button onClick={programarPadroes} className="rounded-lg border px-4 py-2 text-sm" type="button">
+            Programar padrões
           </button>
           <button onClick={novaExecucao} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white" type="button">
             Nova execução
@@ -289,7 +339,49 @@ export default function ChecklistsClient() {
           </table>
         </div>
       </section>
+
+      <section className="rounded-xl border bg-white p-4 shadow-sm">
+        <h2 className="mb-3 text-lg font-semibold">Programações</h2>
+        <div className="text-sm text-slate-600">Programações definem checklists recorrentes por local e alimentam alertas de pendência.</div>
+        <div className="mt-3 overflow-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 text-left">
+              <tr>
+                <th className="px-3 py-2">Local</th>
+                <th className="px-3 py-2">Modelo</th>
+                <th className="px-3 py-2">Periodicidade</th>
+                <th className="px-3 py-2">Última execução</th>
+                <th className="px-3 py-2">Vigência</th>
+                <th className="px-3 py-2">Ativo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {programacoes.map((p: any) => (
+                <tr key={p.id} className="border-t">
+                  <td className="px-3 py-2">
+                    {p.tipoLocal} {p.idObra || p.idUnidade || ''}
+                  </td>
+                  <td className="px-3 py-2">{p.nomeModelo}</td>
+                  <td className="px-3 py-2">{p.periodicidade}</td>
+                  <td className="px-3 py-2">{p.ultimaExecucao || '-'}</td>
+                  <td className="px-3 py-2">
+                    {p.dataInicioVigencia}
+                    {p.dataFimVigencia ? ` → ${p.dataFimVigencia}` : ''}
+                  </td>
+                  <td className="px-3 py-2">{p.ativo ? 'SIM' : 'NÃO'}</td>
+                </tr>
+              ))}
+              {programacoes.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-3 py-6 text-center text-slate-500">
+                    Nenhuma programação.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }
-

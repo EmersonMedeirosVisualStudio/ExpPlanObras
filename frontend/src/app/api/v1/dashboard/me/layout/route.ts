@@ -47,6 +47,16 @@ const DEFAULTS: Record<string, any[]> = {
     { widgetCodigo: 'SERIES_ENGENHARIA', ordemExibicao: 3, largura: 6, altura: 1, visivel: true },
     { widgetCodigo: 'OBRAS_RISCO', ordemExibicao: 4, largura: 12, altura: 1, visivel: true },
     { widgetCodigo: 'MEDICOES_PENDENTES', ordemExibicao: 5, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'CRONOGRAMA_ACOMPANHAMENTO', ordemExibicao: 6, largura: 12, altura: 1, visivel: true },
+  ],
+  FISCALIZACAO: [
+    { widgetCodigo: 'CARDS_FISCALIZACAO', ordemExibicao: 1, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'DIARIO_OBRA', ordemExibicao: 2, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'CALENDARIO_OBRA', ordemExibicao: 3, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'PROGRESSO_OBRA', ordemExibicao: 4, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'PROGRESSO_CONTRATO', ordemExibicao: 5, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'PRAZO_EXECUCAO', ordemExibicao: 6, largura: 6, altura: 1, visivel: true },
+    { widgetCodigo: 'MEDICOES_FISCALIZACAO', ordemExibicao: 7, largura: 6, altura: 1, visivel: true },
   ],
   HOME: [
     { widgetCodigo: 'BEM_VINDO', ordemExibicao: 1, largura: 12, altura: 1, visivel: true },

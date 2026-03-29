@@ -1,12 +1,210 @@
 'use client';
 
+import { useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { DocumentosApi } from '@/lib/modules/documentos/api';
+import type { DocumentoRegistroDTO } from '@/lib/modules/documentos/types';
+
 export default function ObrasDocumentosPage() {
+  const router = useRouter();
+  const sp = useSearchParams();
+  const initialTipo = (sp.get('tipo') || 'OBRA').toUpperCase();
+  const initialId = sp.get('id') || '';
+
+  const [tipo, setTipo] = useState<'OBRA' | 'CONTRATO'>(initialTipo === 'CONTRATO' ? 'CONTRATO' : 'OBRA');
+  const [idRef, setIdRef] = useState(initialId);
+  const [categoriaPrefix, setCategoriaPrefix] = useState(tipo === 'OBRA' ? 'OBRA:' : 'CONTRATO:');
+  const [incluirObras, setIncluirObras] = useState(true);
+
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [rows, setRows] = useState<DocumentoRegistroDTO[]>([]);
+
+  const categoriasSugeridas = useMemo(() => {
+    if (tipo === 'OBRA') {
+      return ['OBRA:ART', 'OBRA:PROJETO', 'OBRA:REVISAO_PROJETO', 'OBRA:LAUDO', 'OBRA:PARECER', 'OBRA:RELATORIO', 'OBRA:OUTROS'];
+    }
+    return ['CONTRATO:CONTRATO', 'CONTRATO:OS', 'CONTRATO:ADITIVO', 'CONTRATO:MEDICAO', 'CONTRATO:COMUNICACAO', 'CONTRATO:OUTROS'];
+  }, [tipo]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, DocumentoRegistroDTO[]>();
+    for (const r of rows) {
+      const cat = String(r.categoriaDocumento || 'SEM_CATEGORIA');
+      const parts = cat.split(':').map((p) => p.trim()).filter(Boolean);
+      const key = parts.length >= 2 ? `${parts[0]}:${parts[1]}` : parts[0] || cat;
+      map.set(key, [...(map.get(key) || []), r]);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [rows]);
+
+  async function carregar() {
+    const id = Number(idRef || 0);
+    if (!id) return;
+    try {
+      setLoading(true);
+      setErro(null);
+      router.replace(`/dashboard/obras/documentos?tipo=${tipo}&id=${id}`);
+      const data = await DocumentosApi.listar({
+        limit: 200,
+        entidadeTipo: tipo,
+        entidadeId: id,
+        categoriaPrefix: categoriaPrefix || null,
+        incluirObrasDoContrato: tipo === 'CONTRATO' ? incluirObras : false,
+      });
+      setRows(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setErro(e?.message || 'Erro ao carregar documentos.');
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function criarDocumento() {
+    const id = Number(idRef || 0);
+    if (!id) return;
+    const cat = (prompt('Categoria (use padrão TIPO:SUBTIPO, ex.: OBRA:ART):', categoriaPrefix || '') || '').trim().toUpperCase();
+    if (!cat) return;
+    const titulo = (prompt('Título:') || '').trim();
+    if (!titulo) return;
+    try {
+      setLoading(true);
+      setErro(null);
+      const res = await DocumentosApi.criar({
+        categoriaDocumento: cat,
+        tituloDocumento: titulo,
+        entidadeTipo: tipo,
+        entidadeId: id,
+      });
+      router.push(`/dashboard/documentos/${res.id}`);
+    } catch (e: any) {
+      setErro(e?.message || 'Erro ao criar documento.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <div className="max-w-5xl">
-      <h1 className="text-2xl font-bold text-gray-900">Documentos/Fotos</h1>
-      <div className="mt-2 text-sm text-gray-600">Upload e organização por obra/unidade serão implementados após a Sprint 0.</div>
-      <div className="mt-6 bg-white border rounded-lg p-6 text-gray-700">Wireframe: lista + upload + tags + filtros.</div>
+    <div className="max-w-7xl space-y-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-800">Documentos</h1>
+          <div className="mt-1 text-sm text-slate-600">
+            Organização por tipo/subtipo (categoria) e vínculo com obra/contrato. Contratos podem visualizar também os documentos das obras vinculadas.
+          </div>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={carregar} disabled={loading}>
+            Atualizar
+          </button>
+          <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white" type="button" onClick={criarDocumento} disabled={loading}>
+            Novo documento
+          </button>
+        </div>
+      </div>
+
+      {erro ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{erro}</div> : null}
+
+      <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
+          <div>
+            <div className="text-sm text-slate-600">Contexto</div>
+            <select
+              className="input"
+              value={tipo}
+              onChange={(e) => {
+                const v = e.target.value === 'CONTRATO' ? 'CONTRATO' : 'OBRA';
+                setTipo(v);
+                setCategoriaPrefix(v === 'OBRA' ? 'OBRA:' : 'CONTRATO:');
+                setRows([]);
+              }}
+            >
+              <option value="OBRA">Obra</option>
+              <option value="CONTRATO">Contrato</option>
+            </select>
+          </div>
+          <div>
+            <div className="text-sm text-slate-600">ID</div>
+            <input className="input" value={idRef} onChange={(e) => setIdRef(e.target.value)} placeholder={tipo === 'OBRA' ? 'idObra' : 'idContrato'} />
+          </div>
+          <div className="md:col-span-2">
+            <div className="text-sm text-slate-600">Categoria prefixo</div>
+            <input className="input" value={categoriaPrefix} onChange={(e) => setCategoriaPrefix(e.target.value.toUpperCase())} placeholder="Ex.: OBRA:" />
+          </div>
+          <div className="md:col-span-2 flex items-end gap-3">
+            {tipo === 'CONTRATO' ? (
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={incluirObras} onChange={(e) => setIncluirObras(e.target.checked)} />
+                Incluir documentos das obras do contrato
+              </label>
+            ) : (
+              <div className="text-sm text-slate-500">Dica: use categorias como OBRA:ART, OBRA:PROJETO, OBRA:LAUDO.</div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {categoriasSugeridas.map((c) => (
+            <button key={c} type="button" className="rounded-full border px-3 py-1 text-xs" onClick={() => setCategoriaPrefix(`${c.split(':')[0]}:${c.split(':')[1]}:`.replace('::', ':'))}>
+              {c}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {grouped.map(([cat, items]) => (
+          <div key={cat} className="rounded-xl border bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div className="text-lg font-semibold">{cat}</div>
+              <div className="text-sm text-slate-500">{items.length} documento(s)</div>
+            </div>
+            <div className="overflow-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-left">
+                  <tr>
+                    <th className="px-3 py-2">Título</th>
+                    <th className="px-3 py-2">Vínculo</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((r) => (
+                    <tr key={r.id} className="border-t">
+                      <td className="px-3 py-2">
+                        <div className="font-medium text-slate-800">{r.tituloDocumento}</div>
+                        <div className="text-xs text-slate-500">#{r.id}</div>
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">{r.entidadeTipo && r.entidadeId ? `${r.entidadeTipo}:${r.entidadeId}` : '-'}</td>
+                      <td className="px-3 py-2">{r.statusDocumento}</td>
+                      <td className="px-3 py-2 text-right">
+                        <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => router.push(`/dashboard/documentos/${r.id}`)}>
+                          Abrir
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {!items.length ? (
+                    <tr>
+                      <td className="px-3 py-6 text-center text-slate-500" colSpan={4}>
+                        Sem documentos.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+
+        {!grouped.length ? (
+          <div className="rounded-xl border bg-white p-6 text-sm text-slate-500">
+            Informe o contexto e o ID e clique em “Atualizar” para listar os documentos.
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
-
