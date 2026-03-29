@@ -443,7 +443,7 @@ export default async function documentosQualificadosRoutes(server: FastifyInstan
       if (localStatus === 'ASSINADA') {
         const dl = await providerImpl.downloadSignedDocument({ tenantId: s.tenantId, envelopeId: s.providerEnvelopeId!, config: (s.provedor.configuracaoJson as any) || null });
         const hash = sha256Hex(dl.buffer);
-        const signedBytes = new Uint8Array(dl.buffer.buffer, dl.buffer.byteOffset, dl.buffer.byteLength);
+        const signedBytes = Uint8Array.from(dl.buffer);
         const art = await tx.documentoAssinaturaArtefato.create({
           data: {
             tenantId: s.tenantId,
