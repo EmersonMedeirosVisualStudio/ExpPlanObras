@@ -56,6 +56,72 @@ model Tenant {
   backupExecucoes BackupExecucaoTenant[]
   backupRestauracoes BackupRestauracaoTenant[]
   auditoriaEventos AuditoriaEvento[]
+  securityFieldPolicies SecurityFieldPolicy[]
+  securityFieldPolicyTargets SecurityFieldPolicyTarget[]
+  documentoAssinaturaProvedores DocumentoAssinaturaProvedor[]
+  documentoAssinaturaSolicitacoes DocumentoAssinaturaSolicitacao[]
+  documentoAssinaturaSolicitacoesSignatarios DocumentoAssinaturaSolicitacaoSignatario[]
+  documentoAssinaturaArtefatos DocumentoAssinaturaArtefato[]
+  documentoAssinaturaEvidencias DocumentoAssinaturaEvidencia[]
+  documentoAssinaturaCallbacks DocumentoAssinaturaCallback[]
+  bcpPlanos BcpPlano[]
+  bcpPlanosAtivosCriticos BcpPlanoAtivoCritico[]
+  bcpRunbooks BcpRunbook[]
+  bcpRunbooksPassos BcpRunbookPasso[]
+  bcpPlanosRunbooks BcpPlanoRunbook[]
+  bcpTestes BcpTeste[]
+  drExecucoes DrExecucaoRecuperacao[]
+  observabilidadeEventos ObservabilidadeEvento[]
+  observabilidadeRegras ObservabilidadeRegra[]
+  observabilidadeAlertas ObservabilidadeAlerta[]
+  observabilidadeAlertasEventos ObservabilidadeAlertaEvento[]
+  observabilidadeIncidentes ObservabilidadeIncidente[]
+  observabilidadeIncidentesEventos ObservabilidadeIncidenteEvento[]
+  observabilidadeDestinosExternos ObservabilidadeDestinoExterno[]
+  observabilidadePlaybooks ObservabilidadePlaybook[]
+  observabilidadePlaybooksPassos ObservabilidadePlaybookPasso[]
+  observabilidadePlaybooksExecucoes ObservabilidadePlaybookExecucao[]
+  observabilidadePlaybooksExecucoesPassos ObservabilidadePlaybookExecucaoPasso[]
+  observabilidadeIncidentesTimeline ObservabilidadeIncidenteTimeline[]
+  observabilidadeCasosCompliance ObservabilidadeCasoCompliance[]
+  observabilidadeCasosComplianceEvidencias ObservabilidadeCasoComplianceEvidencia[]
+  criseRegistros CriseRegistro[]
+  criseParticipantes CriseWarRoomParticipante[]
+  criseTimeline CriseTimeline[]
+  criseComunicacoes CriseComunicacao[]
+  grcRiscos GrcRisco[]
+  grcAvaliacoes GrcRiscoAvaliacao[]
+  grcControles GrcControle[]
+  grcRiscosControles GrcRiscoControle[]
+  grcControlesTestes GrcControleTeste[]
+  grcAuditorias GrcAuditoria[]
+  grcAuditoriasItensEscopo GrcAuditoriaItemEscopo[]
+  grcAchados GrcAchado[]
+  grcAchadosAcoes GrcAchadoAcao[]
+  grcPlanosAcao GrcPlanoAcao[]
+  grcPlanosAcaoItens GrcPlanoAcaoItem[]
+  grcEvidencias GrcEvidencia[]
+  grcControlesMetricas GrcControleMetrica[]
+  grcMatrizSnapshots GrcMatrizRiscoSnapshot[]
+  governancaDominios GovernancaDadoDominio[]
+  governancaAtivos GovernancaDadoAtivo[]
+  governancaAtivosCampos GovernancaDadoAtivoCampo[]
+  governancaGlossarios GovernancaDadoGlossario[]
+  governancaLineageRelacoes GovernancaDadoLineageRelacao[]
+  governancaQualidadeRegras GovernancaDadoQualidadeRegra[]
+  governancaQualidadeExecucoes GovernancaDadoQualidadeExecucao[]
+  governancaQualidadeIssues GovernancaDadoQualidadeIssue[]
+  governancaRetencaoPoliticas GovernancaRetencaoPolitica[]
+  governancaRetencaoItens GovernancaRetencaoItem[]
+  governancaLegalHolds GovernancaLegalHold[]
+  governancaLegalHoldItens GovernancaLegalHoldItem[]
+  governancaDescarteLotes GovernancaDescarteLote[]
+  governancaDescarteLoteItens GovernancaDescarteLoteItem[]
+  governancaRetencaoAuditorias GovernancaRetencaoAuditoria[]
+  governancaPiiScans GovernancaPiiScan[]
+  governancaPiiScanResultados GovernancaPiiScanResultado[]
+  governancaClassificacaoSugestoes GovernancaClassificacaoSugestao[]
+  governancaDadosAuditorias GovernancaDadosAuditoria[]
 }
 
 model User {
@@ -81,6 +147,52 @@ model User {
   backupRestauracoesSolicitadas BackupRestauracaoTenant[]
   dashboardLayouts DashboardLayoutUsuario[]
   auditoriaEventos AuditoriaEvento[]
+  bcpPlanosOwner BcpPlano[] @relation("BcpPlanoOwner")
+  bcpPlanosAprovador BcpPlano[] @relation("BcpPlanoAprovador")
+  bcpAtivosOwner BcpPlanoAtivoCritico[] @relation("BcpPlanoAtivoCriticoOwner")
+  bcpTestesExecutor BcpTeste[] @relation("BcpTesteExecutor")
+  drExecucoesAprovador DrExecucaoRecuperacao[] @relation("DrExecucaoRecuperacaoAprovador")
+  observabilidadePlaybooksExecucoesAprovadoPor ObservabilidadePlaybookExecucao[] @relation("ObservabilidadePlaybookExecucaoAprovadoPor")
+  observabilidadePlaybooksExecucoesExecutadoPor ObservabilidadePlaybookExecucao[] @relation("ObservabilidadePlaybookExecucaoExecutadoPor")
+  grcControlesTestesExecutor GrcControleTeste[] @relation("GrcControleTesteExecutor")
+  grcControlesTestesRevisor GrcControleTeste[] @relation("GrcControleTesteRevisor")
+  grcAuditoriasOwner GrcAuditoria[] @relation("GrcAuditoriaOwner")
+  grcAuditoriasAuditorLider GrcAuditoria[] @relation("GrcAuditoriaAuditorLider")
+  grcPlanosAcaoOwner GrcPlanoAcao[] @relation("GrcPlanoAcaoOwner")
+  grcPlanosAcaoAprovador GrcPlanoAcao[] @relation("GrcPlanoAcaoAprovador")
+  tenantHistoryActor TenantHistoryEntry[]
+  securityFieldsPoliticasConfiguradas SecurityFieldPolicy[]
+  documentosAssinaturaSolicitacoes DocumentoAssinaturaSolicitacao[]
+  governancaGlossariosOwner GovernancaDadoGlossario[]
+  governancaQualidadeIssuesResponsavel GovernancaDadoQualidadeIssue[]
+  observabilidadeEventosAtor ObservabilidadeEvento[]
+  observabilidadeAlertasResponsavel ObservabilidadeAlerta[]
+  observabilidadeIncidentesOwner ObservabilidadeIncidente[]
+  observabilidadeIncidentesTimelineAutor ObservabilidadeIncidenteTimeline[]
+  criseRegistrosComandante CriseRegistro[]
+  criseTimelineAutor CriseTimeline[]
+  criseComunicacoesRemetente CriseComunicacao[]
+  grcRiscosOwner GrcRisco[]
+  grcAvaliacoesAvaliador GrcRiscoAvaliacao[]
+  grcAchadosOwner GrcAchado[]
+  grcAchadosAcoesResponsavel GrcAchadoAcao[]
+  grcPlanosAcaoItensResponsavel GrcPlanoAcaoItem[]
+  grcEvidenciasColetor GrcEvidencia[]
+  governancaAtivosOwnerNegocio GovernancaDadoAtivo[] @relation("GovernancaOwnerNegocio")
+  governancaAtivosOwnerTecnico GovernancaDadoAtivo[] @relation("GovernancaOwnerTecnico")
+  governancaAtivosSteward GovernancaDadoAtivo[] @relation("GovernancaSteward")
+  governancaAtivosCustodiante GovernancaDadoAtivo[] @relation("GovernancaCustodiante")
+  governancaQualidadeCriadoPor GovernancaDadoQualidadeRegra[] @relation("GovQualidadeCriadoPor")
+  governancaQualidadeAtualizadoPor GovernancaDadoQualidadeRegra[] @relation("GovQualidadeAtualizadoPor")
+  governancaRetencaoPoliticasCriadoPor GovernancaRetencaoPolitica[] @relation("GovernancaRetencaoPoliticaCriadoPor")
+  governancaRetencaoPoliticasAtualizadoPor GovernancaRetencaoPolitica[] @relation("GovernancaRetencaoPoliticaAtualizadoPor")
+  governancaLegalHoldCriador GovernancaLegalHold[] @relation("GovernancaLegalHoldCriador")
+  governancaLegalHoldLiberador GovernancaLegalHold[] @relation("GovernancaLegalHoldLiberador")
+  governancaDescarteLotesCriador GovernancaDescarteLote[] @relation("GovernancaDescarteLoteCriador")
+  governancaDescarteLotesAprovador GovernancaDescarteLote[] @relation("GovernancaDescarteLoteAprovador")
+  governancaDescarteLotesExecutor GovernancaDescarteLote[] @relation("GovernancaDescarteLoteExecutor")
+  governancaPiiScansExecutadoPor GovernancaPiiScan[] @relation("GovernancaPiiScanExecutadoPor")
+  governancaClassificacoesAvaliadoPor GovernancaClassificacaoSugestao[] @relation("GovernancaClassificacaoAvaliadoPor")
 }
 
 model TenantHistoryEntry {
@@ -1799,7 +1911,7 @@ model BcpPlanoAtivoCritico {
 
   tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   plano          BcpPlano @relation(fields: [planoId], references: [id], onDelete: Cascade)
-  owner          User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+  owner          User?    @relation("BcpPlanoAtivoCriticoOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([planoId])
@@ -1880,7 +1992,7 @@ model BcpTeste {
 
   tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   plano          BcpPlano @relation(fields: [planoId], references: [id], onDelete: Cascade)
-  executor       User?    @relation(fields: [executadoPor], references: [id], onDelete: SetNull)
+  executor       User?    @relation("BcpTesteExecutor", fields: [executadoPor], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([planoId])
@@ -1906,7 +2018,7 @@ model DrExecucaoRecuperacao {
 
   tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   plano              BcpPlano @relation(fields: [planoId], references: [id], onDelete: Cascade)
-  aprovador          User?    @relation(fields: [aprovadoPor], references: [id], onDelete: SetNull)
+  aprovador          User?    @relation("DrExecucaoRecuperacaoAprovador", fields: [aprovadoPor], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([planoId])
