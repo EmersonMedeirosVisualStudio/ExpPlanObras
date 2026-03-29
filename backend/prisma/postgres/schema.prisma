@@ -161,6 +161,7 @@ model User {
   securityFieldPoliciesCriadoPor SecurityFieldPolicy[] @relation("SecurityFieldPolicyCriadoPor")
   securityFieldPoliciesAtualizadoPor SecurityFieldPolicy[] @relation("SecurityFieldPolicyAtualizadoPor")
   documentosAssinaturaSolicitacoes DocumentoAssinaturaSolicitacao[]
+  documentosAssinaturaSignatarios DocumentoAssinaturaSolicitacaoSignatario[]
   governancaGlossariosOwner GovernancaDadoGlossario[]
   governancaQualidadeIssuesResponsavel GovernancaDadoQualidadeIssue[]
   observabilidadeEventosAtor ObservabilidadeEvento[]
@@ -335,6 +336,7 @@ model Documento {
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
   uploadedAt DateTime @default(now())
   versoes   DocumentoVersao[]
+  solicitacoesAssinatura DocumentoAssinaturaSolicitacao[]
   @@index([tenantId])
   @@index([obraId])
 }
@@ -859,6 +861,7 @@ model DocumentoAssinaturaProvedor {
 
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   solicitacoes DocumentoAssinaturaSolicitacao[]
+  callbacks   DocumentoAssinaturaCallback[]
 
   @@unique([tenantId, codigo, ambiente])
   @@index([tenantId])
@@ -930,6 +933,7 @@ model DocumentoAssinaturaSolicitacaoSignatario {
   tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   solicitacao    DocumentoAssinaturaSolicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
   user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  evidencias     DocumentoAssinaturaEvidencia[]
 
   @@index([tenantId])
   @@index([solicitacaoId])
@@ -1035,6 +1039,7 @@ model GovernancaDadoDominio {
 
   tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   ativos             GovernancaDadoAtivo[]
+  glossarioTermos    GovernancaDadoGlossario[]
 
   @@unique([tenantId, codigoDominio])
   @@index([tenantId])
@@ -1177,6 +1182,7 @@ model GovernancaDadoQualidadeRegra {
   createdBy          User     @relation("GovQualidadeCriadoPor", fields: [criadoPorUserId], references: [id], onDelete: Cascade)
   updatedBy          User     @relation("GovQualidadeAtualizadoPor", fields: [atualizadoPorUserId], references: [id], onDelete: Cascade)
   execucoes          GovernancaDadoQualidadeExecucao[]
+  issues             GovernancaDadoQualidadeIssue[]
 
   @@index([tenantId])
   @@index([ativoId])
