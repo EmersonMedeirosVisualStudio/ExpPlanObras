@@ -10,7 +10,7 @@ export const legalHoldExecutors: PlaybookActionExecutor[] = [
       const criteriaJson = input.configuracao?.criteriaJson ?? input.configuracao?.criteria ?? null;
       if (!criteriaJson) return { ok: false, error: 'criteriaJson ausente' };
       const res = await aplicarLegalHoldPorCriteria({ tenantId: input.tenantId, userId: input.executorUserId, legalHoldId, criteriaJson });
-      if (!res.ok) return { ok: false, error: res.reason || 'Falha ao aplicar hold' };
+      if (!res.ok) return { ok: false, error: 'Falha ao aplicar hold' };
       return { ok: true, output: res };
     },
   },

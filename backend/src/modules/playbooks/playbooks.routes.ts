@@ -20,16 +20,21 @@ function fail(reply: FastifyReply, code: number, message: string, errors?: Recor
   return reply.code(code).send(payload);
 }
 
-function getAuthContext(request: FastifyRequest) {
+type AuthCtx =
+  | { isSystemAdmin: true; tenantId: number | null; userId: number; role: string }
+  | { isSystemAdmin: false; tenantId: number; userId: number; role: string };
+
+function getAuthContext(request: FastifyRequest): AuthCtx | null {
   const u = request.user as any;
   const tenantId = u?.tenantId;
   const userId = u?.userId;
   const role = u?.role;
   const isSystemAdmin = Boolean(u?.isSystemAdmin);
   if (typeof userId !== 'number') return null;
-  if (isSystemAdmin) return { tenantId: typeof tenantId === 'number' ? tenantId : null, userId, role: typeof role === 'string' ? role : 'SYSTEM_ADMIN', isSystemAdmin: true };
+  if (isSystemAdmin)
+    return { tenantId: typeof tenantId === 'number' ? tenantId : null, userId, role: typeof role === 'string' ? role : 'SYSTEM_ADMIN', isSystemAdmin: true } as const;
   if (typeof tenantId !== 'number') return null;
-  return { tenantId, userId, role: typeof role === 'string' ? role : 'USER', isSystemAdmin: false };
+  return { tenantId, userId, role: typeof role === 'string' ? role : 'USER', isSystemAdmin: false } as const;
 }
 
 async function requireAdmin(request: FastifyRequest, reply: FastifyReply) {

@@ -1771,8 +1771,8 @@ model BcpPlano {
   updatedAt    DateTime @updatedAt
 
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  owner        User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
-  aprovador    User?    @relation(fields: [aprovadoPor], references: [id], onDelete: SetNull)
+  owner        User?    @relation("BcpPlanoOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  aprovador    User?    @relation("BcpPlanoAprovador", fields: [aprovadoPor], references: [id], onDelete: SetNull)
   ativos       BcpPlanoAtivoCritico[]
   vinculos     BcpPlanoRunbook[]
   testes       BcpTeste[]
