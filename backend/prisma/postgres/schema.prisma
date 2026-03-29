@@ -188,6 +188,8 @@ model User {
   governancaRetencaoPoliticasAtualizadoPor GovernancaRetencaoPolitica[] @relation("GovernancaRetencaoPoliticaAtualizadoPor")
   governancaLegalHoldCriador GovernancaLegalHold[] @relation("GovernancaLegalHoldCriador")
   governancaLegalHoldLiberador GovernancaLegalHold[] @relation("GovernancaLegalHoldLiberador")
+  governancaRetencaoAuditorias GovernancaRetencaoAuditoria[]
+  governancaDadosAuditorias GovernancaDadosAuditoria[]
   governancaDescarteLotesCriador GovernancaDescarteLote[] @relation("GovernancaDescarteLoteCriador")
   governancaDescarteLotesAprovador GovernancaDescarteLote[] @relation("GovernancaDescarteLoteAprovador")
   governancaDescarteLotesExecutor GovernancaDescarteLote[] @relation("GovernancaDescarteLoteExecutor")
@@ -1073,6 +1075,8 @@ model GovernancaDadoAtivo {
   lineageDestino        GovernancaDadoLineageRelacao[] @relation("LineageDestino")
   regrasQualidade       GovernancaDadoQualidadeRegra[]
   qualidadeIssues       GovernancaDadoQualidadeIssue[]
+  piiScanResultados     GovernancaPiiScanResultado[]
+  classificacaoSugestoes GovernancaClassificacaoSugestao[]
 
   @@unique([tenantId, codigoAtivo])
   @@index([tenantId])
@@ -1099,6 +1103,8 @@ model GovernancaDadoAtivoCampo {
   updatedAt               DateTime @updatedAt
 
   ativoRef                GovernancaDadoAtivo @relation(fields: [ativoId], references: [id], onDelete: Cascade)
+  piiScanResultados       GovernancaPiiScanResultado[]
+  classificacaoSugestoes  GovernancaClassificacaoSugestao[]
 
   @@unique([ativoId, caminhoCampo])
   @@index([ativoId])
@@ -1285,6 +1291,7 @@ model GovernancaRetencaoItem {
   politicaAplicada        GovernancaRetencaoPolitica? @relation(fields: [politicaAplicadaId], references: [id], onDelete: SetNull)
   holds                   GovernancaLegalHoldItem[]
   lotes                   GovernancaDescarteLoteItem[]
+  auditorias              GovernancaRetencaoAuditoria[]
 
   @@unique([tenantId, recurso, entidadeId])
   @@index([tenantId, statusRetencao, elegivelDescarteEm])
