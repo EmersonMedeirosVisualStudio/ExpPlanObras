@@ -9,7 +9,7 @@ services:
       npm ci --include=dev --ignore-scripts
       npm run prisma:generate
       cd prisma/postgres && npx prisma migrate deploy --schema=./schema.prisma && cd ../..
-      tsx scripts/create-system-admin.ts
+      npx tsx scripts/create-system-admin.ts
       npm run build
     startCommand: |
       node dist/server.js
