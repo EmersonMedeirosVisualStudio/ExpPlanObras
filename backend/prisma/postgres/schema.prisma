@@ -170,11 +170,14 @@ model User {
   criseRegistrosComandante CriseRegistro[]
   criseTimelineAutor CriseTimeline[]
   criseComunicacoesRemetente CriseComunicacao[]
+  criseWarRoomParticipacoes CriseWarRoomParticipante[]
   grcRiscosOwner GrcRisco[]
   grcAvaliacoesAvaliador GrcRiscoAvaliacao[]
   grcAchadosOwner GrcAchado[]
+  grcControlesOwner GrcControle[]
   grcPlanosAcaoItensResponsavel GrcPlanoAcaoItem[]
   grcEvidenciasColetor GrcEvidencia[]
+  observabilidadeCasosComplianceOwner ObservabilidadeCasoCompliance[]
   governancaAtivosOwnerNegocio GovernancaDadoAtivo[] @relation("GovernancaOwnerNegocio")
   governancaAtivosOwnerTecnico GovernancaDadoAtivo[] @relation("GovernancaOwnerTecnico")
   governancaAtivosSteward GovernancaDadoAtivo[] @relation("GovernancaSteward")
@@ -1543,6 +1546,7 @@ model ObservabilidadeEvento {
   actor              User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
   alertasEventos     ObservabilidadeAlertaEvento[]
   incidentesEventos  ObservabilidadeIncidenteEvento[]
+  playbookExecucoesOrigem ObservabilidadePlaybookExecucao[]
 
   @@index([tenantId, ocorridoEm])
   @@index([tenantId, categoria, severidade, ocorridoEm])
@@ -1599,6 +1603,7 @@ model ObservabilidadeAlerta {
   responsavel        User?    @relation(fields: [responsavelUserId], references: [id], onDelete: SetNull)
   eventos            ObservabilidadeAlertaEvento[]
   incidentes         ObservabilidadeIncidente[]
+  playbookExecucoes  ObservabilidadePlaybookExecucao[]
 
   @@index([tenantId])
   @@index([tenantId, statusAlerta, updatedAt])
@@ -1642,6 +1647,9 @@ model ObservabilidadeIncidente {
   alertaOrigem       ObservabilidadeAlerta? @relation(fields: [alertaOrigemId], references: [id], onDelete: SetNull)
   owner              User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
   eventos            ObservabilidadeIncidenteEvento[]
+  playbookExecucoes  ObservabilidadePlaybookExecucao[]
+  timeline           ObservabilidadeIncidenteTimeline[]
+  casosCompliance    ObservabilidadeCasoCompliance[]
 
   @@index([tenantId])
   @@index([tenantId, statusIncidente, updatedAt])
@@ -2042,6 +2050,9 @@ model CriseRegistro {
 
   tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   comandante        User?    @relation(fields: [comandanteUserId], references: [id], onDelete: SetNull)
+  warRoomParticipantes CriseWarRoomParticipante[]
+  timeline          CriseTimeline[]
+  comunicacoes      CriseComunicacao[]
 
   @@unique([tenantId, codigo])
   @@index([tenantId, statusCrise, updatedAt])
@@ -2186,6 +2197,7 @@ model GrcControle {
   testes       GrcControleTeste[]
   riscosControles GrcRiscoControle[]
   achados      GrcAchado[]
+  metricas     GrcControleMetrica[]
 
   @@unique([tenantId, codigo])
   @@index([tenantId, ativo])
@@ -2305,7 +2317,6 @@ model GrcAchado {
   risco        GrcRisco? @relation(fields: [riscoId], references: [id], onDelete: SetNull)
   controle     GrcControle? @relation(fields: [controleId], references: [id], onDelete: SetNull)
   owner        User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
-  planosAcao   GrcPlanoAcao[]
 
   @@index([tenantId])
   @@index([tenantId, statusAchado])
@@ -2334,7 +2345,6 @@ model GrcPlanoAcao {
   owner        User?    @relation("GrcPlanoAcaoOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
   aprovador    User?    @relation("GrcPlanoAcaoAprovador", fields: [aprovadorUserId], references: [id], onDelete: SetNull)
   itens        GrcPlanoAcaoItem[]
-  evidencias   GrcEvidencia[]
 
   @@index([tenantId])
   @@index([tenantId, statusPlano])
