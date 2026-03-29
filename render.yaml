@@ -6,9 +6,12 @@ services:
     plan: free
     buildCommand: |
       set -e
+      ROOT_DIR="$(pwd)"
       npm ci --include=dev --ignore-scripts
       npm run prisma:generate
-      cd prisma/postgres && npx prisma migrate deploy --schema=./schema.prisma && cd ../..
+      cd prisma/postgres
+      npx prisma migrate deploy --schema=./schema.prisma
+      cd "$ROOT_DIR"
       npx tsx scripts/create-system-admin.ts
       npm run build
     startCommand: |
