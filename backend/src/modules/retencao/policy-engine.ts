@@ -1,4 +1,5 @@
 import prisma from '../../plugins/prisma.js';
+import { Prisma } from '@prisma/client';
 import { getRetentionHandler } from './registry.js';
 
 function addPeriod(base: Date, valor: number, unidade: string) {
@@ -78,7 +79,7 @@ export async function sincronizarItemRetencao(args: { tenantId: number; recurso:
       hashReferencia: storageRefs.hash ?? null,
       tamanhoBytes: storageRefs.sizeBytes ?? null,
       confidencialidade: null,
-      metadataJson: null,
+      metadataJson: Prisma.DbNull,
       ultimoProcessamentoEm: now,
       descartadoEm: null,
       expurgadoEm: null,

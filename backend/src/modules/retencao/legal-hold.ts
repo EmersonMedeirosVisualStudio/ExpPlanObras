@@ -1,4 +1,5 @@
 import prisma from '../../plugins/prisma.js';
+import { Prisma } from '@prisma/client';
 import { auditRetencao } from './audit.js';
 
 export async function aplicarLegalHoldEmItem(args: { tenantId: number; userId: number; legalHoldId: number; retencaoItemId: number }) {
@@ -14,7 +15,7 @@ export async function aplicarLegalHoldEmItem(args: { tenantId: number; userId: n
       recurso: item.recurso,
       entidadeId: item.entidadeId,
       ativo: true,
-      metadataJson: null,
+      metadataJson: Prisma.DbNull,
     },
     update: { ativo: true, removidoEm: null },
   });

@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import prisma from '../../plugins/prisma.js';
 import { authenticate } from '../../utils/authenticate.js';
 import { calcularScoreQualidadePorAtivo } from './quality.js';
@@ -842,7 +843,7 @@ export default async function governancaDadosRoutes(server: FastifyInstance) {
         thresholdAlerta: regra.thresholdAlerta ?? null,
         totalRegistros: totalRegistros !== null ? totalRegistros : null,
         totalInconsistencias: totalInconsistencias !== null ? totalInconsistencias : null,
-        amostraJson: null,
+        amostraJson: Prisma.DbNull,
         mensagemResultado,
       },
     });

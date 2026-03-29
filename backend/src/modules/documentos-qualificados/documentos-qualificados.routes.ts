@@ -443,6 +443,7 @@ export default async function documentosQualificadosRoutes(server: FastifyInstan
       if (localStatus === 'ASSINADA') {
         const dl = await providerImpl.downloadSignedDocument({ tenantId: s.tenantId, envelopeId: s.providerEnvelopeId!, config: (s.provedor.configuracaoJson as any) || null });
         const hash = sha256Hex(dl.buffer);
+        const signedBytes = new Uint8Array(dl.buffer.buffer, dl.buffer.byteOffset, dl.buffer.byteLength);
         const art = await tx.documentoAssinaturaArtefato.create({
           data: {
             tenantId: s.tenantId,
@@ -452,7 +453,7 @@ export default async function documentosQualificadosRoutes(server: FastifyInstan
             mimeType: dl.mimeType,
             tamanhoBytes: dl.buffer.length,
             hashSha256: hash,
-            data: dl.buffer,
+            data: signedBytes,
           },
         });
         signedArtifactId = art.id;
@@ -533,7 +534,7 @@ export default async function documentosQualificadosRoutes(server: FastifyInstan
     let valid: boolean | null = null;
     try {
       if (providerImpl?.verifyDocument) {
-        const res = await providerImpl.verifyDocument({ tenantId: ctx.tenantId, buffer: art.data, config: (s.provedor.configuracaoJson as any) || null });
+        const res = await providerImpl.verifyDocument({ tenantId: ctx.tenantId, buffer: Buffer.from(art.data), config: (s.provedor.configuracaoJson as any) || null });
         valid = Boolean(res.valid);
       }
     } catch {
