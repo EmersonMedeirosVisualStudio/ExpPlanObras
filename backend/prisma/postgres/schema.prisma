@@ -2120,8 +2120,8 @@ model GrcControleTeste {
 
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   controle    GrcControle @relation(fields: [controleId], references: [id], onDelete: Cascade)
-  executor    User?    @relation(fields: [executadoPor], references: [id], onDelete: SetNull)
-  revisor     User?    @relation(fields: [revisorUserId], references: [id], onDelete: SetNull)
+  executor    User?    @relation("GrcControleTesteExecutor", fields: [executadoPor], references: [id], onDelete: SetNull)
+  revisor     User?    @relation("GrcControleTesteRevisor", fields: [revisorUserId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([controleId])
@@ -2147,8 +2147,8 @@ model GrcAuditoria {
   updatedAt     DateTime @updatedAt
 
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  owner        User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
-  auditorLider User?    @relation(fields: [auditorLiderUserId], references: [id], onDelete: SetNull)
+  owner        User?    @relation("GrcAuditoriaOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  auditorLider User?    @relation("GrcAuditoriaAuditorLider", fields: [auditorLiderUserId], references: [id], onDelete: SetNull)
   itensEscopo  GrcAuditoriaItemEscopo[]
   achados      GrcAchado[]
 
@@ -2222,8 +2222,8 @@ model GrcPlanoAcao {
   updatedAt    DateTime @updatedAt
 
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  owner        User?    @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
-  aprovador    User?    @relation(fields: [aprovadorUserId], references: [id], onDelete: SetNull)
+  owner        User?    @relation("GrcPlanoAcaoOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  aprovador    User?    @relation("GrcPlanoAcaoAprovador", fields: [aprovadorUserId], references: [id], onDelete: SetNull)
   itens        GrcPlanoAcaoItem[]
   evidencias   GrcEvidencia[]
 

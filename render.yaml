@@ -5,6 +5,7 @@ services:
     env: node
     plan: free
     buildCommand: |
+      set -e
       npm ci --include=dev
       npx prisma generate --schema=./prisma/postgres/schema.prisma
       cd prisma/postgres && npx prisma migrate deploy --schema=./schema.prisma && cd ../..
