@@ -1652,8 +1652,8 @@ model ObservabilidadePlaybookExecucao {
   alerta             ObservabilidadeAlerta? @relation(fields: [alertaId], references: [id], onDelete: SetNull)
   incidente          ObservabilidadeIncidente? @relation(fields: [incidenteId], references: [id], onDelete: SetNull)
   eventoOrigem       ObservabilidadeEvento? @relation(fields: [eventoOrigemId], references: [id], onDelete: SetNull)
-  aprovadoPor        User?    @relation(fields: [aprovadoPorUserId], references: [id], onDelete: SetNull)
-  executadoPor       User?    @relation(fields: [executadoPorUserId], references: [id], onDelete: SetNull)
+  aprovadoPor        User?    @relation("ObservabilidadePlaybookExecucaoAprovadoPor", fields: [aprovadoPorUserId], references: [id], onDelete: SetNull)
+  executadoPor       User?    @relation("ObservabilidadePlaybookExecucaoExecutadoPor", fields: [executadoPorUserId], references: [id], onDelete: SetNull)
   passos             ObservabilidadePlaybookExecucaoPasso[]
 
   @@unique([tenantId, chaveIdempotencia])

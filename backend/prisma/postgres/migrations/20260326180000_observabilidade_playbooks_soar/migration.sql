@@ -2,6 +2,124 @@
 ALTER TABLE "TenantUser" ADD COLUMN     "bloqueadoAteEm" TIMESTAMP(3);
 ALTER TABLE "TenantUser" ADD COLUMN     "tokenRevokedBefore" TIMESTAMP(3);
 
+CREATE TABLE "ObservabilidadeEvento" (
+    "id" SERIAL NOT NULL,
+    "tenantId" INTEGER NOT NULL,
+    "eventId" TEXT NOT NULL,
+    "categoria" TEXT NOT NULL,
+    "subcategoria" TEXT,
+    "nomeEvento" TEXT NOT NULL,
+    "severidade" TEXT NOT NULL,
+    "resultado" TEXT NOT NULL,
+    "origemTipo" TEXT NOT NULL,
+    "origemChave" TEXT,
+    "modulo" TEXT,
+    "entidadeTipo" TEXT,
+    "entidadeId" INTEGER,
+    "actorTipo" TEXT,
+    "actorUserId" INTEGER,
+    "actorEmail" TEXT,
+    "targetTipo" TEXT,
+    "targetId" INTEGER,
+    "requestId" TEXT,
+    "correlationId" TEXT,
+    "sessionId" TEXT,
+    "traceId" TEXT,
+    "ip" TEXT,
+    "userAgent" TEXT,
+    "rota" TEXT,
+    "metodoHttp" TEXT,
+    "statusHttp" INTEGER,
+    "payloadRedactedJson" JSONB,
+    "labelsJson" JSONB,
+    "ocorridoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ObservabilidadeEvento_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE "ObservabilidadeRegra" (
+    "id" SERIAL NOT NULL,
+    "tenantId" INTEGER NOT NULL,
+    "nome" TEXT NOT NULL,
+    "descricao" TEXT,
+    "tipoRegra" TEXT NOT NULL,
+    "categoriaAlvo" TEXT,
+    "filtroJson" JSONB,
+    "janelaMinutos" INTEGER NOT NULL DEFAULT 5,
+    "limiarValor" INTEGER,
+    "agrupamentoJson" JSONB,
+    "severidadeAlerta" TEXT NOT NULL DEFAULT 'WARNING',
+    "geraIncidenteAutomatico" BOOLEAN NOT NULL DEFAULT false,
+    "notificarJson" JSONB,
+    "ativo" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ObservabilidadeRegra_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE "ObservabilidadeAlerta" (
+    "id" SERIAL NOT NULL,
+    "tenantId" INTEGER NOT NULL,
+    "regraId" INTEGER NOT NULL,
+    "titulo" TEXT NOT NULL,
+    "descricao" TEXT,
+    "severidade" TEXT NOT NULL,
+    "statusAlerta" TEXT NOT NULL DEFAULT 'ABERTO',
+    "dedupeKey" TEXT,
+    "primeiroEventoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "ultimoEventoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "totalEventos" INTEGER NOT NULL DEFAULT 1,
+    "responsavelUserId" INTEGER,
+    "metadataJson" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ObservabilidadeAlerta_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE "ObservabilidadeAlertaEvento" (
+    "id" SERIAL NOT NULL,
+    "tenantId" INTEGER NOT NULL,
+    "alertaId" INTEGER NOT NULL,
+    "eventoId" INTEGER NOT NULL,
+
+    CONSTRAINT "ObservabilidadeAlertaEvento_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE "ObservabilidadeIncidente" (
+    "id" SERIAL NOT NULL,
+    "tenantId" INTEGER NOT NULL,
+    "alertaOrigemId" INTEGER,
+    "tipoIncidente" TEXT NOT NULL,
+    "titulo" TEXT NOT NULL,
+    "descricao" TEXT,
+    "criticidade" TEXT NOT NULL,
+    "statusIncidente" TEXT NOT NULL DEFAULT 'ABERTO',
+    "ownerUserId" INTEGER,
+    "slaRespostaEm" TIMESTAMP(3),
+    "slaResolucaoEm" TIMESTAMP(3),
+    "resolvidoEm" TIMESTAMP(3),
+    "causaRaiz" TEXT,
+    "impactoResumo" TEXT,
+    "acoesTomadasJson" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ObservabilidadeIncidente_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE "ObservabilidadeIncidenteEvento" (
+    "id" SERIAL NOT NULL,
+    "tenantId" INTEGER NOT NULL,
+    "incidenteId" INTEGER NOT NULL,
+    "eventoId" INTEGER NOT NULL,
+
+    CONSTRAINT "ObservabilidadeIncidenteEvento_pkey" PRIMARY KEY ("id")
+);
+
 CREATE TABLE "ObservabilidadePlaybook" (
     "id" SERIAL NOT NULL,
     "tenantId" INTEGER NOT NULL,
@@ -162,6 +280,51 @@ CREATE INDEX "ObservabilidadeCasoCompliance_tenantId_statusCaso_updatedAt_idx" O
 
 CREATE INDEX "ObservabilidadeCasoComplianceEvidencia_tenantId_idx" ON "ObservabilidadeCasoComplianceEvidencia"("tenantId");
 CREATE INDEX "ObservabilidadeCasoComplianceEvidencia_casoId_idx" ON "ObservabilidadeCasoComplianceEvidencia"("casoId");
+
+CREATE INDEX "ObservabilidadeEvento_tenantId_ocorridoEm_idx" ON "ObservabilidadeEvento"("tenantId", "ocorridoEm");
+CREATE INDEX "ObservabilidadeEvento_tenantId_categoria_severidade_ocorridoEm_idx" ON "ObservabilidadeEvento"("tenantId", "categoria", "severidade", "ocorridoEm");
+CREATE INDEX "ObservabilidadeEvento_tenantId_actorUserId_ocorridoEm_idx" ON "ObservabilidadeEvento"("tenantId", "actorUserId", "ocorridoEm");
+CREATE INDEX "ObservabilidadeEvento_tenantId_entidadeTipo_entidadeId_ocorridoEm_idx" ON "ObservabilidadeEvento"("tenantId", "entidadeTipo", "entidadeId", "ocorridoEm");
+CREATE INDEX "ObservabilidadeEvento_tenantId_correlationId_idx" ON "ObservabilidadeEvento"("tenantId", "correlationId");
+CREATE INDEX "ObservabilidadeEvento_tenantId_requestId_idx" ON "ObservabilidadeEvento"("tenantId", "requestId");
+
+CREATE INDEX "ObservabilidadeRegra_tenantId_idx" ON "ObservabilidadeRegra"("tenantId");
+CREATE INDEX "ObservabilidadeRegra_tenantId_ativo_idx" ON "ObservabilidadeRegra"("tenantId", "ativo");
+
+CREATE INDEX "ObservabilidadeAlerta_tenantId_idx" ON "ObservabilidadeAlerta"("tenantId");
+CREATE INDEX "ObservabilidadeAlerta_tenantId_statusAlerta_updatedAt_idx" ON "ObservabilidadeAlerta"("tenantId", "statusAlerta", "updatedAt");
+
+CREATE INDEX "ObservabilidadeAlertaEvento_tenantId_idx" ON "ObservabilidadeAlertaEvento"("tenantId");
+CREATE INDEX "ObservabilidadeAlertaEvento_alertaId_idx" ON "ObservabilidadeAlertaEvento"("alertaId");
+CREATE INDEX "ObservabilidadeAlertaEvento_eventoId_idx" ON "ObservabilidadeAlertaEvento"("eventoId");
+
+CREATE INDEX "ObservabilidadeIncidente_tenantId_idx" ON "ObservabilidadeIncidente"("tenantId");
+CREATE INDEX "ObservabilidadeIncidente_tenantId_statusIncidente_updatedAt_idx" ON "ObservabilidadeIncidente"("tenantId", "statusIncidente", "updatedAt");
+
+CREATE INDEX "ObservabilidadeIncidenteEvento_tenantId_idx" ON "ObservabilidadeIncidenteEvento"("tenantId");
+CREATE INDEX "ObservabilidadeIncidenteEvento_incidenteId_idx" ON "ObservabilidadeIncidenteEvento"("incidenteId");
+CREATE INDEX "ObservabilidadeIncidenteEvento_eventoId_idx" ON "ObservabilidadeIncidenteEvento"("eventoId");
+
+ALTER TABLE "ObservabilidadeEvento" ADD CONSTRAINT "ObservabilidadeEvento_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ObservabilidadeEvento" ADD CONSTRAINT "ObservabilidadeEvento_actorUserId_fkey" FOREIGN KEY ("actorUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE "ObservabilidadeRegra" ADD CONSTRAINT "ObservabilidadeRegra_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "ObservabilidadeAlerta" ADD CONSTRAINT "ObservabilidadeAlerta_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ObservabilidadeAlerta" ADD CONSTRAINT "ObservabilidadeAlerta_regraId_fkey" FOREIGN KEY ("regraId") REFERENCES "ObservabilidadeRegra"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ObservabilidadeAlerta" ADD CONSTRAINT "ObservabilidadeAlerta_responsavelUserId_fkey" FOREIGN KEY ("responsavelUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE "ObservabilidadeAlertaEvento" ADD CONSTRAINT "ObservabilidadeAlertaEvento_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ObservabilidadeAlertaEvento" ADD CONSTRAINT "ObservabilidadeAlertaEvento_alertaId_fkey" FOREIGN KEY ("alertaId") REFERENCES "ObservabilidadeAlerta"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ObservabilidadeAlertaEvento" ADD CONSTRAINT "ObservabilidadeAlertaEvento_eventoId_fkey" FOREIGN KEY ("eventoId") REFERENCES "ObservabilidadeEvento"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "ObservabilidadeIncidente" ADD CONSTRAINT "ObservabilidadeIncidente_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ObservabilidadeIncidente" ADD CONSTRAINT "ObservabilidadeIncidente_alertaOrigemId_fkey" FOREIGN KEY ("alertaOrigemId") REFERENCES "ObservabilidadeAlerta"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ObservabilidadeIncidente" ADD CONSTRAINT "ObservabilidadeIncidente_ownerUserId_fkey" FOREIGN KEY ("ownerUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE "ObservabilidadeIncidenteEvento" ADD CONSTRAINT "ObservabilidadeIncidenteEvento_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ObservabilidadeIncidenteEvento" ADD CONSTRAINT "ObservabilidadeIncidenteEvento_incidenteId_fkey" FOREIGN KEY ("incidenteId") REFERENCES "ObservabilidadeIncidente"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ObservabilidadeIncidenteEvento" ADD CONSTRAINT "ObservabilidadeIncidenteEvento_eventoId_fkey" FOREIGN KEY ("eventoId") REFERENCES "ObservabilidadeEvento"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "ObservabilidadePlaybook" ADD CONSTRAINT "ObservabilidadePlaybook_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

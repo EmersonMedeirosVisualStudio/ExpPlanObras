@@ -369,9 +369,8 @@ export default async function documentosQualificadosRoutes(server: FastifyInstan
     const arrayBuf = await docRes.arrayBuffer();
     const buffer = Buffer.from(arrayBuf);
 
-    const callbackUrl = `${String(process.env.PUBLIC_API_URL || '').replace(/\\/$/, '')}/api/v1/documentos/qualificados/callback/${encodeURIComponent(
-      s.provedor.codigo
-    )}`;
+    const baseUrl = String(process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
+    const callbackUrl = `${baseUrl}/api/v1/documentos/qualificados/callback/${encodeURIComponent(s.provedor.codigo)}`;
     if (!callbackUrl.startsWith('http')) return fail(reply, 501, 'PUBLIC_API_URL não configurado para receber callback do provedor');
 
     const created = await providerImpl.createEnvelope({
