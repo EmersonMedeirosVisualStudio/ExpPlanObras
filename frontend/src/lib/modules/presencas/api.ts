@@ -3,6 +3,7 @@ import type {
   PresencaItemDTO,
   PresencaCabecalhoDTO,
   PresencaProducaoItemDTO,
+  PresencaServicoLancadoDTO,
   ProdutividadeLinhaDTO,
   StatusPresenca,
   TipoLocalPresenca,
@@ -58,7 +59,10 @@ export const PresencasApi = {
 
   obterProducao: (idPresenca: number) => api<PresencaProducaoItemDTO[]>(`/api/v1/rh/presencas/${idPresenca}/producao`),
 
-  salvarProducao: (idPresenca: number, payload: { itens: Array<{ idPresencaItem: number; quantidadeExecutada: number; unidadeMedida?: string | null; servicos?: string[] | null }> }) =>
+  salvarProducao: (
+    idPresenca: number,
+    payload: { itens: Array<{ idPresencaItem: number; quantidadeExecutada: number; unidadeMedida?: string | null; servicos?: Array<string | PresencaServicoLancadoDTO> | null }> }
+  ) =>
     api<{ idPresenca: number }>(`/api/v1/rh/presencas/${idPresenca}/producao`, { method: 'PUT', body: JSON.stringify(payload) }),
 
   equipeObra: (idObra: number) => api<any[]>(`/api/v1/rh/obras/equipe?idObra=${idObra}`),

@@ -37,13 +37,19 @@ export type PresencaItemDTO = {
 
 export type PresencaDetalheDTO = PresencaCabecalhoDTO & { itens: PresencaItemDTO[] };
 
+export type PresencaServicoLancadoDTO = {
+  codigoServico: string;
+  codigoCentroCusto?: string | null;
+  quantidade?: number | null;
+};
+
 export type PresencaProducaoItemDTO = {
   idPresencaItem: number;
   idFuncionario: number;
   funcionarioNome: string;
   quantidadeExecutada: number;
   unidadeMedida: string | null;
-  servicos: Array<string | { codigoServico: string; quantidade?: number | null }> | null;
+  servicos: Array<string | PresencaServicoLancadoDTO> | null;
 };
 
 export type ProdutividadeLinhaDTO = {
