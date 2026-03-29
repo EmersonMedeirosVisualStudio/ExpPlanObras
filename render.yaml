@@ -6,10 +6,10 @@ services:
     plan: free
     buildCommand: |
       set -e
-      npm ci --include=dev
-      npx prisma generate --schema=./prisma/postgres/schema.prisma
+      npm ci --include=dev --ignore-scripts
+      npm run prisma:generate
       cd prisma/postgres && npx prisma migrate deploy --schema=./schema.prisma && cd ../..
-      npm run create-system-admin
+      tsx scripts/create-system-admin.ts
       npm run build
     startCommand: |
       node dist/server.js

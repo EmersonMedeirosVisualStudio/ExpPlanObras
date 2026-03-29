@@ -57,7 +57,6 @@ model Tenant {
   backupRestauracoes BackupRestauracaoTenant[]
   auditoriaEventos AuditoriaEvento[]
   securityFieldPolicies SecurityFieldPolicy[]
-  securityFieldPolicyTargets SecurityFieldPolicyTarget[]
   documentoAssinaturaProvedores DocumentoAssinaturaProvedor[]
   documentoAssinaturaSolicitacoes DocumentoAssinaturaSolicitacao[]
   documentoAssinaturaSolicitacoesSignatarios DocumentoAssinaturaSolicitacaoSignatario[]
@@ -97,7 +96,6 @@ model Tenant {
   grcAuditorias GrcAuditoria[]
   grcAuditoriasItensEscopo GrcAuditoriaItemEscopo[]
   grcAchados GrcAchado[]
-  grcAchadosAcoes GrcAchadoAcao[]
   grcPlanosAcao GrcPlanoAcao[]
   grcPlanosAcaoItens GrcPlanoAcaoItem[]
   grcEvidencias GrcEvidencia[]
@@ -160,8 +158,8 @@ model User {
   grcAuditoriasAuditorLider GrcAuditoria[] @relation("GrcAuditoriaAuditorLider")
   grcPlanosAcaoOwner GrcPlanoAcao[] @relation("GrcPlanoAcaoOwner")
   grcPlanosAcaoAprovador GrcPlanoAcao[] @relation("GrcPlanoAcaoAprovador")
-  tenantHistoryActor TenantHistoryEntry[]
-  securityFieldsPoliticasConfiguradas SecurityFieldPolicy[]
+  securityFieldPoliciesCriadoPor SecurityFieldPolicy[] @relation("SecurityFieldPolicyCriadoPor")
+  securityFieldPoliciesAtualizadoPor SecurityFieldPolicy[] @relation("SecurityFieldPolicyAtualizadoPor")
   documentosAssinaturaSolicitacoes DocumentoAssinaturaSolicitacao[]
   governancaGlossariosOwner GovernancaDadoGlossario[]
   governancaQualidadeIssuesResponsavel GovernancaDadoQualidadeIssue[]
@@ -175,7 +173,6 @@ model User {
   grcRiscosOwner GrcRisco[]
   grcAvaliacoesAvaliador GrcRiscoAvaliacao[]
   grcAchadosOwner GrcAchado[]
-  grcAchadosAcoesResponsavel GrcAchadoAcao[]
   grcPlanosAcaoItensResponsavel GrcPlanoAcaoItem[]
   grcEvidenciasColetor GrcEvidencia[]
   governancaAtivosOwnerNegocio GovernancaDadoAtivo[] @relation("GovernancaOwnerNegocio")
