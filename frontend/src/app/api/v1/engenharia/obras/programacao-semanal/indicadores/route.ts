@@ -152,10 +152,9 @@ export async function GET(req: NextRequest) {
       dias: diasNorm,
       unidadeMedida: unidade,
       amostras,
-      producaoMinimaPorHora: produtividade == null ? null : Number(productividade.toFixed(4)),
+      producaoMinimaPorHora: produtividade == null ? null : Number(produtividade.toFixed(4)),
     });
   } catch (e) {
     return handleApiError(e);
   }
 }
-
