@@ -4,6 +4,29 @@
 
 ---
 
+## Sumário
+
+- [1. Visão geral do sistema](#1-vis%C3%A3o-geral-do-sistema)
+- [2. Objetivo do sistema](#2-objetivo-do-sistema)
+- [3. Princípios do sistema](#3-princ%C3%ADpios-do-sistema)
+- [4. Estrutura geral do sistema](#4-estrutura-geral-do-sistema)
+- [5. Estrutura base dos dados do sistema](#5-estrutura-base-dos-dados-do-sistema)
+- [6. Perfis de usuários e níveis de acesso](#6-perfis-de-usu%C3%A1rios-e-n%C3%ADveis-de-acesso)
+- [7. Painéis por perfil](#7-pain%C3%A9is-por-perfil)
+- [8. Procedimento inicial de implantação e uso do sistema](#8-procedimento-inicial-de-implanta%C3%A7%C3%A3o-e-uso-do-sistema)
+- [9. Módulo RH](#9-m%C3%B3dulo-rh)
+- [10. Módulo SST](#10-m%C3%B3dulo-sst)
+- [11. Módulo Engenharia](#11-m%C3%B3dulo-engenharia)
+- [12. Módulo Suprimentos](#12-m%C3%B3dulo-suprimentos)
+- [13. Módulo de Controle Financeiro](#13-m%C3%B3dulo-de-controle-financeiro)
+- [14. Painel de Fiscalização](#14-painel-de-fiscaliza%C3%A7%C3%A3o)
+- [15. Módulo Administração do sistema](#15-m%C3%B3dulo-administra%C3%A7%C3%A3o-do-sistema)
+- [16. Relações entre os módulos e os dados](#16-rela%C3%A7%C3%B5es-entre-os-m%C3%B3dulos-e-os-dados)
+- [17. Filtros, escopos e visões por lotação](#17-filtros-escopos-e-vis%C3%B5es-por-lota%C3%A7%C3%A3o)
+- [18. Importações e exportações](#18-importa%C3%A7%C3%B5es-e-exporta%C3%A7%C3%B5es)
+- [19. Segurança das informações — regras mínimas da reconstrução](#19-seguran%C3%A7a-das-informa%C3%A7%C3%B5es--regras-m%C3%ADnimas-da-reconstru%C3%A7%C3%A3o)
+- [20. Resumo final do funcionamento do sistema](#20-resumo-final-do-funcionamento-do-sistema)
+
 ## 1. Visão geral do sistema
 
 Este sistema é uma plataforma integrada de gestão empresarial desenvolvida para organizar, controlar e acompanhar a operação da empresa com foco principal em **Engenharia**, suas ramificações operacionais e as áreas de suporte necessárias ao funcionamento das obras e unidades da empresa.
@@ -297,9 +320,11 @@ Os registros do sistema devem utilizar **identificadores internos numéricos int
 
 O sistema opera com perfis de acesso organizados por função e por lotação.
 
-### 6.1 Representante
+### 6.1 Representante da Empresa
 
-Perfil com foco em acompanhamento institucional, contratual ou executivo, conforme designação da empresa.
+Perfil de governança máxima da empresa no sistema.
+
+No primeiro acesso ao ambiente, o Representante é o usuário com maior nível de autoridade para estruturar a empresa e delegar funções estratégicas. Após a empresa estar estruturada, o Representante mantém autoridade permanente para redefinir os titulares das funções estratégicas, sem necessariamente operar os módulos no dia a dia.
 
 ### 6.2 CEO
 
@@ -326,30 +351,76 @@ Perfil responsável pela configuração operacional do sistema, cadastro de perf
 - **Gerente de Obra**: visualiza apenas os dados da(s) obra(s) sob sua responsabilidade, incluindo contratos, suprimentos, cronograma, RH e SST.
 - **Diretor de Engenharia**: visualiza todas as informações relacionadas à engenharia, incluindo obras, contratos e indicadores técnicos.
 - **CEO**: visão global da empresa; permissões de alteração restritas ao organograma e à definição de diretores e gerentes a partir da lista de funcionários.
-- **Representante da Empresa**: define o administrador do sistema da empresa e define o CEO.
-- **Administrador do sistema da empresa**: define usuários e perfis do sistema.
+- **Representante da Empresa**: define ou altera os titulares de CEO, Administrador do sistema (da empresa) e Gerente de RH.
+- **Administrador do sistema (da empresa)**: define usuários, perfis e permissões dentro da empresa, conforme as funções formalmente atribuídas.
+
+### 6.8 Papéis estratégicos (titulares)
+
+O sistema possui papéis estratégicos com impacto direto em permissões e liberação de acesso:
+
+- **CEO (Diretor Geral)**: define estrutura organizacional (organograma) e diretrizes de gestão.
+- **Administrador do sistema (da empresa)**: configura o ambiente (usuários, perfis, permissões e parametrizações).
+- **Gerente de RH**: completa cadastros funcionais e estrutura o quadro de colaboradores.
+
+Regras:
+
+- o acesso aos módulos é liberado conforme o papel formalmente atribuído;
+- a alteração de titular atualiza automaticamente as permissões do usuário (ganha ou perde acesso conforme o novo papel);
+- quando o mesmo usuário acumula papéis, ele não “mistura” painéis: alterna entre telas específicas de cada papel.
 
 ---
 
 ## 7. Painéis por perfil
 
-### 7.1 Painel do Representante
+### 7.1 Painel do Representante da Empresa
 
-O painel do Representante é um painel de leitura rápida, voltado para quem precisa acompanhar um conjunto de contratos, obras, compromissos ou frentes de atuação sem se aprofundar em toda a operação interna do sistema.
+O painel do Representante é o painel de governança da empresa. Ele é voltado a garantir que o ambiente fique operável desde o primeiro acesso, com delegação de funções estratégicas e controle permanente.
 
-Esse painel apresenta:
+#### Primeiro acesso (configuração inicial)
 
-- resumo das obras e contratos vinculados ao seu escopo;
-- situação geral de execução;
-- principais alertas;
-- prazos críticos;
-- medições relevantes;
-- visão simplificada de andamento físico e financeiro;
-- documentos-chave para consulta;
-- relatórios resumidos;
-- pendências institucionais ou contratuais de maior relevância.
+No primeiro acesso ao sistema, o Representante assume automaticamente, de forma provisória:
 
-O objetivo é oferecer leitura rápida, com foco em acompanhamento e posicionamento.
+- **Representante da Empresa**
+- **CEO (Diretor Geral)**
+- **Administrador do sistema (da empresa)**
+
+Esse comportamento existe para impedir que a empresa fique “travada” no início. As responsabilidades permanecem com o Representante até que ele designe outros usuários para ocupá-las.
+
+#### Seletor de telas (papéis acumulados)
+
+O painel deve possuir um seletor de telas para alternar entre as áreas gerenciais de:
+
+- Representante da Empresa
+- CEO
+- Administrador do sistema (da empresa)
+
+As telas são diferentes. Se a mesma pessoa acumular papéis, ela alterna entre telas distintas.
+
+#### Delegação de funções (dinâmica)
+
+O Representante possui autonomia para definir ou alterar os titulares de:
+
+- Gerente de RH
+- CEO
+- Administrador do sistema (da empresa)
+
+Regras:
+
+- qualquer uma ou todas as funções podem ser geridas pelo próprio Representante;
+- após delegar um papel para outro funcionário, o Representante perde a autonomia de criação/alteração dentro das telas respectivas e passa a operar nelas em modo de visualização;
+- o Representante mantém autoridade máxima para redefinir os titulares a qualquer momento.
+
+#### Cadastro inicial de funcionários (mínimo viável)
+
+Para viabilizar a delegação:
+
+- o Representante pode cadastrar funcionários com dados mínimos (ex.: nome, e-mail, função inicial);
+- o sistema deve gerar alertas de pendências cadastrais para o RH.
+
+Após a nomeação do Gerente de RH:
+
+- o RH assume a responsabilidade de completar os cadastros;
+- o RH passa a estruturar o quadro funcional conforme o organograma da empresa.
 
 ### 7.2 Painel do CEO
 
@@ -373,6 +444,13 @@ Esse painel deve apresentar:
 - visão geral do resultado por unidade, por obra e global.
 
 A leitura do painel do CEO deve ser simples, rica em informação, mas de fácil entendimento. Os gráficos devem ser executivos, objetivos e diretamente acionáveis.
+#### Implementação (no sistema)
+- Menu: Painéis → CEO
+- Edição de organograma: Administração → Organograma (perfil CEO)
+- Indicadores possuem links para módulos origem (Engenharia, RH, SST, Suprimentos)
+#### Validação
+- Ao trocar o titular de CEO, o novo usuário visualiza o painel e opções estratégicas imediatamente
+- O titular anterior mantém visualização e perde edição
 
 ### 7.3 Painel do Organograma — exclusivo do CEO
 
@@ -396,6 +474,11 @@ Esse painel deve permitir ao CEO:
 - visualizar quem responde por qual diretoria e gerência;
 - entender a cadeia de responsabilidade;
 - manter a hierarquia clara e atualizada.
+#### Implementação (no sistema)
+- Menu: Administração → Organograma (perfil CEO)
+- Editor visual com árvore, titulares por função e publicação de versão ativa
+#### Validação
+- Após publicar, titulares ganham seus perfis e painéis correspondentes automaticamente
 
 #### Relação com o Administrador do sistema
 
@@ -494,25 +577,47 @@ Esse painel deve permitir:
 - apoio à operação e implantação.
 
 Ele não substitui a visão estratégica do CEO, mas é o painel de manutenção funcional do ambiente.
+#### Implementação (no sistema)
+- Menu: Administração → Painel do Administrador
+- Criar usuários, vincular a funcionários, atribuir perfis, configurar permissões, parametrizações
+#### Validação
+- Alterações de perfis refletem imediatamente em menus e módulos visíveis
 
 ---
 
 ## 8. Procedimento inicial de implantação e uso do sistema
 
-A definição proposta é boa, mas pode ser melhor organizada para evitar dependência excessiva no início.
-
 ### 8.1 Procedimento recomendado
 
 #### Etapa 1 — criação do ambiente
 
-O ambiente da empresa é criado com o primeiro usuário principal: o **CEO**.
+O ambiente da empresa é criado com o primeiro usuário principal: o **Representante da Empresa**.
+
+No primeiro acesso, o Representante assume provisoriamente os papéis de CEO e Administrador do sistema (da empresa), para viabilizar a configuração inicial.
 
 #### Etapa 2 — definição dos responsáveis iniciais
 
-O CEO define inicialmente dois papéis essenciais:
+O Representante define inicialmente três papéis essenciais:
 
-- **Administrador do sistema da empresa**
+- **CEO (Diretor Geral)**
+- **Administrador do sistema (da empresa)**
 - **Gerente de RH**
+#### Implementação (no sistema)
+- Painéis → Representante → Seletor de telas: alternar entre Representante / CEO / Administrador
+- Delegar titulares:
+  - CEO: Administração → Organograma → titular
+  - Administrador: Administração → Painel do Administrador → titular
+  - Gerente de RH: RH → Configuração → titular
+- Cadastro mínimo de funcionários (se preciso): RH → Funcionários → Novo (nome, e-mail, função inicial)
+#### Validação
+- Titulares recém-definidos acessam seus painéis imediatamente
+- Representante, ao delegar, passa a ter visualização nas telas daquele papel
+- Alertas de pendências para RH aparecem após cadastro mínimo
+
+Regra:
+
+- o acesso efetivo de cada papel só acontece após a atribuição formal do titular;
+- a alteração de titular deve atualizar automaticamente as permissões do usuário.
 
 #### Etapa 3 — atuação do Gerente de RH
 
@@ -534,25 +639,30 @@ O Administrador do sistema passa a ser responsável por:
 - configurar permissões;
 - definir escopos operacionais.
 
-### 8.2 Avaliação desse modelo
+### 8.2 Controle permanente do Representante
 
-Esse procedimento é adequado e, funcionalmente, é o mais seguro entre simplicidade e controle.
+Mesmo após a empresa estar operando normalmente, o Representante mantém autoridade para:
 
-#### Motivos
-
-- o CEO não precisa cadastrar todos os usuários;
-- o RH cuida da base funcional das pessoas;
-- o Administrador cuida dos acessos e perfis;
-- há separação de responsabilidades;
-- a empresa consegue começar a usar o sistema sem confusão.
-
-Esse modelo é melhor do que deixar todo o cadastro inicial apenas com o RH ou apenas com o Administrador.
+- redefinir os titulares de CEO, Administrador do sistema (da empresa) e Gerente de RH;
+- acompanhar as telas gerenciais (visualização), mesmo que não seja o titular;
+- garantir que papéis-chave estejam corretamente atribuídos.
 
 ---
 
 ## 9. Módulo RH
 
 O módulo RH é responsável pela gestão de pessoas da empresa, ligando a estrutura funcional à operação.
+#### Implementação (no sistema)
+
+- Menu: RH
+- Cadastros-base: Pessoas, Funcionários, Lotação
+- Gestão operacional: alocação por obra/unidade, presença diária, produção diária, produtividade
+- Alertas: pendências cadastrais, vencimentos relevantes, necessidades por obra/unidade
+
+#### Validação
+
+- Após nomear o Gerente de RH, as pendências de cadastro devem aparecer para o RH automaticamente
+- Lotação e alocação devem refletir em visões de obras, programação semanal e leitura gerencial
 
 ### 9.1 Cadastro de pessoas e funcionários
 
@@ -781,6 +891,16 @@ O módulo SST deve operar com visão por:
 - obra.
 
 Seu papel é apoiar a gestão de segurança e saúde ocupacional.
+#### Implementação (no sistema)
+
+- Menu: SST
+- Rotinas: checklists, não conformidades, treinamentos, acidentes, pendências e vencimentos
+- Visões: por obra, por unidade, por escritório e consolidada
+
+#### Validação
+
+- Checklists reprovados devem gerar rastreabilidade e, quando definido, não conformidade automaticamente
+- Treinamentos vinculados a serviços devem impactar alertas na Programação Semanal (apto/não apto)
 
 ### 10.1 Funcionalidades principais
 
@@ -855,6 +975,16 @@ No sistema:
 ## 11. Módulo Engenharia
 
 Este é o núcleo principal da plataforma.
+#### Implementação (no sistema)
+
+- Menu: Engenharia
+- Acesso orientado por obra: obras, contratos, medições, pagamentos, planilhas e cronogramas
+- Integrações: RH (pessoas), SST (segurança), Suprimentos (materiais), Financeiro (pagamentos)
+
+#### Validação
+
+- Toda obra deve estar vinculada a um contrato e possuir rastreabilidade por serviço (quando aplicável)
+- Usuários devem enxergar apenas as obras/unidades do seu escopo (lotação)
 
 ### 11.1 Obras
 
@@ -873,6 +1003,22 @@ A obra deve conter:
 - histórico operacional.
 
 A obra é o principal ponto de ligação entre os módulos.
+
+#### Regras
+
+- toda obra deve estar vinculada a um contrato;
+- toda obra deve ter pelo menos uma planilha contratada (serviços SER-0001) para liberar programação e apropriação;
+- toda navegação operacional deve ser orientada pela obra selecionada.
+
+#### Implementação (no sistema)
+
+- Engenharia → Obras → selecionar obra
+- Janelas por obra: Programação Semanal, Apropriação, Cronograma, Fiscalização e Medições, Suprimentos e Consumos
+
+#### Validação
+
+- sem contrato e sem planilha contratada, o sistema deve impedir programação e apropriação
+- o usuário deve enxergar apenas as obras/unidades do seu escopo (lotação)
 
 #### 11.1.1 Navegação por obra (janelas)
 
@@ -976,6 +1122,17 @@ Os contratos se ligam diretamente a:
 - cronograma;
 - controle financeiro.
 
+#### Implementação (no sistema)
+
+- Engenharia → Contratos → Novo / Detalhe
+- Vínculos obrigatórios: contrato ↔ obra/serviço
+- Integrações: medições e pagamentos vinculados ao contrato
+
+#### Validação
+
+- obra/serviço sem número de contrato não deve ser aceito
+- pagamentos e medições devem apontar sempre para um contrato válido
+
 #### 11.2.1 Tipos de contrato
 
 - Público (empresa pública)
@@ -1002,6 +1159,16 @@ O sistema deve permitir:
 - vínculo com pagamento.
 
 As medições também alimentam o módulo financeiro, pois representam uma das principais entradas ou expectativas de entrada de recursos.
+
+#### Implementação (no sistema)
+
+- Engenharia → Medições (por contrato e por obra)
+- Fluxo: criar → anexar evidências → enviar → aprovar/ajustar → consolidar impacto no financeiro
+
+#### Validação
+
+- medição aprovada deve refletir automaticamente em avanço físico/financeiro e no módulo financeiro
+- ajustes de fiscalização devem manter rastreabilidade (original do engenheiro e cópia ajustada do fiscal)
 
 #### 11.3.1 Regras de execução e aprovação
 
@@ -1052,6 +1219,16 @@ O módulo de Engenharia, em conjunto com o Financeiro, deve permitir acompanhame
 - valores por unidade;
 - valores por contrato.
 
+#### Implementação (no sistema)
+
+- Engenharia → Pagamentos (por obra/contrato) e Financeiro → Pagamentos
+- Pagamentos podem ser gerados a partir de medições e acompanhados por status
+
+#### Validação
+
+- todo pagamento deve ter vínculo com contrato e referência de origem (ex.: medição)
+- status do pagamento deve ser consistente entre Engenharia e Financeiro
+
 ### 11.5 Planilha orçamentária
 
 A planilha orçamentária deve permitir:
@@ -1067,6 +1244,16 @@ A planilha orçamentária deve permitir:
 
 Ela é a base da leitura de custo, planejamento e comparação com o executado.
 
+#### Implementação (no sistema)
+
+- Engenharia → Obras → Planilha contratada / Planilha orçamentária
+- Importação/edição: serviços, composições, insumos, quantitativos e custos
+
+#### Validação
+
+- a planilha define os serviços válidos (SER-0001) para programação e apropriação
+- mudanças de planilha na obra não devem alterar a base corporativa
+
 ### 11.6 BDI, impostos e lucro
 
 O sistema deve permitir compor e visualizar:
@@ -1078,6 +1265,16 @@ O sistema deve permitir compor e visualizar:
 - formação do orçamento.
 
 Isso deve ficar claro para a gestão e para o controle técnico-econômico da obra.
+
+#### Implementação (no sistema)
+
+- Engenharia → Orçamentos → Parâmetros econômicos (por orçamento)
+- BDI, impostos e encargos devem alimentar formação do preço e relatórios de orçamento
+
+#### Validação
+
+- alteração de parâmetros deve refletir no preço calculado e nos relatórios
+- histórico de versões do orçamento deve preservar parâmetros anteriores
 
 ### 11.7 Previsto da obra
 
@@ -1095,6 +1292,16 @@ Inclui:
 - controle de entrada e saída;
 - centro de custo;
 - apropriação.
+
+#### Implementação (no sistema)
+
+- Engenharia → Obras → abrir obra → Previsto
+- Abas mínimas: Calendário, LOB, Diários, Cronograma, Materiais previstos, Valor previsto, Cotações, Centro de custo, Apropriação
+
+#### Validação
+
+- planejado x executado financeiro deve ser calculado a partir das medições aprovadas
+- planejado x executado físico deve ser coerente com LOB/cronograma e com evidências de execução
 
 #### Calendário
 
@@ -1173,6 +1380,13 @@ Permite relacionar gastos, materiais, serviços ou recursos à obra, unidade, co
 
 O sistema possui o módulo **Engenharia → Orçamentos**, que centraliza a base corporativa e a criação de orçamentos independentes.
 
+#### Regras
+
+- base corporativa (serviços/insumos/composições) é compartilhada e mantida no nível corporativo;
+- orçamentos são independentes, versionados e não alteram automaticamente outros orçamentos;
+- importação por CSV deve respeitar ordem obrigatória para evitar inconsistências (insumos → composições → serviços);
+- parâmetros econômicos (BDI/impostos/encargos) são por orçamento e influenciam diretamente o preço final.
+
 #### 11.8.1 Base corporativa (Engenharia)
 
 Regras:
@@ -1201,15 +1415,15 @@ Parâmetros econômicos (por orçamento):
 - impostos e encargos por tipo (materiais/serviços/equipamentos);
 - faixa de preço de insumos (compra/venda) com alertas.
 
-Implementação (no sistema):
+#### Implementação (no sistema)
 
 - Engenharia → Orçamentos
-  - Aba Orçamentos: cria e lista orçamentos;
+  - Aba Orçamentos: criar e listar orçamentos
   - Orçamento → Detalhe:
-    - copiar base corporativa para a versão (serviços/insumos/composições);
-    - importar CSV por ordem obrigatória (insumos → composições → serviços);
-    - ajustar faixas de preço de insumos e preço atual;
-    - alerta visual quando preço atual ficar abaixo do mínimo de compra.
+    - copiar base corporativa para uma versão do orçamento (serviços/insumos/composições)
+    - importar CSV por ordem obrigatória (insumos → composições → serviços)
+    - ajustar faixas de preço de insumos e preço atual
+    - alertas visuais quando preço atual ficar abaixo do mínimo de compra
 
 #### 11.8.3 Planilhas versionadas (obra/licitação/contrato privado)
 
@@ -1219,11 +1433,39 @@ Regras:
 - planilha de licitação e de contrato privado também devem ser versionadas;
 - nenhuma alteração na obra altera a base corporativa da engenharia.
 
+#### Validação
+
+- alterações em um orçamento não podem alterar a base corporativa
+- importação fora da ordem obrigatória deve ser bloqueada com mensagem clara
+- versionamento deve permitir comparar versões e voltar para uma versão anterior
+
 ### 11.9 Controle de licitações
 
 O módulo de Licitações deve fazer parte da visão geral do sistema e ser tratado como uma área operacional própria.
 
 Seu objetivo é gerenciar as licitações que a empresa poderá participar, desde a análise da oportunidade até o encerramento do processo.
+
+#### Regras
+
+- cada licitação deve possuir status e fase, com datas e prazos rastreáveis;
+- o sistema deve comparar automaticamente demandas do edital com capacidades existentes (documentos, acervo, profissionais);
+- pendências devem ser exibidas como checklist (atendido, pendente, vencido, a vencer, sem arquivo);
+- uma licitação vencida pode originar um contrato e depois uma obra, mantendo rastreabilidade do vínculo.
+
+#### Implementação (no sistema)
+
+- Menu: Engenharia → Licitações
+- Fluxo de uso:
+  1) cadastrar Documentos da Empresa (biblioteca corporativa)
+  2) cadastrar Acervo da Empresa (biblioteca corporativa)
+  3) criar licitação e vincular documentos/acervo necessários
+  4) validar pendências no checklist e gerar dossiê
+
+#### Validação
+
+- documentos vencidos ou a vencer devem gerar alerta e bloquear envio quando configurado como pendência crítica
+- checklist deve refletir automaticamente: vinculado, sem arquivo, a vencer, vencido
+- dossiê deve listar todos os itens com links de download do PDF final
 
 #### 11.9.1 Funções principais do módulo de licitações
 
@@ -1497,6 +1739,17 @@ Os controles devem estar disponíveis no nível central (Diretoria de Engenharia
 ## 12. Módulo Suprimentos
 
 O módulo de Suprimentos organiza a cadeia de materiais, aquisições e movimentações.
+#### Implementação (no sistema)
+
+- Menu: Suprimentos
+- Cadastros: materiais/itens, fornecedores, unidades de armazenagem, destinos
+- Operação: solicitações, cotações, aquisições, entradas, saídas, transferências, estoque
+- Visões: itens críticos e rastreabilidade por obra/unidade/centro de custo
+
+#### Validação
+
+- Toda movimentação deve registrar origem, destino, responsável e data/hora
+- Estoque e custos devem refletir nas leituras de obra/unidade e no módulo financeiro
 
 ### 12.1 Funções principais
 
@@ -1609,6 +1862,16 @@ Suprimentos se conecta com:
 O módulo de Controle Financeiro deve estar presente na visão geral do sistema e também nas visões específicas por obra, unidade e escopo permitido.
 
 Seu papel é permitir leitura simples, porém robusta, da situação financeira da operação.
+#### Implementação (no sistema)
+
+- Menu: Financeiro
+- Visões: por obra, por unidade e consolidada (conforme perfil)
+- Integração com medições: pendências, pagos, previsões e leitura de resultado
+
+#### Validação
+
+- Um usuário no dashboard da obra deve enxergar apenas os dados da obra
+- Pagamentos e medições devem manter consistência (pago, pendente, previsto) e rastreabilidade
 
 ### 13.1 Funções principais
 
@@ -1675,6 +1938,16 @@ O financeiro se conecta com:
 ## 14. Painel de Fiscalização
 
 O painel da Fiscalização é uma das áreas centrais do sistema, especialmente para o acompanhamento da obra no campo.
+#### Implementação (no sistema)
+
+- Menu: Fiscalização (por obra)
+- Rotinas de campo: diário de obra, calendário, progresso, medições, prazos, anexos (fotos/documentos)
+- Repositório central: evidências por obra com origem (diário, medição, relatórios, anexos)
+
+#### Validação
+
+- Todo registro de campo deve ficar vinculado à obra e aparecer no histórico e repositório de evidências
+- Permissões por perfil e lotação devem limitar quais obras e rotinas o usuário enxerga
 
 ### 14.0 Gestão de conteúdo da obra (fotos e documentos)
 
@@ -1826,6 +2099,16 @@ A fiscalização se conecta com:
 ## 15. Módulo Administração do sistema
 
 Esse módulo sustenta o funcionamento do ambiente da empresa.
+#### Implementação (no sistema)
+
+- Menu: Administração
+- Gestão de acesso: usuários, perfis, vinculação usuário↔funcionário, ativação/inativação
+- Escopo: lotação por unidade/obra/diretoria/área e perfis padrão por função
+
+#### Validação
+
+- Alterações de perfil e lotação devem atualizar menus e módulos visíveis automaticamente
+- Auditoria deve registrar quem alterou usuário/perfil/lotação e quando
 
 ### 15.1 Funções principais
 
