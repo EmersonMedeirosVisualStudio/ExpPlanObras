@@ -7,6 +7,8 @@ function extractLatLngFromGoogleMapsLink(link: string) {
   if (atMatch) return { lat: atMatch[1], lon: atMatch[2] };
   const bangMatch = v.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
   if (bangMatch) return { lat: bangMatch[1], lon: bangMatch[2] };
+  const queryLatLonMatch = v.match(/[?&](?:query|q)=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/i);
+  if (queryLatLonMatch) return { lat: queryLatLonMatch[1], lon: queryLatLonMatch[2] };
   return null;
 }
 
@@ -44,6 +46,48 @@ async function fetchJson(url: string) {
     });
     const data: any = await res.json().catch(() => null);
     return { ok: res.ok, status: res.status, data };
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+function isAllowedMapsHost(hostname: string) {
+  const host = String(hostname || '').toLowerCase();
+  return (
+    host === 'maps.app.goo.gl' ||
+    host === 'goo.gl' ||
+    host.endsWith('.goo.gl') ||
+    host === 'google.com' ||
+    host.endsWith('.google.com') ||
+    host === 'www.google.com'
+  );
+}
+
+async function resolveFinalUrl(inputUrl: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(inputUrl);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  if (!isAllowedMapsHost(parsed.hostname)) return null;
+
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(parsed.toString(), {
+      method: 'GET',
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'ExpPlanObras/1.0 (geo)',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      signal: controller.signal,
+    });
+    return typeof res.url === 'string' && res.url.length > 0 ? res.url : null;
+  } catch {
+    return null;
   } finally {
     clearTimeout(id);
   }
@@ -89,8 +133,18 @@ export default async function geoRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       const { link } = request.body as { link: string };
-      const latLng = extractLatLngFromGoogleMapsLink(link);
-      const q = extractQueryFromLink(link);
+      let latLng = extractLatLngFromGoogleMapsLink(link);
+      let q = extractQueryFromLink(link);
+      let resolvedLink = String(link || '').trim();
+
+      if (!latLng && (!q || q.length === 0)) {
+        const finalUrl = await resolveFinalUrl(resolvedLink);
+        if (finalUrl) {
+          resolvedLink = finalUrl;
+          latLng = extractLatLngFromGoogleMapsLink(resolvedLink);
+          q = extractQueryFromLink(resolvedLink);
+        }
+      }
 
       if (latLng) {
         const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&lat=${encodeURIComponent(

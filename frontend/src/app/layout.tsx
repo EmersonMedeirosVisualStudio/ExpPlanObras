@@ -19,6 +19,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "ExpPlan Obras",
   description: "Plataforma corporativa de engenharia civil",
+  icons: {
+    icon: [{ url: "/favicon_do_site.png", type: "image/png" }],
+    shortcut: [{ url: "/favicon_do_site.png", type: "image/png" }],
+    apple: [{ url: "/favicon_do_site.png", type: "image/png" }],
+  },
   manifest: "/manifest.webmanifest",
   themeColor: "#0f172a",
 };

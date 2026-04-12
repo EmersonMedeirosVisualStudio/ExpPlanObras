@@ -589,47 +589,94 @@ Ele não substitui a visão estratégica do CEO, mas é o painel de manutenção
 
 ### 8.1 Procedimento recomendado
 
-#### Etapa 1 — criação do ambiente
+#### Etapa 1 — cadastro (criação da empresa e do primeiro usuário)
 
-O ambiente da empresa é criado com o primeiro usuário principal: o **Representante da Empresa**.
+O primeiro acesso ao sistema acontece por meio do **cadastro da empresa**, realizado pelo **Representante da Empresa**.
 
-No primeiro acesso, o Representante assume provisoriamente os papéis de CEO e Administrador do sistema (da empresa), para viabilizar a configuração inicial.
+Esse cadastro cria automaticamente:
 
-#### Etapa 2 — definição dos responsáveis iniciais
+- o ambiente da empresa (empresa/tenant);
+- o primeiro usuário do sistema (Representante), que passa a ser o usuário com maior autoridade para iniciar a implantação.
+
+Como acessar:
+
+- Acesse a tela **/login**
+- Clique em **criar uma nova conta**
+
+O que preencher (mínimo):
+
+- Dados da Empresa: Nome, CNPJ, e-mail da empresa (e opcionalmente o slug)
+- Endereço e localização (para cadastro da empresa e referência geográfica)
+- Dados do Representante: nome, CPF, e-mail (login) e senha
+
+Regras de senha:
+
+- mínimo 8 caracteres;
+- deve conter pelo menos 1 letra e 1 número;
+- deve confirmar a senha.
+
+Ao clicar em **Cadastrar**, o sistema cria a empresa e autentica o Representante.
+
+#### Etapa 2 — primeiro login (o que o Representante vê e faz)
+
+Após o cadastro, o Representante é direcionado para o **Dashboard**.
+
+O que o Representante vê no primeiro acesso:
+
+- acesso ao painel de governança (Representante);
+- seletor de telas para alternar entre Representante / CEO / Administrador do sistema (provisórios);
+- atalhos para Configuração da Empresa e definição de titulares.
+
+O que o Representante pode fazer no primeiro acesso:
+
+- parametrizar dados iniciais da empresa (configuração básica);
+- cadastrar o mínimo de funcionários (para permitir delegação);
+- definir os titulares de CEO, Administrador do sistema (da empresa) e Gerente de RH.
+
+Regra operacional:
+
+- no primeiro acesso, o Representante assume provisoriamente os papéis de CEO e Administrador do sistema (da empresa), para impedir que a empresa fique travada no início;
+- ao delegar um papel para outro usuário, o Representante passa a ter visualização nas telas daquele papel, e o titular passa a ter edição.
+
+#### Etapa 3 — definição dos responsáveis iniciais (titulares)
 
 O Representante define inicialmente três papéis essenciais:
 
-- **CEO (Diretor Geral)**
-- **Administrador do sistema (da empresa)**
-- **Gerente de RH**
+- CEO (Diretor Geral)
+- Administrador do sistema (da empresa)
+- Gerente de RH
+
 #### Implementação (no sistema)
+
 - Painéis → Representante → Seletor de telas: alternar entre Representante / CEO / Administrador
 - Delegar titulares:
-  - CEO: Administração → Organograma → titular
-  - Administrador: Administração → Painel do Administrador → titular
-  - Gerente de RH: RH → Configuração → titular
+  - CEO: Administração → Organograma → definir titular
+  - Administrador: Administração → Painel do Administrador → definir titular
+  - Gerente de RH: RH → Configuração → definir titular
 - Cadastro mínimo de funcionários (se preciso): RH → Funcionários → Novo (nome, e-mail, função inicial)
+
 #### Validação
-- Titulares recém-definidos acessam seus painéis imediatamente
-- Representante, ao delegar, passa a ter visualização nas telas daquele papel
-- Alertas de pendências para RH aparecem após cadastro mínimo
+
+- titulares recém-definidos acessam seus painéis imediatamente;
+- o titular anterior perde edição e mantém visualização (quando aplicável);
+- alertas de pendências para RH aparecem após cadastro mínimo de funcionários.
 
 Regra:
 
-- o acesso efetivo de cada papel só acontece após a atribuição formal do titular;
-- a alteração de titular deve atualizar automaticamente as permissões do usuário.
+- o acesso efetivo de cada papel acontece após a atribuição formal do titular;
+- a alteração de titular atualiza automaticamente as permissões do usuário.
 
-#### Etapa 3 — atuação do Gerente de RH
+#### Etapa 4 — atuação do Gerente de RH (regularização do cadastro funcional)
 
 O Gerente de RH passa a ser o responsável pelo cadastro funcional dos colaboradores, incluindo:
 
-- dados básicos;
+- dados completos do funcionário;
 - lotação;
 - situação funcional;
 - vínculo;
 - movimentações iniciais.
 
-#### Etapa 4 — atuação do Administrador do sistema
+#### Etapa 5 — atuação do Administrador do sistema (usuários e permissões)
 
 O Administrador do sistema passa a ser responsável por:
 
@@ -638,6 +685,22 @@ O Administrador do sistema passa a ser responsável por:
 - atribuir perfis;
 - configurar permissões;
 - definir escopos operacionais.
+
+#### Etapa 6 — acessos posteriores (entrar no dia a dia)
+
+Depois que a empresa está configurada, o acesso padrão do usuário é:
+
+- ir em **/login**
+- informar e-mail e senha
+- clicar em **Entrar**
+
+Se o usuário esquecer a senha:
+
+- na tela **/login**, clicar em **Esqueci minha senha**
+- informar o e-mail
+- seguir as instruções enviadas para o e-mail para redefinir a senha
+
+Se um usuário tiver vínculo com múltiplas empresas, o sistema exibe uma tela de seleção para escolher qual empresa acessar.
 
 ### 8.2 Controle permanente do Representante
 
@@ -1738,145 +1801,81 @@ Os controles devem estar disponíveis no nível central (Diretoria de Engenharia
 
 ## 12. Módulo Suprimentos
 
-O módulo de Suprimentos organiza a cadeia de materiais, aquisições e movimentações.
+O módulo de Suprimentos organiza a cadeia de materiais, aquisições e movimentações, garantindo que a engenharia receba os insumos no momento certo e com rastreabilidade de custos.
+
+#### Regras
+
+- toda movimentação de material deve registrar origem, destino, responsável e data/hora;
+- o custo real do material (aquisição + frete + impostos) deve ser apropriado no centro de custo de destino;
+- materiais podem ser adquiridos diretamente para a obra ou para estoque central (unidade de armazenagem).
+
 #### Implementação (no sistema)
 
 - Menu: Suprimentos
-- Cadastros: materiais/itens, fornecedores, unidades de armazenagem, destinos
-- Operação: solicitações, cotações, aquisições, entradas, saídas, transferências, estoque
-- Visões: itens críticos e rastreabilidade por obra/unidade/centro de custo
+- Cadastros base: materiais/itens, fornecedores, unidades de armazenagem, destinos.
+- Operação: solicitações de compra, cotações, aquisições, controle de entrada (NF), saídas e transferências.
+- Visões: estoque em tempo real, itens críticos, rastreabilidade por obra/unidade e centro de custo.
 
 #### Validação
 
-- Toda movimentação deve registrar origem, destino, responsável e data/hora
-- Estoque e custos devem refletir nas leituras de obra/unidade e no módulo financeiro
+- alterações no estoque devem refletir imediatamente no saldo do local (obra ou armazenagem);
+- o custo das saídas deve compor o custo realizado da obra no módulo financeiro/engenharia;
+- transferências entre obras devem debitar de uma e creditar na outra gerando histórico inalterável.
 
-### 12.1 Funções principais
+### 12.1 Aquisição e composição de custos
 
-- cadastro de materiais;
-- solicitações;
-- aquisições;
-- cotações;
-- entradas;
-- saídas;
-- estoques;
-- destinos;
-- movimentações;
-- acompanhamento por obra e unidade;
-- itens críticos;
-- apoio às necessidades da engenharia.
+Quando um item for adquirido, o sistema deve registrar e ratear os componentes do custo real:
 
-### 12.2 Custos detalhados de aquisição
+- valor de aquisição (nota fiscal);
+- impostos recuperáveis e não recuperáveis;
+- frete e transporte externo;
+- transporte interno e custos acessórios.
 
-Quando um item for adquirido, o sistema deve permitir registrar os componentes do custo, como:
+Esses valores formam o custo médio do estoque e devem poder ser analisados por: obra, unidade, tipo de material, fornecedor e centro de custo.
 
-- valor de aquisição;
-- impostos;
-- frete/transporte externo;
-- transporte interno;
-- custos acessórios;
-- outros custos vinculados.
+### 12.2 Armazenagem, alocação e transferências
 
-Esses valores devem poder ser analisados por:
+O material não precisa ser consumido imediatamente. O sistema deve permitir:
 
-- obra;
-- unidade;
-- tipo de material;
-- fornecedor;
-- aquisição;
-- centro de custo.
+- **Entrada em estoque central**: aquisição para uma "unidade de armazenagem";
+- **Alocação**: envio do estoque central para uma obra, unidade ou base operacional;
+- **Transferência (Realocação)**: movimentação de um insumo que sobrou em uma obra para outra obra ou de volta para o estoque central.
 
-Isso é importante para a leitura real do custo do insumo.
+Toda movimentação exige aprovação e mantém histórico completo de quem enviou, quem recebeu e quando.
 
-### 12.3 Armazenagem e alocação
+### 12.3 Importação de base de dados (CSV)
 
-A empresa pode adquirir materiais diversos e armazená-los em uma **unidade de armazenagem**. Posteriormente, esses materiais podem ser alocados para:
+Para facilitar a implantação, o módulo deve permitir a importação em massa via CSV de:
 
-- uma obra;
-- outra obra;
-- uma unidade;
-- outra unidade;
-- uma base operacional.
-
-Ou seja, o material não precisa necessariamente ser adquirido diretamente para consumo imediato. Ele pode:
-
-1. entrar em estoque;
-2. permanecer armazenado;
-3. ser transferido;
-4. ser posteriormente consumido ou destinado a uma obra.
-
-### 12.4 Realocação entre obras e unidades
-
-O sistema deve permitir que um insumo adquirido para uma obra possa ser realocado, quando autorizado, para:
-
-- outra obra;
-- outra unidade;
-- outro destino operacional.
-
-Essa movimentação deve manter histórico e rastreabilidade.
-
-### 12.5 Controle por destino
-
-Todo material deve poder ser rastreado por:
-
-- origem da compra;
-- unidade de armazenamento;
-- destino final;
-- obra;
-- centro de custo;
-- movimentação de entrada e saída.
-
-### 12.6 Importação de materiais, serviços e composições
-
-O sistema deve permitir importação por CSV para:
-
-- materiais;
+- materiais (insumos);
 - serviços;
 - composições.
 
-Com:
-
-- modelo de arquivo para download;
-- validação antes de gravar;
-- conferência;
-- prevenção de inconsistências.
-
-### 12.7 Relações do suprimento
-
-Suprimentos se conecta com:
-
-- engenharia;
-- orçamento;
-- materiais previstos;
-- aquisições;
-- centro de custo;
-- obras;
-- unidades;
-- estoque;
-- financeiro.
+O sistema deve fornecer o modelo (template) para download, validar os dados antes de gravar e exibir tela de conferência para evitar duplicações e inconsistências.
 
 ---
 
 ## 13. Módulo de Controle Financeiro
 
-O módulo de Controle Financeiro deve estar presente na visão geral do sistema e também nas visões específicas por obra, unidade e escopo permitido.
+O módulo de Controle Financeiro atua de forma transversal, consolidando as informações econômicas geradas pela Engenharia, RH e Suprimentos. Seu papel é oferecer uma leitura clara da saúde financeira da operação.
 
-Seu papel é permitir leitura simples, porém robusta, da situação financeira da operação.
+#### Regras
+
+- não existe "pagamento" sem origem justificada (medição aprovada, nota fiscal de suprimentos, folha de RH);
+- a visão financeira é estritamente limitada pelo escopo (lotação) do usuário;
+- o controle financeiro da obra é focado em "caixa da obra" (receitas de medição x custos de execução).
+
 #### Implementação (no sistema)
 
 - Menu: Financeiro
-- Visões: por obra, por unidade e consolidada (conforme perfil)
-- Integração com medições: pendências, pagos, previsões e leitura de resultado
+- Funcionalidades: contas a pagar, contas a receber, fluxo de caixa, DRE gerencial da obra.
+- Visões: por obra, por unidade e consolidada (apenas para Diretoria/CEO).
 
 #### Validação
 
-- Um usuário no dashboard da obra deve enxergar apenas os dados da obra
-- Pagamentos e medições devem manter consistência (pago, pendente, previsto) e rastreabilidade
-
-### 13.1 Funções principais
-
-- pagamentos pendentes;
-- pagamentos realizados;
+- a aprovação de uma medição na Engenharia deve gerar automaticamente uma previsão de recebimento no Financeiro;
+- a entrada de uma nota fiscal em Suprimentos deve gerar automaticamente uma previsão de pagamento;
+- o gestor da obra não pode visualizar custos de outras obras ou da administração central.
 - valores por obra;
 - valores por unidade;
 - valores por tipo;
