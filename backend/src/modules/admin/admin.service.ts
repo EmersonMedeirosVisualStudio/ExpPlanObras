@@ -99,6 +99,19 @@ export async function createTenantByAdmin(input: CreateTenantInput) {
         });
     }
 
+    await tx.empresaRepresentante.create({
+      data: {
+        tenantId: tenant.id,
+        funcionarioId: null,
+        nomeRepresentante: representativeName,
+        cpf: cleanRepCPF,
+        email: cleanRepEmail,
+        ativo: true,
+        dataInicio: new Date(),
+        dataFim: null,
+      },
+    });
+
     await tx.tenantHistoryEntry.create({
       data: {
         tenantId: tenant.id,
@@ -445,12 +458,33 @@ export async function resetRepresentativePassword(tenantId: number, newPassword:
   const hashed = await bcrypt.hash(password, 10);
 
   return prisma.$transaction(async (tx) => {
-    const rep = await tx.empresaRepresentante.findFirst({
+    let rep = await tx.empresaRepresentante.findFirst({
       where: { tenantId, ativo: true },
       orderBy: { dataInicio: 'desc' },
       select: { id: true, cpf: true, email: true, nomeRepresentante: true },
     });
-    if (!rep) throw new Error('Representante da empresa não encontrado.');
+    if (!rep) {
+      const link = await tx.tenantUser.findFirst({
+        where: { tenantId, role: 'ADMIN' },
+        orderBy: { id: 'asc' },
+        include: { user: { select: { id: true, email: true, cpf: true, name: true } } },
+      });
+      if (!link?.user) throw new Error('Representante da empresa não encontrado.');
+
+      rep = await tx.empresaRepresentante.create({
+        data: {
+          tenantId,
+          funcionarioId: null,
+          nomeRepresentante: link.user.name || 'Representante',
+          cpf: link.user.cpf,
+          email: link.user.email,
+          ativo: true,
+          dataInicio: new Date(),
+          dataFim: null,
+        },
+        select: { id: true, cpf: true, email: true, nomeRepresentante: true },
+      });
+    }
 
     const user = await tx.user.findUnique({
       where: { cpf: rep.cpf },
