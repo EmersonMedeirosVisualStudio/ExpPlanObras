@@ -438,6 +438,48 @@ export async function grantTenantAccessDays(id: number, days: number) {
   return manualGrantTenantAccess(id, { reason: 'PAYMENT', days });
 }
 
+export async function resetRepresentativePassword(tenantId: number, newPassword: string) {
+  const password = String(newPassword || '');
+  if (password.length < 8) throw new Error('Senha deve ter no mínimo 8 caracteres.');
+
+  const hashed = await bcrypt.hash(password, 10);
+
+  return prisma.$transaction(async (tx) => {
+    const rep = await tx.empresaRepresentante.findFirst({
+      where: { tenantId, ativo: true },
+      orderBy: { dataInicio: 'desc' },
+      select: { id: true, cpf: true, email: true, nomeRepresentante: true },
+    });
+    if (!rep) throw new Error('Representante da empresa não encontrado.');
+
+    const user = await tx.user.findUnique({
+      where: { cpf: rep.cpf },
+      select: { id: true, email: true, name: true },
+    });
+    if (!user) throw new Error('Usuário do representante não encontrado.');
+
+    await tx.user.update({
+      where: { id: user.id },
+      data: { password: hashed },
+    });
+
+    await tx.tenantHistoryEntry.create({
+      data: {
+        tenantId,
+        source: 'ADMIN',
+        action: 'REPRESENTATIVE_PASSWORD_RESET',
+        message: `Senha do representante resetada pelo administrador. Representante: ${rep.nomeRepresentante} (${rep.email || rep.cpf}).`,
+      },
+    });
+
+    return {
+      ok: true,
+      tenantId,
+      representative: { nome: rep.nomeRepresentante, email: rep.email || user.email, cpf: rep.cpf },
+    };
+  });
+}
+
 export async function deleteTenant(id: number) {
     return prisma.$transaction(async (tx) => {
         // 1. Apaga os vínculos fracos (many-to-many ou tabelas "folha" sem cascade)

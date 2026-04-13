@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '@/lib/api';
-import { CheckCircle, Edit2, History, Loader2, Mail, MessageCircle, Plus, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle, Edit2, History, Key, Loader2, Mail, MessageCircle, Plus, Trash2, XCircle } from 'lucide-react';
 import { UserMenu } from '@/components/UserMenu';
 import { buildSubscriptionReminder, getDaysLeft, normalizeWhatsappPhone } from '@/lib/subscriptionReminders';
 
@@ -173,6 +173,18 @@ export default function AdminTenantsPage() {
   const [manualGrantDays, setManualGrantDays] = useState<30 | 60 | 90 | 365>(90);
   const [manualGrantLoading, setManualGrantLoading] = useState(false);
   const [manualGrantError, setManualGrantError] = useState('');
+
+  const [flash, setFlash] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!flash) return;
+    const t = window.setTimeout(() => setFlash(null), 6000);
+    return () => window.clearTimeout(t);
+  }, [flash]);
+
+  const notify = (type: 'success' | 'error' | 'info', action: string, message: string) => {
+    setFlash({ type, text: `Admin > Empresas > ${action}: ${message}` });
+  };
 
   useEffect(() => {
     fetchTenants();
@@ -575,18 +587,22 @@ export default function AdminTenantsPage() {
       try {
           await api.put(`/api/admin/tenants/${tenant.id}`, { status: newStatus });
           fetchTenants();
+          notify('success', 'Status', `Empresa "${tenant.name}" agora está ${newStatus === 'ACTIVE' ? 'ATIVA' : 'INATIVA'}.`);
       } catch (err: unknown) {
-          alert(getApiErrorMessage(err) || 'Erro ao alterar status da empresa');
+          notify('error', 'Status', getApiErrorMessage(err) || 'Falha ao alterar status da empresa.');
       }
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Tem certeza que deseja excluir esta empresa?')) return;
+    const tenant = tenants.find((t) => t.id === id) || null;
+    const name = tenant?.name || `ID ${id}`;
+    if (!confirm(`Tem certeza que deseja excluir a empresa "${name}"? Esta ação é irreversível.`)) return;
     try {
         await api.delete(`/api/admin/tenants/${id}`);
         fetchTenants();
-    } catch {
-        alert('Erro ao excluir empresa');
+        notify('success', 'Excluir', `Empresa "${name}" excluída com sucesso.`);
+    } catch (err: unknown) {
+        notify('error', 'Excluir', getApiErrorMessage(err) || `Falha ao excluir a empresa "${name}".`);
     }
   };
 
@@ -596,8 +612,9 @@ export default function AdminTenantsPage() {
     try {
       await api.post(`/api/admin/tenants/${tenant.id}/grant-access`, { days });
       fetchTenants();
+      notify('success', 'Liberar acesso', `Acesso liberado por ${label} para "${tenant.name}".`);
     } catch (err: unknown) {
-      alert(getApiErrorMessage(err) || 'Erro ao liberar acesso');
+      notify('error', 'Liberar acesso', getApiErrorMessage(err) || `Falha ao liberar acesso para "${tenant.name}".`);
     }
   };
 
@@ -627,8 +644,12 @@ export default function AdminTenantsPage() {
       });
       closeManualGrant();
       fetchTenants();
+      const label = manualGrantDays === 365 ? '1 ano' : `${manualGrantDays} dias`;
+      notify('success', 'Liberar acesso', `Acesso liberado por ${label} para "${manualGrantTenant.name}".`);
     } catch (err: unknown) {
-      setManualGrantError(getApiErrorMessage(err) || 'Erro ao liberar acesso');
+      const msg = getApiErrorMessage(err) || 'Erro ao liberar acesso';
+      setManualGrantError(msg);
+      notify('error', 'Liberar acesso', msg);
     } finally {
       setManualGrantLoading(false);
     }
@@ -639,12 +660,12 @@ export default function AdminTenantsPage() {
       String(tenant.billingProvider || '').toUpperCase() === 'MANUAL' ||
       String(tenant.billingPlan || '').toUpperCase().startsWith('MANUAL');
     if (!isManual) {
-      alert('Só é possível revogar liberação manual.');
+      notify('error', 'Revogar', 'Só é possível revogar liberação manual.');
       return;
     }
     const current = String(tenant.subscriptionStatus || '');
     if (!['ACTIVE', 'TRIAL', 'GRACE_PERIOD'].includes(current)) {
-      alert('Não há liberação manual ativa para revogar.');
+      notify('error', 'Revogar', 'Não há liberação manual ativa para revogar.');
       return;
     }
     if (!confirm(`Revogar a assinatura/liberação manual de "${tenant.name}"?`)) return;
@@ -653,8 +674,9 @@ export default function AdminTenantsPage() {
     try {
       await api.post(`/api/admin/tenants/${tenant.id}/manual-revoke`, { reason: String(reason || '').trim() });
       fetchTenants();
+      notify('success', 'Revogar', `Liberação/assinatura manual revogada para "${tenant.name}".`);
     } catch (err: unknown) {
-      alert(getApiErrorMessage(err) || 'Erro ao revogar assinatura');
+      notify('error', 'Revogar', getApiErrorMessage(err) || `Falha ao revogar assinatura de "${tenant.name}".`);
     }
   };
 
@@ -718,8 +740,11 @@ export default function AdminTenantsPage() {
             representativePassword: '', representativeWhatsapp: ''
           });
           fetchTenants();
+          notify('success', 'Criar', `Empresa "${payload.name}" criada com sucesso.`);
       } catch (err: unknown) {
-          setError(getApiErrorMessage(err) || 'Erro ao criar empresa');
+          const msg = getApiErrorMessage(err) || 'Erro ao criar empresa';
+          setError(msg);
+          notify('error', 'Criar', msg);
       } finally {
           setCreating(false);
       }
@@ -830,11 +855,37 @@ export default function AdminTenantsPage() {
           await api.put(`/api/admin/tenants/${editingTenant.id}`, payload);
           closeEditModal();
           fetchTenants();
+          notify('success', 'Editar', `Empresa "${editingTenant.name}" atualizada com sucesso.`);
       } catch (err: unknown) {
-          alert(getApiErrorMessage(err) || 'Erro ao atualizar empresa');
+          notify('error', 'Editar', getApiErrorMessage(err) || `Falha ao atualizar a empresa "${editingTenant?.name || ''}".`);
       } finally {
           setCreating(false);
       }
+  };
+
+  const handleResetRepresentativePassword = async (tenant: Tenant) => {
+    const fixedPassword = '12345678!';
+    if (
+      !confirm(
+        `Trocar senha do Representante da empresa "${tenant.name}" para: ${fixedPassword}\n\nRecomendação: após o acesso, o Representante deve trocar a senha.`
+      )
+    )
+      return;
+    try {
+      await api.post(`/api/admin/tenants/${tenant.id}/representative/reset-password`, { newPassword: fixedPassword });
+      notify('success', 'Trocar senha', `Senha do Representante resetada. Nova senha: ${fixedPassword}`);
+    } catch (err: unknown) {
+      notify('error', 'Trocar senha', getApiErrorMessage(err) || `Falha ao resetar a senha do Representante de "${tenant.name}".`);
+    }
+  };
+
+  const handleOpenBilling = (tenant: Tenant, url: string) => {
+    if (!url) {
+      notify('error', 'Assinar', 'Link de pagamento indisponível.');
+      return;
+    }
+    notify('info', 'Assinar', `Abrindo pagamento da empresa "${tenant.name}" em nova aba.`);
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -950,6 +1001,21 @@ export default function AdminTenantsPage() {
                 </button>
             </div>
         </div>
+
+        {flash && (
+          <div
+            className={`mb-6 rounded-md border px-4 py-3 text-sm ${
+              flash.type === 'success'
+                ? 'bg-green-50 border-green-200 text-green-800'
+                : flash.type === 'error'
+                  ? 'bg-red-50 border-red-200 text-red-800'
+                  : 'bg-blue-50 border-blue-200 text-blue-800'
+            }`}
+            role="status"
+          >
+            {flash.text}
+          </div>
+        )}
 
         <div className="bg-white shadow-sm rounded-lg overflow-x-auto">
             <table className="min-w-[1700px] w-full divide-y divide-gray-200">
@@ -1192,13 +1258,14 @@ export default function AdminTenantsPage() {
                                       </div>
 
                                       <div className="flex items-center gap-2">
-                                        <a
-                                          href={billingUrlClaim}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenBilling(tenant, billingUrlClaim)}
                                           className="px-3 py-2 border rounded text-gray-800 hover:bg-gray-50"
                                           title="Assinar/regularizar - MercadoPago"
                                         >
                                           Assinar
-                                        </a>
+                                        </button>
                                       </div>
 
                                       {(emailMsg || whatsappMsg) && (
@@ -1229,6 +1296,14 @@ export default function AdminTenantsPage() {
                                       )}
 
                                       <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleResetRepresentativePassword(tenant)}
+                                          className="text-gray-700 hover:text-gray-900 px-2 py-2"
+                                          title="Trocar senha do Representante"
+                                        >
+                                          <Key className="w-5 h-5" />
+                                        </button>
                                         <button
                                           type="button"
                                           onClick={() => handleToggleStatus(tenant)}

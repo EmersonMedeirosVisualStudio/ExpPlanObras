@@ -2,7 +2,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createTenantSchema, updateTenantSchema } from './admin.schema.js';
-import { acceptClaimAsAdmin, activateTenantSubscription, createTenantByAdmin, deleteTenant, getAllTenants, grantTenantAccessDays, manualGrantTenantAccess, revokeManualTenantAccess, updateTenant } from './admin.service.js';
+import { acceptClaimAsAdmin, activateTenantSubscription, createTenantByAdmin, deleteTenant, getAllTenants, grantTenantAccessDays, manualGrantTenantAccess, resetRepresentativePassword, revokeManualTenantAccess, updateTenant } from './admin.service.js';
 import { checkSystemAdmin } from '../../utils/authenticate.js';
 import prisma from '../../plugins/prisma.js';
 
@@ -565,6 +565,30 @@ export default async function adminRoutes(server: FastifyInstance) {
         } catch (error) {
             return reply.code(404).send({ message: 'Tenant not found' });
         }
+    }
+  );
+
+  server.post(
+    '/tenants/:id/representative/reset-password',
+    {
+      schema: {
+        params: z.object({
+          id: z.coerce.number().int(),
+        }),
+        body: z.object({
+          newPassword: z.string().min(8),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: number };
+      try {
+        const body = request.body as { newPassword: string };
+        const result = await resetRepresentativePassword(id, body.newPassword);
+        return reply.send(result);
+      } catch (error: any) {
+        return reply.code(400).send({ message: error?.message || 'Erro ao resetar senha do representante' });
+      }
     }
   );
 }
