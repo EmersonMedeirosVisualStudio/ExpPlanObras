@@ -439,7 +439,25 @@ export async function grantTenantAccessDays(id: number, days: number) {
 }
 
 export async function deleteTenant(id: number) {
-    return prisma.tenant.delete({
-        where: { id }
+    return prisma.$transaction(async (tx) => {
+        // 1. Apaga os vínculos fracos (many-to-many ou tabelas "folha" sem cascade)
+        await tx.responsavelObra.deleteMany({ where: { responsavel: { tenantId: id } } });
+        await tx.medicao.deleteMany({ where: { obra: { tenantId: id } } });
+        await tx.pagamento.deleteMany({ where: { obra: { tenantId: id } } });
+        
+        // 2. Apaga as tabelas com RESTRICT que bloqueiam a exclusão (de baixo para cima)
+        await tx.responsavelTecnico.deleteMany({ where: { tenantId: id } });
+        await tx.tarefa.deleteMany({ where: { tenantId: id } });
+        await tx.documento.deleteMany({ where: { tenantId: id } });
+        await tx.custo.deleteMany({ where: { tenantId: id } });
+        await tx.etapa.deleteMany({ where: { tenantId: id } });
+        
+        // 3. Apaga o "nó principal" operacional (Obra)
+        await tx.obra.deleteMany({ where: { tenantId: id } });
+
+        // 4. Por fim, apaga o Tenant (o banco cuidará do resto via CASCADE)
+        return tx.tenant.delete({
+            where: { id }
+        });
     });
 }

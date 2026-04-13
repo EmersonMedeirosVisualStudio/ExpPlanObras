@@ -444,7 +444,29 @@ Esse painel deve apresentar:
 - visão geral do resultado por unidade, por obra e global.
 
 A leitura do painel do CEO deve ser simples, rica em informação, mas de fácil entendimento. Os gráficos devem ser executivos, objetivos e diretamente acionáveis.
-#### Implementação (no sistema)
+#### Implementação (no sistema - Backend)
+
+Para que a exclusão não falhe por erro de banco de dados (constraints de chave estrangeira), o backend executa uma **sequência de exclusão (transação atômica)** de "baixo para cima", limpando primeiro os vínculos e tabelas "folha" antes de apagar a empresa.
+
+A sequência exata executada pelo sistema é:
+
+1. **Vínculos fracos (many-to-many e tabelas secundárias):**
+   - Apaga vínculos de Responsável-Obra (`ResponsavelObra`);
+   - Apaga Medições (`Medicao`);
+   - Apaga Pagamentos (`Pagamento`);
+2. **Tabelas RESTRICT (que bloqueiam a exclusão se tiverem dados):**
+   - Apaga Responsáveis Técnicos (`ResponsavelTecnico`);
+   - Apaga Tarefas (`Tarefa`);
+   - Apaga Documentos (`Documento`);
+   - Apaga Custos (`Custo`);
+   - Apaga Etapas (`Etapa`);
+3. **Nó Operacional Principal:**
+   - Apaga as Obras (`Obra`);
+4. **Exclusão Final (Tenant):**
+   - Apaga a Empresa (`Tenant`). 
+   - *Nota: ao apagar o Tenant, o banco de dados se encarrega de apagar automaticamente todas as outras dezenas de tabelas configuradas com `CASCADE` (Usuários, Módulos de Governança, Backups, etc).*
+
+#### Implementação (no sistema - Frontend)
 - Menu: Painéis → CEO
 - Edição de organograma: Administração → Organograma (perfil CEO)
 - Indicadores possuem links para módulos origem (Engenharia, RH, SST, Suprimentos)
@@ -2129,6 +2151,164 @@ Ou seja:
 
 - o organograma define a estrutura e a função;
 - o administrador operacionaliza o perfil e o acesso da pessoa correspondente.
+
+### 15.3 Exclusão de empresa (remoção do ambiente) — exclusivo do Administrador do Sistema (plataforma)
+
+A exclusão de uma empresa remove o **ambiente inteiro** daquela empresa dentro da plataforma.
+
+Isso não é uma ação do “Administrador do sistema (da empresa)”. É uma ação do **Administrador do Sistema (da plataforma)**, usada apenas em casos especiais (ex.: empresa criada por engano em ambiente de teste).
+
+#### O que a exclusão atinge
+
+Ao excluir uma empresa, são removidos:
+
+- a empresa (tenant) e seu cadastro (CNPJ, nome, endereço, localização e parâmetros);
+- o vínculo dos usuários com essa empresa (a empresa deixa de existir para eles);
+- todos os dados operacionais que pertencem a essa empresa, incluindo módulos e cadastros vinculados ao tenant (ex.: obras, unidades, funcionários, documentos, histórico e registros).
+
+Impacto prático:
+
+- qualquer usuário que tente acessar essa empresa não conseguirá mais, porque ela deixa de existir;
+- a ação é **irreversível** no uso normal do sistema.
+
+#### Tabelas afetadas (o que apaga e o que bloqueia)
+
+O sistema é multiempresa. Quase tudo possui `tenantId` e fica “dentro” da empresa.
+
+Existem dois comportamentos possíveis no banco:
+
+- **RESTRICT (bloqueia exclusão)**: se existir qualquer registro nessas tabelas, o banco impede excluir a empresa até remover esses dados primeiro;
+- **CASCADE (remove junto)**: ao excluir a empresa, o banco apaga automaticamente os registros dessas tabelas que pertencem a ela.
+
+Tabelas que **bloqueiam a exclusão** (ON DELETE RESTRICT):
+
+- Obra
+- Etapa
+- Custo
+- Documento
+- Tarefa
+- ResponsavelTecnico
+
+Tabelas que são **removidas junto** (ON DELETE CASCADE), quando a exclusão é permitida:
+
+- AuditoriaEvento
+- BackupExecucaoTenant
+- BackupPoliticaTenant
+- BackupRestauracaoTenant
+- BcpPlano
+- BcpPlanoAtivoCritico
+- BcpPlanoRunbook
+- BcpRunbook
+- BcpRunbookPasso
+- BcpTeste
+- CriseComunicacao
+- CriseRegistro
+- CriseTimeline
+- CriseWarRoomParticipante
+- DocumentoAssinaturaArtefato
+- DocumentoAssinaturaCallback
+- DocumentoAssinaturaEvidencia
+- DocumentoAssinaturaProvedor
+- DocumentoAssinaturaSolicitacao
+- DocumentoAssinaturaSolicitacaoSignatario
+- DocumentoVersao
+- DrExecucaoRecuperacao
+- EmpresaEncarregadoSistema
+- EmpresaRepresentante
+- Funcionario
+- GovernancaClassificacaoSugestao
+- GovernancaDadoAtivo
+- GovernancaDadoDominio
+- GovernancaDadoGlossario
+- GovernancaDadoLineageRelacao
+- GovernancaDadoQualidadeExecucao
+- GovernancaDadoQualidadeIssue
+- GovernancaDadoQualidadeRegra
+- GovernancaDadosAuditoria
+- GovernancaDescarteLote
+- GovernancaDescarteLoteItem
+- GovernancaLegalHold
+- GovernancaLegalHoldItem
+- GovernancaPiiScan
+- GovernancaPiiScanResultado
+- GovernancaRetencaoAuditoria
+- GovernancaRetencaoItem
+- GovernancaRetencaoPolitica
+- GrcAchado
+- GrcAuditoria
+- GrcAuditoriaItemEscopo
+- GrcControle
+- GrcControleMetrica
+- GrcControleTeste
+- GrcEvidencia
+- GrcMatrizRiscoSnapshot
+- GrcPlanoAcao
+- GrcPlanoAcaoItem
+- GrcRisco
+- GrcRiscoAvaliacao
+- GrcRiscoControle
+- ObservabilidadeAlerta
+- ObservabilidadeAlertaEvento
+- ObservabilidadeCasoCompliance
+- ObservabilidadeCasoComplianceEvidencia
+- ObservabilidadeEvento
+- ObservabilidadeIncidente
+- ObservabilidadeIncidenteEvento
+- ObservabilidadeIncidenteTimeline
+- ObservabilidadePlaybook
+- ObservabilidadePlaybookExecucao
+- ObservabilidadePlaybookExecucaoPasso
+- ObservabilidadePlaybookPasso
+- ObservabilidadeRegra
+- OrganizacaoCargo
+- OrganizacaoSetor
+- OrganogramaPosicao
+- Perfil
+- SecurityFieldPolicy
+- SecuritySensitiveDataAudit
+- Subscription
+- TenantHistoryEntry
+- TenantUser
+- Unidade
+
+#### Recomendação (boa prática)
+
+Na maioria dos casos, não se deve excluir uma empresa. O recomendado é:
+
+- **inativar** a empresa (bloqueia acesso e mantém dados para auditoria e recuperação);
+- ou **revogar assinatura/liberação** (quando o objetivo é bloquear uso por inadimplência).
+
+Exclusão deve ser usada apenas quando:
+
+- a empresa foi cadastrada por engano;
+- é um ambiente de teste que precisa ser removido;
+- existe confirmação explícita de que não há dados a preservar.
+
+#### Implementação (no sistema)
+
+ETAPA 1 — Onde acessar
+- Acesse o painel do Administrador do Sistema (plataforma) → Gestão de Empresas (lista de empresas)
+
+ETAPA 2 — O que clicar
+- Localize a empresa na lista
+- Clique no ícone **Excluir**
+
+ETAPA 3 — O que preencher
+- Confirme a mensagem de exclusão
+
+ETAPA 4 — O que esperar
+- A empresa some da lista
+- A empresa deixa de ser acessível para qualquer usuário
+
+ETAPA 5 — Como validar
+- Tente acessar a empresa com um usuário vinculado: ela não deve mais aparecer como opção
+- A tela de “seleção de empresa” (quando existir) não deve listar mais essa empresa
+
+#### Validação (regras)
+
+- o sistema deve exigir confirmação explícita antes de excluir;
+- a exclusão deve ser restrita ao Administrador do Sistema (plataforma);
+- a exclusão deve ser tratada como “ação crítica” (com rastreabilidade/auditoria, quando aplicável).
 
 ---
 
