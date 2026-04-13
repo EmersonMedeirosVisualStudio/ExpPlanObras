@@ -44,7 +44,7 @@ export function DashboardHeader() {
     } catch {
     }
     if (profiles.length === 0 && !isSystemAdmin) {
-      profiles = ['CEO', 'REPRESENTANTE_EMPRESA', 'ENCARREGADO_SISTEMA_EMPRESA'];
+      profiles = ['REPRESENTANTE_EMPRESA', 'CEO', 'ENCARREGADO_SISTEMA_EMPRESA'];
     }
     if (profiles.length === 0 && isSystemAdmin) {
       profiles = ['SYSTEM_ADMIN'];

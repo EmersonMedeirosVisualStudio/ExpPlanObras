@@ -22,7 +22,12 @@ function safeSet(key: string, value: string) {
 }
 
 export function AppHeader({ user }: { user: CurrentUser }) {
-  const [activeProfile, setActiveProfile] = useState(() => safeGet("active_profile") || user.perfis[0] || "");
+  const [activeProfile, setActiveProfile] = useState(() => {
+    const stored = safeGet("active_profile") || "";
+    if (stored && user.perfis.includes(stored as any)) return stored;
+    if (user.perfis.includes("REPRESENTANTE_EMPRESA" as any)) return "REPRESENTANTE_EMPRESA";
+    return user.perfis[0] || "";
+  });
   const [activeContext, setActiveContext] = useState<"EMPRESA" | "OBRA" | "UNIDADE">(() => {
     const v = safeGet("active_context");
     if (v === "OBRA" || v === "UNIDADE") return v;

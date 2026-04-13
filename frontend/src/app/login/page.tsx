@@ -255,7 +255,7 @@ function setAuthSession(input: {
 
   const profiles: ProfileCode[] =
     tenantRole === 'ADMIN'
-      ? [PROFILE_CODES.CEO]
+      ? [PROFILE_CODES.REPRESENTANTE_EMPRESA, PROFILE_CODES.CEO, PROFILE_CODES.ENCARREGADO_SISTEMA_EMPRESA]
       : userEmail.includes('encarregado')
         ? [PROFILE_CODES.ENCARREGADO_SISTEMA_EMPRESA]
         : userEmail.includes('sst')
