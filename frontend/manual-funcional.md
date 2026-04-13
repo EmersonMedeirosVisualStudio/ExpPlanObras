@@ -631,6 +631,23 @@ O que preencher (mínimo):
 - Endereço e localização (para cadastro da empresa e referência geográfica)
 - Dados do Representante: nome, CPF, e-mail (login) e senha
 
+Observação importante:
+
+- o **e-mail da empresa** é usado como contato institucional (comunicações, avisos e assuntos de cadastro/financeiro) e **não é credencial de acesso**;
+- a credencial de acesso é o **e-mail do usuário** (do Representante e dos demais usuários).
+
+Padrão de endereço no sistema (como funciona):
+
+- campos padronizados: rua/logradouro, número, bairro, cidade, UF, CEP, latitude, longitude e link do Google Maps;
+- formas de preencher:
+  - **Link Google Maps** (recomendado): o sistema extrai coordenadas e preenche o endereço automaticamente;
+  - **CEP**: o sistema preenche endereço via base pública (e pode complementar coordenadas);
+  - **manual**: o usuário digita e o sistema salva, mesmo sem coordenadas.
+- status de implantação:
+  - **Empresa (Tenant)**: implementado no cadastro inicial;
+  - **Obra**: campos existem e a busca automática está em implantação contínua;
+  - outros cadastros (ex.: Unidades): padronização será aplicada quando o endereço fizer sentido operacional.
+
 Regras de senha:
 
 - mínimo 8 caracteres;
