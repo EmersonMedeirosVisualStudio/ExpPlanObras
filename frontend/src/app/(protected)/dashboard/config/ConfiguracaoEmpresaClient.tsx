@@ -14,6 +14,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
   const [aba, setAba] = useState<Aba>(abaInicial);
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
+  const [savingRole, setSavingRole] = useState<null | 'CEO' | 'ENCARREGADO' | 'GERENTE_RH'>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [config, setConfig] = useState<ConfiguracaoEmpresaDTO>({
@@ -83,26 +84,26 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
 
   async function salvarEncarregado(funcionarioId: number) {
     try {
-      setSalvando(true);
+      setSavingRole('ENCARREGADO');
       await EmpresaConfigApi.definirEncarregado({ idFuncionario: funcionarioId });
       setModalEnc(false);
       await carregar();
     } catch (e: any) {
       alert(e.message || 'Erro ao definir encarregado.');
     } finally {
-      setSalvando(false);
+      setSavingRole(null);
     }
   }
 
   async function salvarTitular(roleCode: 'CEO' | 'GERENTE_RH', funcionarioId: number) {
     try {
-      setSalvando(true);
+      setSavingRole(roleCode);
       await EmpresaConfigApi.definirTitular({ roleCode, idFuncionario: funcionarioId });
       await carregar();
     } catch (e: any) {
       alert(e.message || 'Erro ao definir titular.');
     } finally {
-      setSalvando(false);
+      setSavingRole(null);
     }
   }
 
@@ -177,11 +178,11 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
                   </button>
                   <button
                     className="rounded-lg bg-blue-600 px-3 py-2 text-xs text-white disabled:opacity-60"
-                    disabled={salvando || !ceoFuncionarioId}
+                    disabled={Boolean(savingRole) || !ceoFuncionarioId}
                     type="button"
                     onClick={() => salvarTitular('CEO', ceoFuncionarioId)}
                   >
-                    {salvando ? 'Salvando...' : 'Definir'}
+                    {savingRole === 'CEO' ? 'Salvando...' : 'Definir'}
                   </button>
                 </div>
                 <div className="mt-2 text-xs text-slate-600">{ceo?.idFuncionario ? `Atual: ${formatFuncionarioRef(ceo.idFuncionario, ceo.nome)}` : 'Atual: não definido'}</div>
@@ -210,11 +211,11 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
                   </button>
                   <button
                     className="rounded-lg bg-blue-600 px-3 py-2 text-xs text-white disabled:opacity-60"
-                    disabled={salvando || !encarregadoFuncionarioId}
+                    disabled={Boolean(savingRole) || !encarregadoFuncionarioId}
                     type="button"
                     onClick={() => salvarEncarregado(encarregadoFuncionarioId)}
                   >
-                    {salvando ? 'Salvando...' : 'Definir'}
+                    {savingRole === 'ENCARREGADO' ? 'Salvando...' : 'Definir'}
                   </button>
                 </div>
                 <div className="mt-2 text-xs text-slate-600">{enc?.idFuncionario ? `Atual: ${formatFuncionarioRef(enc.idFuncionario, enc.nome)}` : 'Atual: não definido'}</div>
@@ -243,11 +244,11 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
                   </button>
                   <button
                     className="rounded-lg bg-blue-600 px-3 py-2 text-xs text-white disabled:opacity-60"
-                    disabled={salvando || !gerenteRhFuncionarioId}
+                    disabled={Boolean(savingRole) || !gerenteRhFuncionarioId}
                     type="button"
                     onClick={() => salvarTitular('GERENTE_RH', gerenteRhFuncionarioId)}
                   >
-                    {salvando ? 'Salvando...' : 'Definir'}
+                    {savingRole === 'GERENTE_RH' ? 'Salvando...' : 'Definir'}
                   </button>
                 </div>
                 <div className="mt-2 text-xs text-slate-600">
