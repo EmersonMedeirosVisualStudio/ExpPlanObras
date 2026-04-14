@@ -441,8 +441,8 @@ export default async function v1Routes(server: FastifyInstance) {
         orderBy: { id: 'desc' },
         select: { id: true }
       });
-      const matricula = \`TEMP-\${(last?.id || 0) + 1}-\${timestamp}\`;
-      const cpfFake = \`00\${timestamp.toString().slice(-9)}\`;
+      const matricula = `TEMP-${(last?.id || 0) + 1}-${timestamp}`;
+      const cpfFake = `00${timestamp.toString().slice(-9)}`;
 
       const created = await prisma.$transaction(async (tx) => {
         const f = await tx.funcionario.create({
