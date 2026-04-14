@@ -75,7 +75,7 @@ export default function SstAcidentesClient() {
 
     const principalEnvolvido = (prompt("Principal envolvido? (S/N):") || "S").trim().toUpperCase() === "S";
 
-    let payload: any = { tipoEnvolvido, principalEnvolvido };
+    const payload: any = { tipoEnvolvido, principalEnvolvido };
 
     if (tipoEnvolvido === "EXTERNO") {
       const nomeExterno = (prompt("Nome externo:") || "").trim();
@@ -99,7 +99,7 @@ export default function SstAcidentesClient() {
     const tipoTestemunha = (prompt("Tipo testemunha (FUNCIONARIO/TERCEIRIZADO/EXTERNO):") || "FUNCIONARIO").trim().toUpperCase();
     if (!["FUNCIONARIO", "TERCEIRIZADO", "EXTERNO"].includes(tipoTestemunha)) return;
 
-    let payload: any = { tipoTestemunha };
+    const payload: any = { tipoTestemunha };
 
     if (tipoTestemunha === "EXTERNO") {
       const nomeExterno = (prompt("Nome externo:") || "").trim();

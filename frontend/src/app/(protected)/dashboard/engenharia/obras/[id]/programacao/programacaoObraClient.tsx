@@ -17,15 +17,11 @@ export default function ProgramacaoObraClient({ idObra }: { idObra: number }) {
     return "Programação semanal — Insumos";
   }, [tab]);
 
-  if (!idObra) {
-    return (
-      <div className="p-6 max-w-4xl">
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">Obra inválida.</div>
-      </div>
-    );
-  }
-
   useEffect(() => {
+    if (!idObra) {
+      setPlanilhaOk(false);
+      return;
+    }
     async function check() {
       try {
         const res = await fetch(`/api/v1/engenharia/obras/${idObra}/planilha/status`, { cache: "no-store" });
@@ -38,6 +34,14 @@ export default function ProgramacaoObraClient({ idObra }: { idObra: number }) {
     }
     check();
   }, [idObra]);
+
+  if (!idObra) {
+    return (
+      <div className="p-6 max-w-4xl">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">Obra inválida.</div>
+      </div>
+    );
+  }
 
   if (planilhaOk === false) {
     return (

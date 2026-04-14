@@ -1,9 +1,15 @@
 import { useEffect, useRef } from 'react';
 import { realtimeClient } from './client';
 
-export function useRealtimeTopic(topic: string, onEvent: (eventName: string, payload: any) => void, eventNames?: string[]) {
+type RealtimePayload = unknown;
+
+export function useRealtimeTopic(topic: string, onEvent: (eventName: string, payload: RealtimePayload) => void, eventNames?: string[]) {
   const cb = useRef(onEvent);
-  cb.current = onEvent;
+
+  useEffect(() => {
+    cb.current = onEvent;
+  }, [onEvent]);
+
   useEffect(() => {
     const offs: (() => void)[] = [];
     const names = eventNames && eventNames.length ? eventNames : ['message'];
@@ -17,14 +23,17 @@ export function useRealtimeTopic(topic: string, onEvent: (eventName: string, pay
     return () => {
       offs.forEach((off) => off());
     };
-  }, [topic, (eventNames || []).join('|')]);
+  }, [topic, eventNames]);
 }
 
-export function useRealtimeEvent(topic: string, eventName: string, handler: (payload: any) => void) {
+export function useRealtimeEvent(topic: string, eventName: string, handler: (payload: RealtimePayload) => void) {
   const cb = useRef(handler);
-  cb.current = handler;
+
+  useEffect(() => {
+    cb.current = handler;
+  }, [handler]);
+
   useEffect(() => {
     return realtimeClient.subscribe(topic, eventName, (_ev, payload) => cb.current(payload));
   }, [topic, eventName]);
 }
-
