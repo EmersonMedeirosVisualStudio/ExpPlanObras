@@ -21,5 +21,11 @@ export const EmpresaConfigApi = {
   definirEncarregado: (payload: { idFuncionario: number }) =>
     api<{ id: number }>('/api/v1/empresa/encarregado-sistema', { method: 'PUT', body: JSON.stringify(payload) }),
 
+  definirTitular: (payload: { roleCode: 'CEO' | 'GERENTE_RH'; idFuncionario: number }) =>
+    api<{ id: number }>('/api/v1/empresa/titulares', { method: 'PUT', body: JSON.stringify(payload) }),
+
+  criarFuncionarioSimples: (payload: { nomeCompleto: string; email?: string | null; cargo?: string | null }) =>
+    api<{ id: number; nome: string }>('/api/v1/apoio/funcionarios-simples', { method: 'POST', body: JSON.stringify(payload) }),
+
   listarFuncionariosSelect: () => api<FuncionarioSelectDTO[]>('/api/v1/apoio/funcionarios-select'),
 };

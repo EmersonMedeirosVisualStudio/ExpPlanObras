@@ -8,6 +8,15 @@ export const APP_MENU: MenuSectionConfig[] = [
     ordem: 1,
     items: [
       {
+        key: 'config-empresa-representante',
+        label: 'Painel do Representante',
+        href: '/dashboard/config/representante',
+        icon: 'settings',
+        permission: PERMISSIONS.REPRESENTANTE_VIEW,
+        scopeTypes: ['EMPRESA'],
+        homePriority: 0,
+      },
+      {
         key: 'dashboard-ceo',
         label: 'Dashboard CEO',
         href: '/dashboard/ceo',

@@ -46,9 +46,50 @@ export async function GET() {
       [user.tenantId]
     );
 
+    let ceo = null;
+    let gerenteRh = null;
+    try {
+      await db.query(
+        `
+        CREATE TABLE IF NOT EXISTS empresa_titulares (
+          id_empresa_titular INT AUTO_INCREMENT PRIMARY KEY,
+          tenant_id INT NOT NULL,
+          role_code VARCHAR(50) NOT NULL,
+          id_funcionario INT NOT NULL,
+          ativo TINYINT(1) NOT NULL DEFAULT 1,
+          data_inicio DATE NOT NULL,
+          data_fim DATE NULL,
+          KEY idx_empresa_titulares_tenant_role (tenant_id, role_code),
+          KEY idx_empresa_titulares_funcionario (id_funcionario)
+        )
+        `
+      );
+
+      const [titRows]: any = await db.query(
+        `
+        SELECT et.role_code roleCode,
+               et.id_funcionario idFuncionario,
+               f.nome_completo nome
+        FROM empresa_titulares et
+        JOIN funcionarios f ON f.id_funcionario = et.id_funcionario
+        WHERE et.tenant_id = ? AND et.ativo = 1
+        `,
+        [user.tenantId]
+      );
+      if (Array.isArray(titRows)) {
+        ceo = titRows.find((r: any) => String(r.roleCode).toUpperCase() === 'CEO') || null;
+        gerenteRh = titRows.find((r: any) => String(r.roleCode).toUpperCase() === 'GERENTE_RH') || null;
+      }
+    } catch {
+      ceo = null;
+      gerenteRh = null;
+    }
+
     return ok({
       representante: Array.isArray(repRows) ? (repRows[0] ?? null) : null,
       encarregadoSistema: Array.isArray(encRows) ? (encRows[0] ?? null) : null,
+      ceo,
+      gerenteRh,
     });
   } catch (error) {
     return handleApiError(error);

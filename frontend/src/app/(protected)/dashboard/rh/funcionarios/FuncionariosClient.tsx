@@ -96,7 +96,7 @@ export default function FuncionariosClient() {
                 {lista.map((item) => (
                   <tr key={item.id} className="cursor-pointer border-t hover:bg-slate-50" onClick={() => abrir(item.id)}>
                     <td className="px-3 py-2">{item.matricula}</td>
-                    <td className="px-3 py-2">{item.nomeCompleto}</td>
+                    <td className="px-3 py-2">#{item.id} - {item.nomeCompleto}</td>
                     <td className="px-3 py-2">{item.cpf}</td>
                     <td className="px-3 py-2">{item.cargoContratual || '-'}</td>
                     <td className="px-3 py-2">{item.statusFuncional}</td>

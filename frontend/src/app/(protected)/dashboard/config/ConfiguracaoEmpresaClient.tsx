@@ -15,11 +15,18 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
   const [config, setConfig] = useState<ConfiguracaoEmpresaDTO>({
     representante: null,
     encarregadoSistema: null,
+    ceo: null,
+    gerenteRh: null,
   });
   const [funcionarios, setFuncionarios] = useState<FuncionarioSelectDTO[]>([]);
 
   const [modalRep, setModalRep] = useState(false);
   const [modalEnc, setModalEnc] = useState(false);
+  const [modalFuncionario, setModalFuncionario] = useState<null | { target: 'CEO' | 'ENCARREGADO' | 'GERENTE_RH' }>(null);
+
+  const [ceoFuncionarioId, setCeoFuncionarioId] = useState<number>(0);
+  const [gerenteRhFuncionarioId, setGerenteRhFuncionarioId] = useState<number>(0);
+  const [encarregadoFuncionarioId, setEncarregadoFuncionarioId] = useState<number>(0);
 
   async function carregar() {
     try {
@@ -40,6 +47,15 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
   useEffect(() => {
     carregar();
   }, []);
+
+  useEffect(() => {
+    const ceoId = typeof config.ceo?.idFuncionario === 'number' ? config.ceo.idFuncionario : 0;
+    const rhId = typeof config.gerenteRh?.idFuncionario === 'number' ? config.gerenteRh.idFuncionario : 0;
+    const encId = typeof config.encarregadoSistema?.idFuncionario === 'number' ? config.encarregadoSistema.idFuncionario : 0;
+    setCeoFuncionarioId(ceoId);
+    setGerenteRhFuncionarioId(rhId);
+    setEncarregadoFuncionarioId(encId);
+  }, [config.ceo?.idFuncionario, config.encarregadoSistema?.idFuncionario, config.gerenteRh?.idFuncionario]);
 
   async function salvarRepresentante(payload: {
     nome: string;
@@ -73,12 +89,30 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
     }
   }
 
+  async function salvarTitular(roleCode: 'CEO' | 'GERENTE_RH', funcionarioId: number) {
+    try {
+      setSalvando(true);
+      await EmpresaConfigApi.definirTitular({ roleCode, idFuncionario: funcionarioId });
+      await carregar();
+    } catch (e: any) {
+      alert(e.message || 'Erro ao definir titular.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
   async function definirRepresentanteComoEncarregado() {
     if (!config.representante?.idFuncionario) {
       alert('O representante atual precisa estar vinculado a um funcionário para assumir esta função.');
       return;
     }
     await salvarEncarregado(config.representante.idFuncionario);
+  }
+
+  async function criarFuncionarioSimples(payload: { nomeCompleto: string; email?: string | null; cargo?: string | null }) {
+    const created = await EmpresaConfigApi.criarFuncionarioSimples(payload);
+    await carregar();
+    return created;
   }
 
   if (loading) {
@@ -91,12 +125,14 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
 
   const rep = config.representante;
   const enc = config.encarregadoSistema;
+  const ceo = config.ceo;
+  const gerenteRh = config.gerenteRh;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-slate-800">Configuração da Empresa</h1>
-        <p className="text-sm text-slate-500">Definição do Representante da Empresa e do Encarregado do Sistema.</p>
+        <p className="text-sm text-slate-500">Definição de titulares (CEO, Administrador do Sistema e RH) e governança da empresa.</p>
       </div>
 
       <div className="flex gap-2 border-b border-slate-200">
@@ -109,26 +145,134 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
       </div>
 
       {aba === 'representante' && (
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Representante atual</h2>
-            <button onClick={() => setModalRep(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white" type="button">
-              Editar Representante
-            </button>
+        <div className="space-y-6">
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Titulares iniciais</h2>
+              <div className="text-sm text-slate-500">Defina quem ocupará as funções-chave da empresa.</div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-sm font-semibold text-slate-800">CEO</div>
+                <div className="mt-1 text-xs text-slate-500">Visão executiva e tomada de decisão.</div>
+                <div className="mt-3 flex gap-2">
+                  <select className="input" value={ceoFuncionarioId || ''} onChange={(e) => setCeoFuncionarioId(e.target.value ? Number(e.target.value) : 0)}>
+                    <option value="">Selecionar funcionário</option>
+                    {funcionarios.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        #{f.id} - {f.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => setModalFuncionario({ target: 'CEO' })}>
+                    Cadastrar funcionário
+                  </button>
+                  <button
+                    className="rounded-lg bg-blue-600 px-3 py-2 text-xs text-white disabled:opacity-60"
+                    disabled={salvando || !ceoFuncionarioId}
+                    type="button"
+                    onClick={() => salvarTitular('CEO', ceoFuncionarioId)}
+                  >
+                    {salvando ? 'Salvando...' : 'Definir'}
+                  </button>
+                </div>
+                <div className="mt-2 text-xs text-slate-600">{ceo?.idFuncionario ? `Atual: #${ceo.idFuncionario} - ${ceo.nome}` : 'Atual: não definido'}</div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-sm font-semibold text-slate-800">Administrador do Sistema</div>
+                <div className="mt-1 text-xs text-slate-500">Usuários, perfis e permissões.</div>
+                <div className="mt-3 flex gap-2">
+                  <select
+                    className="input"
+                    value={encarregadoFuncionarioId || ''}
+                    onChange={(e) => setEncarregadoFuncionarioId(e.target.value ? Number(e.target.value) : 0)}
+                  >
+                    <option value="">Selecionar funcionário</option>
+                    {funcionarios.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        #{f.id} - {f.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => setModalFuncionario({ target: 'ENCARREGADO' })}>
+                    Cadastrar funcionário
+                  </button>
+                  <button
+                    className="rounded-lg bg-blue-600 px-3 py-2 text-xs text-white disabled:opacity-60"
+                    disabled={salvando || !encarregadoFuncionarioId}
+                    type="button"
+                    onClick={() => salvarEncarregado(encarregadoFuncionarioId)}
+                  >
+                    {salvando ? 'Salvando...' : 'Definir'}
+                  </button>
+                </div>
+                <div className="mt-2 text-xs text-slate-600">{enc?.idFuncionario ? `Atual: #${enc.idFuncionario} - ${enc.nome}` : 'Atual: não definido'}</div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-sm font-semibold text-slate-800">Gerente de RH</div>
+                <div className="mt-1 text-xs text-slate-500">Cadastro funcional e gestão de pessoas.</div>
+                <div className="mt-3 flex gap-2">
+                  <select
+                    className="input"
+                    value={gerenteRhFuncionarioId || ''}
+                    onChange={(e) => setGerenteRhFuncionarioId(e.target.value ? Number(e.target.value) : 0)}
+                  >
+                    <option value="">Selecionar funcionário</option>
+                    {funcionarios.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        #{f.id} - {f.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => setModalFuncionario({ target: 'GERENTE_RH' })}>
+                    Cadastrar funcionário
+                  </button>
+                  <button
+                    className="rounded-lg bg-blue-600 px-3 py-2 text-xs text-white disabled:opacity-60"
+                    disabled={salvando || !gerenteRhFuncionarioId}
+                    type="button"
+                    onClick={() => salvarTitular('GERENTE_RH', gerenteRhFuncionarioId)}
+                  >
+                    {salvando ? 'Salvando...' : 'Definir'}
+                  </button>
+                </div>
+                <div className="mt-2 text-xs text-slate-600">
+                  {gerenteRh?.idFuncionario ? `Atual: #${gerenteRh.idFuncionario} - ${gerenteRh.nome}` : 'Atual: não definido'}
+                </div>
+              </div>
+            </div>
           </div>
 
-          {rep ? (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Info label="Nome" valor={rep.nome} />
-              <Info label="CPF" valor={rep.cpf} />
-              <Info label="E-mail" valor={rep.email || '-'} />
-              <Info label="Telefone" valor={rep.telefone || '-'} />
-              <Info label="Funcionário vinculado" valor={String(rep.idFuncionario ?? '-')} />
-              <Info label="Início" valor={rep.dataInicio} />
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Representante atual</h2>
+              <button onClick={() => setModalRep(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white" type="button">
+                Editar Representante
+              </button>
             </div>
-          ) : (
-            <div className="text-sm text-slate-500">Nenhum representante definido.</div>
-          )}
+
+            {rep ? (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Info label="Nome" valor={rep.nome} />
+                <Info label="CPF" valor={rep.cpf} />
+                <Info label="E-mail" valor={rep.email || '-'} />
+                <Info label="Telefone" valor={rep.telefone || '-'} />
+                <Info label="Funcionário vinculado" valor={String(rep.idFuncionario ?? '-')} />
+                <Info label="Início" valor={rep.dataInicio} />
+              </div>
+            ) : (
+              <div className="text-sm text-slate-500">Nenhum representante definido.</div>
+            )}
+          </div>
         </div>
       )}
 
@@ -191,6 +335,30 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
           <EncarregadoForm funcionarios={funcionarios} salvando={salvando} onCancel={() => setModalEnc(false)} onSave={salvarEncarregado} />
         </Modal>
       )}
+
+      {modalFuncionario && (
+        <Modal titulo="Cadastrar funcionário (mínimo)" onClose={() => setModalFuncionario(null)}>
+          <FuncionarioMinimoForm
+            salvando={salvando}
+            onCancel={() => setModalFuncionario(null)}
+            onSave={async (payload: { nomeCompleto: string; email?: string | null; cargo?: string | null }) => {
+              try {
+                setSalvando(true);
+                const created = await criarFuncionarioSimples(payload);
+                const newId = Number((created as any)?.id || 0);
+                if (modalFuncionario.target === 'CEO') setCeoFuncionarioId(newId);
+                if (modalFuncionario.target === 'ENCARREGADO') setEncarregadoFuncionarioId(newId);
+                if (modalFuncionario.target === 'GERENTE_RH') setGerenteRhFuncionarioId(newId);
+                setModalFuncionario(null);
+              } catch (e: any) {
+                alert(e.message || 'Erro ao cadastrar funcionário.');
+              } finally {
+                setSalvando(false);
+              }
+            }}
+          />
+        </Modal>
+      )}
     </div>
   );
 }
@@ -247,7 +415,7 @@ function RepresentanteForm({ initial, funcionarios, onCancel, onSave, salvando }
         <option value="">Sem vínculo com funcionário</option>
         {funcionarios.map((f: any) => (
           <option key={f.id} value={f.id}>
-            {f.nome} — {f.cargo || 'Sem cargo'}
+            #{f.id} - {f.nome}
           </option>
         ))}
       </select>
@@ -282,7 +450,7 @@ function EncarregadoForm({ funcionarios, onCancel, onSave, salvando }: any) {
       <select className="input" value={funcionarioId} onChange={(e) => setFuncionarioId(Number(e.target.value))}>
         {funcionarios.map((f: any) => (
           <option key={f.id} value={f.id}>
-            {f.nome} — {f.cargo || 'Sem cargo'}
+            #{f.id} - {f.nome}
           </option>
         ))}
       </select>
@@ -294,6 +462,45 @@ function EncarregadoForm({ funcionarios, onCancel, onSave, salvando }: any) {
         <button
           disabled={salvando}
           onClick={() => onSave(funcionarioId)}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60"
+          type="button"
+        >
+          {salvando ? 'Salvando...' : 'Salvar'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FuncionarioMinimoForm({
+  onCancel,
+  onSave,
+  salvando,
+}: {
+  onCancel: () => void;
+  onSave: (payload: { nomeCompleto: string; email?: string | null; cargo?: string | null }) => void;
+  salvando: boolean;
+}) {
+  const [form, setForm] = useState({ nomeCompleto: '', email: '', cargo: '' });
+
+  return (
+    <div className="space-y-4">
+      <input
+        className="input"
+        placeholder="Nome completo"
+        value={form.nomeCompleto}
+        onChange={(e) => setForm((p) => ({ ...p, nomeCompleto: e.target.value }))}
+      />
+      <input className="input" placeholder="E-mail (opcional)" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
+      <input className="input" placeholder="Função / cargo (opcional)" value={form.cargo} onChange={(e) => setForm((p) => ({ ...p, cargo: e.target.value }))} />
+
+      <div className="flex justify-end gap-2">
+        <button onClick={onCancel} className="rounded-lg border px-4 py-2 text-sm" type="button">
+          Cancelar
+        </button>
+        <button
+          disabled={salvando}
+          onClick={() => onSave({ nomeCompleto: form.nomeCompleto, email: form.email || null, cargo: form.cargo || null })}
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60"
           type="button"
         >

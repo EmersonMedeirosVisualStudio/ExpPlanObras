@@ -25,6 +25,8 @@ export type EncarregadoSistemaDTO = {
 export type ConfiguracaoEmpresaDTO = {
   representante: RepresentanteEmpresaDTO | null;
   encarregadoSistema: EncarregadoSistemaDTO | null;
+  ceo?: { roleCode: 'CEO'; idFuncionario: number; nome: string } | null;
+  gerenteRh?: { roleCode: 'GERENTE_RH'; idFuncionario: number; nome: string } | null;
 };
 
 export type FuncionarioSelectDTO = {
