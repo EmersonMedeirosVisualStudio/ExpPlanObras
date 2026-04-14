@@ -695,7 +695,7 @@ Regras:
 - por padrão, enquanto CEO / Administrador do Sistema / Gerente de RH ainda não estiverem definidos, os seletores aparecem pré-preenchidos com o funcionário do Representante;
 - no primeiro acesso, o Representante é cadastrado automaticamente como **Funcionário** para permitir essa pré-seleção;
 - um mesmo funcionário pode assumir múltiplas funções (ex.: CEO e Gerente de RH), quando fizer sentido operacional.
-- o padrão visual em listas e seletores de funcionário é: `@Id funcionario - Nome` (Id inteiro sequencial).
+- o padrão visual em listas e seletores de funcionário é: `#Id - Nome` (Id inteiro sequencial).
 
 #### Implementação (no sistema)
 

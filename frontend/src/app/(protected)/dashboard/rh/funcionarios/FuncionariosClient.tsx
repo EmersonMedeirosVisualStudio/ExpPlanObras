@@ -18,7 +18,7 @@ const vazio = {
 };
 
 function formatFuncionarioRef(id: number | string, nome: string) {
-  return `@${id} funcionario - ${nome}`;
+  return `#${id} - ${nome}`;
 }
 
 export default function FuncionariosClient() {

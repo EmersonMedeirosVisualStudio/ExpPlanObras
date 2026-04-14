@@ -5,7 +5,7 @@ import { SstTreinamentosApi } from "@/lib/modules/sst-treinamentos/api";
 import { EpiApi } from "@/lib/modules/epi/api";
 
 function formatFuncionarioRef(id: number | string, nome: string) {
-  return `@${id} funcionario - ${nome}`;
+  return `#${id} - ${nome}`;
 }
 
 export default function SstTreinamentosClient() {

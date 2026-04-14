@@ -83,8 +83,8 @@ function minutesBetween(h1: string, h2: string) {
 }
 
 function formatFuncionarioRef(id: number | string, nome?: string | null) {
-  if (nome && String(nome).trim()) return `@${id} funcionario - ${nome}`;
-  return `@${id} funcionario`;
+  if (nome && String(nome).trim()) return `#${id} - ${nome}`;
+  return `#${id}`;
 }
 
 export default function ProgramacaoSemanalClient({ idObraFixed }: { idObraFixed?: number }) {

@@ -7,7 +7,7 @@ import type { ConfiguracaoEmpresaDTO, FuncionarioSelectDTO } from '@/lib/modules
 type Aba = 'representante' | 'encarregado';
 
 function formatFuncionarioRef(id: number | string, nome: string) {
-  return `@${id} funcionario - ${nome}`;
+  return `#${id} - ${nome}`;
 }
 
 export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: Aba }) {

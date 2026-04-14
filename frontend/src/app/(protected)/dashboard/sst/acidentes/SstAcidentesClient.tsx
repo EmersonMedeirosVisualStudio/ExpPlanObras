@@ -5,7 +5,7 @@ import { SstAcidentesApi } from "@/lib/modules/sst-acidentes/api";
 import { EpiApi } from "@/lib/modules/epi/api";
 
 function formatFuncionarioRef(id: number | string) {
-  return `@${id} funcionario`;
+  return `#${id}`;
 }
 
 export default function SstAcidentesClient() {
@@ -277,7 +277,7 @@ export default function SstAcidentesClient() {
                                 : e.idFuncionario
                                   ? formatFuncionarioRef(e.idFuncionario)
                                   : e.idTerceirizadoTrabalhador
-                                    ? `@${e.idTerceirizadoTrabalhador} terceirizado`
+                                    ? `#${e.idTerceirizadoTrabalhador} - terceirizado`
                                     : "-"}
                             </td>
                             <td className="px-3 py-2">{e.principalEnvolvido ? "Sim" : "Não"}</td>
@@ -316,7 +316,7 @@ export default function SstAcidentesClient() {
                                 : t.idFuncionario
                                   ? formatFuncionarioRef(t.idFuncionario)
                                   : t.idTerceirizadoTrabalhador
-                                    ? `@${t.idTerceirizadoTrabalhador} terceirizado`
+                                    ? `#${t.idTerceirizadoTrabalhador} - terceirizado`
                                     : "-"}
                             </td>
                             <td className="px-3 py-2">{t.contato || "-"}</td>
