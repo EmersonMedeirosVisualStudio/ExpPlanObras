@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 import { SstTreinamentosApi } from "@/lib/modules/sst-treinamentos/api";
 import { EpiApi } from "@/lib/modules/epi/api";
 
+function formatFuncionarioRef(id: number | string, nome: string) {
+  return `@${id} funcionario - ${nome}`;
+}
+
 export default function SstTreinamentosClient() {
   const [modelos, setModelos] = useState<any[]>([]);
   const [turmas, setTurmas] = useState<any[]>([]);
@@ -249,9 +253,7 @@ export default function SstTreinamentosClient() {
               <tbody>
                 {aptosConsulta.rows.map((r: any) => (
                   <tr key={r.idFuncionario} className="border-t">
-                    <td className="px-3 py-2">
-                      {r.funcionarioNome} <span className="text-xs text-slate-500">#{r.idFuncionario}</span>
-                    </td>
+                    <td className="px-3 py-2">{formatFuncionarioRef(r.idFuncionario, r.funcionarioNome)}</td>
                     <td className="px-3 py-2">{r.validadeAteMax === "2999-12-31" ? "sem validade" : r.validadeAteMax || "-"}</td>
                   </tr>
                 ))}

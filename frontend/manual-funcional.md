@@ -677,6 +677,11 @@ Regra operacional:
 - no primeiro acesso, o Representante assume provisoriamente os papéis de CEO e Administrador do sistema (da empresa), para impedir que a empresa fique travada no início;
 - ao delegar um papel para outro usuário, o Representante passa a ter visualização nas telas daquele papel, e o titular passa a ter edição.
 
+Detalhe de nomenclatura (importante):
+
+- **Administrador do Sistema (da empresa)** e **Encarregado do Sistema (da empresa)** são tratados como a mesma função.
+- Para simplificação operacional, o sistema usa as duas nomenclaturas como equivalentes no fluxo de definição de titular.
+
 #### Etapa 3 — definição dos responsáveis iniciais (titulares)
 
 O Representante define inicialmente três papéis essenciais:
@@ -684,6 +689,13 @@ O Representante define inicialmente três papéis essenciais:
 - CEO (Diretor Geral)
 - Administrador do sistema (da empresa)
 - Gerente de RH
+
+Regras:
+
+- por padrão, enquanto CEO / Administrador do Sistema / Gerente de RH ainda não estiverem definidos, os seletores aparecem pré-preenchidos com o funcionário do Representante;
+- no primeiro acesso, o Representante é cadastrado automaticamente como **Funcionário** para permitir essa pré-seleção;
+- um mesmo funcionário pode assumir múltiplas funções (ex.: CEO e Gerente de RH), quando fizer sentido operacional.
+- o padrão visual em listas e seletores de funcionário é: `@Id funcionario - Nome` (Id inteiro sequencial).
 
 #### Implementação (no sistema)
 
@@ -714,6 +726,12 @@ O Gerente de RH passa a ser o responsável pelo cadastro funcional dos colaborad
 - situação funcional;
 - vínculo;
 - movimentações iniciais.
+
+Indicador “Alertas” no CRUD de Funcionários:
+
+- **bolinha vermelha**: faltam dados obrigatórios (ex.: matrícula, nome, CPF, admissão);
+- **bolinha amarela**: dados obrigatórios ok, mas faltam dados não obrigatórios (ex.: cargo contratual, função principal);
+- **bolinha verde**: cadastro completo.
 
 #### Etapa 5 — atuação do Administrador do sistema (usuários e permissões)
 

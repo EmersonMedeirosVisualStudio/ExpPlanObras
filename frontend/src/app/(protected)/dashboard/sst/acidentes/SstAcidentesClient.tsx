@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { SstAcidentesApi } from "@/lib/modules/sst-acidentes/api";
 import { EpiApi } from "@/lib/modules/epi/api";
 
+function formatFuncionarioRef(id: number | string) {
+  return `@${id} funcionario`;
+}
+
 export default function SstAcidentesClient() {
   const [lista, setLista] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -271,9 +275,9 @@ export default function SstAcidentesClient() {
                               {e.tipoEnvolvido === "EXTERNO"
                                 ? e.nomeExterno
                                 : e.idFuncionario
-                                  ? `FUNC #${e.idFuncionario}`
+                                  ? formatFuncionarioRef(e.idFuncionario)
                                   : e.idTerceirizadoTrabalhador
-                                    ? `TERC #${e.idTerceirizadoTrabalhador}`
+                                    ? `@${e.idTerceirizadoTrabalhador} terceirizado`
                                     : "-"}
                             </td>
                             <td className="px-3 py-2">{e.principalEnvolvido ? "Sim" : "Não"}</td>
@@ -310,9 +314,9 @@ export default function SstAcidentesClient() {
                               {t.tipoTestemunha === "EXTERNO"
                                 ? t.nomeExterno
                                 : t.idFuncionario
-                                  ? `FUNC #${t.idFuncionario}`
+                                  ? formatFuncionarioRef(t.idFuncionario)
                                   : t.idTerceirizadoTrabalhador
-                                    ? `TERC #${t.idTerceirizadoTrabalhador}`
+                                    ? `@${t.idTerceirizadoTrabalhador} terceirizado`
                                     : "-"}
                             </td>
                             <td className="px-3 py-2">{t.contato || "-"}</td>

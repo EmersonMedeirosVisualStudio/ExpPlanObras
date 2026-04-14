@@ -17,6 +17,10 @@ const vazio = {
   ativo: true,
 };
 
+function formatFuncionarioRef(id: number | string, nome: string) {
+  return `@${id} funcionario - ${nome}`;
+}
+
 export default function FuncionariosClient() {
   const [busca, setBusca] = useState('');
   const [lista, setLista] = useState<FuncionarioResumoDTO[]>([]);
@@ -84,6 +88,7 @@ export default function FuncionariosClient() {
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 text-left">
                 <tr>
+                  <th className="px-3 py-2">Alertas</th>
                   <th className="px-3 py-2">Matrícula</th>
                   <th className="px-3 py-2">Nome</th>
                   <th className="px-3 py-2">CPF</th>
@@ -95,8 +100,11 @@ export default function FuncionariosClient() {
               <tbody>
                 {lista.map((item) => (
                   <tr key={item.id} className="cursor-pointer border-t hover:bg-slate-50" onClick={() => abrir(item.id)}>
+                    <td className="px-3 py-2">
+                      <AlertaBadge item={item} />
+                    </td>
                     <td className="px-3 py-2">{item.matricula}</td>
-                    <td className="px-3 py-2">#{item.id} - {item.nomeCompleto}</td>
+                    <td className="px-3 py-2">{formatFuncionarioRef(item.id, item.nomeCompleto)}</td>
                     <td className="px-3 py-2">{item.cpf}</td>
                     <td className="px-3 py-2">{item.cargoContratual || '-'}</td>
                     <td className="px-3 py-2">{item.statusFuncional}</td>
@@ -239,6 +247,43 @@ function Info({ label, value }: { label: string; value: string }) {
       <div className="text-xs text-slate-500">{label}</div>
       <div className="font-medium">{value}</div>
     </div>
+  );
+}
+
+function AlertaBadge({ item }: { item: FuncionarioResumoDTO }) {
+  const missingRequired: string[] = [];
+  if (!String(item.matricula || '').trim()) missingRequired.push('Matrícula');
+  if (!String(item.nomeCompleto || '').trim()) missingRequired.push('Nome');
+  if (!String(item.cpf || '').trim()) missingRequired.push('CPF');
+  if (!String(item.dataAdmissao || '').trim()) missingRequired.push('Admissão');
+
+  const missingOptional: string[] = [];
+  if (!String(item.cargoContratual || '').trim()) missingOptional.push('Cargo contratual');
+  if (!String(item.funcaoPrincipal || '').trim()) missingOptional.push('Função principal');
+
+  if (missingRequired.length > 0) {
+    return (
+      <span className="inline-flex items-center gap-2" title={`Faltando obrigatório: ${missingRequired.join(', ')}`}>
+        <span className="h-2 w-2 rounded-full bg-red-600" />
+        <span className="text-xs text-slate-600">Obrig.</span>
+      </span>
+    );
+  }
+
+  if (missingOptional.length > 0) {
+    return (
+      <span className="inline-flex items-center gap-2" title={`Faltando opcional: ${missingOptional.join(', ')}`}>
+        <span className="h-2 w-2 rounded-full bg-amber-500" />
+        <span className="text-xs text-slate-600">Opc.</span>
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-2" title="Cadastro completo">
+      <span className="h-2 w-2 rounded-full bg-emerald-600" />
+      <span className="text-xs text-slate-600">OK</span>
+    </span>
   );
 }
 

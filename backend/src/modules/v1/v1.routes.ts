@@ -52,7 +52,7 @@ async function requireRepresentative(request: FastifyRequest, reply: FastifyRepl
   const rep = await prisma.empresaRepresentante.findFirst({
     where: { tenantId: ctx.tenantId, ativo: true },
     orderBy: { id: 'desc' },
-    select: { id: true, funcionarioId: true, email: true },
+    select: { id: true, funcionarioId: true, email: true, cpf: true, nomeRepresentante: true },
   });
 
   if (!rep) {
@@ -67,7 +67,68 @@ async function requireRepresentative(request: FastifyRequest, reply: FastifyRepl
   const matchByEmail = Boolean(repEmail && actorEmail && repEmail === actorEmail);
 
   if (!matchByFuncionario && !matchByEmail) return fail(reply, 403, 'Acesso negado');
-  return { ...ctx, tenantUserId: tenantUser.id, funcionarioId: tenantUser.funcionarioId, representanteId: rep.id };
+
+  let funcionarioId = tenantUser.funcionarioId ?? null;
+
+  if (typeof funcionarioId !== 'number') {
+    if (typeof rep.funcionarioId === 'number') {
+      const updated = await prisma.tenantUser.update({
+        where: { id: tenantUser.id },
+        data: { funcionarioId: rep.funcionarioId },
+        select: { funcionarioId: true },
+      });
+      funcionarioId = updated.funcionarioId ?? null;
+    } else {
+      const user = await prisma.user.findUnique({
+        where: { id: ctx.userId },
+        select: { id: true, email: true, name: true, cpf: true },
+      });
+
+      const cpf = String(user?.cpf || rep.cpf || '').trim();
+      if (cpf) {
+        const existingByCpf = await prisma.funcionario.findFirst({
+          where: { tenantId: ctx.tenantId, cpf },
+          select: { id: true },
+        });
+        funcionarioId = existingByCpf?.id ?? null;
+      }
+
+      if (typeof funcionarioId !== 'number') {
+        const baseMatricula = `REP-${ctx.userId}`;
+        const existingMatricula = await prisma.funcionario.findFirst({
+          where: { tenantId: ctx.tenantId, matricula: baseMatricula },
+          select: { id: true },
+        });
+        const matricula = existingMatricula ? `REP-${ctx.userId}-${Date.now()}` : baseMatricula;
+        const nomeCompleto = String(user?.name || rep.nomeRepresentante || 'Representante').trim();
+
+        const created = await prisma.funcionario.create({
+          data: {
+            tenantId: ctx.tenantId,
+            matricula,
+            nomeCompleto,
+            cpf: String(user?.cpf || rep.cpf || '').trim(),
+            email: user?.email || null,
+            cargo: 'Representante',
+            funcaoPrincipal: 'Representante',
+            statusFuncional: 'ATIVO',
+            ativo: true,
+          },
+          select: { id: true },
+        });
+        funcionarioId = created.id;
+      }
+
+      if (typeof funcionarioId === 'number') {
+        await prisma.$transaction([
+          prisma.tenantUser.update({ where: { id: tenantUser.id }, data: { funcionarioId } }),
+          prisma.empresaRepresentante.update({ where: { id: rep.id }, data: { funcionarioId } }),
+        ]);
+      }
+    }
+  }
+
+  return { ...ctx, tenantUserId: tenantUser.id, funcionarioId, representanteId: rep.id };
 }
 
 async function requireEncarregado(request: FastifyRequest, reply: FastifyReply) {

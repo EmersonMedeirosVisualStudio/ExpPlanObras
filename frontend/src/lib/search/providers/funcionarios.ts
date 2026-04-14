@@ -11,7 +11,7 @@ function buildDoc(row: any): SearchDocumentInput {
   const cpf = row?.cpf ? String(row.cpf) : '';
   const cargo = row?.cargoContratual ? String(row.cargoContratual) : '';
   const funcao = row?.funcaoPrincipal ? String(row.funcaoPrincipal) : '';
-  const nome = row?.nomeCompleto ? String(row.nomeCompleto) : `Funcionário #${row.id}`;
+  const nome = row?.nomeCompleto ? `@${row.id} funcionario - ${String(row.nomeCompleto)}` : `@${row.id} funcionario`;
   const subtitulo = [matricula ? `Matrícula ${matricula}` : null, cargo || funcao ? `${cargo}${cargo && funcao ? ' • ' : ''}${funcao}` : null]
     .filter(Boolean)
     .join(' • ');

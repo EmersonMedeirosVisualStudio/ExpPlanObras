@@ -6,6 +6,10 @@ import type { ConfiguracaoEmpresaDTO, FuncionarioSelectDTO } from '@/lib/modules
 
 type Aba = 'representante' | 'encarregado';
 
+function formatFuncionarioRef(id: number | string, nome: string) {
+  return `@${id} funcionario - ${nome}`;
+}
+
 export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: Aba }) {
   const [aba, setAba] = useState<Aba>(abaInicial);
   const [loading, setLoading] = useState(true);
@@ -49,13 +53,14 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
   }, []);
 
   useEffect(() => {
-    const ceoId = typeof config.ceo?.idFuncionario === 'number' ? config.ceo.idFuncionario : 0;
-    const rhId = typeof config.gerenteRh?.idFuncionario === 'number' ? config.gerenteRh.idFuncionario : 0;
-    const encId = typeof config.encarregadoSistema?.idFuncionario === 'number' ? config.encarregadoSistema.idFuncionario : 0;
+    const repId = typeof config.representante?.idFuncionario === 'number' ? config.representante.idFuncionario : 0;
+    const ceoId = typeof config.ceo?.idFuncionario === 'number' ? config.ceo.idFuncionario : repId;
+    const rhId = typeof config.gerenteRh?.idFuncionario === 'number' ? config.gerenteRh.idFuncionario : repId;
+    const encId = typeof config.encarregadoSistema?.idFuncionario === 'number' ? config.encarregadoSistema.idFuncionario : repId;
     setCeoFuncionarioId(ceoId);
     setGerenteRhFuncionarioId(rhId);
     setEncarregadoFuncionarioId(encId);
-  }, [config.ceo?.idFuncionario, config.encarregadoSistema?.idFuncionario, config.gerenteRh?.idFuncionario]);
+  }, [config.representante?.idFuncionario, config.ceo?.idFuncionario, config.encarregadoSistema?.idFuncionario, config.gerenteRh?.idFuncionario]);
 
   async function salvarRepresentante(payload: {
     nome: string;
@@ -132,7 +137,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-slate-800">Configuração da Empresa</h1>
-        <p className="text-sm text-slate-500">Definição de titulares (CEO, Administrador do Sistema e RH) e governança da empresa.</p>
+        <p className="text-sm text-slate-500">Definição de titulares (CEO, Administrador/Encarregado do Sistema e RH) e governança da empresa.</p>
       </div>
 
       <div className="flex gap-2 border-b border-slate-200">
@@ -140,7 +145,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
           Representante da Empresa
         </Tab>
         <Tab ativo={aba === 'encarregado'} onClick={() => setAba('encarregado')}>
-          Encarregado do Sistema da Empresa
+          Administrador do Sistema da Empresa
         </Tab>
       </div>
 
@@ -161,7 +166,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
                     <option value="">Selecionar funcionário</option>
                     {funcionarios.map((f) => (
                       <option key={f.id} value={f.id}>
-                        #{f.id} - {f.nome}
+                        {formatFuncionarioRef(f.id, f.nome)}
                       </option>
                     ))}
                   </select>
@@ -179,11 +184,11 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
                     {salvando ? 'Salvando...' : 'Definir'}
                   </button>
                 </div>
-                <div className="mt-2 text-xs text-slate-600">{ceo?.idFuncionario ? `Atual: #${ceo.idFuncionario} - ${ceo.nome}` : 'Atual: não definido'}</div>
+                <div className="mt-2 text-xs text-slate-600">{ceo?.idFuncionario ? `Atual: ${formatFuncionarioRef(ceo.idFuncionario, ceo.nome)}` : 'Atual: não definido'}</div>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <div className="text-sm font-semibold text-slate-800">Administrador do Sistema</div>
+                <div className="text-sm font-semibold text-slate-800">Administrador / Encarregado do Sistema</div>
                 <div className="mt-1 text-xs text-slate-500">Usuários, perfis e permissões.</div>
                 <div className="mt-3 flex gap-2">
                   <select
@@ -194,7 +199,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
                     <option value="">Selecionar funcionário</option>
                     {funcionarios.map((f) => (
                       <option key={f.id} value={f.id}>
-                        #{f.id} - {f.nome}
+                        {formatFuncionarioRef(f.id, f.nome)}
                       </option>
                     ))}
                   </select>
@@ -212,7 +217,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
                     {salvando ? 'Salvando...' : 'Definir'}
                   </button>
                 </div>
-                <div className="mt-2 text-xs text-slate-600">{enc?.idFuncionario ? `Atual: #${enc.idFuncionario} - ${enc.nome}` : 'Atual: não definido'}</div>
+                <div className="mt-2 text-xs text-slate-600">{enc?.idFuncionario ? `Atual: ${formatFuncionarioRef(enc.idFuncionario, enc.nome)}` : 'Atual: não definido'}</div>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -227,7 +232,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
                     <option value="">Selecionar funcionário</option>
                     {funcionarios.map((f) => (
                       <option key={f.id} value={f.id}>
-                        #{f.id} - {f.nome}
+                        {formatFuncionarioRef(f.id, f.nome)}
                       </option>
                     ))}
                   </select>
@@ -246,7 +251,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
                   </button>
                 </div>
                 <div className="mt-2 text-xs text-slate-600">
-                  {gerenteRh?.idFuncionario ? `Atual: #${gerenteRh.idFuncionario} - ${gerenteRh.nome}` : 'Atual: não definido'}
+                  {gerenteRh?.idFuncionario ? `Atual: ${formatFuncionarioRef(gerenteRh.idFuncionario, gerenteRh.nome)}` : 'Atual: não definido'}
                 </div>
               </div>
             </div>
@@ -266,7 +271,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
                 <Info label="CPF" valor={rep.cpf} />
                 <Info label="E-mail" valor={rep.email || '-'} />
                 <Info label="Telefone" valor={rep.telefone || '-'} />
-                <Info label="Funcionário vinculado" valor={String(rep.idFuncionario ?? '-')} />
+                <Info label="Funcionário vinculado" valor={rep.idFuncionario ? formatFuncionarioRef(rep.idFuncionario, rep.nome) : '-'} />
                 <Info label="Início" valor={rep.dataInicio} />
               </div>
             ) : (
@@ -279,7 +284,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
       {aba === 'encarregado' && (
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Encarregado atual</h2>
+            <h2 className="text-lg font-semibold">Administrador / Encarregado atual</h2>
             <div className="flex gap-2">
               <button onClick={definirRepresentanteComoEncarregado} className="rounded-lg border px-4 py-2 text-sm" type="button">
                 Definir a mim mesmo
@@ -331,7 +336,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
       )}
 
       {modalEnc && (
-        <Modal titulo="Definir Encarregado do Sistema" onClose={() => setModalEnc(false)}>
+        <Modal titulo="Definir Administrador / Encarregado do Sistema" onClose={() => setModalEnc(false)}>
           <EncarregadoForm funcionarios={funcionarios} salvando={salvando} onCancel={() => setModalEnc(false)} onSave={salvarEncarregado} />
         </Modal>
       )}
@@ -415,7 +420,7 @@ function RepresentanteForm({ initial, funcionarios, onCancel, onSave, salvando }
         <option value="">Sem vínculo com funcionário</option>
         {funcionarios.map((f: any) => (
           <option key={f.id} value={f.id}>
-            #{f.id} - {f.nome}
+            {formatFuncionarioRef(f.id, f.nome)}
           </option>
         ))}
       </select>
@@ -450,7 +455,7 @@ function EncarregadoForm({ funcionarios, onCancel, onSave, salvando }: any) {
       <select className="input" value={funcionarioId} onChange={(e) => setFuncionarioId(Number(e.target.value))}>
         {funcionarios.map((f: any) => (
           <option key={f.id} value={f.id}>
-            #{f.id} - {f.nome}
+            {formatFuncionarioRef(f.id, f.nome)}
           </option>
         ))}
       </select>

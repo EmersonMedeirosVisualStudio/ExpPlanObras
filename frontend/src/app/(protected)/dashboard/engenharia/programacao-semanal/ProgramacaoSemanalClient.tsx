@@ -82,6 +82,11 @@ function minutesBetween(h1: string, h2: string) {
   return (bH * 60 + bM) - (aH * 60 + aM);
 }
 
+function formatFuncionarioRef(id: number | string, nome?: string | null) {
+  if (nome && String(nome).trim()) return `@${id} funcionario - ${nome}`;
+  return `@${id} funcionario`;
+}
+
 export default function ProgramacaoSemanalClient({ idObraFixed }: { idObraFixed?: number }) {
   const [idObra, setIdObra] = useState(() => (idObraFixed ? String(idObraFixed) : ""));
   const [gestorObra, setGestorObra] = useState({ idFuncionarioGestor: "", definidoEm: "" });
@@ -751,7 +756,7 @@ export default function ProgramacaoSemanalClient({ idObraFixed }: { idObraFixed?
                   {itensFiltrados.map((i, idx) => (
                     <tr key={`${i.idItem}-${idx}`} className="border-t">
                       <td className="px-3 py-2">{i.dataReferencia}</td>
-                      <td className="px-3 py-2">#{i.idFuncionario}</td>
+                      <td className="px-3 py-2">{formatFuncionarioRef(i.idFuncionario)}</td>
                       <td className="px-3 py-2">{i.codigoServico}</td>
                       <td className="px-3 py-2">{i.codigoCentroCusto ?? "-"}</td>
                       <td className="px-3 py-2">{i.horaInicioPrevista && i.horaFimPrevista ? `${i.horaInicioPrevista}–${i.horaFimPrevista}` : "-"}</td>
@@ -793,7 +798,7 @@ export default function ProgramacaoSemanalClient({ idObraFixed }: { idObraFixed?
           {det?.faltandoProgramacao?.length ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               Trabalhadores lotados sem programação:{" "}
-              {det.faltandoProgramacao.map((f) => `${f.nome} (#${f.idFuncionario})`).slice(0, 10).join(", ")}
+              {det.faltandoProgramacao.map((f) => formatFuncionarioRef(f.idFuncionario, f.nome)).slice(0, 10).join(", ")}
               {det.faltandoProgramacao.length > 10 ? "..." : ""}
             </div>
           ) : null}
