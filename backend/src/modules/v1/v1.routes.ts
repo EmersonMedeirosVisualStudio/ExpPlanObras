@@ -154,6 +154,16 @@ export default async function v1Routes(server: FastifyInstance) {
       },
     });
 
+    const titulares = await prisma.empresaTitular.findMany({
+      where: { tenantId: ctx.tenantId, ativo: true },
+      include: {
+        funcionario: { select: { id: true, nomeCompleto: true } },
+      },
+    });
+
+    const ceoTitular = titulares.find(t => t.roleCode === 'CEO');
+    const rhTitular = titulares.find(t => t.roleCode === 'GERENTE_RH');
+
     const representativeData = rep
       ? {
           id: rep.id,
@@ -193,6 +203,8 @@ export default async function v1Routes(server: FastifyInstance) {
     return ok(reply, {
       representante: safeRepresentative,
       encarregadoSistema: encarregadoData,
+      ceo: ceoTitular ? { roleCode: 'CEO', idFuncionario: ceoTitular.funcionarioId, nome: ceoTitular.funcionario.nomeCompleto } : null,
+      gerenteRh: rhTitular ? { roleCode: 'GERENTE_RH', idFuncionario: rhTitular.funcionarioId, nome: rhTitular.funcionario.nomeCompleto } : null,
       historico: historico.map((h) => ({
         id: h.id,
         source: h.source,
@@ -346,6 +358,122 @@ export default async function v1Routes(server: FastifyInstance) {
     }
   );
 
+  server.put(
+    '/empresa/titulares',
+    {
+      schema: {
+        body: z.object({
+          roleCode: z.enum(['CEO', 'GERENTE_RH']),
+          idFuncionario: z.number().int(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const ctx = await requireRepresentative(request, reply);
+      if (!ctx || (ctx as any).success === false) return;
+
+      const { roleCode, idFuncionario } = request.body as { roleCode: 'CEO' | 'GERENTE_RH'; idFuncionario: number };
+
+      const funcionario = await prisma.funcionario.findFirst({ where: { id: idFuncionario, tenantId: ctx.tenantId } });
+      if (!funcionario) return fail(reply, 404, 'Funcionário não encontrado');
+
+      const now = new Date();
+      
+      const current = await prisma.empresaTitular.findFirst({
+        where: { tenantId: ctx.tenantId, roleCode, ativo: true },
+        orderBy: { id: 'desc' },
+      });
+
+      const created = await prisma.$transaction(async (tx) => {
+        if (current) {
+          await tx.empresaTitular.update({ where: { id: current.id }, data: { ativo: false, dataFim: now } });
+        }
+        const titular = await tx.empresaTitular.create({
+          data: {
+            tenantId: ctx.tenantId,
+            roleCode,
+            funcionarioId: idFuncionario,
+            ativo: true,
+            dataInicio: now,
+          },
+        });
+        await tx.auditoriaEvento.create({
+          data: {
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            entidade: 'empresa_titulares',
+            idRegistro: String(titular.id),
+            acao: 'DEFINIR_TITULAR',
+            dadosNovos: { roleCode, idFuncionario },
+          },
+        });
+        return titular;
+      });
+
+      return ok(reply, { id: created.id }, { message: 'Titular definido com sucesso' });
+    }
+  );
+
+  server.post(
+    '/apoio/funcionarios-simples',
+    {
+      schema: {
+        body: z.object({
+          nomeCompleto: z.string().min(2),
+          email: z.string().email().optional().nullable(),
+          cargo: z.string().optional().nullable(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const ctx = await requireRepresentative(request, reply);
+      if (!ctx || (ctx as any).success === false) return;
+
+      const body = request.body as any;
+      const nomeCompleto = String(body.nomeCompleto).trim();
+      const email = body.email ? normalizeEmail(String(body.email)) : null;
+      const cargo = body.cargo ? String(body.cargo).trim() : null;
+
+      // Gerar matrícula e cpfFake com base no timestamp
+      const timestamp = Date.now();
+      const last = await prisma.funcionario.findFirst({
+        where: { tenantId: ctx.tenantId },
+        orderBy: { id: 'desc' },
+        select: { id: true }
+      });
+      const matricula = \`TEMP-\${(last?.id || 0) + 1}-\${timestamp}\`;
+      const cpfFake = \`00\${timestamp.toString().slice(-9)}\`;
+
+      const created = await prisma.$transaction(async (tx) => {
+        const f = await tx.funcionario.create({
+          data: {
+            tenantId: ctx.tenantId,
+            nomeCompleto,
+            email,
+            cargo,
+            matricula,
+            cpf: cpfFake,
+            statusFuncional: 'ATIVO',
+            ativo: true,
+          },
+        });
+        await tx.auditoriaEvento.create({
+          data: {
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            entidade: 'funcionarios',
+            idRegistro: String(f.id),
+            acao: 'CREATE_MINIMO',
+            dadosNovos: { nomeCompleto, email, cargo },
+          },
+        });
+        return f;
+      });
+
+      return ok(reply, { id: created.id, nome: created.nomeCompleto }, { message: 'Funcionário cadastrado com sucesso.' });
+    }
+  );
+
   server.post(
     '/empresa/encarregado-sistema/solicitar-saida',
     {
@@ -384,6 +512,26 @@ export default async function v1Routes(server: FastifyInstance) {
       return ok(reply, {}, { message: 'Solicitação registrada' });
     }
   );
+
+  server.get('/apoio/funcionarios-select', async (request, reply) => {
+    const ctx = getAuthContext(request);
+    if (!ctx) return fail(reply, 401, 'Não autenticado');
+
+    const funcionarios = await prisma.funcionario.findMany({
+      where: { tenantId: ctx.tenantId, ativo: true },
+      select: { id: true, nomeCompleto: true, cargo: true },
+      orderBy: { nomeCompleto: 'asc' },
+    });
+
+    return ok(
+      reply,
+      funcionarios.map((f) => ({
+        id: f.id,
+        nome: f.nomeCompleto,
+        cargo: f.cargo,
+      }))
+    );
+  });
 
   server.get('/governanca/usuarios', async (request, reply) => {
     const ctx = await requireEncarregado(request, reply);

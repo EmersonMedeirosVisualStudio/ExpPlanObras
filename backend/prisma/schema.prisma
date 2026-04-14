@@ -52,6 +52,7 @@ model Tenant {
   organogramaPosicoes OrganogramaPosicao[]
   empresaRepresentantes EmpresaRepresentante[]
   empresaEncarregadosSistema EmpresaEncarregadoSistema[]
+  empresaTitulares EmpresaTitular[]
   perfis Perfil[]
   backupPoliticas BackupPoliticaTenant[]
   backupExecucoes BackupExecucaoTenant[]
@@ -373,6 +374,7 @@ model Funcionario {
   usuarios       TenantUser[]
   representacoes EmpresaRepresentante[]
   encarregosSistema EmpresaEncarregadoSistema[]
+  titularidades   EmpresaTitular[]
 
   @@unique([tenantId, matricula])
   @@unique([tenantId, cpf])
@@ -519,6 +521,22 @@ model EmpresaEncarregadoSistema {
   @@index([funcionarioId])
   @@index([userId])
   @@index([definidoPorRepresentanteId])
+}
+
+model EmpresaTitular {
+  id            Int      @id @default(autoincrement())
+  tenantId      Int
+  roleCode      String   // CEO, GERENTE_RH
+  funcionarioId Int
+  ativo         Boolean  @default(true)
+  dataInicio    DateTime @default(now())
+  dataFim       DateTime?
+
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  funcionario   Funcionario @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, roleCode])
+  @@index([funcionarioId])
 }
 
 model Perfil {
