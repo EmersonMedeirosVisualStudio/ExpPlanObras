@@ -172,7 +172,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
                   </select>
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2">
-                  <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => setModalFuncionario({ target: 'CEO' })}>
+                  <button className="rounded-lg border bg-white px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 disabled:text-slate-400" type="button" onClick={() => setModalFuncionario({ target: 'CEO' })}>
                     Cadastrar funcionário
                   </button>
                   <button
@@ -205,7 +205,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
                   </select>
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2">
-                  <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => setModalFuncionario({ target: 'ENCARREGADO' })}>
+                  <button className="rounded-lg border bg-white px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 disabled:text-slate-400" type="button" onClick={() => setModalFuncionario({ target: 'ENCARREGADO' })}>
                     Cadastrar funcionário
                   </button>
                   <button
@@ -238,7 +238,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
                   </select>
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2">
-                  <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => setModalFuncionario({ target: 'GERENTE_RH' })}>
+                  <button className="rounded-lg border bg-white px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 disabled:text-slate-400" type="button" onClick={() => setModalFuncionario({ target: 'GERENTE_RH' })}>
                     Cadastrar funcionário
                   </button>
                   <button
@@ -286,7 +286,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold">Administrador / Encarregado atual</h2>
             <div className="flex gap-2">
-              <button onClick={definirRepresentanteComoEncarregado} className="rounded-lg border px-4 py-2 text-sm" type="button">
+              <button onClick={definirRepresentanteComoEncarregado} className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:text-slate-400" type="button">
                 Definir a mim mesmo
               </button>
               <button onClick={() => setModalEnc(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white" type="button">
@@ -431,7 +431,7 @@ function RepresentanteForm({ initial, funcionarios, onCancel, onSave, salvando }
       <input className="input" placeholder="Telefone" value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} />
 
       <div className="flex justify-end gap-2">
-        <button onClick={onCancel} className="rounded-lg border px-4 py-2 text-sm" type="button">
+        <button onClick={onCancel} className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:text-slate-400" type="button">
           Cancelar
         </button>
         <button
@@ -461,7 +461,7 @@ function EncarregadoForm({ funcionarios, onCancel, onSave, salvando }: any) {
       </select>
 
       <div className="flex justify-end gap-2">
-        <button onClick={onCancel} className="rounded-lg border px-4 py-2 text-sm" type="button">
+        <button onClick={onCancel} className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:text-slate-400" type="button">
           Cancelar
         </button>
         <button
@@ -500,7 +500,7 @@ function FuncionarioMinimoForm({
       <input className="input" placeholder="Função / cargo (opcional)" value={form.cargo} onChange={(e) => setForm((p) => ({ ...p, cargo: e.target.value }))} />
 
       <div className="flex justify-end gap-2">
-        <button onClick={onCancel} className="rounded-lg border px-4 py-2 text-sm" type="button">
+        <button onClick={onCancel} className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:text-slate-400" type="button">
           Cancelar
         </button>
         <button
