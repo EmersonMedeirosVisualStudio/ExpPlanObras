@@ -154,7 +154,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
         <div className="space-y-6">
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Titulares iniciais</h2>
+              <h2 className="text-lg font-semibold text-slate-900">Titulares iniciais</h2>
               <div className="text-sm text-slate-500">Defina quem ocupará as funções-chave da empresa.</div>
             </div>
 
@@ -260,7 +260,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
 
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Representante atual</h2>
+              <h2 className="text-lg font-semibold text-slate-900">Representante atual</h2>
               <button onClick={() => setModalRep(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white" type="button">
                 Editar Representante
               </button>
@@ -285,7 +285,7 @@ export default function ConfiguracaoEmpresaClient({ abaInicial }: { abaInicial: 
       {aba === 'encarregado' && (
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Administrador / Encarregado atual</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Administrador / Encarregado atual</h2>
             <div className="flex gap-2">
               <button onClick={definirRepresentanteComoEncarregado} className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:text-slate-400" type="button">
                 Definir a mim mesmo
@@ -395,10 +395,10 @@ function Info({ label, valor }: { label: string; valor: string }) {
 function Modal({ titulo, children, onClose }: any) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl">
+      <div className="w-full max-w-2xl rounded-xl bg-white text-slate-900 shadow-xl">
         <div className="flex items-center justify-between border-b px-5 py-4">
-          <h2 className="text-lg font-semibold">{titulo}</h2>
-          <button onClick={onClose} type="button">
+          <h2 className="text-lg font-semibold text-slate-900">{titulo}</h2>
+          <button onClick={onClose} className="text-slate-700" type="button">
             ✕
           </button>
         </div>

@@ -1,13 +1,30 @@
 import type { ConfiguracaoEmpresaDTO, FuncionarioSelectDTO } from './types';
 import { api } from '@/lib/api';
 
+function isNetworkError(error: any) {
+  const msg = String(error?.message || '');
+  const code = String(error?.code || '');
+  return !error?.response && (msg.includes('Network Error') || code === 'ERR_NETWORK' || code === 'ECONNABORTED');
+}
+
 async function request<T>(method: 'get' | 'post' | 'put' | 'delete', url: string, data?: any): Promise<T> {
-  try {
-    const res = await api[method](url, data);
-    return res.data?.data as T;
-  } catch (error: any) {
-    throw new Error(error.response?.data?.message || error.message || 'Erro na requisição');
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await api[method](url, data);
+      return res.data?.data as T;
+    } catch (error: any) {
+      if (attempt === 0 && isNetworkError(error)) {
+        await new Promise((r) => setTimeout(r, 1200));
+        continue;
+      }
+      throw new Error(
+        error.response?.data?.message ||
+          (isNetworkError(error) ? 'Falha de rede ao conectar ao servidor. Aguarde alguns segundos e tente novamente.' : error.message) ||
+          'Erro na requisição'
+      );
+    }
   }
+  throw new Error('Erro na requisição');
 }
 
 export const EmpresaConfigApi = {
