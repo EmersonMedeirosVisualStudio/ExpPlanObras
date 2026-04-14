@@ -24,6 +24,13 @@ function fail(reply: FastifyReply, code: number, message: string, errors?: Recor
   return reply.code(code).send(payload);
 }
 
+function isMissingTableError(error: any, tableName: string) {
+  const code = typeof error?.code === 'string' ? error.code : '';
+  const msg = String(error?.message || '');
+  if (code === 'P2021') return msg.includes(tableName);
+  return msg.includes(tableName) && msg.toLowerCase().includes('does not exist');
+}
+
 function getAuthContext(request: FastifyRequest) {
   const u = request.user as any;
   const tenantId = u?.tenantId;
@@ -154,12 +161,18 @@ export default async function v1Routes(server: FastifyInstance) {
       },
     });
 
-    const titulares = await prisma.empresaTitular.findMany({
-      where: { tenantId: ctx.tenantId, ativo: true },
-      include: {
-        funcionario: { select: { id: true, nomeCompleto: true } },
-      },
-    });
+    let titulares: Array<{ roleCode: string; funcionarioId: number; funcionario: { nomeCompleto: string } }> = [];
+    try {
+      titulares = await prisma.empresaTitular.findMany({
+        where: { tenantId: ctx.tenantId, ativo: true },
+        include: {
+          funcionario: { select: { id: true, nomeCompleto: true } },
+        },
+      });
+    } catch (e: any) {
+      if (!isMissingTableError(e, 'EmpresaTitular')) throw e;
+      titulares = [];
+    }
 
     const ceoTitular = titulares.find(t => t.roleCode === 'CEO');
     const rhTitular = titulares.find(t => t.roleCode === 'GERENTE_RH');
@@ -378,37 +391,48 @@ export default async function v1Routes(server: FastifyInstance) {
       if (!funcionario) return fail(reply, 404, 'Funcionário não encontrado');
 
       const now = new Date();
-      
-      const current = await prisma.empresaTitular.findFirst({
-        where: { tenantId: ctx.tenantId, roleCode, ativo: true },
-        orderBy: { id: 'desc' },
-      });
+      let current: any = null;
+      try {
+        current = await prisma.empresaTitular.findFirst({
+          where: { tenantId: ctx.tenantId, roleCode, ativo: true },
+          orderBy: { id: 'desc' },
+        });
+      } catch (e: any) {
+        if (isMissingTableError(e, 'EmpresaTitular')) return fail(reply, 501, 'Recurso ainda não disponível: migração de banco pendente (EmpresaTitular). Faça o redeploy do backend com as migrations atualizadas.');
+        throw e;
+      }
 
-      const created = await prisma.$transaction(async (tx) => {
-        if (current) {
-          await tx.empresaTitular.update({ where: { id: current.id }, data: { ativo: false, dataFim: now } });
-        }
-        const titular = await tx.empresaTitular.create({
-          data: {
-            tenantId: ctx.tenantId,
-            roleCode,
-            funcionarioId: idFuncionario,
-            ativo: true,
-            dataInicio: now,
-          },
+      let created: any;
+      try {
+        created = await prisma.$transaction(async (tx) => {
+          if (current) {
+            await tx.empresaTitular.update({ where: { id: current.id }, data: { ativo: false, dataFim: now } });
+          }
+          const titular = await tx.empresaTitular.create({
+            data: {
+              tenantId: ctx.tenantId,
+              roleCode,
+              funcionarioId: idFuncionario,
+              ativo: true,
+              dataInicio: now,
+            },
+          });
+          await tx.auditoriaEvento.create({
+            data: {
+              tenantId: ctx.tenantId,
+              userId: ctx.userId,
+              entidade: 'empresa_titulares',
+              idRegistro: String(titular.id),
+              acao: 'DEFINIR_TITULAR',
+              dadosNovos: { roleCode, idFuncionario },
+            },
+          });
+          return titular;
         });
-        await tx.auditoriaEvento.create({
-          data: {
-            tenantId: ctx.tenantId,
-            userId: ctx.userId,
-            entidade: 'empresa_titulares',
-            idRegistro: String(titular.id),
-            acao: 'DEFINIR_TITULAR',
-            dadosNovos: { roleCode, idFuncionario },
-          },
-        });
-        return titular;
-      });
+      } catch (e: any) {
+        if (isMissingTableError(e, 'EmpresaTitular')) return fail(reply, 501, 'Recurso ainda não disponível: migração de banco pendente (EmpresaTitular). Faça o redeploy do backend com as migrations atualizadas.');
+        throw e;
+      }
 
       return ok(reply, { id: created.id }, { message: 'Titular definido com sucesso' });
     }
