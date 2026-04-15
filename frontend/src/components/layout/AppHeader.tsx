@@ -6,6 +6,14 @@ import { UserMenu } from "@/components/UserMenu";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { GlobalSearchTrigger } from "@/components/search/GlobalSearchTrigger";
 
+function formatProfileLabel(profile: string) {
+  if (profile === "REPRESENTANTE_EMPRESA") return "Representante";
+  if (profile === "ENCARREGADO_SISTEMA_EMPRESA") return "Encarregado do Sistema";
+  if (profile === "CEO") return "CEO";
+  if (profile === "SYSTEM_ADMIN") return "Administrador da Plataforma";
+  return profile;
+}
+
 function safeGet(key: string) {
   try {
     return localStorage.getItem(key);
@@ -74,26 +82,43 @@ export function AppHeader({ user }: { user: CurrentUser }) {
             <select value={activeProfile} onChange={(e) => onProfileChange(e.target.value)} className="border rounded px-2 py-1 text-sm">
               {user.perfis.map((p) => (
                 <option key={p} value={p}>
-                  {p}
+                  {formatProfileLabel(p)}
                 </option>
               ))}
             </select>
           </label>
-          <label className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <span>Contexto</span>
-            <select
-              value={activeContext}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v === "EMPRESA" || v === "OBRA" || v === "UNIDADE") onContextChange(v);
-              }}
-              className="border rounded px-2 py-1 text-sm"
-            >
-              <option value="EMPRESA">Empresa</option>
-              <option value="OBRA">Obra</option>
-              <option value="UNIDADE">Unidade</option>
-            </select>
-          </label>
+            <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+              <button
+                type="button"
+                onClick={() => onContextChange("EMPRESA")}
+                className={`px-3 py-1 text-sm ${
+                  activeContext === "EMPRESA" ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                Empresa
+              </button>
+              <button
+                type="button"
+                onClick={() => onContextChange("OBRA")}
+                className={`px-3 py-1 text-sm ${
+                  activeContext === "OBRA" ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                Obra
+              </button>
+              <button
+                type="button"
+                onClick={() => onContextChange("UNIDADE")}
+                className={`px-3 py-1 text-sm ${
+                  activeContext === "UNIDADE" ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                Unidade
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
