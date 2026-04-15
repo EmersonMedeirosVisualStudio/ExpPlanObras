@@ -334,9 +334,6 @@ export default function FuncionariosClient() {
 
       {modalNovo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-
-      {modalNovo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form onSubmit={salvarNovo} className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Novo funcionário</h3>

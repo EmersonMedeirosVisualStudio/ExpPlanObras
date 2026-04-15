@@ -8,7 +8,7 @@ export const runtime = 'nodejs';
 
 function isMissingTableError(e: any) {
   const msg = String(e?.message || '');
-  return msg.includes('ER_NO_SUCH_TABLE') || msg.includes('doesn\\'t exist') || msg.includes('no such table');
+  return msg.includes('ER_NO_SUCH_TABLE') || msg.includes("doesn't exist") || msg.includes('no such table');
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -82,4 +82,3 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return handleApiError(e);
   }
 }
-
