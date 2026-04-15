@@ -10,11 +10,28 @@ export const APP_MENU: MenuSectionConfig[] = [
       {
         key: 'config-empresa-representante',
         label: 'Painel do Representante',
-        href: '/dashboard/config/representante',
         icon: 'settings',
         permission: PERMISSIONS.REPRESENTANTE_VIEW,
         scopeTypes: ['EMPRESA'],
-        homePriority: 0,
+        children: [
+          {
+            key: 'painel-representante-dashboard',
+            label: 'Dashboard',
+            href: '/dashboard/config/representante/dashboard',
+            icon: 'layout-dashboard',
+            permission: PERMISSIONS.REPRESENTANTE_VIEW,
+            scopeTypes: ['EMPRESA'],
+            homePriority: 0,
+          },
+          {
+            key: 'painel-representante-configuracoes',
+            label: 'Configurações',
+            href: '/dashboard/config/representante/configuracoes',
+            icon: 'settings',
+            permission: PERMISSIONS.REPRESENTANTE_VIEW,
+            scopeTypes: ['EMPRESA'],
+          },
+        ],
       },
       {
         key: 'dashboard-ceo',

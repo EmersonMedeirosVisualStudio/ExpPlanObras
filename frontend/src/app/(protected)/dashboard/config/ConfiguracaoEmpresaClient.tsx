@@ -112,9 +112,6 @@ export default function ConfiguracaoEmpresaClient({ modo = 'REPRESENTANTE' }: { 
       <div>
         <h1 className="text-2xl font-semibold text-slate-800">Configuração da Empresa</h1>
         <p className="text-sm text-slate-500">Definição de titulares (CEO, Encarregado do Sistema e RH) e governança da empresa.</p>
-        <div className="mt-2 text-xs text-slate-600">
-          Contexto desta tela: <span className="font-semibold text-slate-800">Empresa</span>
-        </div>
       </div>
 
       {actionError ? (

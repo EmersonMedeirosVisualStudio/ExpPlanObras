@@ -12,8 +12,6 @@ const nextConfig: NextConfig = {
         { source: "/api/obras/:path*", destination: `${apiOrigin}/api/obras/:path*` },
         { source: "/api/billing/:path*", destination: `${apiOrigin}/api/billing/:path*` },
         { source: "/api/maintenance/:path*", destination: `${apiOrigin}/api/maintenance/:path*` },
-        { source: "/health", destination: `${apiOrigin}/health` },
-        { source: "/health/db", destination: `${apiOrigin}/health/db` },
       ],
       afterFiles: [],
       fallback: [],

@@ -581,20 +581,19 @@ export default function GovernancaClient() {
 
   return (
     <div className="max-w-7xl">
-      <div className="rounded-xl border bg-white p-5 text-center">
-        <h1 className="text-2xl font-semibold text-gray-900">Administração do Sistema</h1>
-        <div className="mt-1 text-sm text-slate-600">Contexto: Empresa</div>
-        <div className="mt-2 text-sm text-gray-600">Gestão de usuários, perfis, permissões, abrangências e segurança.</div>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Administração do Sistema</h1>
+          <div className="mt-1 text-sm text-slate-600">Gestão de usuários, perfis, permissões, abrangências e segurança.</div>
+        </div>
         {usuarioAtualEhEncarregado ? (
-          <div className="mt-4 flex justify-center">
-            <button
-              type="button"
-              onClick={registrarSolicitacaoSaida}
-              className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-700"
-            >
-              Solicitar deixar a função
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={registrarSolicitacaoSaida}
+            className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-700"
+          >
+            Solicitar deixar a função
+          </button>
         ) : null}
       </div>
 

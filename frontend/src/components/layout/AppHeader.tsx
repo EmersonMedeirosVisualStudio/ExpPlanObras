@@ -1,165 +1,35 @@
 "use client";
 
 import type { CurrentUser } from "@/lib/auth/current-user";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { UserMenu } from "@/components/UserMenu";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { GlobalSearchTrigger } from "@/components/search/GlobalSearchTrigger";
 
-function formatProfileLabel(profile: string) {
-  if (profile === "REPRESENTANTE_EMPRESA") return "Representante";
-  if (profile === "ENCARREGADO_SISTEMA_EMPRESA") return "Encarregado do Sistema";
-  if (profile === "CEO") return "CEO";
-  if (profile === "SYSTEM_ADMIN") return "Administrador da Plataforma";
-  return profile;
-}
-
-function safeGet(key: string) {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function safeSet(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-  }
-}
-
 export function AppHeader({ user }: { user: CurrentUser }) {
-  const [activeProfile, setActiveProfile] = useState(() => {
-    const stored = safeGet("active_profile") || "";
-    if (stored && user.perfis.includes(stored as any)) return stored;
-    if (user.perfis.includes("REPRESENTANTE_EMPRESA" as any)) return "REPRESENTANTE_EMPRESA";
-    return user.perfis[0] || "";
-  });
-  const [activeContext, setActiveContext] = useState<"EMPRESA" | "OBRA" | "UNIDADE">(() => {
-    const v = safeGet("active_context");
-    if (v === "OBRA" || v === "UNIDADE") return v;
-    return "EMPRESA";
-  });
-
   const companyName = useMemo(() => {
-    const u = safeGet("user");
-    if (!u) return `Empresa #${user.tenantId}`;
     try {
-      const parsed: unknown = JSON.parse(u);
-      const obj = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : null;
-      const tenants = obj ? obj['tenants'] : null;
+      const raw = localStorage.getItem("user");
+      if (!raw) return `Empresa #${user.tenantId}`;
+      const parsed: unknown = JSON.parse(raw);
+      const obj = typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : null;
+      const tenants = obj ? obj["tenants"] : null;
       if (Array.isArray(tenants) && tenants.length > 0) {
-        const first = typeof tenants[0] === 'object' && tenants[0] !== null ? (tenants[0] as Record<string, unknown>) : null;
-        return String((first && first['name']) || `Empresa #${user.tenantId}`);
+        const first = typeof tenants[0] === "object" && tenants[0] !== null ? (tenants[0] as Record<string, unknown>) : null;
+        const name = first && first["name"] ? String(first["name"]) : "";
+        if (name.trim()) return name.trim();
       }
-    } catch {
-    }
+    } catch {}
     return `Empresa #${user.tenantId}`;
   }, [user.tenantId]);
 
-  const onProfileChange = (p: string) => {
-    setActiveProfile(p);
-    safeSet("active_profile", p);
-    if (p === 'REPRESENTANTE_EMPRESA') {
-      setActiveContext('EMPRESA');
-      safeSet('active_context', 'EMPRESA');
-    }
-  };
-
-  const onContextChange = (ctx: "EMPRESA" | "OBRA" | "UNIDADE") => {
-    setActiveContext(ctx);
-    safeSet("active_context", ctx);
-  };
-
-  const contextMode = activeProfile === 'ENCARREGADO_SISTEMA_EMPRESA' ? 'EMPRESA_ONLY' : activeProfile === 'REPRESENTANTE_EMPRESA' ? 'REPRESENTANTE_LOCKED' : 'ALL';
-
-  const ContextControl = () => {
-    if (contextMode === 'EMPRESA_ONLY') {
-      return (
-        <div className="text-center">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Contexto</div>
-          <div className="mt-1 text-sm font-medium text-slate-700">Empresa</div>
-        </div>
-      );
-    }
-
-    if (contextMode === 'REPRESENTANTE_LOCKED') {
-      return (
-        <div className="text-center">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Contexto</div>
-          <div className="mt-1 inline-flex overflow-hidden rounded-lg border border-slate-200 bg-white">
-            <button type="button" onClick={() => onContextChange('EMPRESA')} className="bg-blue-600 px-3 py-1 text-sm text-white">
-              Empresa
-            </button>
-            <button type="button" disabled title="Em breve" className="px-3 py-1 text-sm text-slate-400">
-              Obra
-            </button>
-            <button type="button" disabled title="Em breve" className="px-3 py-1 text-sm text-slate-400">
-              Unidade
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="text-center">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Contexto</div>
-        <div className="mt-1 inline-flex overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <button
-            type="button"
-            onClick={() => onContextChange('EMPRESA')}
-            className={`px-3 py-1 text-sm ${activeContext === 'EMPRESA' ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-50'}`}
-          >
-            Empresa
-          </button>
-          <button
-            type="button"
-            onClick={() => onContextChange('OBRA')}
-            className={`px-3 py-1 text-sm ${activeContext === 'OBRA' ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-50'}`}
-          >
-            Obra
-          </button>
-          <button
-            type="button"
-            onClick={() => onContextChange('UNIDADE')}
-            className={`px-3 py-1 text-sm ${activeContext === 'UNIDADE' ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-50'}`}
-          >
-            Unidade
-          </button>
-        </div>
-      </div>
-    );
-  };
-
   return (
-    <header className="flex items-center gap-6 border-b bg-white px-6 py-4">
-      <div className="min-w-0 flex-1">
-        <h1 className="text-lg font-semibold truncate">{companyName}</h1>
-        <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-gray-600">
-          <div className="text-gray-700">{user.nome}</div>
-          <div className="text-gray-400">•</div>
-          <div className="text-gray-600">{user.email}</div>
-          <div className="text-gray-400">•</div>
-          <label className="flex items-center gap-2">
-            <span>Perfil</span>
-            <select value={activeProfile} onChange={(e) => onProfileChange(e.target.value)} className="border rounded px-2 py-1 text-sm">
-              {user.perfis.map((p) => (
-                <option key={p} value={p}>
-                  {formatProfileLabel(p)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+    <header className="flex items-center justify-between border-b bg-white px-6 py-4">
+      <div className="min-w-0">
+        <div className="text-lg font-semibold text-slate-900 truncate">{companyName}</div>
       </div>
 
-      <div className="flex flex-1 justify-center">
-        <ContextControl />
-      </div>
-
-      <div className="flex flex-1 items-center justify-end gap-3">
+      <div className="ml-6 flex items-center gap-3">
         <GlobalSearchTrigger />
         <NotificationBell />
         <UserMenu />
