@@ -1,5 +1,6 @@
 import type {
   FuncionarioDetalheDTO,
+  FuncionarioHistoricoEventoDTO,
   FuncionarioHoraExtraDTO,
   FuncionarioJornadaDTO,
   FuncionarioLotacaoDTO,
@@ -33,6 +34,8 @@ export const FuncionariosApi = {
   listar: (q = '') => api<FuncionarioResumoDTO[]>(`/api/v1/rh/funcionarios?q=${encodeURIComponent(q)}`),
 
   obter: (id: number) => api<FuncionarioDetalheDTO>(`/api/v1/rh/funcionarios/${id}`),
+
+  historico: (id: number) => api<FuncionarioHistoricoEventoDTO[]>(`/api/v1/rh/funcionarios/${id}/historico`),
 
   criar: (payload: { matricula: string; nomeCompleto: string; cpf: string; dataAdmissao: string }) =>
     api<FuncionarioDetalheDTO>(`/api/v1/rh/funcionarios`, { method: 'POST', body: JSON.stringify(payload) }),

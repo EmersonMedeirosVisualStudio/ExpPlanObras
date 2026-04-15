@@ -3,7 +3,7 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import { FuncionariosApi } from '@/lib/modules/funcionarios/api';
-import type { FuncionarioDetalheDTO, FuncionarioResumoDTO } from '@/lib/modules/funcionarios/types';
+import type { FuncionarioDetalheDTO, FuncionarioHistoricoEventoDTO, FuncionarioResumoDTO } from '@/lib/modules/funcionarios/types';
 
 const vazio = {
   matricula: '',
@@ -25,6 +25,7 @@ export default function FuncionariosClient() {
   const [busca, setBusca] = useState('');
   const [lista, setLista] = useState<FuncionarioResumoDTO[]>([]);
   const [selecionado, setSelecionado] = useState<FuncionarioDetalheDTO | null>(null);
+  const [historico, setHistorico] = useState<FuncionarioHistoricoEventoDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalNovo, setModalNovo] = useState(false);
   const [form, setForm] = useState<any>(vazio);
@@ -39,6 +40,12 @@ export default function FuncionariosClient() {
   async function abrir(id: number) {
     const det = await FuncionariosApi.obter(id);
     setSelecionado(det);
+    try {
+      const hist = await FuncionariosApi.historico(id);
+      setHistorico(hist);
+    } catch {
+      setHistorico([]);
+    }
   }
 
   async function salvarNovo(e: React.FormEvent) {
@@ -94,6 +101,7 @@ export default function FuncionariosClient() {
                   <th className="px-3 py-2">CPF</th>
                   <th className="px-3 py-2">Cargo</th>
                   <th className="px-3 py-2">Status funcional</th>
+                  <th className="px-3 py-2">Ativo</th>
                   <th className="px-3 py-2">RH</th>
                 </tr>
               </thead>
@@ -108,6 +116,11 @@ export default function FuncionariosClient() {
                     <td className="px-3 py-2">{item.cpf}</td>
                     <td className="px-3 py-2">{item.cargoContratual || '-'}</td>
                     <td className="px-3 py-2">{item.statusFuncional}</td>
+                    <td className="px-3 py-2">
+                      <span className={`rounded px-2 py-1 text-xs font-semibold ${item.ativo ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>
+                        {item.ativo ? 'Ativo' : 'Inativo'}
+                      </span>
+                    </td>
                     <td className="px-3 py-2">{item.statusCadastroRh}</td>
                   </tr>
                 ))}
@@ -140,6 +153,7 @@ export default function FuncionariosClient() {
               <Info label="Função" value={selecionado.funcaoPrincipal || '-'} />
               <Info label="Vínculo" value={selecionado.tipoVinculo} />
               <Info label="Admissão" value={selecionado.dataAdmissao} />
+              <Info label="Ativo" value={selecionado.ativo ? 'Ativo' : 'Inativo'} />
               <Info label="RH" value={selecionado.statusCadastroRh} />
             </div>
           </section>
@@ -192,7 +206,7 @@ export default function FuncionariosClient() {
 
           <section className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-2">
             <h2 className="mb-3 text-lg font-semibold">Histórico (movimentações)</h2>
-            <HistoricoFuncionario funcionario={selecionado} />
+            <HistoricoFuncionario funcionario={selecionado} auditoria={historico} />
           </section>
         </div>
       )}
@@ -292,10 +306,20 @@ function AlertaBadge({ item }: { item: FuncionarioResumoDTO }) {
   );
 }
 
-function HistoricoFuncionario({ funcionario }: { funcionario: FuncionarioDetalheDTO }) {
+function HistoricoFuncionario({ funcionario, auditoria }: { funcionario: FuncionarioDetalheDTO; auditoria: FuncionarioHistoricoEventoDTO[] }) {
   type Evento = { data: string; tipo: string; detalhe: string };
 
   const eventos: Evento[] = [];
+
+  if (funcionario.dataAdmissao) {
+    eventos.push({ data: funcionario.dataAdmissao, tipo: 'Admissão', detalhe: 'Admitido' });
+  }
+  if (funcionario.dataDesligamento) {
+    eventos.push({ data: funcionario.dataDesligamento, tipo: 'Desligamento', detalhe: 'Desligado' });
+  }
+  if (funcionario.salarioBase !== null && funcionario.salarioBase !== undefined) {
+    eventos.push({ data: funcionario.dataAdmissao || '0000-00-00', tipo: 'Salário', detalhe: `Salário base: ${String(funcionario.salarioBase)}` });
+  }
 
   for (const l of funcionario.lotacoes ?? []) {
     eventos.push({
@@ -348,6 +372,33 @@ function HistoricoFuncionario({ funcionario }: { funcionario: FuncionarioDetalhe
       tipo: 'Hora extra',
       detalhe: `${he.quantidadeMinutos} min • ${he.tipoHoraExtra} • ${he.statusHe}`,
     });
+  }
+
+  const aud = Array.isArray(auditoria) ? auditoria : [];
+  for (const e of aud) {
+    const createdAt = String(e.createdAt || '').slice(0, 10);
+    if (e.entidade === 'usuarios' && e.acao === 'CREATE') {
+      eventos.push({ data: createdAt || '0000-00-00', tipo: 'Usuário', detalhe: 'Designado como usuário do sistema' });
+    }
+    if (e.entidade === 'funcionarios' && e.acao === 'UPDATE') {
+      const before = typeof e.dadosAnteriores === 'object' && e.dadosAnteriores !== null ? (e.dadosAnteriores as any) : null;
+      const after = typeof e.dadosNovos === 'object' && e.dadosNovos !== null ? (e.dadosNovos as any) : null;
+      const beforeSal = before ? before.salario_base ?? before.salarioBase : undefined;
+      const afterSal = after ? after.salarioBase ?? after.salario_base : undefined;
+      if (beforeSal !== undefined && afterSal !== undefined && String(beforeSal) !== String(afterSal)) {
+        eventos.push({ data: createdAt || '0000-00-00', tipo: 'Salário', detalhe: `Alteração: ${String(beforeSal)} → ${String(afterSal)}` });
+      }
+      const beforeAtivo = before ? before.ativo : undefined;
+      const afterAtivo = after ? (after.ativo === false ? 0 : 1) : undefined;
+      if (beforeAtivo !== undefined && afterAtivo !== undefined && String(beforeAtivo) !== String(afterAtivo)) {
+        eventos.push({ data: createdAt || '0000-00-00', tipo: 'Status', detalhe: afterAtivo ? 'Ativação' : 'Inativação' });
+      }
+      const beforeFuncao = before ? before.funcao_principal ?? before.funcaoPrincipal : undefined;
+      const afterFuncao = after ? after.funcaoPrincipal ?? after.funcao_principal : undefined;
+      if (beforeFuncao !== undefined && afterFuncao !== undefined && String(beforeFuncao) !== String(afterFuncao)) {
+        eventos.push({ data: createdAt || '0000-00-00', tipo: 'Nomeação/Exoneração', detalhe: `Função: ${String(beforeFuncao || '-')} → ${String(afterFuncao || '-')}` });
+      }
+    }
   }
 
   eventos.sort((a, b) => String(b.data).localeCompare(String(a.data)));

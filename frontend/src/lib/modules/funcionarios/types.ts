@@ -85,3 +85,14 @@ export type FuncionarioDetalheDTO = FuncionarioResumoDTO & {
   jornadas: FuncionarioJornadaDTO[];
   horasExtras: FuncionarioHoraExtraDTO[];
 };
+
+export type FuncionarioHistoricoEventoDTO = {
+  id: number;
+  createdAt: string;
+  entidade: string;
+  idRegistro: string;
+  acao: string;
+  idUsuario: number | null;
+  dadosAnteriores: unknown;
+  dadosNovos: unknown;
+};

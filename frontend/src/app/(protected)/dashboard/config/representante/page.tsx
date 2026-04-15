@@ -1,9 +1,9 @@
 import { requirePermission } from '@/lib/auth/access';
 import { PERMISSIONS } from '@/lib/auth/permissions';
-import ConfiguracaoEmpresaClient from '../ConfiguracaoEmpresaClient';
+import PainelRepresentanteClient from './PainelRepresentanteClient';
 
 export default async function RepresentantePage() {
   await requirePermission(PERMISSIONS.REPRESENTANTE_VIEW);
 
-  return <ConfiguracaoEmpresaClient modo="REPRESENTANTE" />;
+  return <PainelRepresentanteClient />;
 }
