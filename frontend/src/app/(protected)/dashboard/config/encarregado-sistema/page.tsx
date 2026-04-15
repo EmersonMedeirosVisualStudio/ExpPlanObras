@@ -3,7 +3,7 @@ import { PERMISSIONS } from '@/lib/auth/permissions';
 import ConfiguracaoEmpresaClient from '../ConfiguracaoEmpresaClient';
 
 export default async function EncarregadoSistemaPage() {
-  await requirePermission(PERMISSIONS.REPRESENTANTE_VIEW);
+  await requirePermission(PERMISSIONS.ENCARREGADO_SISTEMA_VIEW);
 
-  return <ConfiguracaoEmpresaClient abaInicial="encarregado" />;
+  return <ConfiguracaoEmpresaClient modo="ENCARREGADO" />;
 }

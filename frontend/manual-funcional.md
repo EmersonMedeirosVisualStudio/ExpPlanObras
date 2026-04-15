@@ -342,7 +342,7 @@ Perfil voltado à gestão operacional e tática do seu escopo.
 
 Perfil de execução. Atua nas rotinas, lançamentos, registros, consultas e acompanhamentos do dia a dia.
 
-### 6.6 Administrador do sistema
+### 6.6 Encarregado do Sistema (da empresa)
 
 Perfil responsável pela configuração operacional do sistema, cadastro de perfis, parametrizações, vínculos de acesso e manutenção da estrutura funcional da plataforma.
 
@@ -351,15 +351,15 @@ Perfil responsável pela configuração operacional do sistema, cadastro de perf
 - **Gerente de Obra**: visualiza apenas os dados da(s) obra(s) sob sua responsabilidade, incluindo contratos, suprimentos, cronograma, RH e SST.
 - **Diretor de Engenharia**: visualiza todas as informações relacionadas à engenharia, incluindo obras, contratos e indicadores técnicos.
 - **CEO**: visão global da empresa; permissões de alteração restritas ao organograma e à definição de diretores e gerentes a partir da lista de funcionários.
-- **Representante da Empresa**: define ou altera os titulares de CEO, Administrador do sistema (da empresa) e Gerente de RH.
-- **Administrador do sistema (da empresa)**: define usuários, perfis e permissões dentro da empresa, conforme as funções formalmente atribuídas.
+- **Representante da Empresa**: define ou altera os titulares de CEO, Encarregado do Sistema (da empresa) e Gerente de RH.
+- **Encarregado do Sistema (da empresa)**: define usuários, perfis e permissões dentro da empresa, conforme as funções formalmente atribuídas.
 
 ### 6.8 Papéis estratégicos (titulares)
 
 O sistema possui papéis estratégicos com impacto direto em permissões e liberação de acesso:
 
 - **CEO (Diretor Geral)**: define estrutura organizacional (organograma) e diretrizes de gestão.
-- **Administrador do sistema (da empresa)**: configura o ambiente (usuários, perfis, permissões e parametrizações).
+- **Encarregado do Sistema (da empresa)**: configura o ambiente (usuários, perfis, permissões e parametrizações).
 - **Gerente de RH**: completa cadastros funcionais e estrutura o quadro de colaboradores.
 
 Regras:
@@ -382,7 +382,7 @@ No primeiro acesso ao sistema, o Representante assume automaticamente, de forma 
 
 - **Representante da Empresa**
 - **CEO (Diretor Geral)**
-- **Administrador do sistema (da empresa)**
+- **Encarregado do Sistema (da empresa)**
 
 Esse comportamento existe para impedir que a empresa fique “travada” no início. As responsabilidades permanecem com o Representante até que ele designe outros usuários para ocupá-las.
 
@@ -392,7 +392,7 @@ O painel deve possuir um seletor de telas para alternar entre as áreas gerencia
 
 - Representante da Empresa
 - CEO
-- Administrador do sistema (da empresa)
+- Encarregado do Sistema (da empresa)
 
 As telas são diferentes. Se a mesma pessoa acumular papéis, ela alterna entre telas distintas.
 
@@ -402,7 +402,7 @@ O Representante possui autonomia para definir ou alterar os titulares de:
 
 - Gerente de RH
 - CEO
-- Administrador do sistema (da empresa)
+- Encarregado do Sistema (da empresa)
 
 Regras:
 
@@ -502,9 +502,9 @@ Esse painel deve permitir ao CEO:
 #### Validação
 - Após publicar, titulares ganham seus perfis e painéis correspondentes automaticamente
 
-#### Relação com o Administrador do sistema
+#### Relação com o Encarregado do Sistema
 
-Embora a **visão estratégica completa do organograma seja exclusiva do CEO**, o **Administrador do sistema** deve ter uma área operacional derivada dessa estrutura para:
+Embora a **visão estratégica completa do organograma seja exclusiva do CEO**, o **Encarregado do Sistema** deve ter uma área operacional derivada dessa estrutura para:
 
 - vincular perfis às funções definidas;
 - ajustar ou expandir perfis de acesso;
@@ -581,9 +581,9 @@ Ele deve apresentar:
 
 A ideia é evitar excesso de informação e oferecer um ambiente de trabalho direto, simples e eficiente.
 
-### 7.7 Painel do Administrador do sistema
+### 7.7 Painel do Encarregado do Sistema
 
-O painel do Administrador do sistema é voltado à sustentação da plataforma dentro da empresa.
+O painel do Encarregado do Sistema é voltado à sustentação da plataforma dentro da empresa.
 
 Esse painel deve permitir:
 
@@ -663,47 +663,42 @@ Após o cadastro, o Representante é direcionado para o **Dashboard**.
 O que o Representante vê no primeiro acesso:
 
 - acesso ao painel de governança (Representante);
-- seletor de telas para alternar entre Representante / CEO / Administrador do sistema (provisórios);
+- seletor de telas para alternar entre Representante / CEO / Encarregado do Sistema (provisórios);
 - atalhos para Configuração da Empresa e definição de titulares.
 
 O que o Representante pode fazer no primeiro acesso:
 
 - parametrizar dados iniciais da empresa (configuração básica);
 - cadastrar o mínimo de funcionários (para permitir delegação);
-- definir os titulares de CEO, Administrador do sistema (da empresa) e Gerente de RH.
+- definir os titulares de CEO, Encarregado do Sistema (da empresa) e Gerente de RH.
 
 Regra operacional:
 
-- no primeiro acesso, o Representante assume provisoriamente os papéis de CEO e Administrador do sistema (da empresa), para impedir que a empresa fique travada no início;
+- no primeiro acesso, o Representante assume provisoriamente os papéis de CEO e Encarregado do Sistema (da empresa), para impedir que a empresa fique travada no início;
 - ao delegar um papel para outro usuário, o Representante passa a ter visualização nas telas daquele papel, e o titular passa a ter edição.
 
 Detalhe de nomenclatura (importante):
 
-- **Administrador do Sistema (da empresa)** e **Encarregado do Sistema (da empresa)** são tratados como a mesma função.
-- Para simplificação operacional, o sistema usa as duas nomenclaturas como equivalentes no fluxo de definição de titular.
+- Para simplificação operacional, o sistema usa apenas a nomenclatura **Encarregado do Sistema (da empresa)** para a função de administração do sistema.
 
 #### Etapa 3 — definição dos responsáveis iniciais (titulares)
 
 O Representante define inicialmente três papéis essenciais:
 
 - CEO (Diretor Geral)
-- Administrador do sistema (da empresa)
+- Encarregado do Sistema (da empresa)
 - Gerente de RH
 
 Regras:
 
-- por padrão, enquanto CEO / Administrador do Sistema / Gerente de RH ainda não estiverem definidos, os seletores aparecem pré-preenchidos com o funcionário do Representante;
+- por padrão, enquanto CEO / Encarregado do Sistema / Gerente de RH ainda não estiverem definidos, os seletores aparecem pré-preenchidos com o funcionário do Representante;
 - no primeiro acesso, o Representante é cadastrado automaticamente como **Funcionário** para permitir essa pré-seleção;
 - um mesmo funcionário pode assumir múltiplas funções (ex.: CEO e Gerente de RH), quando fizer sentido operacional.
 - o padrão visual em listas e seletores de funcionário é: `#Id - Nome` (Id inteiro sequencial).
 
 #### Implementação (no sistema)
 
-- Painéis → Representante → Seletor de telas: alternar entre Representante / CEO / Administrador
-- Delegar titulares:
-  - CEO: Administração → Organograma → definir titular
-  - Administrador: Administração → Painel do Administrador → definir titular
-  - Gerente de RH: RH → Configuração → definir titular
+- Painéis → Representante → Configuração da Empresa: definir titulares iniciais (CEO, Encarregado do Sistema, Gerente de RH).
 - Cadastro mínimo de funcionários (se preciso): RH → Funcionários → Novo (nome, e-mail, função inicial)
 
 #### Validação
@@ -733,9 +728,9 @@ Indicador “Alertas” no CRUD de Funcionários:
 - **bolinha amarela**: dados obrigatórios ok, mas faltam dados não obrigatórios (ex.: cargo contratual, função principal);
 - **bolinha verde**: cadastro completo.
 
-#### Etapa 5 — atuação do Administrador do sistema (usuários e permissões)
+#### Etapa 5 — atuação do Encarregado do Sistema (usuários e permissões)
 
-O Administrador do sistema passa a ser responsável por:
+O Encarregado do Sistema passa a ser responsável por:
 
 - criar acessos;
 - vincular usuários aos funcionários;
@@ -763,7 +758,7 @@ Se um usuário tiver vínculo com múltiplas empresas, o sistema exibe uma tela 
 
 Mesmo após a empresa estar operando normalmente, o Representante mantém autoridade para:
 
-- redefinir os titulares de CEO, Administrador do sistema (da empresa) e Gerente de RH;
+- redefinir os titulares de CEO, Encarregado do Sistema (da empresa) e Gerente de RH;
 - acompanhar as telas gerenciais (visualização), mesmo que não seja o titular;
 - garantir que papéis-chave estejam corretamente atribuídos.
 
@@ -2191,7 +2186,7 @@ Ou seja:
 
 A exclusão de uma empresa remove o **ambiente inteiro** daquela empresa dentro da plataforma.
 
-Isso não é uma ação do “Administrador do sistema (da empresa)”. É uma ação do **Administrador do Sistema (da plataforma)**, usada apenas em casos especiais (ex.: empresa criada por engano em ambiente de teste).
+Isso não é uma ação do “Encarregado do Sistema (da empresa)”. É uma ação do **Administrador do Sistema (da plataforma)**, usada apenas em casos especiais (ex.: empresa criada por engano em ambiente de teste).
 
 #### O que a exclusão atinge
 

@@ -11,6 +11,7 @@ import * as LucideIcons from "lucide-react";
 import type { ComponentType } from "react";
 
 function isActive(pathname: string, item: MenuItemDTO): boolean {
+  if (item.href === "/dashboard") return pathname === "/dashboard";
   if (item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`))) return true;
   if (item.matchStartsWith?.some((p) => pathname.startsWith(p))) return true;
   return (item.children ?? []).some((child) => isActive(pathname, child));
@@ -194,7 +195,7 @@ export function SidebarNav({ secoes, initialBadges = {} }: { secoes: MenuSection
                 .map((k) => itemsMap.get(k))
                 .filter((it): it is MenuItemDTO => !!it && !!it.href)
                 .map((it) => {
-                  const active = pathname === it.href || pathname.startsWith(`${it.href}/`);
+                  const active = it.href === "/dashboard" ? pathname === "/dashboard" : pathname === it.href || pathname.startsWith(`${it.href}/`);
                   const badge = badges[it.key];
                   const Icon = resolveIconComponent(it.icon);
                   return (
