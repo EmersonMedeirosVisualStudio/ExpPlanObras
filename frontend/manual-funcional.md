@@ -707,6 +707,7 @@ O Representante define inicialmente três papéis essenciais:
 Regras:
 
 - por padrão, enquanto CEO / Encarregado do Sistema / Gerente de RH ainda não estiverem definidos, os seletores aparecem pré-preenchidos com o funcionário do Representante;
+- no primeiro acesso, CEO / Encarregado do Sistema / Gerente de RH já nascem definidos como o Representante (evita empresa “sem titular”);
 - no primeiro acesso, o Representante é cadastrado automaticamente como **Funcionário** para permitir essa pré-seleção;
 - um mesmo funcionário pode assumir múltiplas funções (ex.: CEO e Gerente de RH), quando fizer sentido operacional.
 - o padrão visual em listas e seletores de funcionário é: `#Id - Nome` (Id inteiro sequencial).
@@ -714,7 +715,8 @@ Regras:
 #### Implementação (no sistema)
 
 - Painéis → Representante → Configuração da Empresa: definir titulares iniciais (CEO, Encarregado do Sistema, Gerente de RH).
-- Cadastro mínimo de funcionários (se preciso): RH → Funcionários → Novo (nome, e-mail, função inicial)
+- Cadastro mínimo de pessoas (se preciso): RH → Pessoas (Cadastros) → Funcionários → Novo (nome, e-mail, função inicial)
+- Cadastro mínimo de terceirizados (se preciso): RH → Pessoas (Cadastros) → Terceirizados → Novo (nome e função)
 
 #### Validação
 

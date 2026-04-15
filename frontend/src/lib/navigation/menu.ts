@@ -144,8 +144,8 @@ export const APP_MENU: MenuSectionConfig[] = [
       },
       {
         key: 'funcionarios',
-        label: 'Funcionários',
-        href: '/dashboard/rh/funcionarios',
+        label: 'Pessoas (Cadastros)',
+        href: '/dashboard/rh/cadastros',
         icon: 'id-card',
         permission: PERMISSIONS.RH_FUNCIONARIOS_VIEW,
       },
