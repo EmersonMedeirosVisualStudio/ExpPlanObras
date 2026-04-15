@@ -7,9 +7,8 @@ export default async function RepresentanteConfiguracoesPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold text-slate-900">Painel do Representante</h1>
+      <h1 className="text-2xl font-semibold text-slate-900">Painel do Representante</h1>
       <ConfiguracaoEmpresaClient modo="REPRESENTANTE" />
     </div>
   );
 }
-
