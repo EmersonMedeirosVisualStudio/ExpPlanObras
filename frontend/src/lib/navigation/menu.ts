@@ -321,6 +321,14 @@ export const APP_MENU: MenuSectionConfig[] = [
     items: [
       { key: 'organograma', label: 'Organograma', href: '/dashboard/organograma', icon: 'network', permission: PERMISSIONS.ORGANOGRAMA_VIEW },
       {
+        key: 'encarregado-sistema',
+        label: 'Encarregado do Sistema',
+        href: '/dashboard/admin/governanca',
+        icon: 'shield',
+        permission: PERMISSIONS.GOVERNANCA_VIEW,
+        scopeTypes: ['EMPRESA'],
+      },
+      {
         key: 'backup',
         label: 'Backup e Segurança',
         href: '/dashboard/admin/backup',

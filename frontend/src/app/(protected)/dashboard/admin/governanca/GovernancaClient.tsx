@@ -52,6 +52,41 @@ function classNames(...parts: Array<string | false | undefined>) {
   return parts.filter(Boolean).join(' ');
 }
 
+function formatUsuarioRef(id: number, nome: string) {
+  return `#U${id} - ${nome}`;
+}
+
+function usuarioAlertas(u: Usuario) {
+  const missingRequired: string[] = [];
+  if (!String(u.nome || '').trim()) missingRequired.push('Nome');
+  if (!String(u.login || '').trim()) missingRequired.push('Login');
+  if (!String(u.email || '').trim()) missingRequired.push('E-mail');
+  if (!Number.isFinite(u.idFuncionario) || u.idFuncionario <= 0) missingRequired.push('Funcionário');
+  if (!Array.isArray(u.perfis) || u.perfis.length === 0) missingRequired.push('Perfis');
+
+  const missingOptional: string[] = [];
+  if (!Array.isArray(u.abrangencias) || u.abrangencias.length === 0) missingOptional.push('Abrangências');
+
+  if (missingRequired.length > 0) return { level: 'RED' as const, title: `Faltando obrigatório: ${missingRequired.join(', ')}` };
+  if (missingOptional.length > 0) return { level: 'AMBER' as const, title: `Faltando opcional: ${missingOptional.join(', ')}` };
+  return { level: 'GREEN' as const, title: 'Cadastro completo' };
+}
+
+function AlertaPill({ level, title }: { level: 'RED' | 'AMBER' | 'GREEN'; title: string }) {
+  const color =
+    level === 'RED'
+      ? 'bg-red-100 text-red-800'
+      : level === 'AMBER'
+        ? 'bg-amber-100 text-amber-800'
+        : 'bg-emerald-100 text-emerald-800';
+  const label = level === 'RED' ? 'Obrig.' : level === 'AMBER' ? 'Opc.' : 'OK';
+  return (
+    <span title={title} className={classNames('inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold', color)}>
+      {label}
+    </span>
+  );
+}
+
 function nextId(list: Array<{ id: number }>) {
   return list.reduce((max, it) => Math.max(max, it.id), 0) + 1;
 }
@@ -530,8 +565,8 @@ export default function GovernancaClient() {
     <div className="max-w-7xl">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Governança de Usuários e Perfis</h1>
-          <p className="text-gray-600 mt-1">Usuários, perfis, permissões e abrangências (Sprint 0).</p>
+          <h1 className="text-2xl font-semibold text-gray-900">Encarregado do Sistema</h1>
+          <p className="text-gray-600 mt-1">Usuários, perfis, permissões e abrangências.</p>
         </div>
         {usuarioAtualEhEncarregado && (
           <div className="flex items-center gap-2">
@@ -583,12 +618,13 @@ export default function GovernancaClient() {
             <table className="min-w-full divide-y">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Nome</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Alertas</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Usuário</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Login</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">ID Funcionário</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Funcionário</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Perfis</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Abrangências</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Status do usuário</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Último acesso</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Ações</th>
                 </tr>
@@ -596,9 +632,12 @@ export default function GovernancaClient() {
               <tbody className="divide-y">
                 {usuarios.map((u) => (
                   <tr key={u.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-900">{u.nome}</td>
+                    <td className="px-4 py-3 text-sm">
+                      <AlertaPill {...usuarioAlertas(u)} />
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{formatUsuarioRef(u.id, u.nome)}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{u.login}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700">{u.idFuncionario}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700">#{u.idFuncionario}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{u.perfis.join(', ')}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{u.abrangencias.length ? u.abrangencias.join(', ') : '-'}</td>
                     <td className="px-4 py-3 text-sm">
