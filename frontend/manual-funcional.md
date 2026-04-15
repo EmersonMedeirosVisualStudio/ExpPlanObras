@@ -4,6 +4,10 @@
 
 ---
 
+Manual complementar: `manual-permissoes-perfis.md`
+
+---
+
 ## Sumário
 
 - [1. Visão geral do sistema](#1-vis%C3%A3o-geral-do-sistema)
@@ -225,20 +229,18 @@ As janelas (telas) principais se organizam por perfil e por núcleo operacional:
 - Documentos e conteúdo da obra (fotos/documentos vinculados)
 - Administração do sistema (usuários, perfis, permissões e parametrizações)
 
-### 4.2 Barra superior (Perfil e Contexto)
+### 4.2 Barra superior (empresa e utilitários)
 
-Na parte superior do sistema existe uma barra que define duas coisas importantes:
+Na parte superior do sistema, a barra possui foco em simplicidade operacional:
 
-- **Perfil**: determina qual conjunto de permissões e menus você está usando no momento (ex.: Representante, CEO, Encarregado do Sistema). É útil quando a mesma pessoa acumula funções na empresa.
-- **Contexto**: define o foco do sistema para navegação e filtros. Ele aparece como guias:
-  - **Empresa**: visão mais geral da empresa
-  - **Obra**: visão focada em uma obra
-  - **Unidade**: visão focada em uma unidade
+- nome da empresa visível (lado esquerdo);
+- busca global;
+- notificações;
+- menu do usuário (sessão e conta).
 
-Regras:
+Regra atual:
 
-- o Perfil e o Contexto ficam salvos no navegador e permanecem após atualizar a página;
-- algumas telas usam o Contexto apenas como “foco” visual (não muda o conteúdo) e serão refinadas para aplicar filtros automáticos conforme o sistema evolui.
+- o acesso aos painéis e módulos é definido por permissões e menu liberado para o perfil, sem seletor manual de perfil/contexto na barra.
 
 ---
 
@@ -381,7 +383,7 @@ Regras:
 
 - o acesso aos módulos é liberado conforme o papel formalmente atribuído;
 - a alteração de titular atualiza automaticamente as permissões do usuário (ganha ou perde acesso conforme o novo papel);
-- quando o mesmo usuário acumula papéis, ele não “mistura” painéis: alterna entre telas específicas de cada papel.
+- quando o mesmo usuário acumula papéis, os acessos aparecem por menus e submenus específicos liberados para esse usuário.
 
 ---
 
@@ -401,15 +403,15 @@ No primeiro acesso ao sistema, o Representante assume automaticamente, de forma 
 
 Esse comportamento existe para impedir que a empresa fique “travada” no início. As responsabilidades permanecem com o Representante até que ele designe outros usuários para ocupá-las.
 
-#### Seletor de telas (papéis acumulados)
+#### Navegação por menu (papéis acumulados)
 
-O painel deve possuir um seletor de telas para alternar entre as áreas gerenciais de:
+O painel utiliza navegação por menu/submenu para acessar as áreas gerenciais de:
 
 - Representante da Empresa
 - CEO
 - Encarregado do Sistema (da empresa)
 
-As telas são diferentes. Se a mesma pessoa acumular papéis, ela alterna entre telas distintas.
+As telas são diferentes. Se a mesma pessoa acumular papéis, ela navega por entradas distintas do menu lateral.
 
 #### Delegação de funções (dinâmica)
 
