@@ -565,8 +565,8 @@ export default function GovernancaClient() {
     <div className="max-w-7xl">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Encarregado do Sistema</h1>
-          <p className="text-gray-600 mt-1">Usuários, perfis, permissões e abrangências.</p>
+          <h1 className="text-2xl font-semibold text-gray-900">Administração do Sistema</h1>
+          <p className="text-gray-600 mt-1">Gestão de usuários, perfis, permissões e abrangências da empresa.</p>
         </div>
         {usuarioAtualEhEncarregado && (
           <div className="flex items-center gap-2">
