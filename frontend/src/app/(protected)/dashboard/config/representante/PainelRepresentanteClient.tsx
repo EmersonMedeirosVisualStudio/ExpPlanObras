@@ -16,31 +16,31 @@ export default function PainelRepresentanteClient() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border bg-white p-5 text-center">
-        <h1 className="text-2xl font-semibold text-slate-900">Painel do Representante</h1>
-        <div className="mt-2 text-sm text-slate-600">Contexto: Empresa</div>
-
-        <div className="mt-4 flex justify-center">
-          <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
-            <button
-              type="button"
-              onClick={() => {
-                setContexto('EMPRESA');
-                setAbaEmpresa('CONFIG');
-              }}
-              className={classNames('px-4 py-2 text-sm', abaEmpresa === 'CONFIG' ? 'bg-white text-slate-900 font-semibold' : 'bg-white text-slate-600 hover:text-slate-900')}
-            >
-              Configuração
-            </button>
+      <div className="rounded-xl border bg-white px-4 py-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="inline-flex items-center rounded-md bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-900">
+            Painel do Representante
+          </div>
+          <div className="flex items-center gap-4 text-sm">
             <button
               type="button"
               onClick={() => {
                 setContexto('EMPRESA');
                 setAbaEmpresa('DASHBOARD');
               }}
-              className={classNames('px-4 py-2 text-sm', abaEmpresa === 'DASHBOARD' ? 'bg-white text-slate-900 font-semibold' : 'bg-white text-slate-600 hover:text-slate-900')}
+              className={classNames('hover:text-slate-900', abaEmpresa === 'DASHBOARD' ? 'font-semibold text-slate-900' : 'text-slate-600')}
             >
               Dashboard
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setContexto('EMPRESA');
+                setAbaEmpresa('CONFIG');
+              }}
+              className={classNames('hover:text-slate-900', abaEmpresa === 'CONFIG' ? 'font-semibold text-slate-900' : 'text-slate-600')}
+            >
+              Configuração
             </button>
           </div>
         </div>
