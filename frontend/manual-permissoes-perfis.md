@@ -41,6 +41,15 @@ Exemplo:
   - `CEO`
   - `ENCARREGADO_SISTEMA_EMPRESA`
   - `DIRETOR`
+  - `DIRETOR_ADMINISTRATIVO`
+  - `DIRETOR_FINANCEIRO`
+  - `ENGENHEIRO`
+  - `MESTRE_OBRA`
+  - `ENCARREGADO_OBRA`
+  - `APONTADOR`
+  - `ALMOXARIFE`
+  - `FISCAL_OBRA`
+  - `TST`
   - `GERENTE_RH`
   - `ADMIN_RH`
   - `SST_TECNICO`
@@ -63,17 +72,9 @@ Exemplo:
 
 ### 3.3 Gap identificado (planejado)
 
-Os perfis abaixo já foram catalogados para padronização, mas dependem de tela/módulo específico para ficarem 100% ativos no fluxo:
+Os perfis acima já existem e liberam painéis/menu conforme permissões.
 
-- `ENGENHEIRO`
-- `MESTRE_OBRA`
-- `ENCARREGADO_OBRA`
-- `APONTADOR`
-- `ALMOXARIFE`
-- `FISCAL_OBRA`
-- `TST`
-- `DIRETOR_ADMINISTRATIVO`
-- `DIRETOR_FINANCEIRO`
+O que ainda é planejado (para completar o modelo por função) é a criação/amadurecimento de módulos específicos (ex.: financeiro, estoque detalhado, apontamentos completos), com permissões finas por ação.
 
 ---
 
@@ -146,4 +147,3 @@ Navegação e segurança devem seguir:
 - menu dinâmico por permissão;
 - dados filtrados por abrangência;
 - trilha de auditoria para ações críticas.
-

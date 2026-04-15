@@ -164,6 +164,99 @@ function permissionsForProfile(profile: ProfileCode): Permission[] {
       PERMISSIONS.SST_PAINEL_EXECUTIVO_VIEW,
     ];
   }
+  if (profile === PROFILE_CODES.DIRETOR_ADMINISTRATIVO) {
+    return [
+      PERMISSIONS.DASHBOARD_VIEW,
+      PERMISSIONS.DASHBOARD_DIRETOR_VIEW,
+      PERMISSIONS.DASHBOARD_RH_VIEW,
+      PERMISSIONS.DOCUMENTOS_VIEW,
+      PERMISSIONS.DOCUMENTOS_CRUD,
+      PERMISSIONS.DOCUMENTOS_ASSINAR,
+      PERMISSIONS.DOCUMENTOS_VERIFICAR,
+      PERMISSIONS.RH_FUNCIONARIOS_VIEW,
+      PERMISSIONS.RH_FUNCIONARIOS_CRUD,
+      PERMISSIONS.RH_PRESENCAS_VIEW,
+      PERMISSIONS.RH_PRESENCAS_CRUD,
+      PERMISSIONS.RH_HORAS_EXTRAS_VIEW,
+      PERMISSIONS.RH_HORAS_EXTRAS_CRUD,
+      PERMISSIONS.ORGANOGRAMA_VIEW,
+      PERMISSIONS.RELATORIOS_AGENDADOS_VIEW,
+    ];
+  }
+  if (profile === PROFILE_CODES.DIRETOR_FINANCEIRO) {
+    return [
+      PERMISSIONS.DASHBOARD_VIEW,
+      PERMISSIONS.DASHBOARD_DIRETOR_VIEW,
+      PERMISSIONS.DASHBOARD_EXECUTIVO_VIEW,
+      PERMISSIONS.DASHBOARD_EXPORTAR,
+      PERMISSIONS.EXPORT_CSV,
+      PERMISSIONS.APROVACOES_VIEW,
+      PERMISSIONS.APROVACOES_DECIDIR,
+      PERMISSIONS.RELATORIOS_AGENDADOS_VIEW,
+      PERMISSIONS.DOCUMENTOS_VIEW,
+      PERMISSIONS.DOCUMENTOS_VERIFICAR,
+      PERMISSIONS.OBRAS_VIEW,
+      PERMISSIONS.MAPA_OBRAS_VIEW,
+    ];
+  }
+  if (profile === PROFILE_CODES.ENGENHEIRO) {
+    return [
+      PERMISSIONS.DASHBOARD_VIEW,
+      PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+      PERMISSIONS.OBRAS_VIEW,
+      PERMISSIONS.MAPA_OBRAS_VIEW,
+      PERMISSIONS.WORKFLOWS_VIEW,
+      PERMISSIONS.WORKFLOWS_EXECUTAR,
+      PERMISSIONS.DOCUMENTOS_VIEW,
+      PERMISSIONS.DOCUMENTOS_CRUD,
+      PERMISSIONS.DASHBOARD_SUPRIMENTOS_VIEW,
+      PERMISSIONS.PORTAL_GESTOR_VIEW,
+      PERMISSIONS.PORTAL_GESTOR_OPERAR,
+    ];
+  }
+  if (profile === PROFILE_CODES.MESTRE_OBRA) {
+    return [
+      PERMISSIONS.DASHBOARD_VIEW,
+      PERMISSIONS.PORTAL_GESTOR_VIEW,
+      PERMISSIONS.PORTAL_GESTOR_OPERAR,
+      PERMISSIONS.DOCUMENTOS_VIEW,
+      PERMISSIONS.RH_PRESENCAS_VIEW,
+    ];
+  }
+  if (profile === PROFILE_CODES.ENCARREGADO_OBRA) {
+    return [
+      PERMISSIONS.DASHBOARD_VIEW,
+      PERMISSIONS.PORTAL_GESTOR_VIEW,
+      PERMISSIONS.PORTAL_GESTOR_OPERAR,
+      PERMISSIONS.DOCUMENTOS_VIEW,
+      PERMISSIONS.RH_PRESENCAS_VIEW,
+    ];
+  }
+  if (profile === PROFILE_CODES.APONTADOR) {
+    return [
+      PERMISSIONS.DASHBOARD_VIEW,
+      PERMISSIONS.RH_PRESENCAS_VIEW,
+      PERMISSIONS.RH_PRESENCAS_CRUD,
+      PERMISSIONS.PORTAL_GESTOR_VIEW,
+    ];
+  }
+  if (profile === PROFILE_CODES.ALMOXARIFE) {
+    return [PERMISSIONS.DASHBOARD_VIEW, PERMISSIONS.DASHBOARD_SUPRIMENTOS_VIEW, PERMISSIONS.DOCUMENTOS_VIEW];
+  }
+  if (profile === PROFILE_CODES.FISCAL_OBRA) {
+    return [
+      PERMISSIONS.DASHBOARD_VIEW,
+      PERMISSIONS.DASHBOARD_FISCALIZACAO_VIEW,
+      PERMISSIONS.FISCALIZACAO_DIARIO_VIEW,
+      PERMISSIONS.FISCALIZACAO_CALENDARIO_VIEW,
+      PERMISSIONS.FISCALIZACAO_MEDICOES_VIEW,
+      PERMISSIONS.DOCUMENTOS_VIEW,
+      PERMISSIONS.SST_NC_VIEW,
+    ];
+  }
+  if (profile === PROFILE_CODES.TST) {
+    return permissionsForProfile(PROFILE_CODES.SST_TECNICO);
+  }
   if (profile === PROFILE_CODES.GERENTE_RH) {
     return [
       PERMISSIONS.DASHBOARD_VIEW,
@@ -262,18 +355,55 @@ function setAuthSession(input: {
   const tenantRole = typeof (firstTenant && firstTenant['role']) === 'string' ? String(firstTenant && firstTenant['role']).toUpperCase() : '';
   const userEmail = String(userObj['email'] || '').toLowerCase();
 
-  const profiles: ProfileCode[] =
-    tenantRole === 'ADMIN'
-      ? [PROFILE_CODES.REPRESENTANTE_EMPRESA, PROFILE_CODES.CEO, PROFILE_CODES.ENCARREGADO_SISTEMA_EMPRESA]
-      : userEmail.includes('encarregado')
-        ? [PROFILE_CODES.ENCARREGADO_SISTEMA_EMPRESA]
-        : userEmail.includes('sst')
-          ? [PROFILE_CODES.SST_TECNICO]
-        : userEmail.includes('adminrh')
-          ? [PROFILE_CODES.ADMIN_RH]
-          : userEmail.includes('rh')
-            ? [PROFILE_CODES.GERENTE_RH]
-        : [PROFILE_CODES.DIRETOR];
+  const byTenantRole: Record<string, ProfileCode[]> = {
+    ADMIN: [PROFILE_CODES.REPRESENTANTE_EMPRESA, PROFILE_CODES.CEO, PROFILE_CODES.ENCARREGADO_SISTEMA_EMPRESA],
+    REPRESENTANTE: [PROFILE_CODES.REPRESENTANTE_EMPRESA],
+    CEO: [PROFILE_CODES.CEO],
+    DIRETOR: [PROFILE_CODES.DIRETOR],
+    DIRETOR_ADMINISTRATIVO: [PROFILE_CODES.DIRETOR_ADMINISTRATIVO],
+    DIRETOR_FINANCEIRO: [PROFILE_CODES.DIRETOR_FINANCEIRO],
+    ENCARREGADO_SISTEMA: [PROFILE_CODES.ENCARREGADO_SISTEMA_EMPRESA],
+    ENCARREGADO_SISTEMA_EMPRESA: [PROFILE_CODES.ENCARREGADO_SISTEMA_EMPRESA],
+    GERENTE_RH: [PROFILE_CODES.GERENTE_RH],
+    ADMIN_RH: [PROFILE_CODES.ADMIN_RH],
+    SST_TECNICO: [PROFILE_CODES.SST_TECNICO],
+    TST: [PROFILE_CODES.TST],
+    ENGENHEIRO: [PROFILE_CODES.ENGENHEIRO],
+    MESTRE_OBRA: [PROFILE_CODES.MESTRE_OBRA],
+    ENCARREGADO_OBRA: [PROFILE_CODES.ENCARREGADO_OBRA],
+    APONTADOR: [PROFILE_CODES.APONTADOR],
+    ALMOXARIFE: [PROFILE_CODES.ALMOXARIFE],
+    FISCAL_OBRA: [PROFILE_CODES.FISCAL_OBRA],
+  };
+
+  const byEmail =
+    userEmail.includes('representante')
+      ? [PROFILE_CODES.REPRESENTANTE_EMPRESA]
+      : userEmail.includes('ceo')
+        ? [PROFILE_CODES.CEO]
+        : userEmail.includes('encarregado')
+          ? [PROFILE_CODES.ENCARREGADO_SISTEMA_EMPRESA]
+          : userEmail.includes('sst')
+            ? [PROFILE_CODES.SST_TECNICO]
+            : userEmail.includes('tst')
+              ? [PROFILE_CODES.TST]
+              : userEmail.includes('adminrh')
+                ? [PROFILE_CODES.ADMIN_RH]
+                : userEmail.includes('rh')
+                  ? [PROFILE_CODES.GERENTE_RH]
+                  : userEmail.includes('almox')
+                    ? [PROFILE_CODES.ALMOXARIFE]
+                    : userEmail.includes('fiscal')
+                      ? [PROFILE_CODES.FISCAL_OBRA]
+                      : userEmail.includes('apont')
+                        ? [PROFILE_CODES.APONTADOR]
+                        : userEmail.includes('mestre')
+                          ? [PROFILE_CODES.MESTRE_OBRA]
+                          : userEmail.includes('eng')
+                            ? [PROFILE_CODES.ENGENHEIRO]
+                            : null;
+
+  const profiles: ProfileCode[] = byTenantRole[tenantRole] ?? byEmail ?? [PROFILE_CODES.DIRETOR];
 
   const stored = localStorage.getItem('active_profile') as ProfileCode | null;
   const activeProfile = stored && profiles.includes(stored) ? stored : profiles[0];
