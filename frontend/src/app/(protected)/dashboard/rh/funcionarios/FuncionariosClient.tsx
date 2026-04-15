@@ -4,6 +4,8 @@ import type React from 'react';
 import { useEffect, useState } from 'react';
 import { FuncionariosApi } from '@/lib/modules/funcionarios/api';
 import type { FuncionarioDetalheDTO, FuncionarioEventoDTO, FuncionarioHistoricoEventoDTO, FuncionarioResumoDTO } from '@/lib/modules/funcionarios/types';
+import { DocumentosApi } from '@/lib/modules/documentos/api';
+import type { DocumentoRegistroDTO } from '@/lib/modules/documentos/types';
 
 const vazio = {
   matricula: '',
@@ -27,6 +29,15 @@ export default function FuncionariosClient() {
   const [selecionado, setSelecionado] = useState<FuncionarioDetalheDTO | null>(null);
   const [historico, setHistorico] = useState<FuncionarioHistoricoEventoDTO[]>([]);
   const [eventos, setEventos] = useState<FuncionarioEventoDTO[]>([]);
+  const [documentos, setDocumentos] = useState<DocumentoRegistroDTO[]>([]);
+  const [modalDocOpen, setModalDocOpen] = useState(false);
+  const [docSaving, setDocSaving] = useState(false);
+  const [docForm, setDocForm] = useState<{ categoria: string; titulo: string; descricao: string; arquivo: File | null }>({
+    categoria: 'RH_FUNCIONARIO',
+    titulo: '',
+    descricao: '',
+    arquivo: null,
+  });
   const [loading, setLoading] = useState(true);
   const [modalNovo, setModalNovo] = useState(false);
   const [form, setForm] = useState<any>(vazio);
@@ -52,6 +63,12 @@ export default function FuncionariosClient() {
       setEventos(ev);
     } catch {
       setEventos([]);
+    }
+    try {
+      const docs = await DocumentosApi.listar({ entidadeTipo: 'FUNCIONARIO', entidadeId: id, limit: 50 });
+      setDocumentos(docs);
+    } catch {
+      setDocumentos([]);
     }
   }
 
@@ -215,8 +232,108 @@ export default function FuncionariosClient() {
             <h2 className="mb-3 text-lg font-semibold">Histórico (movimentações)</h2>
             <HistoricoFuncionario funcionario={selecionado} auditoria={historico} eventos={eventos} />
           </section>
+
+          <section className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-2">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold">Documentos do funcionário</h2>
+              <button type="button" className="rounded-lg bg-blue-600 px-3 py-2 text-xs text-white" onClick={() => setModalDocOpen(true)}>
+                Novo documento
+              </button>
+            </div>
+            {documentos.length === 0 ? (
+              <div className="text-sm text-slate-600">Nenhum documento vinculado.</div>
+            ) : (
+              <div className="overflow-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 text-left">
+                    <tr>
+                      <th className="px-3 py-2">ID</th>
+                      <th className="px-3 py-2">Categoria</th>
+                      <th className="px-3 py-2">Título</th>
+                      <th className="px-3 py-2">Status</th>
+                      <th className="px-3 py-2">Atualizado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {documentos.map((d) => (
+                      <tr key={d.id} className="border-t">
+                        <td className="px-3 py-2">#{d.id}</td>
+                        <td className="px-3 py-2">{d.categoriaDocumento}</td>
+                        <td className="px-3 py-2">{d.tituloDocumento}</td>
+                        <td className="px-3 py-2">{d.statusDocumento}</td>
+                        <td className="px-3 py-2">{String(d.atualizadoEm).slice(0, 10)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
         </div>
       )}
+
+      {modalDocOpen && selecionado && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Novo documento do funcionário</h3>
+              <button type="button" onClick={() => setModalDocOpen(false)} disabled={docSaving}>
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <input className="input" placeholder="Categoria (ex.: RH_CONTRATO, RH_ADMISSAO)" value={docForm.categoria} onChange={(e) => setDocForm((p) => ({ ...p, categoria: e.target.value }))} />
+              <input className="input" placeholder="Título" value={docForm.titulo} onChange={(e) => setDocForm((p) => ({ ...p, titulo: e.target.value }))} />
+              <input className="input md:col-span-2" placeholder="Descrição (opcional)" value={docForm.descricao} onChange={(e) => setDocForm((p) => ({ ...p, descricao: e.target.value }))} />
+              <input
+                className="md:col-span-2"
+                type="file"
+                onChange={(e) => setDocForm((p) => ({ ...p, arquivo: e.target.files && e.target.files.length ? e.target.files[0] : null }))}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setModalDocOpen(false)} className="rounded-lg border px-4 py-2 text-sm" disabled={docSaving}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                disabled={docSaving || !docForm.categoria.trim() || !docForm.titulo.trim()}
+                onClick={async () => {
+                  try {
+                    setDocSaving(true);
+                    const created = await DocumentosApi.criar({
+                      entidadeTipo: 'FUNCIONARIO',
+                      entidadeId: selecionado.id,
+                      categoriaDocumento: docForm.categoria.trim(),
+                      tituloDocumento: docForm.titulo.trim(),
+                      descricaoDocumento: docForm.descricao.trim() ? docForm.descricao.trim() : null,
+                    });
+                    if (docForm.arquivo) {
+                      await DocumentosApi.criarVersaoUpload(created.id, docForm.arquivo);
+                    }
+                    const docs = await DocumentosApi.listar({ entidadeTipo: 'FUNCIONARIO', entidadeId: selecionado.id, limit: 50 });
+                    setDocumentos(docs);
+                    setModalDocOpen(false);
+                    setDocForm({ categoria: 'RH_FUNCIONARIO', titulo: '', descricao: '', arquivo: null });
+                  } catch (e: any) {
+                    alert(e?.message || 'Erro ao criar documento');
+                  } finally {
+                    setDocSaving(false);
+                  }
+                }}
+              >
+                {docSaving ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalNovo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
 
       {modalNovo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
