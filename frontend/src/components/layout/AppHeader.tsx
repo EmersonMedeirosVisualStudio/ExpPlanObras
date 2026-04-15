@@ -87,8 +87,8 @@ export function AppHeader({ user }: { user: CurrentUser }) {
               ))}
             </select>
           </label>
-          <div className="flex items-center gap-2">
-            <span>Contexto</span>
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Contexto</span>
             <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
               <button
                 type="button"

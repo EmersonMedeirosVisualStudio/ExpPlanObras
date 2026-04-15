@@ -235,8 +235,107 @@ export default async function v1Routes(server: FastifyInstance) {
       titulares = [];
     }
 
-    const ceoTitular = titulares.find(t => t.roleCode === 'CEO');
-    const rhTitular = titulares.find(t => t.roleCode === 'GERENTE_RH');
+    const repFuncionarioId = typeof rep?.funcionarioId === 'number' ? rep.funcionarioId : typeof ctx.funcionarioId === 'number' ? ctx.funcionarioId : null;
+
+    if (typeof repFuncionarioId === 'number') {
+      const needCeo = !titulares.some((t) => t.roleCode === 'CEO');
+      const needRh = !titulares.some((t) => t.roleCode === 'GERENTE_RH');
+      const needEncarregado = !encarregado;
+
+      const canUseTitularesTable = titulares.length > 0 || needCeo || needRh;
+
+      if ((needCeo || needRh) && canUseTitularesTable) {
+        try {
+          const now = new Date();
+          await prisma.$transaction(async (tx) => {
+            if (needCeo) {
+              const created = await tx.empresaTitular.create({
+                data: { tenantId: ctx.tenantId, roleCode: 'CEO', funcionarioId: repFuncionarioId, ativo: true, dataInicio: now, dataFim: null },
+              });
+              await audit({
+                tenantId: ctx.tenantId,
+                userId: ctx.userId,
+                entidade: 'empresa_titulares',
+                idRegistro: String(created.id),
+                acao: 'DEFAULT_TITULAR',
+                dadosNovos: { roleCode: 'CEO', funcionarioId: repFuncionarioId },
+              });
+            }
+            if (needRh) {
+              const created = await tx.empresaTitular.create({
+                data: { tenantId: ctx.tenantId, roleCode: 'GERENTE_RH', funcionarioId: repFuncionarioId, ativo: true, dataInicio: now, dataFim: null },
+              });
+              await audit({
+                tenantId: ctx.tenantId,
+                userId: ctx.userId,
+                entidade: 'empresa_titulares',
+                idRegistro: String(created.id),
+                acao: 'DEFAULT_TITULAR',
+                dadosNovos: { roleCode: 'GERENTE_RH', funcionarioId: repFuncionarioId },
+              });
+            }
+          });
+        } catch (e: any) {
+          if (!isMissingTableError(e, 'EmpresaTitular')) throw e;
+        }
+      }
+
+      if (needEncarregado) {
+        const now = new Date();
+        const current = await prisma.empresaEncarregadoSistema.findFirst({
+          where: { tenantId: ctx.tenantId, ativo: true },
+          orderBy: { id: 'desc' },
+          select: { id: true },
+        });
+        if (!current) {
+          const created = await prisma.empresaEncarregadoSistema.create({
+            data: {
+              tenantId: ctx.tenantId,
+              funcionarioId: repFuncionarioId,
+              userId: ctx.userId,
+              definidoPorRepresentanteId: rep?.id ?? ctx.representanteId,
+              ativo: true,
+              dataInicio: now,
+              dataFim: null,
+              solicitouSaida: false,
+              dataSolicitacaoSaida: null,
+              motivoSolicitacaoSaida: null,
+            },
+          });
+          await audit({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            entidade: 'empresa_encarregado_sistema',
+            idRegistro: String(created.id),
+            acao: 'DEFAULT_ENCARREGADO',
+            dadosNovos: { funcionarioId: repFuncionarioId, userId: ctx.userId },
+          });
+        }
+      }
+    }
+
+    const encarregadoFinal = await prisma.empresaEncarregadoSistema.findFirst({
+      where: { tenantId: ctx.tenantId, ativo: true },
+      orderBy: { id: 'desc' },
+      include: {
+        funcionario: { select: { id: true, nomeCompleto: true } },
+        user: { select: { id: true, email: true, name: true } },
+      },
+    });
+
+    let titularesFinal: Array<{ roleCode: string; funcionarioId: number; funcionario: { nomeCompleto: string } }> = titulares;
+    try {
+      titularesFinal = await prisma.empresaTitular.findMany({
+        where: { tenantId: ctx.tenantId, ativo: true },
+        include: { funcionario: { select: { id: true, nomeCompleto: true } } },
+      });
+    } catch (e: any) {
+      if (!isMissingTableError(e, 'EmpresaTitular')) throw e;
+      titularesFinal = titulares;
+    }
+
+    const ceoTitular = titularesFinal.find((t) => t.roleCode === 'CEO');
+    const rhTitular = titularesFinal.find((t) => t.roleCode === 'GERENTE_RH');
 
     const representativeData = rep
       ? {
@@ -249,16 +348,16 @@ export default async function v1Routes(server: FastifyInstance) {
         }
       : null;
 
-    const encarregadoData = encarregado
+    const encarregadoData = encarregadoFinal
       ? {
-          id: encarregado.id,
-          idFuncionario: encarregado.funcionarioId,
-          nome: encarregado.funcionario?.nomeCompleto || encarregado.user?.name || '',
-          idUsuario: encarregado.userId,
-          usuario: encarregado.user?.email || '',
-          dataInicio: encarregado.dataInicio.toISOString().slice(0, 10),
-          ativo: encarregado.ativo,
-          solicitouSaida: encarregado.solicitouSaida,
+          id: encarregadoFinal.id,
+          idFuncionario: encarregadoFinal.funcionarioId,
+          nome: encarregadoFinal.funcionario?.nomeCompleto || encarregadoFinal.user?.name || '',
+          idUsuario: encarregadoFinal.userId,
+          usuario: encarregadoFinal.user?.email || '',
+          dataInicio: encarregadoFinal.dataInicio.toISOString().slice(0, 10),
+          ativo: encarregadoFinal.ativo,
+          solicitouSaida: encarregadoFinal.solicitouSaida,
         }
       : null;
 
