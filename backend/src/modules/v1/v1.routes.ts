@@ -288,12 +288,13 @@ export default async function v1Routes(server: FastifyInstance) {
           select: { id: true },
         });
         if (!current) {
+          if (!rep) return fail(reply, 400, 'Representante não definido');
           const created = await prisma.empresaEncarregadoSistema.create({
             data: {
               tenantId: ctx.tenantId,
               funcionarioId: repFuncionarioId,
               userId: ctx.userId,
-              definidoPorRepresentanteId: rep?.id ?? ctx.representanteId,
+              definidoPorRepresentanteId: rep.id,
               ativo: true,
               dataInicio: now,
               dataFim: null,
