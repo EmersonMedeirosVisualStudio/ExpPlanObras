@@ -225,6 +225,21 @@ As janelas (telas) principais se organizam por perfil e por núcleo operacional:
 - Documentos e conteúdo da obra (fotos/documentos vinculados)
 - Administração do sistema (usuários, perfis, permissões e parametrizações)
 
+### 4.2 Barra superior (Perfil e Contexto)
+
+Na parte superior do sistema existe uma barra que define duas coisas importantes:
+
+- **Perfil**: determina qual conjunto de permissões e menus você está usando no momento (ex.: Representante, CEO, Encarregado do Sistema). É útil quando a mesma pessoa acumula funções na empresa.
+- **Contexto**: define o foco do sistema para navegação e filtros. Ele aparece como guias:
+  - **Empresa**: visão mais geral da empresa
+  - **Obra**: visão focada em uma obra
+  - **Unidade**: visão focada em uma unidade
+
+Regras:
+
+- o Perfil e o Contexto ficam salvos no navegador e permanecem após atualizar a página;
+- algumas telas usam o Contexto apenas como “foco” visual (não muda o conteúdo) e serão refinadas para aplicar filtros automáticos conforme o sistema evolui.
+
 ---
 
 ## 5. Estrutura base dos dados do sistema
