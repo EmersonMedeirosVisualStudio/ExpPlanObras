@@ -68,6 +68,8 @@ export function AppHeader({ user }: { user: CurrentUser }) {
     safeSet("active_context", ctx);
   };
 
+  const showContextSelector = activeProfile !== "ENCARREGADO_SISTEMA_EMPRESA";
+
   return (
     <header className="flex items-center justify-between border-b bg-white px-6 py-4">
       <div className="min-w-0">
@@ -87,38 +89,45 @@ export function AppHeader({ user }: { user: CurrentUser }) {
               ))}
             </select>
           </label>
-          <div className="flex flex-col gap-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Contexto</span>
-            <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
-              <button
-                type="button"
-                onClick={() => onContextChange("EMPRESA")}
-                className={`px-3 py-1 text-sm ${
-                  activeContext === "EMPRESA" ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                Empresa
-              </button>
-              <button
-                type="button"
-                onClick={() => onContextChange("OBRA")}
-                className={`px-3 py-1 text-sm ${
-                  activeContext === "OBRA" ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                Obra
-              </button>
-              <button
-                type="button"
-                onClick={() => onContextChange("UNIDADE")}
-                className={`px-3 py-1 text-sm ${
-                  activeContext === "UNIDADE" ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                Unidade
-              </button>
+          {showContextSelector ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Contexto</span>
+              <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => onContextChange("EMPRESA")}
+                  className={`px-3 py-1 text-sm ${
+                    activeContext === "EMPRESA" ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Empresa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onContextChange("OBRA")}
+                  className={`px-3 py-1 text-sm ${
+                    activeContext === "OBRA" ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Obra
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onContextChange("UNIDADE")}
+                  className={`px-3 py-1 text-sm ${
+                    activeContext === "UNIDADE" ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Unidade
+                </button>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Contexto</span>
+              <div className="text-sm font-medium text-slate-700">Empresa</div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -189,6 +189,11 @@ export default function FuncionariosClient() {
               </table>
             </div>
           </section>
+
+          <section className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-2">
+            <h2 className="mb-3 text-lg font-semibold">Histórico (movimentações)</h2>
+            <HistoricoFuncionario funcionario={selecionado} />
+          </section>
         </div>
       )}
 
@@ -284,6 +289,94 @@ function AlertaBadge({ item }: { item: FuncionarioResumoDTO }) {
       <span className="h-2 w-2 rounded-full bg-emerald-600" />
       <span className="text-xs text-slate-600">OK</span>
     </span>
+  );
+}
+
+function HistoricoFuncionario({ funcionario }: { funcionario: FuncionarioDetalheDTO }) {
+  type Evento = { data: string; tipo: string; detalhe: string };
+
+  const eventos: Evento[] = [];
+
+  for (const l of funcionario.lotacoes ?? []) {
+    eventos.push({
+      data: l.dataInicio,
+      tipo: 'Lotação',
+      detalhe: `${l.tipoLotacao} ${l.tipoLotacao === 'OBRA' ? `#${l.idObra}` : `#${l.idUnidade}`}${l.atual ? ' (atual)' : ''}`,
+    });
+    if (l.dataFim) {
+      eventos.push({
+        data: l.dataFim,
+        tipo: 'Fim lotação',
+        detalhe: `${l.tipoLotacao} ${l.tipoLotacao === 'OBRA' ? `#${l.idObra}` : `#${l.idUnidade}`}`,
+      });
+    }
+  }
+
+  for (const s of funcionario.supervisoes ?? []) {
+    eventos.push({
+      data: s.dataInicio,
+      tipo: 'Supervisão',
+      detalhe: `${s.supervisorNome}${s.atual ? ' (atual)' : ''}`,
+    });
+    if (s.dataFim) {
+      eventos.push({
+        data: s.dataFim,
+        tipo: 'Fim supervisão',
+        detalhe: s.supervisorNome,
+      });
+    }
+  }
+
+  for (const j of funcionario.jornadas ?? []) {
+    eventos.push({
+      data: j.dataInicio,
+      tipo: 'Jornada',
+      detalhe: `${j.tipoJornada}${j.atual ? ' (atual)' : ''}`,
+    });
+    if (j.dataFim) {
+      eventos.push({
+        data: j.dataFim,
+        tipo: 'Fim jornada',
+        detalhe: j.tipoJornada,
+      });
+    }
+  }
+
+  for (const he of funcionario.horasExtras ?? []) {
+    eventos.push({
+      data: he.dataReferencia,
+      tipo: 'Hora extra',
+      detalhe: `${he.quantidadeMinutos} min • ${he.tipoHoraExtra} • ${he.statusHe}`,
+    });
+  }
+
+  eventos.sort((a, b) => String(b.data).localeCompare(String(a.data)));
+
+  if (eventos.length === 0) {
+    return <div className="text-sm text-slate-600">Nenhuma movimentação registrada.</div>;
+  }
+
+  return (
+    <div className="overflow-auto">
+      <table className="min-w-full text-sm">
+        <thead className="bg-slate-50 text-left">
+          <tr>
+            <th className="px-3 py-2">Data</th>
+            <th className="px-3 py-2">Tipo</th>
+            <th className="px-3 py-2">Detalhe</th>
+          </tr>
+        </thead>
+        <tbody>
+          {eventos.map((e, idx) => (
+            <tr key={`${e.tipo}-${e.data}-${idx}`} className="border-t">
+              <td className="px-3 py-2">{e.data}</td>
+              <td className="px-3 py-2">{e.tipo}</td>
+              <td className="px-3 py-2">{e.detalhe}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

@@ -329,13 +329,6 @@ export const APP_MENU: MenuSectionConfig[] = [
         scopeTypes: ['EMPRESA'],
       },
       {
-        key: 'backup',
-        label: 'Backup e Segurança',
-        href: '/dashboard/admin/backup',
-        icon: 'database-backup',
-        permission: PERMISSIONS.BACKUP_VIEW,
-      },
-      {
         key: 'automacoes',
         label: 'Automações',
         href: '/dashboard/admin/automacoes',

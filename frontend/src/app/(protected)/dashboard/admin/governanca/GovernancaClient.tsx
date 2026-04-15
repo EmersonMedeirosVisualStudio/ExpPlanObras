@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { GovernancaApi } from '@/lib/modules/governanca/api';
 import { parsePermissionCode, stringifyPermission } from '@/lib/modules/governanca/permission-map';
+import BackupSegurancaClient from '../backup/BackupSegurancaClient';
+import { Lock, Pencil, RotateCcw, UserX } from 'lucide-react';
 
-type TabKey = 'USUARIOS' | 'PERFIS' | 'PERMISSOES' | 'ABRANGENCIAS' | 'AUDITORIA';
+type TabKey = 'USUARIOS' | 'PERFIS' | 'PERMISSOES' | 'ABRANGENCIAS' | 'BACKUP' | 'AUDITORIA';
 
 type Usuario = {
   id: number;
@@ -72,18 +74,33 @@ function usuarioAlertas(u: Usuario) {
   return { level: 'GREEN' as const, title: 'Cadastro completo' };
 }
 
-function AlertaPill({ level, title }: { level: 'RED' | 'AMBER' | 'GREEN'; title: string }) {
-  const color =
-    level === 'RED'
-      ? 'bg-red-100 text-red-800'
-      : level === 'AMBER'
-        ? 'bg-amber-100 text-amber-800'
-        : 'bg-emerald-100 text-emerald-800';
-  const label = level === 'RED' ? 'Obrig.' : level === 'AMBER' ? 'Opc.' : 'OK';
+function AlertaDot({ level, title }: { level: 'RED' | 'AMBER' | 'GREEN'; title: string }) {
+  const color = level === 'RED' ? 'bg-red-500' : level === 'AMBER' ? 'bg-amber-400' : 'bg-emerald-500';
+  return <span title={title} className={classNames('inline-block h-3 w-3 rounded-full', color)} />;
+}
+
+function IconButton({
+  title,
+  onClick,
+  disabled,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <span title={title} className={classNames('inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold', color)}>
-      {label}
-    </span>
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+    >
+      {children}
+    </button>
   );
 }
 
@@ -182,6 +199,7 @@ export default function GovernancaClient() {
     { key: 'PERFIS', label: 'Perfis' },
     { key: 'PERMISSOES', label: 'Permissões' },
     { key: 'ABRANGENCIAS', label: 'Abrangências' },
+    { key: 'BACKUP', label: 'Backup e Segurança' },
     { key: 'AUDITORIA', label: 'Auditoria' },
   ];
 
@@ -563,13 +581,12 @@ export default function GovernancaClient() {
 
   return (
     <div className="max-w-7xl">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Administração do Sistema</h1>
-          <p className="text-gray-600 mt-1">Gestão de usuários, perfis, permissões e abrangências da empresa.</p>
-        </div>
-        {usuarioAtualEhEncarregado && (
-          <div className="flex items-center gap-2">
+      <div className="rounded-xl border bg-white p-5 text-center">
+        <h1 className="text-2xl font-semibold text-gray-900">Administração do Sistema</h1>
+        <div className="mt-1 text-sm text-slate-600">Contexto: Empresa</div>
+        <div className="mt-2 text-sm text-gray-600">Gestão de usuários, perfis, permissões, abrangências e segurança.</div>
+        {usuarioAtualEhEncarregado ? (
+          <div className="mt-4 flex justify-center">
             <button
               type="button"
               onClick={registrarSolicitacaoSaida}
@@ -578,7 +595,7 @@ export default function GovernancaClient() {
               Solicitar deixar a função
             </button>
           </div>
-        )}
+        ) : null}
       </div>
 
       {solicitouSaida && (
@@ -614,7 +631,7 @@ export default function GovernancaClient() {
             </button>
           </div>
 
-          <div className="bg-white border rounded-lg overflow-hidden">
+          <div className="bg-white border rounded-lg overflow-x-auto">
             <table className="min-w-full divide-y">
               <thead className="bg-gray-50">
                 <tr>
@@ -633,7 +650,7 @@ export default function GovernancaClient() {
                 {usuarios.map((u) => (
                   <tr key={u.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm">
-                      <AlertaPill {...usuarioAlertas(u)} />
+                      <AlertaDot {...usuarioAlertas(u)} />
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900">{formatUsuarioRef(u.id, u.nome)}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{u.login}</td>
@@ -648,19 +665,19 @@ export default function GovernancaClient() {
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700">{u.ultimoAcesso || '-'}</td>
                     <td className="px-4 py-3 text-sm text-right">
-                      <div className="inline-flex gap-2">
-                        <button type="button" onClick={() => openEditarUsuario(u)} className="px-3 py-1.5 border rounded hover:bg-gray-50">
-                          Editar
-                        </button>
-                        <button type="button" onClick={() => toggleAtivo(u)} className="px-3 py-1.5 border rounded hover:bg-gray-50">
-                          {u.ativo ? 'Inativar' : 'Ativar'}
-                        </button>
-                        <button type="button" onClick={() => toggleBloqueado(u)} className="px-3 py-1.5 border rounded hover:bg-gray-50">
-                          {u.bloqueado ? 'Desbloquear' : 'Bloquear'}
-                        </button>
-                        <button type="button" onClick={() => resetarAcesso(u)} className="px-3 py-1.5 border rounded hover:bg-gray-50">
-                          Resetar
-                        </button>
+                      <div className="inline-flex items-center justify-end gap-2">
+                        <IconButton title="Editar" onClick={() => openEditarUsuario(u)}>
+                          <Pencil className="h-4 w-4" />
+                        </IconButton>
+                        <IconButton title={u.ativo ? 'Inativar' : 'Ativar'} onClick={() => toggleAtivo(u)}>
+                          <UserX className="h-4 w-4" />
+                        </IconButton>
+                        <IconButton title={u.bloqueado ? 'Desbloquear' : 'Bloquear'} onClick={() => toggleBloqueado(u)}>
+                          <Lock className="h-4 w-4" />
+                        </IconButton>
+                        <IconButton title="Resetar acesso" onClick={() => resetarAcesso(u)}>
+                          <RotateCcw className="h-4 w-4" />
+                        </IconButton>
                       </div>
                     </td>
                   </tr>
@@ -741,6 +758,12 @@ export default function GovernancaClient() {
               </button>
             </div>
           </Modal>
+        </div>
+      )}
+
+      {tab === 'BACKUP' && (
+        <div className="mt-6">
+          <BackupSegurancaClient />
         </div>
       )}
 
