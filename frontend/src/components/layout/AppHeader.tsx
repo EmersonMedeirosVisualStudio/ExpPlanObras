@@ -68,7 +68,7 @@ export function AppHeader({ user }: { user: CurrentUser }) {
     safeSet("active_context", ctx);
   };
 
-  const showContextSelector = activeProfile !== "ENCARREGADO_SISTEMA_EMPRESA";
+  const contextMode = activeProfile === 'ENCARREGADO_SISTEMA_EMPRESA' ? 'EMPRESA_ONLY' : activeProfile === 'REPRESENTANTE_EMPRESA' ? 'REPRESENTANTE_LOCKED' : 'ALL';
 
   return (
     <header className="flex items-center justify-between border-b bg-white px-6 py-4">
@@ -89,7 +89,27 @@ export function AppHeader({ user }: { user: CurrentUser }) {
               ))}
             </select>
           </label>
-          {showContextSelector ? (
+          {contextMode === 'EMPRESA_ONLY' ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Contexto</span>
+              <div className="text-sm font-medium text-slate-700">Empresa</div>
+            </div>
+          ) : contextMode === 'REPRESENTANTE_LOCKED' ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Contexto</span>
+              <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+                <button type="button" onClick={() => onContextChange("EMPRESA")} className="bg-blue-600 text-white px-3 py-1 text-sm">
+                  Empresa
+                </button>
+                <button type="button" disabled title="Em breve" className="bg-white text-slate-400 px-3 py-1 text-sm">
+                  Obra
+                </button>
+                <button type="button" disabled title="Em breve" className="bg-white text-slate-400 px-3 py-1 text-sm">
+                  Unidade
+                </button>
+              </div>
+            </div>
+          ) : (
             <div className="flex flex-col gap-1">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Contexto</span>
               <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
@@ -121,11 +141,6 @@ export function AppHeader({ user }: { user: CurrentUser }) {
                   Unidade
                 </button>
               </div>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Contexto</span>
-              <div className="text-sm font-medium text-slate-700">Empresa</div>
             </div>
           )}
         </div>

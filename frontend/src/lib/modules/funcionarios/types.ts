@@ -96,3 +96,15 @@ export type FuncionarioHistoricoEventoDTO = {
   dadosAnteriores: unknown;
   dadosNovos: unknown;
 };
+
+export type FuncionarioEventoDTO = {
+  id: number;
+  tipoEvento: string;
+  dataEvento: string;
+  descricao: string | null;
+  valorAnterior: unknown;
+  valorNovo: unknown;
+  idDocumentoRegistro: number | null;
+  idUsuarioCriador: number | null;
+  createdAt: string;
+};

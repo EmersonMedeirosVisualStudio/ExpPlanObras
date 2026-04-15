@@ -1,5 +1,6 @@
 import type {
   FuncionarioDetalheDTO,
+  FuncionarioEventoDTO,
   FuncionarioHistoricoEventoDTO,
   FuncionarioHoraExtraDTO,
   FuncionarioJornadaDTO,
@@ -36,6 +37,8 @@ export const FuncionariosApi = {
   obter: (id: number) => api<FuncionarioDetalheDTO>(`/api/v1/rh/funcionarios/${id}`),
 
   historico: (id: number) => api<FuncionarioHistoricoEventoDTO[]>(`/api/v1/rh/funcionarios/${id}/historico`),
+
+  eventos: (id: number) => api<FuncionarioEventoDTO[]>(`/api/v1/rh/funcionarios/${id}/eventos`),
 
   criar: (payload: { matricula: string; nomeCompleto: string; cpf: string; dataAdmissao: string }) =>
     api<FuncionarioDetalheDTO>(`/api/v1/rh/funcionarios`, { method: 'POST', body: JSON.stringify(payload) }),

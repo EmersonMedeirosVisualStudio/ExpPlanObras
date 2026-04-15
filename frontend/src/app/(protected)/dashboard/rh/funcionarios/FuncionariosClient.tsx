@@ -3,7 +3,7 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import { FuncionariosApi } from '@/lib/modules/funcionarios/api';
-import type { FuncionarioDetalheDTO, FuncionarioHistoricoEventoDTO, FuncionarioResumoDTO } from '@/lib/modules/funcionarios/types';
+import type { FuncionarioDetalheDTO, FuncionarioEventoDTO, FuncionarioHistoricoEventoDTO, FuncionarioResumoDTO } from '@/lib/modules/funcionarios/types';
 
 const vazio = {
   matricula: '',
@@ -26,6 +26,7 @@ export default function FuncionariosClient() {
   const [lista, setLista] = useState<FuncionarioResumoDTO[]>([]);
   const [selecionado, setSelecionado] = useState<FuncionarioDetalheDTO | null>(null);
   const [historico, setHistorico] = useState<FuncionarioHistoricoEventoDTO[]>([]);
+  const [eventos, setEventos] = useState<FuncionarioEventoDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalNovo, setModalNovo] = useState(false);
   const [form, setForm] = useState<any>(vazio);
@@ -45,6 +46,12 @@ export default function FuncionariosClient() {
       setHistorico(hist);
     } catch {
       setHistorico([]);
+    }
+    try {
+      const ev = await FuncionariosApi.eventos(id);
+      setEventos(ev);
+    } catch {
+      setEventos([]);
     }
   }
 
@@ -206,7 +213,7 @@ export default function FuncionariosClient() {
 
           <section className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-2">
             <h2 className="mb-3 text-lg font-semibold">Histórico (movimentações)</h2>
-            <HistoricoFuncionario funcionario={selecionado} auditoria={historico} />
+            <HistoricoFuncionario funcionario={selecionado} auditoria={historico} eventos={eventos} />
           </section>
         </div>
       )}
@@ -306,7 +313,15 @@ function AlertaBadge({ item }: { item: FuncionarioResumoDTO }) {
   );
 }
 
-function HistoricoFuncionario({ funcionario, auditoria }: { funcionario: FuncionarioDetalheDTO; auditoria: FuncionarioHistoricoEventoDTO[] }) {
+function HistoricoFuncionario({
+  funcionario,
+  auditoria,
+  eventos: eventosExtras,
+}: {
+  funcionario: FuncionarioDetalheDTO;
+  auditoria: FuncionarioHistoricoEventoDTO[];
+  eventos: FuncionarioEventoDTO[];
+}) {
   type Evento = { data: string; tipo: string; detalhe: string };
 
   const eventos: Evento[] = [];
@@ -399,6 +414,15 @@ function HistoricoFuncionario({ funcionario, auditoria }: { funcionario: Funcion
         eventos.push({ data: createdAt || '0000-00-00', tipo: 'Nomeação/Exoneração', detalhe: `Função: ${String(beforeFuncao || '-')} → ${String(afterFuncao || '-')}` });
       }
     }
+  }
+
+  const evts = Array.isArray(eventosExtras) ? eventosExtras : [];
+  for (const e of evts) {
+    const data = String(e.dataEvento || e.createdAt || '').slice(0, 10) || '0000-00-00';
+    const tipo = String(e.tipoEvento || '').trim() || 'Evento';
+    const doc = e.idDocumentoRegistro ? ` • Doc #${e.idDocumentoRegistro}` : '';
+    const desc = e.descricao ? String(e.descricao) : '';
+    eventos.push({ data, tipo, detalhe: `${desc}${doc}`.trim() || doc.trim() || '-' });
   }
 
   eventos.sort((a, b) => String(b.data).localeCompare(String(a.data)));

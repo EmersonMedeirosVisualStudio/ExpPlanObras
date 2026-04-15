@@ -18,63 +18,32 @@ export default function PainelRepresentanteClient() {
     <div className="space-y-6">
       <div className="rounded-xl border bg-white p-5 text-center">
         <h1 className="text-2xl font-semibold text-slate-900">Painel do Representante</h1>
+        <div className="mt-2 text-sm text-slate-600">Contexto: Empresa</div>
+
         <div className="mt-4 flex justify-center">
           <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
             <button
               type="button"
-              onClick={() => setContexto('EMPRESA')}
-              className={classNames(
-                'px-4 py-2 text-sm font-medium',
-                contexto === 'EMPRESA' ? 'bg-blue-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'
-              )}
+              onClick={() => {
+                setContexto('EMPRESA');
+                setAbaEmpresa('CONFIG');
+              }}
+              className={classNames('px-4 py-2 text-sm', abaEmpresa === 'CONFIG' ? 'bg-white text-slate-900 font-semibold' : 'bg-white text-slate-600 hover:text-slate-900')}
             >
-              Empresa
+              Configuração
             </button>
             <button
               type="button"
-              disabled
-              className={classNames('px-4 py-2 text-sm font-medium', 'bg-white text-slate-400')}
-              title="Em breve"
+              onClick={() => {
+                setContexto('EMPRESA');
+                setAbaEmpresa('DASHBOARD');
+              }}
+              className={classNames('px-4 py-2 text-sm', abaEmpresa === 'DASHBOARD' ? 'bg-white text-slate-900 font-semibold' : 'bg-white text-slate-600 hover:text-slate-900')}
             >
-              Obra
-            </button>
-            <button
-              type="button"
-              disabled
-              className={classNames('px-4 py-2 text-sm font-medium', 'bg-white text-slate-400')}
-              title="Em breve"
-            >
-              Unidade
+              Dashboard
             </button>
           </div>
         </div>
-
-        {contexto === 'EMPRESA' ? (
-          <div className="mt-4 flex justify-center">
-            <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
-              <button
-                type="button"
-                onClick={() => setAbaEmpresa('CONFIG')}
-                className={classNames(
-                  'px-4 py-2 text-sm font-medium',
-                  abaEmpresa === 'CONFIG' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'
-                )}
-              >
-                Configuração da Empresa
-              </button>
-              <button
-                type="button"
-                onClick={() => setAbaEmpresa('DASHBOARD')}
-                className={classNames(
-                  'px-4 py-2 text-sm font-medium',
-                  abaEmpresa === 'DASHBOARD' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'
-                )}
-              >
-                Dashboard da Empresa
-              </button>
-            </div>
-          </div>
-        ) : null}
       </div>
 
       {contexto === 'EMPRESA' && abaEmpresa === 'CONFIG' ? <ConfiguracaoEmpresaClient modo="REPRESENTANTE" /> : null}
@@ -85,4 +54,3 @@ export default function PainelRepresentanteClient() {
     </div>
   );
 }
-
