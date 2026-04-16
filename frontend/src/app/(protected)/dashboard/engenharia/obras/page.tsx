@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type ObraRef = { id: number; nome: string };
 type ResponsavelObraRef = {
@@ -18,6 +18,7 @@ type ResponsavelObraRef = {
 
 export default function EngenhariaObrasPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -134,6 +135,21 @@ export default function EngenhariaObrasPage() {
   }, []);
 
   useEffect(() => {
+    const raw = searchParams.get("obraId");
+    if (!raw) return;
+    const id = Number(raw);
+    if (!Number.isInteger(id) || id <= 0) return;
+    if (obras.some((o) => o.id === id)) setObraCadastroId(id);
+  }, [searchParams, obras]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#cadastro-responsaveis") return;
+    const el = document.getElementById("cadastro-responsaveis");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [searchParams, obras, obraCadastroId]);
+
+  useEffect(() => {
     if (!obraCadastroId) return;
     carregarResponsaveis(obraCadastroId);
   }, [obraCadastroId]);
@@ -164,7 +180,7 @@ export default function EngenhariaObrasPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+      <div id="cadastro-responsaveis" className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="text-lg font-semibold">Obras — Cadastros: Responsáveis Técnicos e Fiscais</div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
           <div className="md:col-span-2">

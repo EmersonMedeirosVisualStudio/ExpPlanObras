@@ -24,6 +24,8 @@ export default function EngenhariaObraHomePage() {
   const [responsaveis, setResponsaveis] = useState<ResponsavelObraRef[]>([]);
   const [carregandoResponsaveis, setCarregandoResponsaveis] = useState(false);
   const [erroResponsaveis, setErroResponsaveis] = useState<string | null>(null);
+  const hasResponsavelTecnico = responsaveis.some((r) => r.ativo && r.tipo === "RESPONSAVEL_TECNICO");
+  const hasFiscal = responsaveis.some((r) => r.ativo && r.tipo === "FISCAL_OBRA");
 
   useEffect(() => {
     if (!idObra) return;
@@ -193,8 +195,12 @@ export default function EngenhariaObraHomePage() {
             <div className="text-lg font-semibold">Dados principais da obra</div>
             <div className="text-sm text-slate-600">Responsável técnico e fiscal vinculados à obra.</div>
           </div>
-          <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={() => router.push("/dashboard/engenharia/obras")}>
-            Gerenciar no cadastro
+          <button
+            className="rounded-lg border px-4 py-2 text-sm"
+            type="button"
+            onClick={() => router.push(`/dashboard/engenharia/obras?obraId=${idObra}#cadastro-responsaveis`)}
+          >
+            {!hasResponsavelTecnico || !hasFiscal ? "Cadastrar agora" : "Gerenciar no cadastro"}
           </button>
         </div>
 
