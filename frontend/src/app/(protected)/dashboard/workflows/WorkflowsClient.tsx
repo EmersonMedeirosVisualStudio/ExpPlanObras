@@ -116,7 +116,7 @@ export default function WorkflowsClient() {
     <div className="max-w-7xl space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-800">Workflows</h1>
+          <h1 className="text-2xl font-semibold text-slate-800">Processos → Workflows</h1>
           <p className="text-sm text-slate-500">Minhas tarefas e instâncias com ações pendentes.</p>
         </div>
         <div className="flex gap-2 flex-wrap">

@@ -107,7 +107,7 @@ export default function SyncCenterClient() {
     <div className="max-w-7xl space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-800">Sincronização</h1>
+          <h1 className="text-2xl font-semibold text-slate-800">Processos → Sincronização</h1>
           <p className="text-sm text-slate-500">Fila offline, push notifications e status de rede.</p>
         </div>
         <div className="flex gap-2 flex-wrap">

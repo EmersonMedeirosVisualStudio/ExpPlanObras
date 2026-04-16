@@ -98,7 +98,7 @@ export default function DashboardEngenhariaClient() {
     <div className="space-y-6 p-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold">Dashboard Engenharia / Obras</h1>
+          <h1 className="text-2xl font-semibold">Obras — Planejamento</h1>
           <p className="text-sm text-slate-600">Visão de status de obras, medições, riscos operacionais e alertas.</p>
         </div>
 

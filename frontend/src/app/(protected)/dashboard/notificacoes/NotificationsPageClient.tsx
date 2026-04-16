@@ -38,7 +38,7 @@ export default function NotificationsPageClient() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Notificações</h1>
+          <h1 className="text-2xl font-semibold">Processos → Notificações</h1>
           <p className="text-sm text-slate-600">Centro de notificações do usuário.</p>
         </div>
 

@@ -96,7 +96,7 @@ export default function ContratosLocacaoClient() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Contratos (Locação/Serviço)</h1>
+        <h1 className="text-2xl font-semibold">Contratos — Gestão</h1>
         <p className="text-sm text-slate-600">Contratos simples com contrapartes: locação ativa/passiva e prestação de serviços (por código do serviço).</p>
       </div>
 
@@ -220,4 +220,3 @@ export default function ContratosLocacaoClient() {
     </div>
   );
 }
-

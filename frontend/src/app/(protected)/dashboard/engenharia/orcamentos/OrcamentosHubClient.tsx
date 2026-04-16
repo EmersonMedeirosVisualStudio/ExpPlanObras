@@ -19,7 +19,7 @@ export default function OrcamentosHubClient() {
   return (
     <div className="p-6 space-y-6 max-w-7xl">
       <div>
-        <h1 className="text-2xl font-semibold">Engenharia → Orçamentos</h1>
+        <h1 className="text-2xl font-semibold">Obras — Planejamento → Orçamento (Planilha)</h1>
         <div className="text-sm text-slate-600">{titulo}</div>
       </div>
 
@@ -45,4 +45,3 @@ export default function OrcamentosHubClient() {
     </div>
   );
 }
-

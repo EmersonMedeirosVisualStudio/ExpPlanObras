@@ -132,7 +132,7 @@ export default function PortalGestorClient() {
     <div className="max-w-7xl space-y-5">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-800">Portal do Gestor</h1>
+          <h1 className="text-2xl font-semibold text-slate-800">Obras — Execução → Portal do Gestor</h1>
           <p className="text-sm text-slate-500">Visão operacional por obra/unidade, equipe do dia e pendências críticas.</p>
           {localLabel ? <div className="mt-1 text-xs text-slate-500">{localLabel}</div> : null}
         </div>

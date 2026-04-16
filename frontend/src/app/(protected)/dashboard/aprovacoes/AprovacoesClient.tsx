@@ -152,7 +152,7 @@ export default function AprovacoesClient() {
     <div className="max-w-7xl space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-800">Aprovações</h1>
+          <h1 className="text-2xl font-semibold text-slate-800">Processos → Aprovações</h1>
           <p className="text-sm text-slate-500">Central de decisões, trilha e histórico.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
