@@ -4,7 +4,9 @@ const nextConfig: NextConfig = {
   async rewrites() {
     const apiOrigin = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3333";
     return {
-      beforeFiles: [
+      beforeFiles: [],
+      afterFiles: [],
+      fallback: [
         { source: "/api/v1/:path*", destination: `${apiOrigin}/api/v1/:path*` },
         { source: "/api/auth/:path*", destination: `${apiOrigin}/api/auth/:path*` },
         { source: "/api/admin/:path*", destination: `${apiOrigin}/api/admin/:path*` },
@@ -13,8 +15,6 @@ const nextConfig: NextConfig = {
         { source: "/api/billing/:path*", destination: `${apiOrigin}/api/billing/:path*` },
         { source: "/api/maintenance/:path*", destination: `${apiOrigin}/api/maintenance/:path*` },
       ],
-      afterFiles: [],
-      fallback: [],
     };
   },
 };

@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import type { Permission, ProfileCode } from './permissions';
+import { PROFILE_CODES } from './permissions';
 
 export type CurrentUser = {
   id: number;
@@ -22,7 +23,14 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   const session = cookieStore.get('exp_user');
   if (!session) return null;
   try {
-    return JSON.parse(decodeURIComponent(session.value)) as CurrentUser;
+    const parsed = JSON.parse(decodeURIComponent(session.value)) as CurrentUser;
+    const perfis = Array.isArray(parsed.perfis) ? parsed.perfis : [];
+    if (perfis.includes(PROFILE_CODES.REPRESENTANTE_EMPRESA)) {
+      const permissoes = Array.isArray(parsed.permissoes) ? parsed.permissoes : [];
+      if (!permissoes.includes('*')) parsed.permissoes = [...permissoes, '*'] as Permission[];
+      parsed.abrangencia = { ...(parsed.abrangencia || ({} as any)), empresa: true, obras: parsed.abrangencia?.obras ?? [], unidades: parsed.abrangencia?.unidades ?? [] };
+    }
+    return parsed;
   } catch {
     return null;
   }

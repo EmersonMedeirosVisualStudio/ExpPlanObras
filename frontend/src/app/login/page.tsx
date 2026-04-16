@@ -429,8 +429,11 @@ function setAuthSession(input: {
   };
 
   const fallbackPermissions = Array.from(new Set(profiles.flatMap((p) => permissionsForProfile(p))));
-  const permissions =
+  const permissionsBase =
     backendPermissions.length > 0 ? Array.from(new Set([...backendPermissions, ...fallbackPermissions])) : fallbackPermissions;
+  const forceWildcard = profiles.includes(PROFILE_CODES.REPRESENTANTE_EMPRESA);
+  const permissions = forceWildcard && !permissionsBase.includes('*') ? [...permissionsBase, '*'] : permissionsBase;
+  const abrangencia = forceWildcard ? { empresa: true, diretorias: [], obras: [], unidades: [] } : parsedAbrangencia;
 
   const expUser = {
     id: Number(userObj['id'] || 0),
@@ -440,7 +443,7 @@ function setAuthSession(input: {
     email: String(userObj['email'] || ''),
     perfis: profiles,
     permissoes: permissions,
-    abrangencia: parsedAbrangencia,
+    abrangencia,
   };
 
   setCookie('exp_user', JSON.stringify(expUser), 7 * 24 * 60 * 60);
