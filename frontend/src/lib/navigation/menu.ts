@@ -61,15 +61,6 @@ export const APP_MENU: MenuSectionConfig[] = [
         homePriority: 3,
       },
       {
-        key: 'dashboard-executivo',
-        label: 'Dashboard Executivo',
-        href: '/dashboard',
-        icon: 'layout-dashboard',
-        permission: PERMISSIONS.DASHBOARD_EXECUTIVO_VIEW,
-        scopeTypes: ['EMPRESA', 'DIRETORIA'],
-        homePriority: 4,
-      },
-      {
         key: 'centro-executivo',
         label: 'Centro Executivo',
         href: '/dashboard/executivo/centro',
