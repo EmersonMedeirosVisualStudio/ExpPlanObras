@@ -234,6 +234,11 @@ As janelas (telas) principais se organizam por perfil e por núcleo operacional:
 - Documentos (conteúdo e evidências vinculadas a obras e processos)
 - Administração do Sistema (usuários, perfis, permissões, abrangências e configurações)
 
+Implementação atual relevante:
+
+- Contratos: cadastro de contrapartes com suporte a PJ e PF (criar, listar, editar e inativar).
+- Obras: cadastro de responsáveis por obra com tipos "Responsável Técnico" e "Fiscal da Obra" (CRUD).
+
 ### 4.2 Barra superior (empresa e utilitários)
 
 Na parte superior do sistema, a barra possui foco em simplicidade operacional:

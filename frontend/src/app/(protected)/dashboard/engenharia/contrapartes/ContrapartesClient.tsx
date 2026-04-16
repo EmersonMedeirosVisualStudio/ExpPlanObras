@@ -32,6 +32,7 @@ export default function ContrapartesClient() {
   const [loading, setLoading] = useState(false);
 
   const [novo, setNovo] = useState({ tipo: "PJ" as "PJ" | "PF", nomeRazao: "", documento: "", email: "", telefone: "" });
+  const [edicaoId, setEdicaoId] = useState<number | null>(null);
 
   const [idSelecionado, setIdSelecionado] = useState<number | null>(null);
   const [contratos, setContratos] = useState<ContratoDTO[]>([]);
@@ -162,6 +163,60 @@ export default function ContrapartesClient() {
     }
   }
 
+  async function salvarEdicao() {
+    if (!edicaoId) return;
+    try {
+      setErr(null);
+      const payload = {
+        tipo: novo.tipo,
+        nomeRazao: novo.nomeRazao,
+        documento: novo.documento || null,
+        email: novo.email || null,
+        telefone: novo.telefone || null,
+      };
+      const res = await fetch(`/api/v1/engenharia/contrapartes/${edicaoId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message || "Erro ao atualizar contraparte");
+      setEdicaoId(null);
+      setNovo({ tipo: "PJ", nomeRazao: "", documento: "", email: "", telefone: "" });
+      await carregar();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao atualizar contraparte");
+    }
+  }
+
+  async function inativarSelecionada() {
+    if (!edicaoId) return;
+    if (!window.confirm("Inativar esta contraparte?")) return;
+    try {
+      setErr(null);
+      const res = await fetch(`/api/v1/engenharia/contrapartes/${edicaoId}`, { method: "DELETE" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message || "Erro ao inativar contraparte");
+      if (idSelecionado === edicaoId) setIdSelecionado(null);
+      setEdicaoId(null);
+      setNovo({ tipo: "PJ", nomeRazao: "", documento: "", email: "", telefone: "" });
+      await carregar();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao inativar contraparte");
+    }
+  }
+
+  function prepararEdicao(contraparte: ContraparteDTO) {
+    setEdicaoId(contraparte.idContraparte);
+    setNovo({
+      tipo: contraparte.tipo,
+      nomeRazao: contraparte.nomeRazao || "",
+      documento: contraparte.documento || "",
+      email: contraparte.email || "",
+      telefone: contraparte.telefone || "",
+    });
+  }
+
   useEffect(() => {
     carregar();
   }, []);
@@ -202,7 +257,7 @@ export default function ContrapartesClient() {
       </div>
 
       <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-        <div className="text-lg font-semibold">Nova contraparte</div>
+        <div className="text-lg font-semibold">{edicaoId ? `Editar contraparte #${edicaoId}` : "Nova contraparte"}</div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
           <div>
             <div className="text-sm text-slate-600">Tipo</div>
@@ -229,9 +284,28 @@ export default function ContrapartesClient() {
           </div>
         </div>
         <div className="flex justify-end">
-          <button className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white" type="button" onClick={criar}>
-            Criar
-          </button>
+          <div className="flex gap-2">
+            {edicaoId ? (
+              <button
+                className="rounded-lg border px-4 py-2 text-sm"
+                type="button"
+                onClick={() => {
+                  setEdicaoId(null);
+                  setNovo({ tipo: "PJ", nomeRazao: "", documento: "", email: "", telefone: "" });
+                }}
+              >
+                Cancelar
+              </button>
+            ) : null}
+            {edicaoId ? (
+              <button className="rounded-lg bg-amber-600 px-4 py-2 text-sm text-white" type="button" onClick={inativarSelecionada}>
+                Inativar
+              </button>
+            ) : null}
+            <button className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white" type="button" onClick={edicaoId ? salvarEdicao : criar}>
+              {edicaoId ? "Salvar" : "Criar"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -247,6 +321,7 @@ export default function ContrapartesClient() {
                 <th className="px-3 py-2">Documento</th>
                 <th className="px-3 py-2">Contato</th>
                 <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -262,11 +337,23 @@ export default function ContrapartesClient() {
                   <td className="px-3 py-2">{r.documento || "-"}</td>
                   <td className="px-3 py-2">{[r.email, r.telefone].filter(Boolean).join(" · ") || "-"}</td>
                   <td className="px-3 py-2">{r.status}</td>
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      className="rounded border px-2 py-1 text-xs"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        prepararEdicao(r);
+                      }}
+                    >
+                      Editar
+                    </button>
+                  </td>
                 </tr>
               ))}
               {!rows.length ? (
                 <tr>
-                  <td className="px-3 py-6 text-center text-slate-500" colSpan={6}>
+                  <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
                     Sem dados.
                   </td>
                 </tr>
