@@ -5,6 +5,138 @@ import { FastifyInstance } from "fastify";
 import { normalizeEmail, validateCPF, validateCNPJ, validateCEP, validateSlug } from "../../utils/validators.js";
 import { generateUniqueTenantSlug } from "../../utils/slug.js";
 
+type SessionAccess = {
+  perfis: string[];
+  permissoes: string[];
+  abrangencia: {
+    empresa: boolean;
+    diretorias: number[];
+    obras: number[];
+    unidades: number[];
+  };
+};
+
+function fallbackProfilesByTenantRole(role: string): string[] {
+  const key = String(role || '').toUpperCase();
+  const map: Record<string, string[]> = {
+    ADMIN: ['REPRESENTANTE_EMPRESA'],
+    REPRESENTANTE: ['REPRESENTANTE_EMPRESA'],
+    CEO: ['CEO'],
+    DIRETOR: ['DIRETOR'],
+    DIRETOR_ADMINISTRATIVO: ['DIRETOR_ADMINISTRATIVO'],
+    DIRETOR_FINANCEIRO: ['DIRETOR_FINANCEIRO'],
+    ENCARREGADO_SISTEMA: ['ENCARREGADO_SISTEMA_EMPRESA'],
+    ENCARREGADO_SISTEMA_EMPRESA: ['ENCARREGADO_SISTEMA_EMPRESA'],
+    GERENTE_RH: ['GERENTE_RH'],
+    ADMIN_RH: ['ADMIN_RH'],
+    SST_TECNICO: ['SST_TECNICO'],
+    TST: ['TST'],
+    ENGENHEIRO: ['ENGENHEIRO'],
+    MESTRE_OBRA: ['MESTRE_OBRA'],
+    ENCARREGADO_OBRA: ['ENCARREGADO_OBRA'],
+    APONTADOR: ['APONTADOR'],
+    ALMOXARIFE: ['ALMOXARIFE'],
+    FISCAL_OBRA: ['FISCAL_OBRA'],
+  };
+  return map[key] || ['DIRETOR'];
+}
+
+async function resolveSessionAccess(userId: number, tenantId: number, tenantRole: string): Promise<SessionAccess> {
+  const perfilRows = await prisma.usuarioPerfil.findMany({
+    where: { userId, ativo: true },
+    include: {
+      perfil: {
+        select: {
+          codigo: true,
+          ativo: true,
+          tenantId: true,
+          tenantScope: true,
+          permissoes: {
+            where: { permitido: true },
+            select: { modulo: true, janela: true, acao: true },
+          },
+        },
+      },
+    },
+  });
+
+  const perfis = new Set<string>();
+  const permissoes = new Set<string>();
+
+  for (const row of perfilRows) {
+    const p = row.perfil as any;
+    if (!p || p.ativo === false) continue;
+    const scope = String(p.tenantScope || '').toUpperCase();
+    const isBase = scope === 'BASE' || scope === 'GLOBAL';
+    const isTenant = Number(p.tenantId || 0) === tenantId;
+    if (!isBase && !isTenant) continue;
+    if (String(p.codigo || '').trim()) perfis.add(String(p.codigo).trim().toUpperCase());
+
+    const pp = Array.isArray(p.permissoes) ? p.permissoes : [];
+    for (const perm of pp as any[]) {
+      const parts = [perm?.modulo, perm?.janela, perm?.acao]
+        .map((v) => String(v || '').trim().toLowerCase())
+        .filter(Boolean);
+      if (parts.length >= 2) permissoes.add(parts.join('.'));
+      if (parts.length >= 1 && parts[parts.length - 1]) {
+        const simple = [parts[0], parts[parts.length - 1]].filter(Boolean).join('.');
+        if (simple) permissoes.add(simple);
+      }
+    }
+  }
+
+  if (perfis.size === 0) {
+    for (const code of fallbackProfilesByTenantRole(tenantRole)) perfis.add(code);
+  }
+
+  const abrangenciaRows = (await prisma.usuarioAbrangencia.findMany({
+    where: { userId, ativo: true },
+  })) as any[];
+
+  const diretorias = new Set<number>();
+  const obras = new Set<number>();
+  const unidades = new Set<number>();
+  let empresa = false;
+
+  for (const a of abrangenciaRows) {
+    const tipo = String(a?.tipoAbrangencia || '').toUpperCase();
+    if (tipo === 'EMPRESA') {
+      empresa = true;
+      continue;
+    }
+    if (tipo === 'DIRETORIA') {
+      const idDiretoria = Number(a?.idSetorDiretoria ?? a?.setorDiretoriaId ?? a?.diretoriaId ?? 0);
+      if (idDiretoria > 0) diretorias.add(idDiretoria);
+      continue;
+    }
+    if (tipo === 'OBRA') {
+      const idObra = Number(a?.obraId ?? a?.idObra ?? 0);
+      if (idObra > 0) obras.add(idObra);
+      continue;
+    }
+    if (tipo === 'UNIDADE') {
+      const idUnidade = Number(a?.unidadeId ?? a?.idUnidade ?? 0);
+      if (idUnidade > 0) unidades.add(idUnidade);
+      continue;
+    }
+  }
+
+  if (!empresa && diretorias.size === 0 && obras.size === 0 && unidades.size === 0) {
+    empresa = true;
+  }
+
+  return {
+    perfis: Array.from(perfis),
+    permissoes: Array.from(permissoes),
+    abrangencia: {
+      empresa,
+      diretorias: Array.from(diretorias),
+      obras: Array.from(obras),
+      unidades: Array.from(unidades),
+    },
+  };
+}
+
 function getTrialEndsAt() {
   const days = Number(process.env.TRIAL_DAYS || '60');
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
@@ -299,6 +431,7 @@ export async function loginUser(input: LoginInput, app: FastifyInstance) {
     const selectedTenant = user.tenants[0];
     assertTenantActive(selectedTenant.tenant as any);
     const subscriptionAlert = buildSubscriptionAlert(selectedTenant.tenant as any);
+    const sessionAccess = await resolveSessionAccess(user.id, selectedTenant.tenantId, selectedTenant.role);
     const token = app.jwt.sign({
       userId: user.id,
       tenantId: selectedTenant.tenantId,
@@ -313,6 +446,9 @@ export async function loginUser(input: LoginInput, app: FastifyInstance) {
         email: user.email,
         name: user.name,
         cpf: user.cpf,
+        perfis: sessionAccess.perfis,
+        permissoes: sessionAccess.permissoes,
+        abrangencia: sessionAccess.abrangencia,
         tenants: user.tenants.map(t => ({
           tenantId: t.tenantId,
           role: t.role,
@@ -382,12 +518,14 @@ export async function loginUserByEmail(email: string, app: FastifyInstance) {
   if (user.tenants.length === 1) {
     const selectedTenant = user.tenants[0];
     assertTenantActive(selectedTenant.tenant as any);
+    const sessionAccess = await resolveSessionAccess(user.id, selectedTenant.tenantId, selectedTenant.role);
     token = app.jwt.sign({
       userId: user.id,
       tenantId: selectedTenant.tenantId,
       role: selectedTenant.role,
       email: user.email,
     });
+    (user as any).__sessionAccess = sessionAccess;
   }
 
   return {
@@ -397,6 +535,9 @@ export async function loginUserByEmail(email: string, app: FastifyInstance) {
       email: user.email,
       name: user.name,
       cpf: user.cpf,
+      perfis: token ? ((user as any).__sessionAccess?.perfis || []) : [],
+      permissoes: token ? ((user as any).__sessionAccess?.permissoes || []) : [],
+      abrangencia: token ? ((user as any).__sessionAccess?.abrangencia || null) : null,
       tenants: user.tenants.map((t) => ({
         tenantId: t.tenantId,
         role: t.role,
@@ -427,6 +568,11 @@ export async function selectTenant(userId: number, tenantId: number, app: Fastif
 
     assertTenantActive(tenantUser.tenant as any);
     const subscriptionAlert = buildSubscriptionAlert(tenantUser.tenant as any);
+    const sessionAccess = await resolveSessionAccess(userId, tenantId, tenantUser.role);
+    const userTenants = await prisma.tenantUser.findMany({
+      where: { userId },
+      include: { tenant: true },
+    });
 
     const token = app.jwt.sign({
         userId: userId,
@@ -435,7 +581,25 @@ export async function selectTenant(userId: number, tenantId: number, app: Fastif
         email: tenantUser.user.email,
     });
 
-    return { token, user: tenantUser.user, subscriptionAlert };
+    return {
+      token,
+      subscriptionAlert,
+      user: {
+        id: tenantUser.user.id,
+        email: tenantUser.user.email,
+        name: tenantUser.user.name,
+        cpf: tenantUser.user.cpf,
+        perfis: sessionAccess.perfis,
+        permissoes: sessionAccess.permissoes,
+        abrangencia: sessionAccess.abrangencia,
+        tenants: userTenants.map((t) => ({
+          tenantId: t.tenantId,
+          role: t.role,
+          name: t.tenant.name,
+          slug: t.tenant.slug,
+        })),
+      },
+    };
 }
 
 export async function changePassword(userId: number, oldPassword: string, newPassword: string) {

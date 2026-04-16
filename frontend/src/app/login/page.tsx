@@ -354,6 +354,9 @@ function setAuthSession(input: {
   const firstTenant = Array.isArray(tenantsRaw) && tenantsRaw.length > 0 ? (tenantsRaw[0] as Record<string, unknown>) : null;
   const tenantRole = typeof (firstTenant && firstTenant['role']) === 'string' ? String(firstTenant && firstTenant['role']).toUpperCase() : '';
   const userEmail = String(userObj['email'] || '').toLowerCase();
+  const backendProfiles = Array.isArray(userObj['perfis']) ? (userObj['perfis'] as unknown[]).map((v) => String(v).trim().toUpperCase()).filter(Boolean) : [];
+  const backendPermissions = Array.isArray(userObj['permissoes']) ? (userObj['permissoes'] as unknown[]).map((v) => String(v).trim()).filter(Boolean) : [];
+  const backendScope = typeof userObj['abrangencia'] === 'object' && userObj['abrangencia'] !== null ? (userObj['abrangencia'] as Record<string, unknown>) : null;
 
   const byTenantRole: Record<string, ProfileCode[]> = {
     ADMIN: [PROFILE_CODES.REPRESENTANTE_EMPRESA],
@@ -403,7 +406,8 @@ function setAuthSession(input: {
                             ? [PROFILE_CODES.ENGENHEIRO]
                             : null;
 
-  const profiles: ProfileCode[] = byTenantRole[tenantRole] ?? byEmail ?? [PROFILE_CODES.DIRETOR];
+  const profilesRaw = backendProfiles.length > 0 ? backendProfiles : byTenantRole[tenantRole] ?? byEmail ?? [PROFILE_CODES.DIRETOR];
+  const profiles = profilesRaw as ProfileCode[];
 
   const stored = localStorage.getItem('active_profile') as ProfileCode | null;
   const activeProfile = stored && profiles.includes(stored) ? stored : profiles[0];
@@ -417,14 +421,23 @@ function setAuthSession(input: {
         ? Number(firstTenant['tenantId'])
         : 0;
 
+  const parsedAbrangencia = {
+    empresa: backendScope && typeof backendScope['empresa'] === 'boolean' ? Boolean(backendScope['empresa']) : true,
+    diretorias: backendScope && Array.isArray(backendScope['diretorias']) ? (backendScope['diretorias'] as unknown[]).map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0) : [],
+    obras: backendScope && Array.isArray(backendScope['obras']) ? (backendScope['obras'] as unknown[]).map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0) : [],
+    unidades: backendScope && Array.isArray(backendScope['unidades']) ? (backendScope['unidades'] as unknown[]).map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0) : [],
+  };
+
+  const permissions = backendPermissions.length > 0 ? backendPermissions : Array.from(new Set(profiles.flatMap((p) => permissionsForProfile(p))));
+
   const expUser = {
     id: Number(userObj['id'] || 0),
     tenantId,
     nome: String(userObj['name'] || ''),
     email: String(userObj['email'] || ''),
     perfis: profiles,
-    permissoes: Array.from(new Set(profiles.flatMap((p) => permissionsForProfile(p)))),
-    abrangencia: { empresa: true, diretorias: [], obras: [], unidades: [] },
+    permissoes: permissions,
+    abrangencia: parsedAbrangencia,
   };
 
   setCookie('exp_user', JSON.stringify(expUser), 7 * 24 * 60 * 60);
@@ -940,16 +953,19 @@ export default function LoginPage() {
             userId,
             tenantId
         });
+        const sessionUser = response.data?.user ?? null;
         let pending: unknown = null;
-        try {
-          const raw = localStorage.getItem('pending_user');
-          pending = raw ? JSON.parse(raw) : null;
-        } catch {
+        if (!sessionUser) {
+          try {
+            const raw = localStorage.getItem('pending_user');
+            pending = raw ? JSON.parse(raw) : null;
+          } catch {
+          }
         }
-        if (!pending) {
+        if (!sessionUser && !pending) {
           pending = { id: userId, email, name };
         }
-        setAuthSession({ token: response.data.token, user: pending, subscriptionAlert: response.data.subscriptionAlert, tenantId });
+        setAuthSession({ token: response.data.token, user: sessionUser || pending, subscriptionAlert: response.data.subscriptionAlert, tenantId });
         try {
           localStorage.removeItem('pending_user');
         } catch {

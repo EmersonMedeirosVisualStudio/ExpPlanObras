@@ -152,3 +152,9 @@ Navegação e segurança devem seguir:
 - menu dinâmico por permissão;
 - dados filtrados por abrangência;
 - trilha de auditoria para ações críticas.
+
+Regra técnica aplicada na sessão:
+
+- backend envia `perfis`, `permissoes` e `abrangencia`;
+- frontend consome esses dados diretamente;
+- fallback por `tenant.role`/e-mail só é usado quando a sessão não vier completa (legado).
