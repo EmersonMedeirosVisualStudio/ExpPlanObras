@@ -32,6 +32,10 @@ Você sempre deve ver a **Obra Ativa** no topo da tela.
 - No topo deve aparecer o nome da obra escolhida
 - No menu, aparecerá a seção **Obra** com **Planejamento** e **Execução**
 
+Observação:
+
+- Ao entrar em **/dashboard**, se não houver Obra Ativa definida, o sistema direciona automaticamente para a tela de **seleção de obra**.
+
 ---
 
 ## 3. Menu por obra (Planejamento e Execução)
@@ -92,4 +96,3 @@ Antes de lançar diário, medição ou apropriação:
 - Confirme a **Obra Ativa** no topo.
 
 Isso evita lançar dados na obra errada.
-
