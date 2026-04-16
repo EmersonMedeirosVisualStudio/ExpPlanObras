@@ -43,6 +43,23 @@ export const APP_MENU: MenuSectionConfig[] = [
         homePriority: 1,
       },
       {
+        key: 'config-empresa',
+        label: 'Configurações da Empresa',
+        icon: 'settings',
+        permission: PERMISSIONS.CONFIG_EMPRESA_VIEW,
+        scopeTypes: ['EMPRESA'],
+        children: [
+          {
+            key: 'config-apropriacao',
+            label: 'Apropriação (Configuração)',
+            href: '/dashboard/engenharia/configuracoes/apropriacao',
+            icon: 'sliders',
+            permission: PERMISSIONS.CONFIG_EMPRESA_VIEW,
+            scopeTypes: ['EMPRESA'],
+          },
+        ],
+      },
+      {
         key: 'encarregado-sistema',
         label: 'Administração do Sistema',
         icon: 'shield',
@@ -238,139 +255,9 @@ export const APP_MENU: MenuSectionConfig[] = [
     ],
   },
   {
-    key: 'obras-planejamento',
-    label: 'Obras — Planejamento',
-    ordem: 4,
-    items: [
-      {
-        key: 'painel-engenharia',
-        label: 'Dashboard de Planejamento',
-        href: '/dashboard/engenharia/painel',
-        icon: 'layout-dashboard',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-        scopeTypes: ['EMPRESA', 'DIRETORIA', 'OBRA', 'UNIDADE'],
-        homePriority: 13,
-      },
-      {
-        key: 'engenharia-obras',
-        label: 'Cadastro de Obras',
-        href: '/dashboard/engenharia/obras',
-        icon: 'construction',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
-        key: 'engenharia-orcamentos',
-        label: 'Orçamento (Planilha)',
-        href: '/dashboard/engenharia/orcamentos',
-        icon: 'calculator',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
-        key: 'engenharia-programacao-semanal',
-        label: 'Programação Semanal (Cronograma)',
-        href: '/dashboard/engenharia/programacao-semanal',
-        icon: 'calendar',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
-        key: 'centros-custo',
-        label: 'Centro de Custos',
-        href: '/dashboard/engenharia/cadastros/centros-custo',
-        icon: 'layers',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
-        key: 'engenharia-servicos',
-        label: 'Serviços',
-        href: '/dashboard/engenharia/servicos',
-        icon: 'hammer',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
-        key: 'engenharia-composicoes',
-        label: 'Composições',
-        href: '/dashboard/engenharia/composicoes',
-        icon: 'layers-3',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
-        key: 'engenharia-insumos',
-        label: 'Insumos',
-        href: '/dashboard/engenharia/insumos',
-        icon: 'package',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-    ],
-  },
-  {
-    key: 'obras-execucao',
-    label: 'Obras — Execução',
-    ordem: 5,
-    items: [
-      {
-        key: 'portal-gestor',
-        label: 'Portal do Gestor',
-        href: '/dashboard/gestor/portal',
-        icon: 'construction',
-        permission: PERMISSIONS.PORTAL_GESTOR_VIEW,
-        scopeTypes: ['OBRA', 'UNIDADE', 'EMPRESA', 'DIRETORIA'],
-        homePriority: 6,
-      },
-      {
-        key: 'config-apropriacao',
-        label: 'Apropriação (Configuração)',
-        href: '/dashboard/engenharia/configuracoes/apropriacao',
-        icon: 'sliders',
-        permission: PERMISSIONS.CONFIG_EMPRESA_VIEW,
-      },
-      {
-        key: 'engenharia-consumos',
-        label: 'Consumos',
-        href: '/dashboard/engenharia/consumos',
-        icon: 'repeat',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
-        key: 'engenharia-aquisicoes',
-        label: 'Aquisições',
-        href: '/dashboard/engenharia/aquisicoes',
-        icon: 'shopping-cart',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
-        key: 'ativos',
-        label: 'Equipamentos e Ferramentas',
-        href: '/dashboard/engenharia/ativos',
-        icon: 'wrench',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
-        key: 'engenharia-manutencoes',
-        label: 'Manutenções',
-        href: '/dashboard/engenharia/manutencoes',
-        icon: 'tool',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
-        key: 'engenharia-custos-ativos',
-        label: 'Custos de Ativos',
-        href: '/dashboard/engenharia/custos-ativos',
-        icon: 'dollar-sign',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
-        key: 'engenharia-ferramentas',
-        label: 'Ferramentas',
-        href: '/dashboard/engenharia/ferramentas',
-        icon: 'wrench',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-    ],
-  },
-  {
     key: 'rh',
     label: 'RH',
-    ordem: 6,
+    ordem: 4,
     items: [
       {
         key: 'painel-rh',
@@ -406,7 +293,7 @@ export const APP_MENU: MenuSectionConfig[] = [
   {
     key: 'sst',
     label: 'SST',
-    ordem: 7,
+    ordem: 5,
     items: [
       {
         key: 'painel-sst',
@@ -463,7 +350,7 @@ export const APP_MENU: MenuSectionConfig[] = [
   {
     key: 'suprimentos',
     label: 'Suprimentos',
-    ordem: 8,
+    ordem: 6,
     items: [
       {
         key: 'painel-suprimentos',
@@ -478,7 +365,7 @@ export const APP_MENU: MenuSectionConfig[] = [
   {
     key: 'fiscalizacao',
     label: 'Fiscalização',
-    ordem: 9,
+    ordem: 7,
     items: [
       {
         key: 'painel-fiscalizacao',
@@ -492,7 +379,7 @@ export const APP_MENU: MenuSectionConfig[] = [
   {
     key: 'administracao',
     label: 'Administração Avançada',
-    ordem: 10,
+    ordem: 8,
     items: [
       { key: 'organograma', label: 'Organograma', href: '/dashboard/organograma', icon: 'network', permission: PERMISSIONS.ORGANOGRAMA_VIEW },
       {
@@ -561,32 +448,12 @@ export const APP_MENU: MenuSectionConfig[] = [
         icon: 'shield-check',
         permission: PERMISSIONS.SECURITY_POLICIES_VIEW,
       },
-      {
-        key: 'admin-notificacoes',
-        label: 'Notificações (Admin)',
-        children: [
-          {
-            key: 'admin-notificacoes-fila',
-            label: 'Fila de E-mails',
-            href: '/dashboard/admin/notificacoes/email-fila',
-            icon: 'mail',
-            permission: PERMISSIONS.NOTIFICACOES_EMAIL_FILA_VIEW,
-          },
-          {
-            key: 'admin-notificacoes-templates',
-            label: 'Templates',
-            href: '/dashboard/admin/notificacoes/templates',
-            icon: 'file-text',
-            permission: PERMISSIONS.NOTIFICACOES_TEMPLATES_ADMIN,
-          },
-        ],
-      },
     ],
   },
   {
     key: 'relatorios',
     label: 'Relatórios',
-    ordem: 11,
+    ordem: 9,
     items: [
       {
         key: 'relatorios-agendados',

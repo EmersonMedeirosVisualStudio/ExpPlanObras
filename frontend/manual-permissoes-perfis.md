@@ -70,10 +70,11 @@ Observação:
 
 ### 3.2 Ajustes aplicados nesta revisão
 
-- Header simplificado: sem seletor de perfil/contexto.
+- Header com contexto: seletor de **Obra Ativa** no topo.
 - Navegação do Representante reorganizada por submenu:
   - `Painel do Representante > Dashboard`
   - `Painel do Representante > Configurações`
+- Menu por contexto: seção **Obra** no menu lateral (Planejamento/Execução) baseada na obra ativa.
 - Menu de Administração reorganizado com foco no Encarregado do Sistema:
   - Usuários/Perfis/Permissões
   - Backup e Segurança
@@ -154,13 +155,18 @@ O que ainda é planejado (para completar o modelo por função) é a criação/a
 
 ## 5. Diretriz final
 
-Cada painel deve ser liberado por perfil e permissão, sem seletor manual de contexto na barra superior.
+Cada painel deve ser liberado por perfil e permissão, e a operação diária deve ocorrer com **Obra Ativa** definida.
 
 Navegação e segurança devem seguir:
 
 - menu dinâmico por permissão;
 - dados filtrados por abrangência;
 - trilha de auditoria para ações críticas.
+
+Observação importante (modelo profissional):
+
+- A **Obra Ativa** é um facilitador de navegação/UX.  
+- A **segurança real** continua sendo aplicada por permissões + abrangência no backend e nas APIs (não depende só do menu).
 
 Regra técnica aplicada na sessão:
 
