@@ -21,11 +21,12 @@ function toDto(item: MenuItemConfig, children?: MenuItemDTO[]): MenuItemDTO {
 function hasItemAccess(item: MenuItemConfig, ctx: BuildMenuContext): boolean {
   const permSet = new Set(ctx.permissions);
   const scopeSet = new Set(ctx.scopeTypes);
+  const isWildcard = permSet.has('*');
 
   const permissionOk =
-    (!item.permission || permSet.has(item.permission)) &&
-    (!item.anyPermissions || item.anyPermissions.some((p) => permSet.has(p))) &&
-    (!item.allPermissions || item.allPermissions.every((p) => permSet.has(p)));
+    (!item.permission || isWildcard || permSet.has(item.permission)) &&
+    (!item.anyPermissions || isWildcard || item.anyPermissions.some((p) => permSet.has(p))) &&
+    (!item.allPermissions || isWildcard || item.allPermissions.every((p) => permSet.has(p)));
 
   const scopeOk = !item.scopeTypes || item.scopeTypes.length === 0 || item.scopeTypes.some((s) => scopeSet.has(s));
 
@@ -72,7 +73,7 @@ export function buildMenuResponse(ctx: BuildMenuContext): MenuResponseDTO {
 
 export function buildMenuContextFromUser(user: CurrentUser): BuildMenuContext {
   const scopeTypes: MenuScopeType[] = [];
-  if (user.abrangencia.empresa) scopeTypes.push('EMPRESA');
+  if (user.abrangencia.empresa) scopeTypes.push('EMPRESA', 'DIRETORIA', 'OBRA', 'UNIDADE');
   if (Array.isArray(user.abrangencia.diretorias) && user.abrangencia.diretorias.length) scopeTypes.push('DIRETORIA');
   if (Array.isArray(user.abrangencia.obras) && user.abrangencia.obras.length) scopeTypes.push('OBRA');
   if (Array.isArray(user.abrangencia.unidades) && user.abrangencia.unidades.length) scopeTypes.push('UNIDADE');

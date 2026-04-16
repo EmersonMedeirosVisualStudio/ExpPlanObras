@@ -125,6 +125,16 @@ async function resolveSessionAccess(userId: number, tenantId: number, tenantRole
     empresa = true;
   }
 
+  const isRepresentante = perfis.has('REPRESENTANTE_EMPRESA') || String(tenantRole || '').toUpperCase() === 'ADMIN';
+  if (isRepresentante) {
+    empresa = true;
+    diretorias.clear();
+    obras.clear();
+    unidades.clear();
+    permissoes.clear();
+    permissoes.add('*');
+  }
+
   return {
     perfis: Array.from(perfis),
     permissoes: Array.from(permissoes),

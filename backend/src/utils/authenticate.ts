@@ -155,6 +155,12 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     }
     if (!empresa && obras.size === 0 && unidades.size === 0) empresa = true;
 
+    if (String(tu.role || '').toUpperCase() === 'ADMIN') {
+      empresa = true;
+      obras.clear();
+      unidades.clear();
+    }
+
     user.tenantUserId = tu.id;
     user.tenantRole = tu.role;
     user.funcionarioId = tu.funcionarioId ?? null;

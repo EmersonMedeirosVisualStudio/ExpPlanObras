@@ -4,11 +4,12 @@ import type { Permission } from './permissions';
 
 export function hasPermission(user: CurrentUser | null, permission: Permission): boolean {
   if (!user) return false;
-  return user.permissoes.includes(permission);
+  return user.permissoes.includes('*') || user.permissoes.includes(permission);
 }
 
 export function hasAnyPermission(user: CurrentUser | null, permissions: Permission[]): boolean {
   if (!user) return false;
+  if (user.permissoes.includes('*')) return true;
   return permissions.some((p) => user.permissoes.includes(p));
 }
 
@@ -35,4 +36,3 @@ export async function requireAnyPermission(permissions: Permission[]) {
   if (!hasAnyPermission(user, permissions)) redirect('/dashboard/403');
   return user;
 }
-

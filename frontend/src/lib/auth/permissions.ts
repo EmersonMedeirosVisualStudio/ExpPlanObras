@@ -290,7 +290,7 @@ export const PERMISSIONS = {
   FUNCIONARIOS_CRUD: 'rh.funcionarios.crud',
 } as const;
 
-export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS] | '*';
 
 export const PROFILE_CODES = {
   CEO: 'CEO',

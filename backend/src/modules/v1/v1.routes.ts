@@ -136,9 +136,10 @@ async function requireEncarregado(request: FastifyRequest, reply: FastifyReply) 
   if (!ctx) return fail(reply, 401, 'Não autenticado');
   const tenantUser = await prisma.tenantUser.findUnique({
     where: { tenantId_userId: { tenantId: ctx.tenantId, userId: ctx.userId } },
-    select: { id: true },
+    select: { id: true, role: true },
   });
   if (!tenantUser) return fail(reply, 403, 'Tenant não selecionado');
+  if (tenantUser.role === 'ADMIN') return { ...ctx, tenantUserId: tenantUser.id, encarregadoId: null };
   const active = await prisma.empresaEncarregadoSistema.findFirst({
     where: { tenantId: ctx.tenantId, ativo: true },
     orderBy: { id: 'desc' },
