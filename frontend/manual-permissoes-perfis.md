@@ -31,6 +31,7 @@ Observação:
 
 - `tenant.role` é um campo simples que vem do backend (ex.: `ADMIN`) e define o perfil inicial do usuário na empresa.
 - A regra aplicada no sistema é: `ADMIN` = `REPRESENTANTE_EMPRESA` (governança inicial). Os demais perfis operacionais devem ser atribuídos conforme a função real do usuário.
+- Em produção (momento atual), o **Representante** está com acesso total: permissões `*` e escopo `empresa` (hotfix para não travar a implantação).
 
 ---
 
@@ -158,3 +159,15 @@ Regra técnica aplicada na sessão:
 - backend envia `perfis`, `permissoes` e `abrangencia`;
 - frontend consome esses dados diretamente;
 - fallback por `tenant.role`/e-mail só é usado quando a sessão não vier completa (legado).
+
+## 6. O que está implementado agora (checklist)
+
+- Sessão: token + `perfis/permissoes/abrangencia` vindos do backend
+- Menu: filtrado por permissões e tipo de escopo
+- Escopo (OBRA/UNIDADE): carregado em cada request no backend
+- Escopo aplicado: módulo **Obras** (lista/consulta/alteração)
+
+## 7. O que ainda falta aplicar (para ficar 100%)
+
+- Aplicar filtro por escopo nos demais módulos (RH, SST, Suprimentos, Documentos etc.)
+- Consolidar permissões 100% pelo banco (`PerfilPermissao`) e reduzir fallback do frontend

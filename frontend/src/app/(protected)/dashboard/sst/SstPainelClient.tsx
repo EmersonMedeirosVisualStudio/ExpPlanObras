@@ -17,7 +17,7 @@ function hasExecutivoPermission(): boolean {
     if (!raw) return false;
     const decoded = decodeURIComponent(raw);
     const user = JSON.parse(decoded) as { permissoes?: string[] };
-    return Array.isArray(user.permissoes) && user.permissoes.includes("sst.painel.executivo.view");
+    return Array.isArray(user.permissoes) && (user.permissoes.includes("*") || user.permissoes.includes("sst.painel.executivo.view"));
   } catch {
     return false;
   }

@@ -428,7 +428,9 @@ function setAuthSession(input: {
     unidades: backendScope && Array.isArray(backendScope['unidades']) ? (backendScope['unidades'] as unknown[]).map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0) : [],
   };
 
-  const permissions = backendPermissions.length > 0 ? backendPermissions : Array.from(new Set(profiles.flatMap((p) => permissionsForProfile(p))));
+  const fallbackPermissions = Array.from(new Set(profiles.flatMap((p) => permissionsForProfile(p))));
+  const permissions =
+    backendPermissions.length > 0 ? Array.from(new Set([...backendPermissions, ...fallbackPermissions])) : fallbackPermissions;
 
   const expUser = {
     id: Number(userObj['id'] || 0),

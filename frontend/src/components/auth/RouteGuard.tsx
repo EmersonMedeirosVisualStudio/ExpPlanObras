@@ -16,7 +16,7 @@ export function RouteGuard({ user, permissions, children, fallback }: Props) {
   const pathname = usePathname();
   const router = useRouter();
 
-  const allowed = permissions.some((p) => user.permissoes.includes(p));
+  const allowed = user.permissoes.includes("*") || permissions.some((p) => user.permissoes.includes(p));
 
   if (!allowed) {
     if (fallback) return <>{fallback}</>;
@@ -30,4 +30,3 @@ export function RouteGuard({ user, permissions, children, fallback }: Props) {
 
   return <>{children}</>;
 }
-

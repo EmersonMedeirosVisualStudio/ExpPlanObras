@@ -194,6 +194,11 @@ Relatórios, painéis e decisões dependem de dados corretos e bem relacionados.
 
 O acesso deve respeitar empresa, perfil, lotação, obra, unidade e responsabilidade.
 
+Estado atual (produção):
+
+- O Representante está com acesso total temporário para não travar implantação.
+- O controle por escopo (obra/unidade) começou pelo módulo Obras e será expandido para os demais módulos.
+
 ### 3.7 Integração entre módulos
 
 Os dados precisam conversar entre si. O sistema não é um conjunto de telas isoladas, mas uma estrutura conectada.
