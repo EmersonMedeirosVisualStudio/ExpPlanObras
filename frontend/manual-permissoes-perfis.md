@@ -27,6 +27,14 @@ Exemplo:
 - Abrangência: obras `10` e `12`
 - Resultado: João enxerga e edita apenas nas obras 10 e 12.
 
+## 2.1 Fluxo simples (como você descreveu)
+
+Sim, a ordem correta é:
+
+1) Você define o **perfil** (ex.: Engenheiro)  
+2) Você define as **permissões do perfil** (essas são iguais para todos os engenheiros)  
+3) Você define a **abrangência do usuário** (isso é específico para cada pessoa: quais obras/unidades ele pode atuar)
+
 Observação:
 
 - `tenant.role` é um campo simples que vem do backend (ex.: `ADMIN`) e define o perfil inicial do usuário na empresa.

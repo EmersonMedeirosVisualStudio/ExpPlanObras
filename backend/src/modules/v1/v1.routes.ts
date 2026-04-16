@@ -1027,13 +1027,17 @@ export default async function v1Routes(server: FastifyInstance) {
         });
         if (Array.isArray(body.permissoes) && body.permissoes.length > 0) {
           await tx.perfilPermissao.createMany({
-            data: body.permissoes.map((perm: string) => ({
-              perfilId: perfil.id,
-              modulo: String(perm).split('.')[0] || 'modulo',
-              janela: String(perm),
-              acao: 'ALLOW',
-              permitido: true,
-            })),
+            data: body.permissoes.map((perm: string) => {
+              const raw = String(perm || '').trim().toLowerCase();
+              const parts = raw.split('.').filter(Boolean);
+              return {
+                perfilId: perfil.id,
+                modulo: parts[0] || 'modulo',
+                janela: raw,
+                acao: parts[parts.length - 1] || 'acao',
+                permitido: true,
+              };
+            }),
           });
         }
         await tx.auditoriaEvento.create({
@@ -1072,13 +1076,17 @@ export default async function v1Routes(server: FastifyInstance) {
         await tx.perfilPermissao.deleteMany({ where: { perfilId: id } });
         if (Array.isArray(body.permissoes) && body.permissoes.length > 0) {
           await tx.perfilPermissao.createMany({
-            data: body.permissoes.map((perm: string) => ({
-              perfilId: id,
-              modulo: String(perm).split('.')[0] || 'modulo',
-              janela: String(perm),
-              acao: 'ALLOW',
-              permitido: true,
-            })),
+            data: body.permissoes.map((perm: string) => {
+              const raw = String(perm || '').trim().toLowerCase();
+              const parts = raw.split('.').filter(Boolean);
+              return {
+                perfilId: id,
+                modulo: parts[0] || 'modulo',
+                janela: raw,
+                acao: parts[parts.length - 1] || 'acao',
+                permitido: true,
+              };
+            }),
           });
         }
         await tx.auditoriaEvento.create({

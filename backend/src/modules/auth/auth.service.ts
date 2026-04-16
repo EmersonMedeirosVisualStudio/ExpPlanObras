@@ -74,14 +74,8 @@ async function resolveSessionAccess(userId: number, tenantId: number, tenantRole
 
     const pp = Array.isArray(p.permissoes) ? p.permissoes : [];
     for (const perm of pp as any[]) {
-      const parts = [perm?.modulo, perm?.janela, perm?.acao]
-        .map((v) => String(v || '').trim().toLowerCase())
-        .filter(Boolean);
-      if (parts.length >= 2) permissoes.add(parts.join('.'));
-      if (parts.length >= 1 && parts[parts.length - 1]) {
-        const simple = [parts[0], parts[parts.length - 1]].filter(Boolean).join('.');
-        if (simple) permissoes.add(simple);
-      }
+      const code = String(perm?.janela || '').trim().toLowerCase();
+      if (code) permissoes.add(code);
     }
   }
 
