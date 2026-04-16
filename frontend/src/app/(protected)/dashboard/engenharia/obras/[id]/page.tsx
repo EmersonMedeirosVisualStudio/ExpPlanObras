@@ -1,15 +1,54 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 type Janela = { key: string; titulo: string; desc: string; href: (idObra: number) => string; nivel: "OPERACAO" | "GESTAO" | "CADASTRO" };
+type ResponsavelObraRef = {
+  idResponsavelObra: number;
+  idObra: number;
+  tipo: "RESPONSAVEL_TECNICO" | "FISCAL_OBRA";
+  nome: string;
+  registroProfissional: string | null;
+  cpf: string | null;
+  email: string | null;
+  telefone: string | null;
+  ativo: boolean;
+};
 
 export default function EngenhariaObraHomePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
 
   const idObra = Number(params?.id || 0);
+  const [responsaveis, setResponsaveis] = useState<ResponsavelObraRef[]>([]);
+  const [carregandoResponsaveis, setCarregandoResponsaveis] = useState(false);
+  const [erroResponsaveis, setErroResponsaveis] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!idObra) return;
+    let active = true;
+    (async () => {
+      try {
+        setCarregandoResponsaveis(true);
+        setErroResponsaveis(null);
+        const res = await fetch(`/api/v1/engenharia/obras/responsaveis?idObra=${idObra}`, { cache: "no-store" });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar responsáveis.");
+        const lista = Array.isArray(json.data) ? json.data : [];
+        if (active) setResponsaveis(lista);
+      } catch (e: any) {
+        if (!active) return;
+        setErroResponsaveis(e?.message || "Erro ao carregar responsáveis.");
+        setResponsaveis([]);
+      } finally {
+        if (active) setCarregandoResponsaveis(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [idObra]);
 
   const janelas = useMemo<Janela[]>(
     () => [
@@ -146,6 +185,63 @@ export default function EngenhariaObraHomePage() {
         <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={() => router.push("/dashboard/engenharia/obras")}>
           Trocar obra
         </button>
+      </div>
+
+      <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <div className="text-lg font-semibold">Dados principais da obra</div>
+            <div className="text-sm text-slate-600">Responsável técnico e fiscal vinculados à obra.</div>
+          </div>
+          <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={() => router.push("/dashboard/engenharia/obras")}>
+            Gerenciar no cadastro
+          </button>
+        </div>
+
+        {carregandoResponsaveis ? <div className="text-sm text-slate-500">Carregando responsáveis...</div> : null}
+        {erroResponsaveis ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{erroResponsaveis}</div> : null}
+
+        {!carregandoResponsaveis && !erroResponsaveis ? (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="rounded-lg border p-3">
+              <div className="text-sm font-semibold text-slate-700">Responsável Técnico</div>
+              <div className="mt-2 space-y-1 text-sm text-slate-700">
+                {responsaveis
+                  .filter((r) => r.ativo && r.tipo === "RESPONSAVEL_TECNICO")
+                  .slice(0, 3)
+                  .map((r) => (
+                    <div key={r.idResponsavelObra} className="rounded-md bg-slate-50 px-3 py-2">
+                      <div className="font-medium">{r.nome}</div>
+                      <div className="text-xs text-slate-600">
+                        {[r.registroProfissional, r.email, r.telefone].filter(Boolean).join(" · ") || "Sem contato"}
+                      </div>
+                    </div>
+                  ))}
+                {!responsaveis.some((r) => r.ativo && r.tipo === "RESPONSAVEL_TECNICO") ? (
+                  <div className="text-sm text-slate-500">Não cadastrado.</div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <div className="text-sm font-semibold text-slate-700">Fiscal da Obra</div>
+              <div className="mt-2 space-y-1 text-sm text-slate-700">
+                {responsaveis
+                  .filter((r) => r.ativo && r.tipo === "FISCAL_OBRA")
+                  .slice(0, 3)
+                  .map((r) => (
+                    <div key={r.idResponsavelObra} className="rounded-md bg-slate-50 px-3 py-2">
+                      <div className="font-medium">{r.nome}</div>
+                      <div className="text-xs text-slate-600">
+                        {[r.registroProfissional, r.email, r.telefone].filter(Boolean).join(" · ") || "Sem contato"}
+                      </div>
+                    </div>
+                  ))}
+                {!responsaveis.some((r) => r.ativo && r.tipo === "FISCAL_OBRA") ? <div className="text-sm text-slate-500">Não cadastrado.</div> : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="space-y-4">
