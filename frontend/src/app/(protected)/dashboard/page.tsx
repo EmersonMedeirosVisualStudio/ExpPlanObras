@@ -1,7 +1,4 @@
 import { redirect } from 'next/navigation';
-import { requirePermission } from '@/lib/auth/access';
-import { PERMISSIONS } from '@/lib/auth/permissions';
-import DashboardExecutivoClient from './DashboardExecutivoClient';
 import { getCurrentUser } from '@/lib/auth/current-user';
 import { getCurrentUserPermissions } from '@/lib/auth/get-current-user-permissions';
 import { getDashboardScope } from '@/lib/dashboard/scope';
@@ -22,10 +19,5 @@ export default async function DashboardCeoPage() {
   ].filter(Boolean) as MenuScopeType[];
   const ctx: BuildMenuContext = { permissions, scopeTypes };
   const homeHref = resolveHomeHref(ctx);
-  if (homeHref === '/dashboard') {
-    await requirePermission(PERMISSIONS.DASHBOARD_EXECUTIVO_VIEW);
-    return <DashboardExecutivoClient />;
-  }
-
   redirect(homeHref);
 }
