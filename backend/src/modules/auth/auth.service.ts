@@ -446,6 +446,7 @@ export async function loginUser(input: LoginInput, app: FastifyInstance) {
         email: user.email,
         name: user.name,
         cpf: user.cpf,
+        idFuncionario: typeof (selectedTenant as any).funcionarioId === 'number' ? (selectedTenant as any).funcionarioId : null,
         perfis: sessionAccess.perfis,
         permissoes: sessionAccess.permissoes,
         abrangencia: sessionAccess.abrangencia,
@@ -526,6 +527,7 @@ export async function loginUserByEmail(email: string, app: FastifyInstance) {
       email: user.email,
     });
     (user as any).__sessionAccess = sessionAccess;
+    (user as any).__funcionarioId = typeof (selectedTenant as any).funcionarioId === 'number' ? (selectedTenant as any).funcionarioId : null;
   }
 
   return {
@@ -535,6 +537,7 @@ export async function loginUserByEmail(email: string, app: FastifyInstance) {
       email: user.email,
       name: user.name,
       cpf: user.cpf,
+      idFuncionario: token ? ((user as any).__funcionarioId ?? null) : null,
       perfis: token ? ((user as any).__sessionAccess?.perfis || []) : [],
       permissoes: token ? ((user as any).__sessionAccess?.permissoes || []) : [],
       abrangencia: token ? ((user as any).__sessionAccess?.abrangencia || null) : null,
@@ -589,6 +592,7 @@ export async function selectTenant(userId: number, tenantId: number, app: Fastif
         email: tenantUser.user.email,
         name: tenantUser.user.name,
         cpf: tenantUser.user.cpf,
+        idFuncionario: typeof (tenantUser as any).funcionarioId === 'number' ? (tenantUser as any).funcionarioId : null,
         perfis: sessionAccess.perfis,
         permissoes: sessionAccess.permissoes,
         abrangencia: sessionAccess.abrangencia,

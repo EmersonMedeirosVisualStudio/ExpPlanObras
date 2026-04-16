@@ -1,6 +1,8 @@
 import prisma, { setTenantContext } from "../../plugins/prisma.js";
 import { CreateObraInput, UpdateObraInput } from "./obras.schema.js";
 
+export type AbrangenciaContext = { empresa: boolean; obras: number[]; unidades: number[] };
+
 // Helper to execute with RLS context
 // This ensures that the tenant_id is set for the transaction session
 async function withRLS<T>(tenantId: number, callback: (tx: any) => Promise<T>): Promise<T> {
@@ -22,19 +24,30 @@ export async function createObra(input: CreateObraInput, tenantId: number) {
   });
 }
 
-export async function getObras(tenantId: number) {
+function scopeWhere(tenantId: number, scope?: AbrangenciaContext) {
+  if (!scope || scope.empresa) return { tenantId };
+  if (Array.isArray(scope.obras) && scope.obras.length > 0) return { tenantId, id: { in: scope.obras } };
+  return { tenantId, id: { in: [-1] } };
+}
+
+function canAccessObraId(obraId: number, scope?: AbrangenciaContext) {
+  if (!scope || scope.empresa) return true;
+  return Array.isArray(scope.obras) && scope.obras.includes(obraId);
+}
+
+export async function getObras(tenantId: number, scope?: AbrangenciaContext) {
   return withRLS(tenantId, async (tx) => {
     return tx.obra.findMany({
       orderBy: { createdAt: 'desc' },
-      where: {
-        // Even with RLS, it's safer to include tenantId in the query
-        tenantId: tenantId
-      }
+      where: scopeWhere(tenantId, scope),
     });
   });
 }
 
-export async function getObraById(id: number, tenantId: number) {
+export async function getObraById(id: number, tenantId: number, scope?: AbrangenciaContext) {
+  if (!canAccessObraId(id, scope)) {
+    throw new Error("Access denied");
+  }
   return withRLS(tenantId, async (tx) => {
     const obra = await tx.obra.findUnique({
       where: { id },
@@ -50,7 +63,10 @@ export async function getObraById(id: number, tenantId: number) {
   });
 }
 
-export async function updateObra(id: number, input: UpdateObraInput, tenantId: number) {
+export async function updateObra(id: number, input: UpdateObraInput, tenantId: number, scope?: AbrangenciaContext) {
+  if (!canAccessObraId(id, scope)) {
+    throw new Error("Access denied");
+  }
   return withRLS(tenantId, async (tx) => {
     // Verify ownership first or rely on RLS update policy
     // With RLS, if the row is not visible, update might affect 0 rows or throw
@@ -66,11 +82,14 @@ export async function updateObra(id: number, input: UpdateObraInput, tenantId: n
         throw new Error("Obra not found or access denied");
     }
     
-    return getObraById(id, tenantId);
+    return getObraById(id, tenantId, scope);
   });
 }
 
-export async function deleteObra(id: number, tenantId: number) {
+export async function deleteObra(id: number, tenantId: number, scope?: AbrangenciaContext) {
+  if (!canAccessObraId(id, scope)) {
+    throw new Error("Access denied");
+  }
   return withRLS(tenantId, async (tx) => {
     const count = await tx.obra.deleteMany({
       where: { 
@@ -88,6 +107,7 @@ export async function deleteObra(id: number, tenantId: number) {
 }
 
 export async function getOrcamento(obraId: number, tenantId: number) {
+  // Orcamento é sempre por obra, então respeita escopo
   return withRLS(tenantId, async (tx) => {
     const obra = await tx.obra.findFirst({
       where: { id: obraId, tenantId },
@@ -108,7 +128,10 @@ export async function getOrcamento(obraId: number, tenantId: number) {
   });
 }
 
-export async function updateOrcamento(obraId: number, valorPrevisto: number, tenantId: number) {
+export async function updateOrcamento(obraId: number, valorPrevisto: number, tenantId: number, scope?: AbrangenciaContext) {
+  if (!canAccessObraId(obraId, scope)) {
+    throw new Error("Access denied");
+  }
   return withRLS(tenantId, async (tx) => {
     const updated = await tx.obra.updateMany({
       where: { id: obraId, tenantId },
@@ -120,6 +143,7 @@ export async function updateOrcamento(obraId: number, valorPrevisto: number, ten
 }
 
 export async function addCusto(obraId: number, input: { description: string; amount: number; date?: string }, tenantId: number) {
+  // Custos são sempre por obra, então respeita escopo
   return withRLS(tenantId, async (tx) => {
     // ensure obra belongs to tenant
     const obra = await tx.obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } });
@@ -139,6 +163,7 @@ export async function addCusto(obraId: number, input: { description: string; amo
 }
 
 export async function removeCusto(obraId: number, custoId: number, tenantId: number) {
+  // Remoção de custo também respeita escopo da obra
   return withRLS(tenantId, async (tx) => {
     const deleted = await tx.custo.deleteMany({
       where: { id: custoId, obraId, tenantId }

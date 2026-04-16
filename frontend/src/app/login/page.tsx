@@ -433,6 +433,7 @@ function setAuthSession(input: {
   const expUser = {
     id: Number(userObj['id'] || 0),
     tenantId,
+    idFuncionario: typeof userObj['idFuncionario'] === 'number' ? Number(userObj['idFuncionario']) : null,
     nome: String(userObj['name'] || ''),
     email: String(userObj['email'] || ''),
     perfis: profiles,

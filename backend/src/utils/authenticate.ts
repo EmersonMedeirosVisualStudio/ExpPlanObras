@@ -112,7 +112,7 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
 
     const tu = await prisma.tenantUser.findUnique({
       where: { tenantId_userId: { tenantId, userId } },
-      select: { id: true, ativo: true, bloqueado: true, bloqueadoAteEm: true, tokenRevokedBefore: true },
+      select: { id: true, role: true, funcionarioId: true, ativo: true, bloqueado: true, bloqueadoAteEm: true, tokenRevokedBefore: true },
     });
     if (!tu || !tu.ativo) {
       return reply.code(403).send({ message: 'Acesso negado' });
@@ -135,6 +135,30 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
         }
       }
     }
+
+    const abrangencias = (await prisma.usuarioAbrangencia.findMany({
+      where: { userId, ativo: true },
+      select: { tipoAbrangencia: true, obraId: true, unidadeId: true },
+    })) as Array<{ tipoAbrangencia: string; obraId: number | null; unidadeId: number | null }>;
+
+    const obras = new Set<number>();
+    const unidades = new Set<number>();
+    let empresa = false;
+    for (const a of abrangencias) {
+      const tipo = String(a.tipoAbrangencia || '').toUpperCase();
+      if (tipo === 'EMPRESA') {
+        empresa = true;
+        continue;
+      }
+      if (tipo === 'OBRA' && typeof a.obraId === 'number' && a.obraId > 0) obras.add(a.obraId);
+      if (tipo === 'UNIDADE' && typeof a.unidadeId === 'number' && a.unidadeId > 0) unidades.add(a.unidadeId);
+    }
+    if (!empresa && obras.size === 0 && unidades.size === 0) empresa = true;
+
+    user.tenantUserId = tu.id;
+    user.tenantRole = tu.role;
+    user.funcionarioId = tu.funcionarioId ?? null;
+    user.abrangencia = { empresa, obras: Array.from(obras), unidades: Array.from(unidades) };
   } catch (err: any) {
     return reply.code(401).send({ message: 'Não autenticado' });
   }

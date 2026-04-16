@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createObraSchema, updateObraSchema, updateOrcamentoSchema, createCustoSchema } from './obras.schema.js';
-import { createObra, getObras, getObraById, updateObra, deleteObra, getOrcamento, updateOrcamento, addCusto, removeCusto } from './obras.service.js';
+import { createObra, getObras, getObraById, updateObra, deleteObra, getOrcamento, updateOrcamento, addCusto, removeCusto, type AbrangenciaContext } from './obras.service.js';
 import { authenticate } from '../../utils/authenticate.js';
 import { parseCSV } from '../../utils/csv.js';
 
@@ -83,7 +83,11 @@ export default async function obraRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
       const { id } = request.params as { id: number };
+      if (scope && !scope.empresa && Array.isArray(scope.obras) && !scope.obras.includes(id)) {
+        return reply.code(403).send({ message: 'Acesso negado' });
+      }
       const data = await getOrcamento(id, tenantId);
       return reply.send(data);
     }
@@ -101,9 +105,10 @@ export default async function obraRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
       const { id } = request.params as { id: number };
       const { valorPrevisto } = request.body as { valorPrevisto: number };
-      const data = await updateOrcamento(id, valorPrevisto, tenantId);
+      const data = await updateOrcamento(id, valorPrevisto, tenantId, scope);
       return reply.send(data);
     }
   );
@@ -177,7 +182,8 @@ export default async function obraRoutes(server: FastifyInstance) {
 
   server.get('/', async (request, reply) => {
     const { tenantId } = request.user as any;
-    const obras = await getObras(tenantId);
+    const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
+    const obras = await getObras(tenantId, scope);
     return reply.send(obras);
   });
 
@@ -192,8 +198,9 @@ export default async function obraRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
       const { id } = request.params as { id: number };
-      const obra = await getObraById(id, tenantId);
+      const obra = await getObraById(id, tenantId, scope);
       
       if (!obra) {
         return reply.code(404).send({ message: 'Obra not found' });
@@ -215,9 +222,10 @@ export default async function obraRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
       const { id } = request.params as { id: number };
       try {
-        const obra = await updateObra(id, request.body as z.infer<typeof updateObraSchema>, tenantId);
+        const obra = await updateObra(id, request.body as z.infer<typeof updateObraSchema>, tenantId, scope);
         return reply.send(obra);
       } catch (error) {
         return reply.code(404).send({ message: 'Obra not found' });
@@ -236,9 +244,10 @@ export default async function obraRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
       const { id } = request.params as { id: number };
       try {
-        await deleteObra(id, tenantId);
+        await deleteObra(id, tenantId, scope);
         return reply.code(204).send();
       } catch (error) {
         return reply.code(404).send({ message: 'Obra not found' });
