@@ -356,7 +356,7 @@ function setAuthSession(input: {
   const userEmail = String(userObj['email'] || '').toLowerCase();
 
   const byTenantRole: Record<string, ProfileCode[]> = {
-    ADMIN: [PROFILE_CODES.REPRESENTANTE_EMPRESA, PROFILE_CODES.CEO, PROFILE_CODES.ENCARREGADO_SISTEMA_EMPRESA],
+    ADMIN: [PROFILE_CODES.REPRESENTANTE_EMPRESA],
     REPRESENTANTE: [PROFILE_CODES.REPRESENTANTE_EMPRESA],
     CEO: [PROFILE_CODES.CEO],
     DIRETOR: [PROFILE_CODES.DIRETOR],

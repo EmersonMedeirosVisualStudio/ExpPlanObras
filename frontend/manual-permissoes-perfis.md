@@ -27,6 +27,11 @@ Exemplo:
 - Abrangência: obras `10` e `12`
 - Resultado: João enxerga e edita apenas nas obras 10 e 12.
 
+Observação:
+
+- `tenant.role` é um campo simples que vem do backend (ex.: `ADMIN`) e define o perfil inicial do usuário na empresa.
+- A regra aplicada no sistema é: `ADMIN` = `REPRESENTANTE_EMPRESA` (governança inicial). Os demais perfis operacionais devem ser atribuídos conforme a função real do usuário.
+
 ---
 
 ## 3. Auditoria do implementado (estado atual)
