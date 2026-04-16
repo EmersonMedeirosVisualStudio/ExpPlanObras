@@ -9,6 +9,8 @@ import type { MenuBadgesMapDTO, MenuItemDTO, MenuSectionDTO } from "@/lib/naviga
 import { useRealtimeEvent } from "@/lib/realtime/hooks";
 import * as LucideIcons from "lucide-react";
 import type { ComponentType } from "react";
+import { getActiveObra, subscribeActiveObra } from "@/lib/obra/active";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 
 function isActive(pathname: string, item: MenuItemDTO): boolean {
   if (item.href === "/dashboard") return pathname === "/dashboard";
@@ -119,11 +121,88 @@ export function SidebarNav({ secoes, initialBadges = {} }: { secoes: MenuSection
   const pathname = usePathname();
   const [badges, setBadges] = useState<MenuBadgesMapDTO>(initialBadges);
   const [favoritos, setFavoritos] = useState<string[]>([]);
+  const [activeObra, setActiveObra] = useState(() => getActiveObra());
+
+  useEffect(() => subscribeActiveObra(() => setActiveObra(getActiveObra())), []);
+
+  function readPermissionSet() {
+    if (typeof document === "undefined") return new Set<string>();
+    const cookies = document.cookie.split(";").map((c) => c.trim());
+    const raw = cookies.find((c) => c.startsWith("exp_user="))?.slice("exp_user=".length);
+    if (!raw) return new Set<string>();
+    try {
+      const decoded = decodeURIComponent(raw);
+      const parsed = JSON.parse(decoded) as any;
+      const perms = Array.isArray(parsed?.permissoes) ? (parsed.permissoes as any[]).map((p) => String(p)) : [];
+      return new Set<string>(perms);
+    } catch {
+      return new Set<string>();
+    }
+  }
+
+  const mergedSections = useMemo(() => {
+    const permissionSet = readPermissionSet();
+    const has = (perm?: string) => {
+      if (!perm) return true;
+      if (permissionSet.has("*")) return true;
+      return permissionSet.has(perm);
+    };
+
+    const obraId = activeObra?.id ? Number(activeObra.id) : 0;
+    const obraNome = activeObra?.nome ? String(activeObra.nome) : null;
+    const obraLabel = obraId ? `Obra: ${obraNome || `#${obraId}`}` : "Obra (selecionar)";
+
+    const planejamentoChildren: MenuItemDTO[] = [
+      { key: "obra-planejamento-dashboard", label: "Dashboard", href: "/dashboard/engenharia/painel", icon: "layout-dashboard", permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW } as any,
+      { key: "obra-planejamento-cadastro", label: "Cadastro da Obra", href: obraId ? `/dashboard/engenharia/obras/${obraId}` : "/dashboard/engenharia/obras", icon: "construction", permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW } as any,
+      { key: "obra-planejamento-orcamento", label: "Orçamento (Planilha)", href: obraId ? `/dashboard/engenharia/obras/${obraId}/planilha` : "/dashboard/engenharia/obras", icon: "calculator", permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW } as any,
+      { key: "obra-planejamento-cronograma", label: "Cronograma / Programação", href: obraId ? `/dashboard/engenharia/obras/${obraId}/programacao` : "/dashboard/engenharia/obras", icon: "calendar", permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW } as any,
+      { key: "obra-planejamento-centro-custos", label: "Centro de Custos", href: "/dashboard/engenharia/cadastros/centros-custo", icon: "layers", permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW } as any,
+      { key: "obra-planejamento-contrato", label: "Contrato da Obra", href: obraId ? `/dashboard/engenharia/obras/${obraId}/contrato` : "/dashboard/engenharia/obras", icon: "file-text", permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW } as any,
+    ].filter((it: any) => has(it.permission));
+
+    const execucaoChildren: MenuItemDTO[] = [
+      { key: "obra-execucao-portal", label: "Portal do Gestor", href: "/dashboard/gestor/portal", icon: "briefcase", permission: PERMISSIONS.PORTAL_GESTOR_VIEW } as any,
+      { key: "obra-execucao-apropriacao", label: "Apropriação", href: obraId ? `/dashboard/engenharia/obras/${obraId}/apropriacao` : "/dashboard/engenharia/obras", icon: "timer", permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW } as any,
+      { key: "obra-execucao-medicoes", label: "Medições / Fiscalização", href: "/dashboard/fiscalizacao/painel", icon: "clipboard-check", permission: PERMISSIONS.DASHBOARD_FISCALIZACAO_VIEW } as any,
+      { key: "obra-execucao-suprimentos", label: "Almoxarifado / Materiais", href: "/dashboard/suprimentos/painel", icon: "package", permission: PERMISSIONS.DASHBOARD_SUPRIMENTOS_VIEW } as any,
+    ].filter((it: any) => has(it.permission));
+
+    const obraSection: MenuSectionDTO = {
+      key: "obra",
+      label: "Obra",
+      items: [
+        {
+          key: "obra-ativo",
+          label: obraLabel,
+          icon: "construction",
+          children: [
+            { key: "obra-trocar", label: obraId ? "Trocar obra" : "Selecionar obra", href: "/dashboard/engenharia/obras", icon: "arrow-left-right", permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW } as any,
+            {
+              key: "obra-planejamento",
+              label: "Planejamento",
+              icon: "layout-dashboard",
+              children: planejamentoChildren,
+            } as any,
+            {
+              key: "obra-execucao",
+              label: "Execução",
+              icon: "activity",
+              children: execucaoChildren,
+            } as any,
+          ].filter((it: any) => !it.permission || has(it.permission)),
+        } as any,
+      ],
+    };
+
+    return [obraSection, ...secoes];
+  }, [secoes, activeObra]);
+
   const itemsMap = useMemo(() => {
     const m = new Map<string, MenuItemDTO>();
-    for (const s of secoes) flattenItems(s.items, m);
+    for (const s of mergedSections) flattenItems(s.items, m);
     return m;
-  }, [secoes]);
+  }, [mergedSections]);
 
   useEffect(() => {
     let active = true;
@@ -217,7 +296,7 @@ export function SidebarNav({ secoes, initialBadges = {} }: { secoes: MenuSection
             </div>
           </div>
         ) : null}
-        {secoes.map((secao) => (
+        {mergedSections.map((secao) => (
           <div key={secao.key}>
             <div className="mb-2 text-xs font-semibold uppercase text-slate-500">{secao.label}</div>
 

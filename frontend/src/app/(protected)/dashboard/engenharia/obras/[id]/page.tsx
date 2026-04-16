@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { setActiveObra } from "@/lib/obra/active";
 
 type Janela = { key: string; titulo: string; desc: string; href: (idObra: number) => string; nivel: "OPERACAO" | "GESTAO" | "CADASTRO" };
 type ResponsavelObraRef = {
@@ -15,6 +16,16 @@ type ResponsavelObraRef = {
   telefone: string | null;
   ativo: boolean;
 };
+type ContratoDaObra = {
+  idObra: number;
+  nomeObra: string;
+  idContrato: number | null;
+  numeroContrato: string;
+  statusContrato: string | null;
+  valorContratado: number;
+  valorExecutado: number;
+  valorPago: number;
+};
 
 export default function EngenhariaObraHomePage() {
   const params = useParams<{ id: string }>();
@@ -26,6 +37,34 @@ export default function EngenhariaObraHomePage() {
   const [erroResponsaveis, setErroResponsaveis] = useState<string | null>(null);
   const hasResponsavelTecnico = responsaveis.some((r) => r.ativo && r.tipo === "RESPONSAVEL_TECNICO");
   const hasFiscal = responsaveis.some((r) => r.ativo && r.tipo === "FISCAL_OBRA");
+  const [contrato, setContrato] = useState<ContratoDaObra | null>(null);
+  const [carregandoContrato, setCarregandoContrato] = useState(false);
+
+  useEffect(() => {
+    if (!idObra) return;
+    setActiveObra({ id: idObra });
+  }, [idObra]);
+
+  useEffect(() => {
+    if (!idObra) return;
+    let active = true;
+    (async () => {
+      try {
+        setCarregandoContrato(true);
+        const res = await fetch(`/api/v1/engenharia/obras/${idObra}/contrato`, { cache: "no-store" });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar contrato.");
+        if (active) setContrato(json.data as ContratoDaObra);
+      } catch {
+        if (active) setContrato(null);
+      } finally {
+        if (active) setCarregandoContrato(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [idObra]);
 
   useEffect(() => {
     if (!idObra) return;
@@ -204,50 +243,49 @@ export default function EngenhariaObraHomePage() {
           </button>
         </div>
 
-        {carregandoResponsaveis ? <div className="text-sm text-slate-500">Carregando responsáveis...</div> : null}
-        {erroResponsaveis ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{erroResponsaveis}</div> : null}
-
-        {!carregandoResponsaveis && !erroResponsaveis ? (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div className="rounded-lg border p-3">
-              <div className="text-sm font-semibold text-slate-700">Responsável Técnico</div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="rounded-lg border p-3">
+            <div className="text-sm font-semibold text-slate-700">Contrato</div>
+            {carregandoContrato ? (
+              <div className="mt-2 text-sm text-slate-500">Carregando…</div>
+            ) : contrato ? (
               <div className="mt-2 space-y-1 text-sm text-slate-700">
-                {responsaveis
-                  .filter((r) => r.ativo && r.tipo === "RESPONSAVEL_TECNICO")
-                  .slice(0, 3)
-                  .map((r) => (
-                    <div key={r.idResponsavelObra} className="rounded-md bg-slate-50 px-3 py-2">
-                      <div className="font-medium">{r.nome}</div>
-                      <div className="text-xs text-slate-600">
-                        {[r.registroProfissional, r.email, r.telefone].filter(Boolean).join(" · ") || "Sem contato"}
-                      </div>
-                    </div>
-                  ))}
-                {!responsaveis.some((r) => r.ativo && r.tipo === "RESPONSAVEL_TECNICO") ? (
-                  <div className="text-sm text-slate-500">Não cadastrado.</div>
-                ) : null}
+                <div>
+                  <span className="text-slate-500">Número:</span>{" "}
+                  <span className="font-medium">{contrato.numeroContrato?.trim() ? contrato.numeroContrato : "Sem número"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Status:</span> <span className="font-medium">{contrato.statusContrato || "—"}</span>
+                </div>
+                <button className="mt-2 rounded-md border px-3 py-1.5 text-xs" type="button" onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/contrato`)}>
+                  Ver detalhes
+                </button>
               </div>
-            </div>
+            ) : (
+              <div className="mt-2 text-sm text-slate-500">Não vinculado.</div>
+            )}
+          </div>
 
-            <div className="rounded-lg border p-3">
-              <div className="text-sm font-semibold text-slate-700">Fiscal da Obra</div>
-              <div className="mt-2 space-y-1 text-sm text-slate-700">
-                {responsaveis
-                  .filter((r) => r.ativo && r.tipo === "FISCAL_OBRA")
-                  .slice(0, 3)
-                  .map((r) => (
-                    <div key={r.idResponsavelObra} className="rounded-md bg-slate-50 px-3 py-2">
-                      <div className="font-medium">{r.nome}</div>
-                      <div className="text-xs text-slate-600">
-                        {[r.registroProfissional, r.email, r.telefone].filter(Boolean).join(" · ") || "Sem contato"}
-                      </div>
-                    </div>
-                  ))}
-                {!responsaveis.some((r) => r.ativo && r.tipo === "FISCAL_OBRA") ? <div className="text-sm text-slate-500">Não cadastrado.</div> : null}
-              </div>
+          <div className="rounded-lg border p-3">
+            <div className="text-sm font-semibold text-slate-700">Equipe responsável</div>
+            <div className="mt-2 space-y-1 text-sm text-slate-700">
+              {responsaveis
+                .filter((r) => r.ativo)
+                .slice(0, 4)
+                .map((r) => (
+                  <div key={r.idResponsavelObra} className="rounded-md bg-slate-50 px-3 py-2">
+                    <div className="text-xs font-semibold text-slate-600">{r.tipo === "RESPONSAVEL_TECNICO" ? "Responsável Técnico" : "Fiscal da Obra"}</div>
+                    <div className="font-medium">{r.nome}</div>
+                    <div className="text-xs text-slate-600">{[r.registroProfissional, r.email, r.telefone].filter(Boolean).join(" · ") || "Sem contato"}</div>
+                  </div>
+                ))}
+              {!responsaveis.some((r) => r.ativo) ? <div className="text-sm text-slate-500">Não cadastrado.</div> : null}
             </div>
           </div>
-        ) : null}
+        </div>
+
+        {carregandoResponsaveis ? <div className="text-sm text-slate-500">Carregando responsáveis...</div> : null}
+        {erroResponsaveis ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{erroResponsaveis}</div> : null}
       </div>
 
       <div className="space-y-4">

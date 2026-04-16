@@ -238,6 +238,8 @@ Implementação atual relevante:
 
 - Contratos: cadastro de contrapartes com suporte a PJ e PF (criar, listar, editar e inativar).
 - Obras: cadastro de responsáveis por obra com tipos "Responsável Técnico" e "Fiscal da Obra" (CRUD).
+- Obra ativa: seleção de obra no topo (header) e seção “Obra” no menu com Planejamento/Execução baseada na obra ativa.
+- Contrato da obra: acesso via obra ativa, com resumo na home da obra e tela de detalhes (somente leitura).
 
 ### 4.2 Barra superior (empresa e utilitários)
 

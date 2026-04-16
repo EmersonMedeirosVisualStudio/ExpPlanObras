@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { setActiveObra } from "@/lib/obra/active";
 
 type ObraRef = { id: number; nome: string };
 type ResponsavelObraRef = {
@@ -296,7 +297,10 @@ export default function EngenhariaObrasPage() {
             key={o.id}
             type="button"
             className="rounded-xl border bg-white p-4 shadow-sm text-left hover:bg-slate-50"
-            onClick={() => router.push(`/dashboard/engenharia/obras/${o.id}`)}
+            onClick={() => {
+              setActiveObra({ id: o.id, nome: o.nome });
+              router.push(`/dashboard/engenharia/obras/${o.id}`);
+            }}
           >
             <div className="font-semibold">{o.nome}</div>
             <div className="text-sm text-slate-600">Abrir janelas da obra</div>
