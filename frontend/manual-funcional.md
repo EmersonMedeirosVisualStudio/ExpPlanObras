@@ -209,30 +209,30 @@ Os dados precisam conversar entre si. O sistema não é um conjunto de telas iso
 
 O sistema é formado pelos seguintes grandes blocos funcionais:
 
-1. Painéis por perfil
-2. Organograma
-3. Administração do sistema
-4. RH
-5. SST
-6. Engenharia
-7. Fiscalização
+1. Painéis (por perfil e por responsabilidade)
+2. Processos (Aprovações, Workflows e Documentos)
+3. Contratos
+4. Obras — Planejamento
+5. Obras — Execução
+6. RH
+7. SST
 8. Suprimentos
-9. Licitações
-10. Controle Financeiro
-11. Importações e exportações
-12. Segurança das informações
+9. Fiscalização
+10. Administração do Sistema e Governança
+11. Relatórios
 
 ### 4.1 Janelas principais do sistema
 
 As janelas (telas) principais se organizam por perfil e por núcleo operacional:
 
-- Painéis por perfil (CEO, Diretor, Gerente, Representante)
-- Engenharia (Contratos → Obras/Serviços → Cronograma/LOB → Medições → Pagamentos)
-- Fiscalização (Painel Fiscalização, Diário de obra, Medições da fiscalização, Calendário e acompanhamento)
-- Suprimentos (solicitação/aprovação, apropriação e controle por serviço/centro de custo)
+- Painéis (Representante, CEO, Diretor, Gerente e Centro Executivo)
+- Contratos (gestão do ciclo: cadastro, documentos e acompanhamento)
+- Obras — Planejamento (cadastro, orçamento, cronograma, centros de custo e estrutura de serviços/insumos)
+- Obras — Execução (portal do gestor, apropriação, consumo, aquisições, equipamentos e manutenção)
+- Processos (workflows e aprovações para medições, aditivos e decisões-chave)
 - RH e SST (cadastros e acompanhamento por unidade/obra)
-- Documentos e conteúdo da obra (fotos/documentos vinculados)
-- Administração do sistema (usuários, perfis, permissões e parametrizações)
+- Documentos (conteúdo e evidências vinculadas a obras e processos)
+- Administração do Sistema (usuários, perfis, permissões, abrangências e configurações)
 
 ### 4.2 Barra superior (empresa e utilitários)
 
