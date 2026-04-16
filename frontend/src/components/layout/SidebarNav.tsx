@@ -171,6 +171,7 @@ export function SidebarNav({ secoes, initialBadges = {} }: { secoes: MenuSection
     const obraSection: MenuSectionDTO = {
       key: "obra",
       label: "Obra",
+      ordem: 0,
       items: [
         {
           key: "obra-ativo",
