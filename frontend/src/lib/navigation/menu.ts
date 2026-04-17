@@ -216,48 +216,233 @@ export const APP_MENU: MenuSectionConfig[] = [
     ordem: 3,
     items: [
       {
-        key: 'contratos-locacao',
-        label: 'Gestão de Contratos',
-        href: '/dashboard/engenharia/contratos-locacao',
+        key: 'contratos-dashboard',
+        label: 'Dashboard',
+        href: '/dashboard/contratos/dashboard',
         icon: 'file-text',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
-        key: 'licitacoes',
-        label: 'Licitações',
-        href: '/dashboard/engenharia/licitacoes',
-        icon: 'file-search',
         permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
         children: [
           {
-            key: 'licitacoes-documentos-empresa',
-            label: 'Documentos da Empresa',
-            href: '/dashboard/engenharia/licitacoes/documentos-empresa',
+            key: 'contratos-dashboard-gestao',
+            label: 'Gestão de Contratos',
+            href: '/dashboard/engenharia/contratos-locacao',
             icon: 'file-text',
             permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
           },
           {
-            key: 'licitacoes-acervo-empresa',
-            label: 'Acervo da Empresa',
-            href: '/dashboard/engenharia/licitacoes/acervo-empresa',
-            icon: 'archive',
+            key: 'contratos-dashboard-aditivos',
+            label: 'Aditivos',
+            href: '/dashboard/contratos/aditivos',
+            icon: 'file-pen',
+            permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+          },
+          {
+            key: 'contratos-dashboard-documentos',
+            label: 'Documentos do Contrato',
+            href: '/dashboard/obras/documentos?tipo=CONTRATO',
+            icon: 'paperclip',
+            permission: PERMISSIONS.DOCUMENTOS_VIEW,
+          },
+          {
+            key: 'contratos-dashboard-medicoes',
+            label: 'Medições (por contrato)',
+            href: '/dashboard/contratos/medicoes',
+            icon: 'clipboard-check',
+            permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+          },
+          {
+            key: 'contratos-dashboard-pagamentos',
+            label: 'Pagamentos',
+            href: '/dashboard/contratos/pagamentos',
+            icon: 'dollar-sign',
             permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
           },
         ],
       },
       {
         key: 'contrapartes',
-        label: 'Contrapartes',
-        href: '/dashboard/engenharia/contrapartes',
+        label: 'Contrapartes (Parceiros)',
         icon: 'handshake',
         permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+        children: [
+          {
+            key: 'contrapartes-cadastro',
+            label: 'Cadastro de Pessoas (PF/PJ)',
+            href: '/dashboard/engenharia/contrapartes',
+            icon: 'id-card',
+            permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+          },
+          {
+            key: 'contrapartes-empresas',
+            label: 'Empresas',
+            href: '/dashboard/engenharia/contrapartes',
+            icon: 'building-2',
+            permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+          },
+          {
+            key: 'contrapartes-contatos',
+            label: 'Contatos',
+            href: '/dashboard/engenharia/contrapartes',
+            icon: 'contact',
+            permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+          },
+          {
+            key: 'contrapartes-documentos',
+            label: 'Documentos',
+            href: '/dashboard/engenharia/contrapartes',
+            icon: 'paperclip',
+            permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'engenharia',
+    label: 'Engenharia',
+    ordem: 4,
+    items: [
+      {
+        key: 'engenharia-dashboard',
+        label: 'Dashboard Engenharia',
+        href: '/dashboard/engenharia/painel',
+        icon: 'layout-dashboard',
+        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+        homePriority: 13,
+      },
+      {
+        key: 'engenharia-obras',
+        label: 'Obras',
+        icon: 'construction',
+        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+        children: [
+          {
+            key: 'engenharia-obras-selecionar',
+            label: 'Selecionar Obra',
+            href: '/dashboard/engenharia/obras',
+            icon: 'arrow-left-right',
+            permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+          },
+          {
+            key: 'engenharia-obras-ativa-dashboard',
+            label: 'Dashboard da Obra',
+            href: '/dashboard/engenharia/obras/ativa/dashboard',
+            icon: 'layout-dashboard',
+            permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+          },
+          {
+            key: 'engenharia-obras-ativa-contrato',
+            label: 'Resumo do Contrato',
+            href: '/dashboard/engenharia/obras/ativa/contrato',
+            icon: 'file-text',
+            permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+          },
+          {
+            key: 'engenharia-obras-ativa-documentos',
+            label: 'Documentos da Obra',
+            href: '/dashboard/engenharia/obras/ativa/documentos',
+            icon: 'paperclip',
+            permission: PERMISSIONS.DOCUMENTOS_VIEW,
+          },
+          {
+            key: 'engenharia-obras-planejamento',
+            label: 'Planejamento',
+            icon: 'layout-dashboard',
+            children: [
+              {
+                key: 'engenharia-obras-ativa-planilha-contratada',
+                label: 'Planilha Contratada',
+                href: '/dashboard/engenharia/obras/ativa/planilha-contratada',
+                icon: 'calculator',
+                permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+              },
+              {
+                key: 'engenharia-orcamentos',
+                label: 'Orçamento (referência)',
+                href: '/dashboard/engenharia/orcamentos',
+                icon: 'calculator',
+                permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+              },
+              {
+                key: 'engenharia-obras-ativa-cronograma',
+                label: 'Cronograma',
+                href: '/dashboard/engenharia/obras/ativa/programacao-semanal',
+                icon: 'calendar',
+                permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+              },
+              {
+                key: 'engenharia-centros-custo',
+                label: 'Centro de Custos',
+                href: '/dashboard/engenharia/cadastros/centros-custo',
+                icon: 'layers',
+                permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+              },
+            ],
+          },
+          {
+            key: 'engenharia-obras-execucao',
+            label: 'Execução',
+            icon: 'activity',
+            children: [
+              {
+                key: 'engenharia-obras-ativa-programacao',
+                label: 'Programação Semanal',
+                href: '/dashboard/engenharia/obras/ativa/programacao-semanal',
+                icon: 'calendar',
+                permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+              },
+              {
+                key: 'engenharia-obras-ativa-apropriacao',
+                label: 'Apropriação',
+                href: '/dashboard/engenharia/obras/ativa/apropriacao',
+                icon: 'timer',
+                permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+              },
+              {
+                key: 'engenharia-suprimentos',
+                label: 'Suprimentos / Almoxarifado',
+                href: '/dashboard/suprimentos/painel',
+                icon: 'package',
+                permission: PERMISSIONS.DASHBOARD_SUPRIMENTOS_VIEW,
+              },
+              {
+                key: 'engenharia-equipamentos',
+                label: 'Equipamentos',
+                href: '/dashboard/engenharia/ativos',
+                icon: 'wrench',
+                permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+              },
+              {
+                key: 'engenharia-servicos',
+                label: 'Produção / Serviços',
+                href: '/dashboard/engenharia/servicos',
+                icon: 'hammer',
+                permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+              },
+              {
+                key: 'engenharia-medicoes',
+                label: 'Medições (workflow)',
+                href: '/dashboard/fiscalizacao/painel',
+                icon: 'clipboard-check',
+                permission: PERMISSIONS.DASHBOARD_FISCALIZACAO_VIEW,
+              },
+              {
+                key: 'engenharia-produtividade',
+                label: 'Produtividade',
+                href: '/dashboard/rh/produtividade',
+                icon: 'line-chart',
+                permission: PERMISSIONS.DASHBOARD_RH_VIEW,
+              },
+            ],
+          },
+        ],
       },
     ],
   },
   {
     key: 'rh',
     label: 'RH',
-    ordem: 4,
+    ordem: 5,
     items: [
       {
         key: 'painel-rh',
@@ -293,7 +478,7 @@ export const APP_MENU: MenuSectionConfig[] = [
   {
     key: 'sst',
     label: 'SST',
-    ordem: 5,
+    ordem: 6,
     items: [
       {
         key: 'painel-sst',
@@ -350,7 +535,7 @@ export const APP_MENU: MenuSectionConfig[] = [
   {
     key: 'suprimentos',
     label: 'Suprimentos',
-    ordem: 6,
+    ordem: 7,
     items: [
       {
         key: 'painel-suprimentos',
@@ -365,7 +550,7 @@ export const APP_MENU: MenuSectionConfig[] = [
   {
     key: 'fiscalizacao',
     label: 'Fiscalização',
-    ordem: 7,
+    ordem: 8,
     items: [
       {
         key: 'painel-fiscalizacao',
@@ -379,7 +564,7 @@ export const APP_MENU: MenuSectionConfig[] = [
   {
     key: 'administracao',
     label: 'Administração',
-    ordem: 8,
+    ordem: 9,
     items: [
       { key: 'organograma', label: 'Organograma', href: '/dashboard/organograma', icon: 'network', permission: PERMISSIONS.ORGANOGRAMA_VIEW },
       {
@@ -534,7 +719,7 @@ export const APP_MENU: MenuSectionConfig[] = [
   {
     key: 'relatorios',
     label: 'Relatórios',
-    ordem: 9,
+    ordem: 10,
     items: [
       {
         key: 'relatorios-agendados',
