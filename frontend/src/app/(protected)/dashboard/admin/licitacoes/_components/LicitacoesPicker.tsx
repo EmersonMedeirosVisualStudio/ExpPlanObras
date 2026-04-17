@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import api from "@/lib/api";
 
 type LicitacaoRow = {
   idLicitacao: number;
@@ -40,9 +41,8 @@ export default function LicitacoesPicker({
     try {
       setErr(null);
       setLoading(true);
-      const res = await fetch("/api/v1/engenharia/licitacoes", { cache: "no-store" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar licitações.");
+      const { data: json } = await api.get("/api/v1/engenharia/licitacoes");
+      if (!json?.success) throw new Error(json?.message || "Erro ao carregar licitações.");
       const data = Array.isArray(json.data) ? (json.data as LicitacaoRow[]) : [];
       setRows(data);
     } catch (e: any) {
@@ -64,13 +64,13 @@ export default function LicitacoesPicker({
   }, [rows, q]);
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl">
+    <div className="p-6 space-y-6 max-w-6xl text-slate-900">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold">{title}</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
           <div className="text-sm text-slate-600">{subtitle}</div>
         </div>
-        <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={carregar} disabled={loading}>
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" type="button" onClick={carregar} disabled={loading}>
           Atualizar
         </button>
       </div>
@@ -89,7 +89,7 @@ export default function LicitacoesPicker({
 
         <div className="overflow-auto">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left">
+            <thead className="bg-slate-50 text-left text-slate-700">
               <tr>
                 <th className="px-3 py-2">ID</th>
                 <th className="px-3 py-2">Título</th>
@@ -106,7 +106,7 @@ export default function LicitacoesPicker({
                   <td className="px-3 py-2">{r.orgao || "—"}</td>
                   <td className="px-3 py-2">{STATUS_LABEL[String(r.status || "").toUpperCase()] || r.status}</td>
                   <td className="px-3 py-2">
-                    <button className="rounded border px-2 py-1 text-xs" type="button" onClick={() => onOpen(r.idLicitacao)}>
+                    <button className="rounded border bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50" type="button" onClick={() => onOpen(r.idLicitacao)}>
                       {actionLabel}
                     </button>
                   </td>
@@ -126,4 +126,3 @@ export default function LicitacoesPicker({
     </div>
   );
 }
-
