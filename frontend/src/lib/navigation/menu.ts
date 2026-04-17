@@ -238,6 +238,13 @@ export const APP_MENU: MenuSectionConfig[] = [
         homePriority: 13,
       },
       {
+        key: 'engenharia-obras-cadastro',
+        label: 'Cadastro de Obra',
+        href: '/dashboard/engenharia/obras/cadastro',
+        icon: 'plus',
+        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+      },
+      {
         key: 'engenharia-obras',
         label: 'Obras',
         icon: 'construction',

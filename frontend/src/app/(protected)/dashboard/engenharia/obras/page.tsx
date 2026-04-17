@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { setActiveObra } from "@/lib/obra/active";
+import api from "@/lib/api";
 
 type ObraRef = { id: number; nome: string };
 type ResponsavelObraRef = {
@@ -41,9 +42,8 @@ export default function EngenhariaObrasPage() {
     try {
       setLoading(true);
       setErr(null);
-      const res = await fetch("/api/v1/dashboard/me/filtros", { cache: "no-store" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar obras");
+      const { data: json } = await api.get("/api/v1/dashboard/me/filtros");
+      if (!json?.success) throw new Error(json?.message || "Erro ao carregar obras");
       const lista = Array.isArray(json.data?.obras) ? json.data.obras : [];
       const obrasNormalizadas = lista.map((o: any) => ({ id: Number(o.id), nome: String(o.nome || `Obra #${o.id}`) }));
       setObras(obrasNormalizadas);
@@ -59,9 +59,8 @@ export default function EngenhariaObrasPage() {
   async function carregarResponsaveis(idObra: number) {
     try {
       setErr(null);
-      const res = await fetch(`/api/v1/engenharia/obras/responsaveis?idObra=${idObra}`, { cache: "no-store" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar responsáveis.");
+      const { data: json } = await api.get(`/api/v1/engenharia/obras/responsaveis`, { params: { idObra } });
+      if (!json?.success) throw new Error(json?.message || "Erro ao carregar responsáveis.");
       const lista = Array.isArray(json.data) ? json.data : [];
       setResponsaveis(lista);
     } catch (e: any) {
@@ -85,10 +84,8 @@ export default function EngenhariaObrasPage() {
         ativo: formResp.ativo,
       };
       const url = edicaoId ? `/api/v1/engenharia/obras/responsaveis/${edicaoId}` : "/api/v1/engenharia/obras/responsaveis";
-      const method = edicaoId ? "PUT" : "POST";
-      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao salvar responsável.");
+      const { data: json } = edicaoId ? await api.put(url, payload) : await api.post(url, payload);
+      if (!json?.success) throw new Error(json?.message || "Erro ao salvar responsável.");
       setEdicaoId(null);
       setFormResp({ tipo: "RESPONSAVEL_TECNICO", nome: "", registroProfissional: "", cpf: "", email: "", telefone: "", ativo: true });
       await carregarResponsaveis(obraCadastroId);
@@ -101,9 +98,8 @@ export default function EngenhariaObrasPage() {
     if (!window.confirm("Excluir este registro?")) return;
     try {
       setErr(null);
-      const res = await fetch(`/api/v1/engenharia/obras/responsaveis/${idResponsavelObra}`, { method: "DELETE" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao excluir responsável.");
+      const { data: json } = await api.delete(`/api/v1/engenharia/obras/responsaveis/${idResponsavelObra}`);
+      if (!json?.success) throw new Error(json?.message || "Erro ao excluir responsável.");
       if (!obraCadastroId) return;
       await carregarResponsaveis(obraCadastroId);
     } catch (e: any) {
@@ -156,13 +152,13 @@ export default function EngenhariaObrasPage() {
   }, [obraCadastroId]);
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
+    <div className="p-6 space-y-6 max-w-5xl text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold">Engenharia → Obras</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Engenharia → Obras</h1>
           <div className="text-sm text-slate-600">Selecione uma obra para abrir as janelas operacionais (planejamento, apropriação, equipamentos, insumos e documentos).</div>
         </div>
-        <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={carregar} disabled={loading}>
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" type="button" onClick={carregar} disabled={loading}>
           {loading ? "Carregando..." : "Atualizar"}
         </button>
       </div>
@@ -233,7 +229,7 @@ export default function EngenhariaObrasPage() {
           {edicaoId ? (
             <button
               type="button"
-              className="rounded-lg border px-4 py-2 text-sm"
+              className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
               onClick={() => {
                 setEdicaoId(null);
                 setFormResp({ tipo: "RESPONSAVEL_TECNICO", nome: "", registroProfissional: "", cpf: "", email: "", telefone: "", ativo: true });
@@ -249,7 +245,7 @@ export default function EngenhariaObrasPage() {
 
         <div className="overflow-auto">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left">
+            <thead className="bg-slate-50 text-left text-slate-700">
               <tr>
                 <th className="px-3 py-2">Tipo</th>
                 <th className="px-3 py-2">Nome</th>

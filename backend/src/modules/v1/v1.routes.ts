@@ -1425,6 +1425,158 @@ export default async function v1Routes(server: FastifyInstance) {
     });
   });
 
+  server.get('/engenharia/obras/responsaveis', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const q = z.object({ idObra: z.coerce.number().int().positive() }).parse(request.query || {});
+    const obra = await prisma.obra.findUnique({ where: { id: q.idObra }, select: { id: true, tenantId: true } }).catch(() => null);
+    if (!obra || obra.tenantId !== ctx.tenantId) return fail(reply, 404, 'Obra não encontrada');
+
+    const rows = await prisma.responsavelObra.findMany({
+      where: { obraId: obra.id },
+      include: { responsavel: true },
+      orderBy: { id: 'desc' },
+    });
+
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idResponsavelObra: r.id,
+        idObra: r.obraId,
+        tipo: String(r.role || '').toUpperCase() === 'FISCAL_OBRA' ? 'FISCAL_OBRA' : 'RESPONSAVEL_TECNICO',
+        nome: r.responsavel?.name || '',
+        registroProfissional: r.responsavel?.crea ?? null,
+        cpf: r.responsavel?.cpf ?? null,
+        email: r.responsavel?.email ?? null,
+        telefone: r.responsavel?.phone ?? null,
+        ativo: r.endDate == null,
+      }))
+    );
+  });
+
+  server.post('/engenharia/obras/responsaveis', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const body = z
+      .object({
+        idObra: z.number().int().positive(),
+        tipo: z.enum(['RESPONSAVEL_TECNICO', 'FISCAL_OBRA']),
+        nome: z.string().min(2),
+        registroProfissional: z.string().optional().nullable(),
+        cpf: z.string().optional().nullable(),
+        email: z.string().optional().nullable(),
+        telefone: z.string().optional().nullable(),
+        ativo: z.boolean().default(true),
+      })
+      .parse(request.body || {});
+
+    const obra = await prisma.obra.findUnique({ where: { id: body.idObra }, select: { id: true, tenantId: true } }).catch(() => null);
+    if (!obra || obra.tenantId !== ctx.tenantId) return fail(reply, 404, 'Obra não encontrada');
+
+    const cpf = body.cpf ? onlyDigits(String(body.cpf)) : '';
+    const email = body.email ? normalizeEmail(String(body.email)) : '';
+
+    let resp = null as any;
+    if (cpf) resp = await prisma.responsavelTecnico.findFirst({ where: { tenantId: ctx.tenantId, cpf } }).catch(() => null);
+    if (!resp && email) resp = await prisma.responsavelTecnico.findFirst({ where: { tenantId: ctx.tenantId, email } }).catch(() => null);
+
+    if (!resp) {
+      resp = await prisma.responsavelTecnico.create({
+        data: {
+          tenantId: ctx.tenantId,
+          name: String(body.nome),
+          crea: body.registroProfissional ?? null,
+          cpf: cpf || null,
+          email: email || null,
+          phone: body.telefone ?? null,
+        },
+      });
+    } else {
+      resp = await prisma.responsavelTecnico.update({
+        where: { id: resp.id },
+        data: {
+          name: String(body.nome),
+          crea: body.registroProfissional ?? null,
+          cpf: cpf || null,
+          email: email || null,
+          phone: body.telefone ?? null,
+        },
+      });
+    }
+
+    const created = await prisma.responsavelObra.create({
+      data: {
+        obraId: obra.id,
+        responsavelId: resp.id,
+        role: body.tipo,
+        endDate: body.ativo ? null : new Date(),
+      },
+    });
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_obras_responsaveis', idRegistro: String(created.id), acao: 'CREATE', dadosNovos: { ...created, responsavelId: resp.id } });
+    return ok(reply, { idResponsavelObra: created.id }, { message: 'Responsável cadastrado' });
+  });
+
+  server.put('/engenharia/obras/responsaveis/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        idObra: z.number().int().positive(),
+        tipo: z.enum(['RESPONSAVEL_TECNICO', 'FISCAL_OBRA']),
+        nome: z.string().min(2),
+        registroProfissional: z.string().optional().nullable(),
+        cpf: z.string().optional().nullable(),
+        email: z.string().optional().nullable(),
+        telefone: z.string().optional().nullable(),
+        ativo: z.boolean().default(true),
+      })
+      .parse(request.body || {});
+
+    const current = await prisma.responsavelObra.findUnique({ where: { id }, include: { responsavel: true, obra: { select: { tenantId: true } } } }).catch(() => null);
+    if (!current || current.obra?.tenantId !== ctx.tenantId) return fail(reply, 404, 'Registro não encontrado');
+
+    const obra = await prisma.obra.findUnique({ where: { id: body.idObra }, select: { id: true, tenantId: true } }).catch(() => null);
+    if (!obra || obra.tenantId !== ctx.tenantId) return fail(reply, 404, 'Obra não encontrada');
+
+    const cpf = body.cpf ? onlyDigits(String(body.cpf)) : '';
+    const email = body.email ? normalizeEmail(String(body.email)) : '';
+
+    const respUpdated = await prisma.responsavelTecnico.update({
+      where: { id: current.responsavelId },
+      data: {
+        name: String(body.nome),
+        crea: body.registroProfissional ?? null,
+        cpf: cpf || null,
+        email: email || null,
+        phone: body.telefone ?? null,
+      },
+    });
+
+    const updated = await prisma.responsavelObra.update({
+      where: { id },
+      data: {
+        obraId: obra.id,
+        role: body.tipo,
+        endDate: body.ativo ? null : new Date(),
+      },
+    });
+
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_obras_responsaveis', idRegistro: String(id), acao: 'UPDATE', dadosAnteriores: current as any, dadosNovos: { ...updated, responsavel: respUpdated } as any });
+    return ok(reply, {}, { message: 'Responsável atualizado' });
+  });
+
+  server.delete('/engenharia/obras/responsaveis/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const current = await prisma.responsavelObra.findUnique({ where: { id }, include: { obra: { select: { tenantId: true } } } }).catch(() => null);
+    if (!current || current.obra?.tenantId !== ctx.tenantId) return fail(reply, 404, 'Registro não encontrado');
+    await prisma.responsavelObra.delete({ where: { id } });
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_obras_responsaveis', idRegistro: String(id), acao: 'DELETE', dadosAnteriores: current as any });
+    return ok(reply, {}, { message: 'Responsável removido' });
+  });
+
   const LICITACAO_STATUS = ['PREVISTA', 'EM_ANALISE', 'EM_PREPARACAO', 'PARTICIPANDO', 'AGUARDANDO_RESULTADO', 'ENCERRADA', 'VENCIDA', 'DESISTIDA'] as const;
 
   function dateOnlyToIso(value: Date | null) {
