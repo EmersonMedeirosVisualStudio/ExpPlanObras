@@ -70,11 +70,11 @@ Observação:
 
 ### 3.2 Ajustes aplicados nesta revisão
 
-- Header com contexto: seletor de **Obra Ativa** no topo.
+- Contexto de obra: **Obra Ativa** definida em **Engenharia → Obras → Selecionar Obra**.
 - Navegação do Representante reorganizada por submenu:
   - `Painel do Representante > Dashboard`
   - `Painel do Representante > Configurações`
-- Menu por contexto: seção **Obra** no menu lateral (Planejamento/Execução) baseada na obra ativa.
+- Menu de Engenharia reorganizado para operar por **Obra Ativa** (atalhos por obra e rotas “ativa”).
 - Menu de Administração reorganizado com foco no Encarregado do Sistema:
   - Usuários/Perfis/Permissões
   - Backup e Segurança

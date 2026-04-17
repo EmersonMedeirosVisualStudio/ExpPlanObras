@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
     const backendOnly = apiMode === "backend";
 
     const rules = [
+      { source: "/api/v1/dashboard/me/filtros", destination: "/api/_internal/v1/dashboard/me/filtros" },
       { source: "/api/v1/:path*", destination: `${apiOrigin}/api/v1/:path*` },
       { source: "/api/auth/:path*", destination: `${apiOrigin}/api/auth/:path*` },
       { source: "/api/admin/:path*", destination: `${apiOrigin}/api/admin/:path*` },

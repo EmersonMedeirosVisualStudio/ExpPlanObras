@@ -67,7 +67,7 @@ Além dos módulos operacionais, o sistema também oferece painéis e visões co
 
 O sistema inclui um módulo específico de **Licitações**, voltado para gerenciar as licitações que a empresa poderá participar.
 
-Menu (Administração → Licitações):
+Menu (Licitações):
 
 - Dashboard (visão geral e alertas)
 - Gestão de Licitações (cadastro completo)
@@ -222,16 +222,15 @@ Os dados precisam conversar entre si. O sistema não é um conjunto de telas iso
 O sistema é formado pelos seguintes grandes blocos funcionais:
 
 1. Painéis (por perfil e por responsabilidade)
-2. Processos (Aprovações, Workflows e Documentos)
-3. Contratos
-4. Obras — Planejamento
-5. Obras — Execução
-6. RH
-7. SST
-8. Suprimentos
-9. Fiscalização
-10. Administração do Sistema e Governança
-11. Relatórios
+2. Contratos
+3. Engenharia (Obras, planejamento e execução)
+4. Licitações
+5. RH
+6. SST
+7. Suprimentos
+8. Fiscalização
+9. Administração do Sistema
+10. Relatórios
 
 ### 4.1 Janelas principais do sistema
 
@@ -239,19 +238,18 @@ As janelas (telas) principais se organizam por perfil e por núcleo operacional:
 
 - Painéis (Representante, CEO, Diretor, Gerente e Centro Executivo)
 - Contratos (gestão do ciclo: cadastro, documentos e acompanhamento)
-- Obras — Planejamento (cadastro, orçamento, cronograma, centros de custo e estrutura de serviços/insumos)
-- Obras — Execução (portal do gestor, apropriação, consumo, aquisições, equipamentos e manutenção)
-- Processos (workflows e aprovações para medições, aditivos e decisões-chave)
+- Engenharia/Obras (cadastro, orçamento, cronograma, centros de custo, execução, apropriação e medições)
+- Licitações (cadastro, checklist, validação e kanban)
 - RH e SST (cadastros e acompanhamento por unidade/obra)
-- Documentos (conteúdo e evidências vinculadas a obras e processos)
+- Documentos (conteúdo e evidências vinculadas a obras e contratos)
 - Administração do Sistema (usuários, perfis, permissões, abrangências e configurações)
 
 Implementação atual relevante:
 
 - Contratos: cadastro de contrapartes com suporte a PJ e PF (criar, listar, editar e inativar).
 - Obras: cadastro de responsáveis por obra com tipos "Responsável Técnico" e "Fiscal da Obra" (CRUD).
-- Obra ativa: seleção de obra no topo (header) e seção “Obra” no menu com Planejamento/Execução baseada na obra ativa.
-- Contrato da obra: acesso via obra ativa, com resumo na home da obra e tela de detalhes (somente leitura).
+- Obra ativa: definida ao selecionar obra em **Engenharia → Obras → Selecionar Obra** (persistida para navegação por contexto).
+- Contrato da obra: acesso pela obra selecionada (resumo na home da obra e tela de detalhes somente leitura).
 
 ### 4.2 Barra superior (empresa e utilitários)
 
@@ -2277,7 +2275,6 @@ Tabelas que são **removidas junto** (ON DELETE CASCADE), quando a exclusão é 
 - CriseComunicacao
 - CriseRegistro
 - CriseTimeline
-- CriseWarRoomParticipante
 - DocumentoAssinaturaArtefato
 - DocumentoAssinaturaCallback
 - DocumentoAssinaturaEvidencia
@@ -2285,7 +2282,6 @@ Tabelas que são **removidas junto** (ON DELETE CASCADE), quando a exclusão é 
 - DocumentoAssinaturaSolicitacao
 - DocumentoAssinaturaSolicitacaoSignatario
 - DocumentoVersao
-- DrExecucaoRecuperacao
 - EmpresaEncarregadoSistema
 - EmpresaRepresentante
 - Funcionario
@@ -2300,45 +2296,12 @@ Tabelas que são **removidas junto** (ON DELETE CASCADE), quando a exclusão é 
 - GovernancaDadosAuditoria
 - GovernancaDescarteLote
 - GovernancaDescarteLoteItem
-- GovernancaLegalHold
-- GovernancaLegalHoldItem
 - GovernancaPiiScan
 - GovernancaPiiScanResultado
-- GovernancaRetencaoAuditoria
-- GovernancaRetencaoItem
-- GovernancaRetencaoPolitica
-- GrcAchado
-- GrcAuditoria
-- GrcAuditoriaItemEscopo
-- GrcControle
-- GrcControleMetrica
-- GrcControleTeste
-- GrcEvidencia
-- GrcMatrizRiscoSnapshot
-- GrcPlanoAcao
-- GrcPlanoAcaoItem
-- GrcRisco
-- GrcRiscoAvaliacao
-- GrcRiscoControle
-- ObservabilidadeAlerta
-- ObservabilidadeAlertaEvento
-- ObservabilidadeCasoCompliance
-- ObservabilidadeCasoComplianceEvidencia
-- ObservabilidadeEvento
-- ObservabilidadeIncidente
-- ObservabilidadeIncidenteEvento
-- ObservabilidadeIncidenteTimeline
-- ObservabilidadePlaybook
-- ObservabilidadePlaybookExecucao
-- ObservabilidadePlaybookExecucaoPasso
-- ObservabilidadePlaybookPasso
-- ObservabilidadeRegra
 - OrganizacaoCargo
 - OrganizacaoSetor
 - OrganogramaPosicao
 - Perfil
-- SecurityFieldPolicy
-- SecuritySensitiveDataAudit
 - Subscription
 - TenantHistoryEntry
 - TenantUser

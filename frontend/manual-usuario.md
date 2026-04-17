@@ -12,25 +12,23 @@ O sistema funciona por contexto. Isso significa:
 2. Seleciona uma obra (vira a sua **Obra Ativa**)
 3. O sistema passa a mostrar e filtrar as telas e dados para essa obra
 
-Você sempre deve ver a **Obra Ativa** no topo da tela.
-
 ---
 
 ## 2. Como selecionar ou trocar a obra
 
 ### ETAPA 1 — Onde acessar
-- No topo do sistema, ao lado do nome da empresa, existe o campo **Obra ativa**
+- No menu lateral, acesse **Engenharia → Obras → Selecionar Obra**
 
 ### ETAPA 2 — O que clicar
-- Clique no seletor e escolha a obra desejada
+- Clique na obra desejada para definir como **Obra Ativa**
 
 ### ETAPA 3 — O que esperar
 - O sistema passa a operar no modo daquela obra
 - Você será direcionado para a página da obra (janelas da obra)
 
 ### ETAPA 4 — Como validar
-- No topo deve aparecer o nome da obra escolhida
-- No menu, aparecerá a seção **Obra** com **Planejamento** e **Execução**
+- A URL e o título da página indicam a obra (ex.: **Obra #ID**)
+- As telas da obra ativa passam a abrir diretamente para a obra selecionada
 
 Observação:
 
@@ -38,13 +36,15 @@ Observação:
 
 ---
 
-## 3. Menu por obra (Planejamento e Execução)
+## 3. Menu da obra (Planejamento e Execução)
 
-Depois que você define a obra ativa, o menu passa a ter:
+Depois que você define a obra ativa, o menu de **Engenharia → Obras** passa a ter atalhos para:
 
-- **Obra**
-  - **Planejamento**
-  - **Execução**
+- **Dashboard da Obra**
+- **Resumo do Contrato**
+- **Documentos da Obra**
+- **Planejamento**
+- **Execução**
 
 Isso evita bagunça e garante que você está trabalhando na obra certa.
 
@@ -93,6 +93,6 @@ Esses dados são cadastrados por obra e aparecem nos dados principais.
 ## 6. Dica de segurança (evite erros)
 
 Antes de lançar diário, medição ou apropriação:
-- Confirme a **Obra Ativa** no topo.
+- Confirme se você selecionou a obra correta em **Engenharia → Obras → Selecionar Obra**.
 
 Isso evita lançar dados na obra errada.
