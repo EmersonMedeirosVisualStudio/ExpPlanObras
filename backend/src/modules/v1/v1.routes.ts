@@ -1478,32 +1478,64 @@ export default async function v1Routes(server: FastifyInstance) {
     const now = new Date();
     const alertaAte = addDays(now, diasAlertaNum);
 
-    const rows = await prisma.engenhariaLicitacao.findMany(
-      incluirSaude
-        ? {
-            where: { tenantId: ctx.tenantId, ativo: true },
-            orderBy: { id: 'desc' },
-            take: 500,
-            include: {
-              recursos: { select: { prazoResposta: true, status: true } },
-              documentosVinculos: { include: { documentoEmpresa: { select: { dataValidade: true } } } },
-            },
-          }
-        : {
-            where: { tenantId: ctx.tenantId, ativo: true },
-            orderBy: { id: 'desc' },
-            take: 500,
-          }
-    );
+    const rows = await prisma.engenhariaLicitacao.findMany({
+      where: { tenantId: ctx.tenantId, ativo: true },
+      orderBy: { id: 'desc' },
+      take: 500,
+      select: {
+        id: true,
+        titulo: true,
+        orgaoContratante: true,
+        status: true,
+        dataAbertura: true,
+        dataEncerramento: true,
+        orcamentoId: true,
+      },
+    });
 
-    const data = rows.map((r) => ({
-      idLicitacao: r.id,
-      titulo: r.titulo,
-      orgao: r.orgaoContratante ?? null,
-      status: r.status,
-      dataAbertura: dateOnlyToIso(r.dataAbertura ?? null),
-      idOrcamento: r.orcamentoId ?? null,
-      saude: incluirSaude
+    const licitacaoIds = rows.map((r) => r.id);
+
+    const recursosByLicitacaoId = new Map<number, Array<{ prazoResposta: Date | null; status: string }>>();
+    const docValidadesByLicitacaoId = new Map<number, Array<Date>>();
+
+    if (incluirSaude && licitacaoIds.length > 0) {
+      const recursos = await prisma.engenhariaLicitacaoRecurso.findMany({
+        where: { tenantId: ctx.tenantId, licitacaoId: { in: licitacaoIds } },
+        select: { licitacaoId: true, prazoResposta: true, status: true },
+      });
+      for (const r of recursos) {
+        const key = r.licitacaoId;
+        const arr = recursosByLicitacaoId.get(key) || [];
+        arr.push({ prazoResposta: r.prazoResposta ?? null, status: r.status });
+        recursosByLicitacaoId.set(key, arr);
+      }
+
+      const vinculos = await prisma.engenhariaLicitacaoDocumento.findMany({
+        where: { tenantId: ctx.tenantId, licitacaoId: { in: licitacaoIds } },
+        select: { licitacaoId: true, documentoEmpresaId: true },
+      });
+      const docIds = Array.from(new Set(vinculos.map((v) => v.documentoEmpresaId)));
+      const docs = docIds.length
+        ? await prisma.engenhariaDocumentoEmpresa.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: docIds } },
+            select: { id: true, dataValidade: true },
+          })
+        : [];
+      const docsById = new Map<number, Date | null>();
+      for (const d of docs) docsById.set(d.id, d.dataValidade ?? null);
+
+      for (const v of vinculos) {
+        const dv = docsById.get(v.documentoEmpresaId) || null;
+        if (!dv) continue;
+        const key = v.licitacaoId;
+        const arr = docValidadesByLicitacaoId.get(key) || [];
+        arr.push(dv);
+        docValidadesByLicitacaoId.set(key, arr);
+      }
+    }
+
+    const data = rows.map((r) => {
+      const saude = incluirSaude
         ? (() => {
             let criticos = 0;
             let alertas = 0;
@@ -1515,34 +1547,39 @@ export default async function v1Routes(server: FastifyInstance) {
               else if (d.getTime() <= alertaAte.getTime()) alertas += 1;
             }
 
-            const recursos = (r as any).recursos as Array<{ prazoResposta: Date | null; status: string }> | undefined;
-            if (Array.isArray(recursos)) {
-              for (const rc of recursos) {
-                if (isClosedRecursoStatus(rc.status)) continue;
-                if (!rc.prazoResposta) {
-                  infos += 1;
-                  continue;
-                }
-                const d = new Date(rc.prazoResposta);
-                if (d.getTime() < now.getTime()) criticos += 1;
-                else if (d.getTime() <= alertaAte.getTime()) alertas += 1;
+            const recursos = recursosByLicitacaoId.get(r.id) || [];
+            for (const rc of recursos) {
+              if (isClosedRecursoStatus(rc.status)) continue;
+              if (!rc.prazoResposta) {
+                infos += 1;
+                continue;
               }
+              const d = new Date(rc.prazoResposta);
+              if (d.getTime() < now.getTime()) criticos += 1;
+              else if (d.getTime() <= alertaAte.getTime()) alertas += 1;
             }
 
-            const docs = (r as any).documentosVinculos as Array<{ documentoEmpresa?: { dataValidade: Date | null } }> | undefined;
-            if (Array.isArray(docs)) {
-              for (const v of docs) {
-                const dv = v?.documentoEmpresa?.dataValidade ? new Date(v.documentoEmpresa.dataValidade) : null;
-                if (!dv) continue;
-                if (dv.getTime() < now.getTime()) criticos += 1;
-                else if (dv.getTime() <= alertaAte.getTime()) alertas += 1;
-              }
+            const docs = docValidadesByLicitacaoId.get(r.id) || [];
+            for (const dv of docs) {
+              const d = new Date(dv);
+              if (d.getTime() < now.getTime()) criticos += 1;
+              else if (d.getTime() <= alertaAte.getTime()) alertas += 1;
             }
 
             return { criticos, alertas, infos };
           })()
-        : undefined,
-    }));
+        : undefined;
+
+      return {
+        idLicitacao: r.id,
+        titulo: r.titulo,
+        orgao: r.orgaoContratante ?? null,
+        status: r.status,
+        dataAbertura: dateOnlyToIso(r.dataAbertura ?? null),
+        idOrcamento: r.orcamentoId ?? null,
+        saude,
+      };
+    });
 
     return ok(reply, data);
   });
@@ -2190,12 +2227,29 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const lic = await prisma.engenhariaLicitacao.findFirst({
       where: { tenantId: ctx.tenantId, id, ativo: true },
-      include: {
-        recursos: { select: { id: true, tipo: true, status: true, prazoResposta: true } },
-        documentosVinculos: { include: { documentoEmpresa: { select: { id: true, nome: true, dataValidade: true } } } },
-      },
+      select: { id: true, status: true, dataEncerramento: true },
     });
     if (!lic) return fail(reply, 404, 'Licitação não encontrada');
+
+    const recursos = await prisma.engenhariaLicitacaoRecurso.findMany({
+      where: { tenantId: ctx.tenantId, licitacaoId: id },
+      select: { id: true, tipo: true, status: true, prazoResposta: true },
+      orderBy: { id: 'desc' },
+    });
+
+    const vinculos = await prisma.engenhariaLicitacaoDocumento.findMany({
+      where: { tenantId: ctx.tenantId, licitacaoId: id },
+      select: { documentoEmpresaId: true },
+    });
+    const docIds = Array.from(new Set(vinculos.map((v) => v.documentoEmpresaId)));
+    const docs = docIds.length
+      ? await prisma.engenhariaDocumentoEmpresa.findMany({
+          where: { tenantId: ctx.tenantId, id: { in: docIds } },
+          select: { id: true, nome: true, dataValidade: true },
+        })
+      : [];
+    const docsById = new Map<number, { nome: string; dataValidade: Date | null }>();
+    for (const d of docs) docsById.set(d.id, { nome: d.nome, dataValidade: d.dataValidade ?? null });
 
     let criticos = 0;
     let alertas = 0;
@@ -2213,7 +2267,7 @@ export default async function v1Routes(server: FastifyInstance) {
       }
     }
 
-    for (const rc of lic.recursos) {
+    for (const rc of recursos) {
       if (isClosedRecursoStatus(rc.status)) continue;
       if (!rc.prazoResposta) {
         infos += 1;
@@ -2230,8 +2284,8 @@ export default async function v1Routes(server: FastifyInstance) {
       }
     }
 
-    for (const v of lic.documentosVinculos) {
-      const doc = v.documentoEmpresa;
+    for (const v of vinculos) {
+      const doc = docsById.get(v.documentoEmpresaId);
       if (!doc?.dataValidade) continue;
       const d = new Date(doc.dataValidade);
       if (d.getTime() < now.getTime()) {
