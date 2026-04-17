@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import api from "@/lib/api";
 
 type Saude = { criticos: number; alertas: number; infos: number };
 type LicitacaoRow = {
@@ -90,9 +91,8 @@ export default function LicitacoesKanbanClient() {
     try {
       setErr(null);
       setLoading(true);
-      const res = await fetch("/api/v1/engenharia/licitacoes?incluirSaude=1&diasAlerta=30", { cache: "no-store" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar licitações.");
+      const { data: json } = await api.get("/api/v1/engenharia/licitacoes", { params: { incluirSaude: 1, diasAlerta: 30 } });
+      if (!json?.success) throw new Error(json?.message || "Erro ao carregar licitações.");
       const data = Array.isArray(json.data) ? (json.data as LicitacaoRow[]) : [];
       setRows(data);
     } catch (e: any) {
@@ -123,13 +123,8 @@ export default function LicitacoesKanbanClient() {
     const next = rows.map((r) => (r.idLicitacao === idLicitacao ? { ...r, status: novoStatus } : r));
     setRows(next);
     try {
-      const res = await fetch(`/api/v1/engenharia/licitacoes/${idLicitacao}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: novoStatus }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao atualizar status.");
+      const { data: json } = await api.put(`/api/v1/engenharia/licitacoes/${idLicitacao}`, { status: novoStatus });
+      if (!json?.success) throw new Error(json?.message || "Erro ao atualizar status.");
     } catch (e: any) {
       setRows(prev);
       setErr(e?.message || "Erro ao atualizar status.");
@@ -137,17 +132,17 @@ export default function LicitacoesKanbanClient() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-[1400px]">
+    <div className="p-6 space-y-6 max-w-[1400px] text-slate-900">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold">Administração → Licitações → Quadro (Kanban)</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Licitações → Quadro (Kanban)</h1>
           <div className="text-sm text-slate-600">Arraste uma licitação entre as fases para atualizar o status.</div>
         </div>
         <div className="flex gap-2">
-          <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={() => router.push("/dashboard/admin/licitacoes/dashboard")}>
+          <button className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" type="button" onClick={() => router.push("/dashboard/admin/licitacoes/dashboard")}>
             Voltar ao Dashboard
           </button>
-          <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={carregar} disabled={loading}>
+          <button className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" type="button" onClick={carregar} disabled={loading}>
             Atualizar
           </button>
         </div>
@@ -171,7 +166,7 @@ export default function LicitacoesKanbanClient() {
               setDraggingId(null);
             }}
           >
-            <div className={`px-3 py-2 text-sm font-semibold ${headerTone(status)}`}>
+            <div className={`px-3 py-2 text-sm font-semibold text-slate-800 ${headerTone(status)}`}>
               {STATUS_LABEL[status]} <span className="ml-1 text-xs text-slate-500">({grouped[status]?.length || 0})</span>
             </div>
             <div className="p-3 space-y-2 min-h-[240px]">
@@ -187,7 +182,7 @@ export default function LicitacoesKanbanClient() {
                   className={`rounded-lg border bg-white p-3 cursor-move ${cardBorder(r.saude)} ${draggingId === r.idLicitacao ? "opacity-60" : ""}`}
                   onDoubleClick={() => router.push(`/dashboard/engenharia/licitacoes/${r.idLicitacao}`)}
                 >
-                  <div className="text-sm font-semibold line-clamp-2">{r.titulo}</div>
+                  <div className="text-sm font-semibold text-slate-900 line-clamp-2">{r.titulo}</div>
                   <div className="mt-1 text-xs text-slate-500 line-clamp-2">{r.orgao || "—"}</div>
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <span className="text-xs text-slate-600">#{r.idLicitacao}</span>
@@ -218,12 +213,12 @@ export default function LicitacoesKanbanClient() {
                 setDraggingId(null);
               }}
             >
-              <div className="text-sm font-semibold">
+              <div className="text-sm font-semibold text-slate-800">
                 {STATUS_LABEL[status]} <span className="ml-1 text-xs text-slate-500">({grouped[status]?.length || 0})</span>
               </div>
               <div className="mt-2 space-y-2">
                 {(grouped[status] || []).slice(0, 5).map((r) => (
-                  <button key={r.idLicitacao} type="button" className="w-full rounded-md border px-3 py-2 text-left text-xs hover:bg-slate-50" onClick={() => router.push(`/dashboard/engenharia/licitacoes/${r.idLicitacao}`)}>
+                  <button key={r.idLicitacao} type="button" className="w-full rounded-md border px-3 py-2 text-left text-xs text-slate-800 hover:bg-slate-50" onClick={() => router.push(`/dashboard/engenharia/licitacoes/${r.idLicitacao}`)}>
                     #{r.idLicitacao} • {r.titulo}
                   </button>
                 ))}
