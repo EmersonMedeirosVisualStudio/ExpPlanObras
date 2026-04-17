@@ -40,3 +40,7 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 - [Manual do Usuário](./manual-usuario.md)
 - [Manual Funcional](./manual-funcional.md)
 - [Manual de Permissões e Perfis](./manual-permissoes-perfis.md)
+
+## Ambientes
+
+Veja o arquivo [.env.example](./.env.example) para as variáveis suportadas.

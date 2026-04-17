@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { SubscriptionAlertBanner } from "@/components/SubscriptionAlertBanner";
@@ -25,6 +25,9 @@ export const metadata: Metadata = {
     apple: [{ url: "/favicon_do_site.png", type: "image/png" }],
   },
   manifest: "/manifest.webmanifest",
+};
+
+export const viewport: Viewport = {
   themeColor: "#0f172a",
 };
 
