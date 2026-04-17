@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import api from "@/lib/api";
 
 type Saude = { criticos: number; alertas: number; infos: number };
 type LicitacaoRow = {
@@ -66,9 +67,8 @@ export default function LicitacoesAdminDashboardClient() {
     try {
       setErr(null);
       setLoading(true);
-      const res = await fetch("/api/v1/engenharia/licitacoes?incluirSaude=1&diasAlerta=30", { cache: "no-store" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar licitações.");
+      const { data: json } = await api.get("/api/v1/engenharia/licitacoes", { params: { incluirSaude: 1, diasAlerta: 30 } });
+      if (!json?.success) throw new Error(json?.message || "Erro ao carregar licitações.");
       const data = Array.isArray(json.data) ? (json.data as LicitacaoRow[]) : [];
       setRows(data);
     } catch (e: any) {
@@ -96,14 +96,14 @@ export default function LicitacoesAdminDashboardClient() {
   const criticos = useMemo(() => rows.filter((r) => (r.saude?.criticos || 0) > 0), [rows]);
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl">
+    <div className="p-6 space-y-6 max-w-7xl text-slate-900">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold">Administração → Licitações → Dashboard</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Licitações → Dashboard</h1>
           <div className="text-sm text-slate-600">Visão geral por status e alertas operacionais.</div>
         </div>
         <div className="flex gap-2">
-          <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={() => router.push("/dashboard/admin/licitacoes/kanban")}>
+          <button className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" type="button" onClick={() => router.push("/dashboard/admin/licitacoes/kanban")}>
             Abrir Kanban
           </button>
           <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white" type="button" onClick={() => router.push("/dashboard/admin/licitacoes/gestao")}>
@@ -118,7 +118,7 @@ export default function LicitacoesAdminDashboardClient() {
         {Object.keys(STATUS_LABEL).map((k) => (
           <div key={k} className="rounded-xl border bg-white p-4 shadow-sm">
             <div className="text-xs font-semibold uppercase text-slate-500">{STATUS_LABEL[k]}</div>
-            <div className="mt-1 text-2xl font-semibold">{byStatus[k] || 0}</div>
+            <div className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{byStatus[k] || 0}</div>
           </div>
         ))}
       </div>
