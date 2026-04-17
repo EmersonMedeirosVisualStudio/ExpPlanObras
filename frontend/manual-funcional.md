@@ -67,6 +67,18 @@ Além dos módulos operacionais, o sistema também oferece painéis e visões co
 
 O sistema inclui um módulo específico de **Licitações**, voltado para gerenciar as licitações que a empresa poderá participar.
 
+Menu (Administração → Licitações):
+
+- Dashboard (visão geral e alertas)
+- Gestão de Licitações (cadastro completo)
+- Quadro de Licitações (Kanban por status)
+- Fases e Situação (histórico/andamento)
+- Exigências (Checklist)
+- Análise de Atendimento (validação automática)
+- Acervo Técnico da Empresa
+- Documentos
+- Dossiê da Licitação
+
 Esse módulo permite:
 
 - cadastrar licitações;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 type DocEmpresa = {
   idDocumentoEmpresa: number;
@@ -39,6 +40,7 @@ type OrcamentoLink = {
 };
 
 export default function LicitacaoDetalheClient({ idLicitacao }: { idLicitacao: number }) {
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<"DOCUMENTOS" | "ACERVO" | "CHECKLIST" | "DOSSIE" | "ANDAMENTO" | "COMUNICACOES" | "RECURSOS" | "VALIDACAO">("DOCUMENTOS");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -77,6 +79,12 @@ export default function LicitacaoDetalheClient({ idLicitacao }: { idLicitacao: n
     if (!t) return acervoEmpresa;
     return acervoEmpresa.filter((a) => a.titulo.toLowerCase().includes(t) || a.tipo.toLowerCase().includes(t) || (a.nomeObra || "").toLowerCase().includes(t));
   }, [qAcervo, acervoEmpresa]);
+
+  useEffect(() => {
+    const raw = String(searchParams.get("tab") || "").trim().toUpperCase();
+    const allowed = new Set(["DOCUMENTOS", "ACERVO", "CHECKLIST", "DOSSIE", "ANDAMENTO", "COMUNICACOES", "RECURSOS", "VALIDACAO"]);
+    if (allowed.has(raw)) setTab(raw as any);
+  }, [searchParams]);
 
   async function carregar() {
     try {
