@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import api from "@/lib/api";
 
 type Acervo = {
   idAcervo: number;
@@ -35,9 +36,8 @@ export default function AcervoEmpresaClient() {
     try {
       setLoading(true);
       setErr(null);
-      const res = await fetch(`/api/v1/engenharia/licitacoes/acervo-empresa${queryString}`, { cache: "no-store" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar acervo");
+      const { data: json } = await api.get(`/api/v1/engenharia/licitacoes/acervo-empresa${queryString}`);
+      if (!json?.success) throw new Error(json?.message || "Erro ao carregar acervo");
       setRows(Array.isArray(json.data) ? json.data : []);
     } catch (e: any) {
       setErr(e?.message || "Erro ao carregar acervo");
@@ -59,9 +59,8 @@ export default function AcervoEmpresaClient() {
         nomeObra: novo.nomeObra.trim() || null,
         categoria: novo.categoria.trim() || null,
       };
-      const res = await fetch(`/api/v1/engenharia/licitacoes/acervo-empresa`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao criar acervo");
+      const { data: json } = await api.post(`/api/v1/engenharia/licitacoes/acervo-empresa`, payload);
+      if (!json?.success) throw new Error(json?.message || "Erro ao criar acervo");
       setNovo({ titulo: "", tipo: "ATESTADO", numeroDocumento: "", orgaoEmissor: "", dataEmissao: "", nomeObra: "", categoria: "" });
       await carregar();
     } catch (e: any) {
@@ -74,13 +73,13 @@ export default function AcervoEmpresaClient() {
   }, []);
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl">
+    <div className="p-6 space-y-6 max-w-7xl text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold">Acervo da Empresa</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Acervo da Empresa</h1>
           <div className="text-sm text-slate-600">Biblioteca corporativa de CATs/Atestados/Obras executadas. Cada licitação vincula itens a partir daqui.</div>
         </div>
-        <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={carregar} disabled={loading}>
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" type="button" onClick={carregar} disabled={loading}>
           Atualizar
         </button>
       </div>
@@ -195,4 +194,3 @@ export default function AcervoEmpresaClient() {
     </div>
   );
 }
-

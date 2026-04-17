@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import api from "@/lib/api";
 
 type SaudeResumo = { criticos: number; alertas: number; infos: number };
 type Licitacao = { idLicitacao: number; titulo: string; orgao: string | null; status: string; dataAbertura: string | null; saude?: SaudeResumo };
@@ -26,10 +27,9 @@ export default function LicitacoesClient() {
       setLoading(true);
       setErr(null);
       const dias = Number(String(diasAlerta || "30").trim());
-      const qs = Number.isFinite(dias) ? `?incluirSaude=1&diasAlerta=${Math.max(0, dias)}` : "?incluirSaude=1";
-      const res = await fetch(`/api/v1/engenharia/licitacoes${qs}`, { cache: "no-store" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar licitações");
+      const params = { incluirSaude: 1, ...(Number.isFinite(dias) ? { diasAlerta: Math.max(0, dias) } : {}) };
+      const { data: json } = await api.get("/api/v1/engenharia/licitacoes", { params });
+      if (!json?.success) throw new Error(json?.message || "Erro ao carregar licitações");
       setRows(Array.isArray(json.data) ? json.data : []);
     } catch (e: any) {
       setErr(e?.message || "Erro ao carregar licitações");
@@ -43,9 +43,8 @@ export default function LicitacoesClient() {
     try {
       setErr(null);
       const payload: any = { titulo: novo.titulo.trim(), orgao: novo.orgao.trim() || null, dataAbertura: novo.dataAbertura || null };
-      const res = await fetch("/api/v1/engenharia/licitacoes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao criar licitação");
+      const { data: json } = await api.post("/api/v1/engenharia/licitacoes", payload);
+      if (!json?.success) throw new Error(json?.message || "Erro ao criar licitação");
       setNovo({ titulo: "", orgao: "", dataAbertura: "" });
       await carregar();
     } catch (e: any) {
@@ -58,16 +57,16 @@ export default function LicitacoesClient() {
   }, []);
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl">
+    <div className="p-6 space-y-6 max-w-6xl text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold">Licitações</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Licitações</h1>
           <div className="text-sm text-slate-600">Cadastro e controle básico. Documentos e acervo serão vinculados por licitação.</div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="text-sm text-slate-600">Alerta (dias)</div>
           <input className="input w-24" value={diasAlerta} onChange={(e) => setDiasAlerta(e.target.value)} />
-          <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={carregar} disabled={loading}>
+          <button className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" type="button" onClick={carregar} disabled={loading}>
             {loading ? "Carregando..." : "Atualizar"}
           </button>
         </div>
@@ -99,12 +98,12 @@ export default function LicitacoesClient() {
       </div>
 
       <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-        <div className="text-lg font-semibold">Lista</div>
+        <div className="text-lg font-semibold text-slate-900">Lista</div>
         <div className="flex gap-2 flex-wrap">
-          <a className="rounded-lg border px-3 py-2 text-sm" href="/dashboard/engenharia/licitacoes/documentos-empresa">
+          <a className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" href="/dashboard/engenharia/licitacoes/documentos-empresa">
             Documentos da Empresa
           </a>
-          <a className="rounded-lg border px-3 py-2 text-sm" href="/dashboard/engenharia/licitacoes/acervo-empresa">
+          <a className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" href="/dashboard/engenharia/licitacoes/acervo-empresa">
             Acervo da Empresa
           </a>
         </div>

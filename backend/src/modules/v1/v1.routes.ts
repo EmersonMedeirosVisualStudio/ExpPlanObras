@@ -1439,6 +1439,29 @@ export default async function v1Routes(server: FastifyInstance) {
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
+  function addDays(date: Date, days: number) {
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return d;
+  }
+
+  function isFinalLicitacaoStatus(status: string) {
+    const s = String(status || '').toUpperCase();
+    return s === 'ENCERRADA' || s === 'VENCIDA' || s === 'DESISTIDA';
+  }
+
+  function isClosedRecursoStatus(status: string) {
+    const s = String(status || '').toUpperCase();
+    if (!s) return false;
+    if (s.includes('CONCL')) return true;
+    if (s.includes('ENCERR')) return true;
+    if (s.includes('FINAL')) return true;
+    if (s.includes('RESPOND')) return true;
+    if (s.includes('DEFER')) return true;
+    if (s.includes('INDEFER')) return true;
+    return false;
+  }
+
   server.get('/engenharia/licitacoes', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
@@ -1451,12 +1474,27 @@ export default async function v1Routes(server: FastifyInstance) {
       .parse(request.query || {});
 
     const incluirSaude = q.incluirSaude === '1';
+    const diasAlertaNum = Math.max(0, Number.parseInt(String(q.diasAlerta || '30'), 10) || 30);
+    const now = new Date();
+    const alertaAte = addDays(now, diasAlertaNum);
 
-    const rows = await prisma.engenhariaLicitacao.findMany({
-      where: { tenantId: ctx.tenantId, ativo: true },
-      orderBy: { id: 'desc' },
-      take: 500,
-    });
+    const rows = await prisma.engenhariaLicitacao.findMany(
+      incluirSaude
+        ? {
+            where: { tenantId: ctx.tenantId, ativo: true },
+            orderBy: { id: 'desc' },
+            take: 500,
+            include: {
+              recursos: { select: { prazoResposta: true, status: true } },
+              documentosVinculos: { include: { documentoEmpresa: { select: { dataValidade: true } } } },
+            },
+          }
+        : {
+            where: { tenantId: ctx.tenantId, ativo: true },
+            orderBy: { id: 'desc' },
+            take: 500,
+          }
+    );
 
     const data = rows.map((r) => ({
       idLicitacao: r.id,
@@ -1465,7 +1503,45 @@ export default async function v1Routes(server: FastifyInstance) {
       status: r.status,
       dataAbertura: dateOnlyToIso(r.dataAbertura ?? null),
       idOrcamento: r.orcamentoId ?? null,
-      saude: incluirSaude ? { criticos: 0, alertas: 0, infos: 0 } : undefined,
+      saude: incluirSaude
+        ? (() => {
+            let criticos = 0;
+            let alertas = 0;
+            let infos = 0;
+
+            if (!isFinalLicitacaoStatus(r.status) && r.dataEncerramento) {
+              const d = new Date(r.dataEncerramento);
+              if (d.getTime() < now.getTime()) criticos += 1;
+              else if (d.getTime() <= alertaAte.getTime()) alertas += 1;
+            }
+
+            const recursos = (r as any).recursos as Array<{ prazoResposta: Date | null; status: string }> | undefined;
+            if (Array.isArray(recursos)) {
+              for (const rc of recursos) {
+                if (isClosedRecursoStatus(rc.status)) continue;
+                if (!rc.prazoResposta) {
+                  infos += 1;
+                  continue;
+                }
+                const d = new Date(rc.prazoResposta);
+                if (d.getTime() < now.getTime()) criticos += 1;
+                else if (d.getTime() <= alertaAte.getTime()) alertas += 1;
+              }
+            }
+
+            const docs = (r as any).documentosVinculos as Array<{ documentoEmpresa?: { dataValidade: Date | null } }> | undefined;
+            if (Array.isArray(docs)) {
+              for (const v of docs) {
+                const dv = v?.documentoEmpresa?.dataValidade ? new Date(v.documentoEmpresa.dataValidade) : null;
+                if (!dv) continue;
+                if (dv.getTime() < now.getTime()) criticos += 1;
+                else if (dv.getTime() <= alertaAte.getTime()) alertas += 1;
+              }
+            }
+
+            return { criticos, alertas, infos };
+          })()
+        : undefined,
     }));
 
     return ok(reply, data);
@@ -2106,8 +2182,68 @@ export default async function v1Routes(server: FastifyInstance) {
   server.get('/engenharia/licitacoes/:id/validar', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
-    z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
-    return ok(reply, { resumo: { criticos: 0, alertas: 0, infos: 0 }, issues: [] });
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const q = z.object({ diasAlerta: z.string().optional() }).parse(request.query || {});
+    const diasAlertaNum = Math.max(0, Number.parseInt(String(q.diasAlerta || '30'), 10) || 30);
+    const now = new Date();
+    const alertaAte = addDays(now, diasAlertaNum);
+
+    const lic = await prisma.engenhariaLicitacao.findFirst({
+      where: { tenantId: ctx.tenantId, id, ativo: true },
+      include: {
+        recursos: { select: { id: true, tipo: true, status: true, prazoResposta: true } },
+        documentosVinculos: { include: { documentoEmpresa: { select: { id: true, nome: true, dataValidade: true } } } },
+      },
+    });
+    if (!lic) return fail(reply, 404, 'Licitação não encontrada');
+
+    let criticos = 0;
+    let alertas = 0;
+    let infos = 0;
+    const issues: Array<{ severidade: 'CRITICO' | 'ALERTA' | 'INFO'; codigo: string; titulo: string; detalhe?: string | null }> = [];
+
+    if (!isFinalLicitacaoStatus(lic.status) && lic.dataEncerramento) {
+      const d = new Date(lic.dataEncerramento);
+      if (d.getTime() < now.getTime()) {
+        criticos += 1;
+        issues.push({ severidade: 'CRITICO', codigo: 'PRAZO_LICITACAO_VENCIDO', titulo: 'Prazo da licitação vencido', detalhe: dateOnlyToIso(d) });
+      } else if (d.getTime() <= alertaAte.getTime()) {
+        alertas += 1;
+        issues.push({ severidade: 'ALERTA', codigo: 'PRAZO_LICITACAO_PROXIMO', titulo: 'Prazo da licitação próximo', detalhe: dateOnlyToIso(d) });
+      }
+    }
+
+    for (const rc of lic.recursos) {
+      if (isClosedRecursoStatus(rc.status)) continue;
+      if (!rc.prazoResposta) {
+        infos += 1;
+        issues.push({ severidade: 'INFO', codigo: 'RECURSO_SEM_PRAZO', titulo: `Recurso sem prazo (${rc.tipo})`, detalhe: null });
+        continue;
+      }
+      const d = new Date(rc.prazoResposta);
+      if (d.getTime() < now.getTime()) {
+        criticos += 1;
+        issues.push({ severidade: 'CRITICO', codigo: 'RECURSO_PRAZO_VENCIDO', titulo: `Prazo vencido (${rc.tipo})`, detalhe: dateOnlyToIso(d) });
+      } else if (d.getTime() <= alertaAte.getTime()) {
+        alertas += 1;
+        issues.push({ severidade: 'ALERTA', codigo: 'RECURSO_PRAZO_PROXIMO', titulo: `Prazo próximo (${rc.tipo})`, detalhe: dateOnlyToIso(d) });
+      }
+    }
+
+    for (const v of lic.documentosVinculos) {
+      const doc = v.documentoEmpresa;
+      if (!doc?.dataValidade) continue;
+      const d = new Date(doc.dataValidade);
+      if (d.getTime() < now.getTime()) {
+        criticos += 1;
+        issues.push({ severidade: 'CRITICO', codigo: 'DOCUMENTO_VENCIDO', titulo: `Documento vencido: ${doc.nome}`, detalhe: dateOnlyToIso(d) });
+      } else if (d.getTime() <= alertaAte.getTime()) {
+        alertas += 1;
+        issues.push({ severidade: 'ALERTA', codigo: 'DOCUMENTO_PRAZO_PROXIMO', titulo: `Documento a vencer: ${doc.nome}`, detalhe: dateOnlyToIso(d) });
+      }
+    }
+
+    return ok(reply, { resumo: { criticos, alertas, infos }, issues });
   });
 
   server.get('/engenharia/licitacoes/:id/dossie', async (request, reply) => {
