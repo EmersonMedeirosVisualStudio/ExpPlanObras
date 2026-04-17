@@ -13,7 +13,7 @@ export async function setTenantContext(tx: any, tenantId: number) {
   }
   // Using raw SQL to set the session variable for RLS
   // In a transaction, this applies to subsequent queries in the same transaction
-  await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, TRUE)`;
+  await tx.$executeRaw`SELECT set_config('app.tenant_id', ${String(tenantId)}, TRUE)`;
 }
 
 export default prisma;
