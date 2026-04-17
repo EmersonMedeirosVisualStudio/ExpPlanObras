@@ -102,14 +102,6 @@ export default function LicitacoesAdminDashboardClient() {
           <h1 className="text-2xl font-semibold text-slate-900">Licitações → Dashboard</h1>
           <div className="text-sm text-slate-600">Visão geral por status e alertas operacionais.</div>
         </div>
-        <div className="flex gap-2">
-          <button className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" type="button" onClick={() => router.push("/dashboard/admin/licitacoes/kanban")}>
-            Abrir Kanban
-          </button>
-          <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white" type="button" onClick={() => router.push("/dashboard/admin/licitacoes/gestao")}>
-            Gestão de Licitações
-          </button>
-        </div>
       </div>
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
