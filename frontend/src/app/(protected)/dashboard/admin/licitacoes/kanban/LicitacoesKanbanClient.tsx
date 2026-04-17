@@ -53,6 +53,32 @@ function cardBorder(saude?: Saude) {
   return "border-slate-200";
 }
 
+function Badge({ tone, children }: { tone: "DANGER" | "WARNING" | "INFO" | "OK"; children: string }) {
+  const color =
+    tone === "DANGER"
+      ? "bg-red-100 text-red-800"
+      : tone === "WARNING"
+        ? "bg-amber-100 text-amber-800"
+        : tone === "INFO"
+          ? "bg-slate-100 text-slate-700"
+          : "bg-emerald-100 text-emerald-800";
+  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${color}`}>{children}</span>;
+}
+
+function SaudeBadges({ saude }: { saude?: Saude }) {
+  const crit = Number(saude?.criticos || 0);
+  const al = Number(saude?.alertas || 0);
+  const info = Number(saude?.infos || 0);
+  if (crit <= 0 && al <= 0 && info <= 0) return <Badge tone="OK">OK</Badge>;
+  return (
+    <span className="flex flex-wrap gap-1 justify-end">
+      {crit > 0 ? <Badge tone="DANGER">{`${crit} críticos`}</Badge> : null}
+      {al > 0 ? <Badge tone="WARNING">{`${al} alertas`}</Badge> : null}
+      {info > 0 ? <Badge tone="INFO">{`${info} pendências`}</Badge> : null}
+    </span>
+  );
+}
+
 export default function LicitacoesKanbanClient() {
   const router = useRouter();
   const [rows, setRows] = useState<LicitacaoRow[]>([]);
@@ -163,11 +189,9 @@ export default function LicitacoesKanbanClient() {
                 >
                   <div className="text-sm font-semibold line-clamp-2">{r.titulo}</div>
                   <div className="mt-1 text-xs text-slate-500 line-clamp-2">{r.orgao || "—"}</div>
-                  <div className="mt-2 flex items-center justify-between text-xs">
-                    <span className="text-slate-600">#{r.idLicitacao}</span>
-                    <span className="text-slate-600">
-                      {(r.saude?.criticos || 0) > 0 ? `Crítico: ${r.saude?.criticos || 0}` : (r.saude?.alertas || 0) > 0 ? `Alertas: ${r.saude?.alertas || 0}` : "OK"}
-                    </span>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-xs text-slate-600">#{r.idLicitacao}</span>
+                    <SaudeBadges saude={r.saude} />
                   </div>
                 </div>
               ))}
@@ -214,4 +238,3 @@ export default function LicitacoesKanbanClient() {
     </div>
   );
 }
-

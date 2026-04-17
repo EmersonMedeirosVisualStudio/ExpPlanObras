@@ -37,6 +37,25 @@ function toneForStatus(status: string) {
   return "bg-slate-100 text-slate-800";
 }
 
+function Badge({ tone, children }: { tone: "DANGER" | "WARNING" | "INFO"; children: string }) {
+  const color =
+    tone === "DANGER" ? "bg-red-100 text-red-800" : tone === "WARNING" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-700";
+  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${color}`}>{children}</span>;
+}
+
+function SaudeBadges({ saude }: { saude?: Saude }) {
+  const crit = Number(saude?.criticos || 0);
+  const al = Number(saude?.alertas || 0);
+  const info = Number(saude?.infos || 0);
+  return (
+    <span className="flex flex-wrap gap-1">
+      {crit > 0 ? <Badge tone="DANGER">{`${crit} críticos`}</Badge> : null}
+      {al > 0 ? <Badge tone="WARNING">{`${al} alertas`}</Badge> : null}
+      {info > 0 ? <Badge tone="INFO">{`${info} pendências`}</Badge> : null}
+    </span>
+  );
+}
+
 export default function LicitacoesAdminDashboardClient() {
   const router = useRouter();
   const [rows, setRows] = useState<LicitacaoRow[]>([]);
@@ -127,8 +146,8 @@ export default function LicitacoesAdminDashboardClient() {
                   </div>
                   <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${toneForStatus(r.status)}`}>{STATUS_LABEL[String(r.status || "").toUpperCase()] || r.status}</span>
                 </div>
-                <div className="mt-2 text-xs text-slate-600">
-                  Alertas: {r.saude?.alertas || 0} • Infos: {r.saude?.infos || 0}
+                <div className="mt-2">
+                  <SaudeBadges saude={r.saude} />
                 </div>
               </button>
             ))}
@@ -157,7 +176,9 @@ export default function LicitacoesAdminDashboardClient() {
                   </div>
                   <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${toneForStatus(r.status)}`}>{STATUS_LABEL[String(r.status || "").toUpperCase()] || r.status}</span>
                 </div>
-                <div className="mt-2 text-xs text-red-800">Críticos: {r.saude?.criticos || 0}</div>
+                <div className="mt-2">
+                  <SaudeBadges saude={r.saude} />
+                </div>
               </button>
             ))}
           </div>
@@ -172,4 +193,3 @@ export default function LicitacoesAdminDashboardClient() {
     </div>
   );
 }
-
