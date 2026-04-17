@@ -236,7 +236,7 @@ O sistema é formado pelos seguintes grandes blocos funcionais:
 
 As janelas (telas) principais se organizam por perfil e por núcleo operacional:
 
-- Painéis (Representante, CEO, Diretor, Gerente e Centro Executivo)
+- Painéis (Representante, CEO e Diretor)
 - Contratos (gestão do ciclo: cadastro, documentos e acompanhamento)
 - Engenharia/Obras (cadastro, orçamento, cronograma, centros de custo, execução, apropriação e medições)
 - Licitações (cadastro, checklist, validação e kanban)
@@ -585,26 +585,7 @@ Esse painel deve apresentar:
 - comparativo entre planejado e executado;
 - gráficos gerenciais simples e claros.
 
-### 7.5 Painel do Gerente
-
-O painel do Gerente é orientado à operação com visão gerencial.
-
-Ele deve mostrar:
-
-- tarefas e pendências da equipe;
-- obras do seu escopo;
-- medições em andamento;
-- cronogramas;
-- solicitações pendentes;
-- materiais críticos;
-- contratos em análise;
-- desvios de prazo;
-- itens vencendo;
-- alertas relevantes por obra, unidade ou área.
-
-Seu objetivo é ajudar a conduzir a operação diariamente.
-
-### 7.6 Painel do Operador
+### 7.5 Painel do Operador
 
 O painel do Operador deve ser o mais simples da plataforma.
 

@@ -149,6 +149,17 @@ async function requireEncarregado(request: FastifyRequest, reply: FastifyReply) 
   return { ...ctx, tenantUserId: tenantUser.id, encarregadoId: active.id };
 }
 
+async function requireTenantUser(request: FastifyRequest, reply: FastifyReply) {
+  const ctx = getAuthContext(request);
+  if (!ctx) return fail(reply, 401, 'Não autenticado');
+  const tenantUser = await prisma.tenantUser.findUnique({
+    where: { tenantId_userId: { tenantId: ctx.tenantId, userId: ctx.userId } },
+    select: { id: true },
+  });
+  if (!tenantUser) return fail(reply, 403, 'Tenant não selecionado');
+  return { ...ctx, tenantUserId: tenantUser.id };
+}
+
 async function audit(input: {
   tenantId: number;
   userId?: number | null;
@@ -1386,5 +1397,731 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!ctx || (ctx as any).success === false) return;
     const rows = await prisma.backupRestauracaoTenant.findMany({ where: { tenantId: ctx.tenantId }, orderBy: { id: 'desc' }, take: 50 });
     return ok(reply, rows);
+  });
+
+  server.get('/dashboard/me/filtros', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const scope = (request.user as any)?.abrangencia as any;
+    const empresaTotal = !!scope?.empresa;
+    const scopedObras: number[] = Array.isArray(scope?.obras) ? scope.obras.map((n: any) => Number(n)).filter((n: any) => Number.isInteger(n) && n > 0) : [];
+
+    const obras = await prisma.obra.findMany({
+      where: {
+        tenantId: ctx.tenantId,
+        ...(empresaTotal ? {} : scopedObras.length ? { id: { in: scopedObras } } : { id: { in: [] as number[] } }),
+      },
+      select: { id: true, name: true },
+      orderBy: { id: 'desc' },
+      take: 1000,
+    });
+
+    return ok(reply, {
+      empresaTotal,
+      diretorias: [],
+      unidades: [],
+      obras: obras.map((o) => ({ id: o.id, nome: o.name })),
+    });
+  });
+
+  const LICITACAO_STATUS = ['PREVISTA', 'EM_ANALISE', 'EM_PREPARACAO', 'PARTICIPANDO', 'AGUARDANDO_RESULTADO', 'ENCERRADA', 'VENCIDA', 'DESISTIDA'] as const;
+
+  function dateOnlyToIso(value: Date | null) {
+    if (!value) return null;
+    return new Date(value).toISOString().slice(0, 10);
+  }
+
+  function parseDateOnly(input: any) {
+    const s = String(input ?? '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+    const d = new Date(`${s}T00:00:00.000Z`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  server.get('/engenharia/licitacoes', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const q = z
+      .object({
+        incluirSaude: z.string().optional(),
+        diasAlerta: z.string().optional(),
+      })
+      .parse(request.query || {});
+
+    const incluirSaude = q.incluirSaude === '1';
+
+    const rows = await prisma.engenhariaLicitacao.findMany({
+      where: { tenantId: ctx.tenantId, ativo: true },
+      orderBy: { id: 'desc' },
+      take: 500,
+    });
+
+    const data = rows.map((r) => ({
+      idLicitacao: r.id,
+      titulo: r.titulo,
+      orgao: r.orgaoContratante ?? null,
+      status: r.status,
+      dataAbertura: dateOnlyToIso(r.dataAbertura ?? null),
+      idOrcamento: r.orcamentoId ?? null,
+      saude: incluirSaude ? { criticos: 0, alertas: 0, infos: 0 } : undefined,
+    }));
+
+    return ok(reply, data);
+  });
+
+  server.post('/engenharia/licitacoes', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const body = z
+      .object({
+        titulo: z.string().min(1),
+        orgao: z.string().optional().nullable(),
+        objeto: z.string().optional().nullable(),
+        status: z.enum(LICITACAO_STATUS).optional().nullable(),
+        fase: z.string().optional().nullable(),
+        dataAbertura: z.string().optional().nullable(),
+        dataEncerramento: z.string().optional().nullable(),
+        responsavelNome: z.string().optional().nullable(),
+        portalUrl: z.string().optional().nullable(),
+        observacoes: z.string().optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    const created = await prisma.engenhariaLicitacao.create({
+      data: {
+        tenantId: ctx.tenantId,
+        titulo: String(body.titulo),
+        orgaoContratante: body.orgao ?? null,
+        objeto: body.objeto ?? null,
+        status: body.status ?? 'EM_ANALISE',
+        fase: body.fase ?? null,
+        dataAbertura: parseDateOnly(body.dataAbertura),
+        dataEncerramento: parseDateOnly(body.dataEncerramento),
+        responsavelNome: body.responsavelNome ?? null,
+        portalUrl: body.portalUrl ?? null,
+        observacoes: body.observacoes ?? null,
+        ativo: true,
+        usuarioCriadorId: ctx.userId,
+      },
+    });
+
+    return ok(reply, { idLicitacao: created.id }, { message: 'Licitação criada' });
+  });
+
+  server.get('/engenharia/licitacoes/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const row = await prisma.engenhariaLicitacao.findFirst({ where: { id, tenantId: ctx.tenantId, ativo: true } });
+    if (!row) return fail(reply, 404, 'Licitação não encontrada');
+    return ok(reply, {
+      idLicitacao: row.id,
+      titulo: row.titulo,
+      orgao: row.orgaoContratante ?? null,
+      objeto: row.objeto ?? null,
+      status: row.status,
+      fase: row.fase ?? null,
+      dataAbertura: dateOnlyToIso(row.dataAbertura ?? null),
+      dataEncerramento: dateOnlyToIso(row.dataEncerramento ?? null),
+      idOrcamento: row.orcamentoId ?? null,
+      responsavelNome: row.responsavelNome ?? null,
+      portalUrl: row.portalUrl ?? null,
+      observacoes: row.observacoes ?? null,
+    });
+  });
+
+  server.put('/engenharia/licitacoes/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        titulo: z.string().optional(),
+        orgao: z.string().optional().nullable(),
+        objeto: z.string().optional().nullable(),
+        status: z.enum(LICITACAO_STATUS).optional(),
+        fase: z.string().optional().nullable(),
+        dataAbertura: z.string().optional().nullable(),
+        dataEncerramento: z.string().optional().nullable(),
+        idOrcamento: z.number().int().optional().nullable(),
+        responsavelNome: z.string().optional().nullable(),
+        portalUrl: z.string().optional().nullable(),
+        observacoes: z.string().optional().nullable(),
+      })
+      .passthrough()
+      .parse(request.body || {});
+
+    const current = await prisma.engenhariaLicitacao.findFirst({ where: { id, tenantId: ctx.tenantId, ativo: true } });
+    if (!current) return fail(reply, 404, 'Licitação não encontrada');
+
+    const updated = await prisma.engenhariaLicitacao.update({
+      where: { id },
+      data: {
+        titulo: typeof body.titulo === 'string' ? String(body.titulo) : undefined,
+        orgaoContratante: body.orgao !== undefined ? (body.orgao ?? null) : undefined,
+        objeto: body.objeto !== undefined ? (body.objeto ?? null) : undefined,
+        status: typeof body.status === 'string' ? String(body.status) : undefined,
+        fase: body.fase !== undefined ? (body.fase ?? null) : undefined,
+        dataAbertura: body.dataAbertura !== undefined ? parseDateOnly(body.dataAbertura) : undefined,
+        dataEncerramento: body.dataEncerramento !== undefined ? parseDateOnly(body.dataEncerramento) : undefined,
+        orcamentoId: body.idOrcamento !== undefined ? (body.idOrcamento ?? null) : undefined,
+        responsavelNome: body.responsavelNome !== undefined ? (body.responsavelNome ?? null) : undefined,
+        portalUrl: body.portalUrl !== undefined ? (body.portalUrl ?? null) : undefined,
+        observacoes: body.observacoes !== undefined ? (body.observacoes ?? null) : undefined,
+      },
+    });
+
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_licitacoes', idRegistro: String(updated.id), acao: 'UPDATE', dadosAnteriores: current as any, dadosNovos: updated as any });
+    return ok(reply, {}, { message: 'Licitação atualizada' });
+  });
+
+  server.delete('/engenharia/licitacoes/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const current = await prisma.engenhariaLicitacao.findFirst({ where: { id, tenantId: ctx.tenantId, ativo: true } });
+    if (!current) return fail(reply, 404, 'Licitação não encontrada');
+    const updated = await prisma.engenhariaLicitacao.update({ where: { id }, data: { ativo: false } });
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_licitacoes', idRegistro: String(updated.id), acao: 'DELETE', dadosAnteriores: current as any, dadosNovos: updated as any });
+    return ok(reply, {}, { message: 'Licitação removida' });
+  });
+
+  server.get('/engenharia/licitacoes/documentos-empresa', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const q = z.object({ q: z.string().optional(), categoria: z.string().optional() }).parse(request.query || {});
+    const term = (q.q || '').trim().toLowerCase();
+    const cat = (q.categoria || '').trim().toUpperCase();
+
+    const rows = await prisma.engenhariaDocumentoEmpresa.findMany({
+      where: {
+        tenantId: ctx.tenantId,
+        ativo: true,
+        ...(cat ? { categoria: cat } : {}),
+        ...(term
+          ? {
+              OR: [{ nome: { contains: term, mode: 'insensitive' } }, { numero: { contains: term, mode: 'insensitive' } }, { orgaoEmissor: { contains: term, mode: 'insensitive' } }],
+            }
+          : {}),
+      },
+      orderBy: { id: 'desc' },
+      take: 1000,
+    });
+
+    const now = new Date();
+    const data = rows.map((r) => {
+      const validade = r.dataValidade ? new Date(r.dataValidade) : null;
+      let status = 'OK';
+      if (validade && validade.getTime() < now.getTime()) status = 'VENCIDO';
+      return {
+        idDocumentoEmpresa: r.id,
+        categoria: r.categoria,
+        nome: r.nome,
+        numero: r.numero ?? null,
+        orgaoEmissor: r.orgaoEmissor ?? null,
+        dataValidade: dateOnlyToIso(validade),
+        status,
+        idDocumentoRegistro: r.documentoRegistroId ?? 0,
+      };
+    });
+
+    return ok(reply, data);
+  });
+
+  server.post('/engenharia/licitacoes/documentos-empresa', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const body = z
+      .object({
+        categoria: z.string().min(1),
+        nome: z.string().min(1),
+        numero: z.string().optional().nullable(),
+        orgaoEmissor: z.string().optional().nullable(),
+        dataEmissao: z.string().optional().nullable(),
+        dataValidade: z.string().optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    const created = await prisma.engenhariaDocumentoEmpresa.create({
+      data: {
+        tenantId: ctx.tenantId,
+        categoria: String(body.categoria).trim().toUpperCase(),
+        nome: String(body.nome).trim(),
+        numero: body.numero ?? null,
+        orgaoEmissor: body.orgaoEmissor ?? null,
+        dataEmissao: parseDateOnly(body.dataEmissao),
+        dataValidade: parseDateOnly(body.dataValidade),
+        documentoRegistroId: null,
+        ativo: true,
+        usuarioCriadorId: ctx.userId,
+      },
+    });
+    return ok(reply, { idDocumentoEmpresa: created.id }, { message: 'Documento criado' });
+  });
+
+  server.get('/engenharia/licitacoes/acervo-empresa', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const q = z.object({ q: z.string().optional(), tipo: z.string().optional() }).parse(request.query || {});
+    const term = (q.q || '').trim().toLowerCase();
+    const tipo = (q.tipo || '').trim().toUpperCase();
+
+    const rows = await prisma.engenhariaAcervoEmpresa.findMany({
+      where: {
+        tenantId: ctx.tenantId,
+        ativo: true,
+        ...(tipo ? { tipo } : {}),
+        ...(term
+          ? {
+              OR: [{ titulo: { contains: term, mode: 'insensitive' } }, { numeroDocumento: { contains: term, mode: 'insensitive' } }, { orgaoEmissor: { contains: term, mode: 'insensitive' } }, { nomeObra: { contains: term, mode: 'insensitive' } }],
+            }
+          : {}),
+      },
+      orderBy: { id: 'desc' },
+      take: 1000,
+    });
+
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idAcervo: r.id,
+        titulo: r.titulo,
+        descricao: r.descricao ?? null,
+        tipo: r.tipo,
+        numeroDocumento: r.numeroDocumento ?? null,
+        orgaoEmissor: r.orgaoEmissor ?? null,
+        dataEmissao: dateOnlyToIso(r.dataEmissao ?? null),
+        nomeObra: r.nomeObra ?? null,
+        contratante: r.contratante ?? null,
+        localObra: r.localObra ?? null,
+        valorObra: r.valorObra == null ? null : Number(r.valorObra),
+        dataInicio: dateOnlyToIso(r.dataInicio ?? null),
+        dataFim: dateOnlyToIso(r.dataFim ?? null),
+        categoria: r.categoria ?? null,
+        subcategoria: r.subcategoria ?? null,
+        porteObra: r.porteObra ?? null,
+        idDocumentoRegistro: r.documentoRegistroId ?? null,
+      }))
+    );
+  });
+
+  server.post('/engenharia/licitacoes/acervo-empresa', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const body = z
+      .object({
+        titulo: z.string().min(1),
+        descricao: z.string().optional().nullable(),
+        tipo: z.string().optional().nullable(),
+        numeroDocumento: z.string().optional().nullable(),
+        orgaoEmissor: z.string().optional().nullable(),
+        dataEmissao: z.string().optional().nullable(),
+        nomeObra: z.string().optional().nullable(),
+        contratante: z.string().optional().nullable(),
+        localObra: z.string().optional().nullable(),
+        valorObra: z.number().optional().nullable(),
+        dataInicio: z.string().optional().nullable(),
+        dataFim: z.string().optional().nullable(),
+        categoria: z.string().optional().nullable(),
+        subcategoria: z.string().optional().nullable(),
+        porteObra: z.string().optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    const created = await prisma.engenhariaAcervoEmpresa.create({
+      data: {
+        tenantId: ctx.tenantId,
+        titulo: String(body.titulo).trim(),
+        descricao: body.descricao ?? null,
+        tipo: (body.tipo ? String(body.tipo).trim().toUpperCase() : 'ATESTADO') || 'ATESTADO',
+        numeroDocumento: body.numeroDocumento ?? null,
+        orgaoEmissor: body.orgaoEmissor ?? null,
+        dataEmissao: parseDateOnly(body.dataEmissao),
+        nomeObra: body.nomeObra ?? null,
+        contratante: body.contratante ?? null,
+        localObra: body.localObra ?? null,
+        valorObra: body.valorObra == null ? null : body.valorObra,
+        dataInicio: parseDateOnly(body.dataInicio),
+        dataFim: parseDateOnly(body.dataFim),
+        categoria: body.categoria ?? null,
+        subcategoria: body.subcategoria ?? null,
+        porteObra: body.porteObra ?? null,
+        documentoRegistroId: null,
+        ativo: true,
+        usuarioCriadorId: ctx.userId,
+      },
+    });
+    return ok(reply, { idAcervo: created.id }, { message: 'Acervo criado' });
+  });
+
+  server.get('/engenharia/licitacoes/:id/documentos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const rows = await prisma.engenhariaLicitacaoDocumento.findMany({
+      where: { tenantId: ctx.tenantId, licitacaoId: id },
+      include: { documentoEmpresa: true },
+      orderBy: { id: 'desc' },
+    });
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idDocumentoEmpresa: r.documentoEmpresaId,
+        categoria: r.documentoEmpresa.categoria,
+        nome: r.documentoEmpresa.nome,
+        dataValidade: dateOnlyToIso(r.documentoEmpresa.dataValidade ?? null),
+        idDocumentoRegistro: r.documentoEmpresa.documentoRegistroId ?? 0,
+      }))
+    );
+  });
+
+  server.post('/engenharia/licitacoes/:id/documentos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z.object({ idDocumentoEmpresa: z.number().int().positive() }).parse(request.body || {});
+    await prisma.engenhariaLicitacaoDocumento.upsert({
+      where: { tenantId_licitacaoId_documentoEmpresaId: { tenantId: ctx.tenantId, licitacaoId: id, documentoEmpresaId: body.idDocumentoEmpresa } },
+      create: { tenantId: ctx.tenantId, licitacaoId: id, documentoEmpresaId: body.idDocumentoEmpresa, usuarioCriadorId: ctx.userId },
+      update: {},
+    });
+    return ok(reply, {}, { message: 'Vínculo criado' });
+  });
+
+  server.delete('/engenharia/licitacoes/:id/documentos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const { idDocumentoEmpresa } = z.object({ idDocumentoEmpresa: z.coerce.number().int().positive() }).parse(request.query || {});
+    await prisma.engenhariaLicitacaoDocumento.deleteMany({ where: { tenantId: ctx.tenantId, licitacaoId: id, documentoEmpresaId: Number(idDocumentoEmpresa) } });
+    return ok(reply, {}, { message: 'Vínculo removido' });
+  });
+
+  server.get('/engenharia/licitacoes/:id/acervo', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const rows = await prisma.engenhariaLicitacaoAcervo.findMany({
+      where: { tenantId: ctx.tenantId, licitacaoId: id },
+      include: { acervoEmpresa: true },
+      orderBy: { id: 'desc' },
+    });
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idAcervo: r.acervoEmpresaId,
+        titulo: r.acervoEmpresa.titulo,
+        tipo: r.acervoEmpresa.tipo,
+        orgaoEmissor: r.acervoEmpresa.orgaoEmissor ?? null,
+        numeroDocumento: r.acervoEmpresa.numeroDocumento ?? null,
+        dataEmissao: dateOnlyToIso(r.acervoEmpresa.dataEmissao ?? null),
+        idDocumentoRegistro: r.acervoEmpresa.documentoRegistroId ?? null,
+      }))
+    );
+  });
+
+  server.post('/engenharia/licitacoes/:id/acervo', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z.object({ idAcervo: z.number().int().positive() }).parse(request.body || {});
+    await prisma.engenhariaLicitacaoAcervo.upsert({
+      where: { tenantId_licitacaoId_acervoEmpresaId: { tenantId: ctx.tenantId, licitacaoId: id, acervoEmpresaId: body.idAcervo } },
+      create: { tenantId: ctx.tenantId, licitacaoId: id, acervoEmpresaId: body.idAcervo, usuarioCriadorId: ctx.userId },
+      update: {},
+    });
+    return ok(reply, {}, { message: 'Vínculo criado' });
+  });
+
+  server.delete('/engenharia/licitacoes/:id/acervo', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const { idAcervo } = z.object({ idAcervo: z.coerce.number().int().positive() }).parse(request.query || {});
+    await prisma.engenhariaLicitacaoAcervo.deleteMany({ where: { tenantId: ctx.tenantId, licitacaoId: id, acervoEmpresaId: Number(idAcervo) } });
+    return ok(reply, {}, { message: 'Vínculo removido' });
+  });
+
+  server.get('/engenharia/licitacoes/:id/checklist', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const rows = await prisma.engenhariaLicitacaoChecklistItem.findMany({ where: { tenantId: ctx.tenantId, licitacaoId: id, ativo: true }, orderBy: [{ ordem: 'asc' }, { id: 'asc' }] });
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idItem: r.id,
+        categoria: r.categoria,
+        nome: r.nome,
+        obrigatorio: r.obrigatorio,
+        diasAlerta: r.diasAlerta,
+        ordem: r.ordem,
+      }))
+    );
+  });
+
+  server.post('/engenharia/licitacoes/:id/checklist', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        preset: z.string().optional(),
+        categoria: z.string().optional(),
+        nome: z.string().optional(),
+        obrigatorio: z.boolean().optional(),
+        diasAlerta: z.number().int().optional(),
+        ordem: z.number().int().optional(),
+      })
+      .passthrough()
+      .parse(request.body || {});
+
+      if (String(body.preset || '').toUpperCase() === 'PADRAO') {
+        const defaults = [
+          { categoria: 'JURIDICO', nome: 'Contrato social / Estatuto', obrigatorio: true },
+          { categoria: 'FISCAL', nome: 'Certidão negativa', obrigatorio: true },
+          { categoria: 'TECNICO', nome: 'Atestado de capacidade técnica', obrigatorio: true },
+        ];
+        await prisma.$transaction(
+          defaults.map((d, idx) =>
+            prisma.engenhariaLicitacaoChecklistItem.create({
+              data: {
+                tenantId: ctx.tenantId,
+                licitacaoId: id,
+                categoria: d.categoria,
+                nome: d.nome,
+                obrigatorio: d.obrigatorio,
+                diasAlerta: 30,
+                ordem: idx,
+                ativo: true,
+                usuarioCriadorId: ctx.userId,
+              },
+            })
+          )
+        );
+        return ok(reply, {}, { message: 'Checklist criado' });
+      }
+
+      const categoria = String(body.categoria || '').trim().toUpperCase();
+      const nome = String(body.nome || '').trim();
+      if (!categoria || !nome) return fail(reply, 422, 'categoria e nome são obrigatórios');
+
+      const created = await prisma.engenhariaLicitacaoChecklistItem.create({
+        data: {
+          tenantId: ctx.tenantId,
+          licitacaoId: id,
+          categoria,
+          nome,
+          obrigatorio: body.obrigatorio ?? true,
+          diasAlerta: typeof body.diasAlerta === 'number' ? body.diasAlerta : 30,
+          ordem: typeof body.ordem === 'number' ? body.ordem : 0,
+          ativo: true,
+          usuarioCriadorId: ctx.userId,
+        },
+      });
+
+    return ok(reply, { idItem: created.id }, { message: 'Item criado' });
+  });
+
+  server.delete('/engenharia/licitacoes/:id/checklist', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const { idItem } = z.object({ idItem: z.coerce.number().int().positive() }).parse(request.query || {});
+    await prisma.engenhariaLicitacaoChecklistItem.updateMany({ where: { tenantId: ctx.tenantId, licitacaoId: id, id: Number(idItem) }, data: { ativo: false } });
+    return ok(reply, {}, { message: 'Item removido' });
+  });
+
+  server.get('/engenharia/licitacoes/:id/andamento', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const rows = await prisma.engenhariaLicitacaoAndamentoEvento.findMany({ where: { tenantId: ctx.tenantId, licitacaoId: id }, orderBy: [{ dataEvento: 'desc' }, { id: 'desc' }] });
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idEvento: r.id,
+        dataEvento: dateOnlyToIso(r.dataEvento),
+        tipo: r.tipo,
+        titulo: r.titulo,
+        descricao: r.descricao ?? null,
+        idDocumentoRegistro: r.documentoRegistroId ?? null,
+      }))
+    );
+  });
+
+  server.post('/engenharia/licitacoes/:id/andamento', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({ dataEvento: z.string().min(10), tipo: z.string().min(1), titulo: z.string().min(1), descricao: z.string().optional().nullable() })
+      .parse(request.body || {});
+    const created = await prisma.engenhariaLicitacaoAndamentoEvento.create({
+      data: {
+        tenantId: ctx.tenantId,
+        licitacaoId: id,
+        dataEvento: parseDateOnly(body.dataEvento) || new Date(),
+        tipo: String(body.tipo),
+        titulo: String(body.titulo),
+        descricao: body.descricao ?? null,
+        documentoRegistroId: null,
+        usuarioCriadorId: ctx.userId,
+      },
+    });
+    return ok(reply, { idEvento: created.id }, { message: 'Evento criado' });
+  });
+
+  server.delete('/engenharia/licitacoes/:id/andamento', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const { idEvento } = z.object({ idEvento: z.coerce.number().int().positive() }).parse(request.query || {});
+    await prisma.engenhariaLicitacaoAndamentoEvento.deleteMany({ where: { tenantId: ctx.tenantId, licitacaoId: id, id: Number(idEvento) } });
+    return ok(reply, {}, { message: 'Evento removido' });
+  });
+
+  server.get('/engenharia/licitacoes/:id/comunicacoes', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const rows = await prisma.engenhariaLicitacaoComunicacao.findMany({ where: { tenantId: ctx.tenantId, licitacaoId: id }, orderBy: [{ dataReferencia: 'desc' }, { id: 'desc' }] });
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idComunicacao: r.id,
+        direcao: r.direcao,
+        canal: r.canal,
+        dataReferencia: dateOnlyToIso(r.dataReferencia),
+        assunto: r.assunto,
+        descricao: r.descricao ?? null,
+        idDocumentoRegistro: r.documentoRegistroId ?? null,
+      }))
+    );
+  });
+
+  server.post('/engenharia/licitacoes/:id/comunicacoes', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        direcao: z.string().min(2),
+        canal: z.string().optional().nullable(),
+        dataReferencia: z.string().min(10),
+        assunto: z.string().min(1),
+        descricao: z.string().optional().nullable(),
+      })
+      .parse(request.body || {});
+    const created = await prisma.engenhariaLicitacaoComunicacao.create({
+      data: {
+        tenantId: ctx.tenantId,
+        licitacaoId: id,
+        direcao: String(body.direcao).toUpperCase(),
+        canal: body.canal ? String(body.canal).toUpperCase() : 'EMAIL',
+        dataReferencia: parseDateOnly(body.dataReferencia) || new Date(),
+        assunto: String(body.assunto),
+        descricao: body.descricao ?? null,
+        documentoRegistroId: null,
+        usuarioCriadorId: ctx.userId,
+      },
+    });
+    return ok(reply, { idComunicacao: created.id }, { message: 'Comunicação criada' });
+  });
+
+  server.delete('/engenharia/licitacoes/:id/comunicacoes', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const { idComunicacao } = z.object({ idComunicacao: z.coerce.number().int().positive() }).parse(request.query || {});
+    await prisma.engenhariaLicitacaoComunicacao.deleteMany({ where: { tenantId: ctx.tenantId, licitacaoId: id, id: Number(idComunicacao) } });
+    return ok(reply, {}, { message: 'Comunicação removida' });
+  });
+
+  server.get('/engenharia/licitacoes/:id/recursos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const rows = await prisma.engenhariaLicitacaoRecurso.findMany({ where: { tenantId: ctx.tenantId, licitacaoId: id }, orderBy: [{ id: 'desc' }] });
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idRecurso: r.id,
+        tipo: r.tipo,
+        fase: r.fase ?? null,
+        status: r.status,
+        dataEnvio: dateOnlyToIso(r.dataEnvio ?? null),
+        prazoResposta: dateOnlyToIso(r.prazoResposta ?? null),
+        protocolo: r.protocolo ?? null,
+        descricao: r.descricao ?? null,
+        idDocumentoRegistro: r.documentoRegistroId ?? null,
+      }))
+    );
+  });
+
+  server.post('/engenharia/licitacoes/:id/recursos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        tipo: z.string().min(2),
+        fase: z.string().optional().nullable(),
+        status: z.string().optional().nullable(),
+        dataEnvio: z.string().optional().nullable(),
+        prazoResposta: z.string().optional().nullable(),
+        protocolo: z.string().optional().nullable(),
+        descricao: z.string().optional().nullable(),
+      })
+      .parse(request.body || {});
+    const created = await prisma.engenhariaLicitacaoRecurso.create({
+      data: {
+        tenantId: ctx.tenantId,
+        licitacaoId: id,
+        tipo: String(body.tipo).toUpperCase(),
+        fase: body.fase ?? null,
+        status: body.status ? String(body.status).toUpperCase() : 'RASCUNHO',
+        dataEnvio: parseDateOnly(body.dataEnvio),
+        prazoResposta: parseDateOnly(body.prazoResposta),
+        protocolo: body.protocolo ?? null,
+        descricao: body.descricao ?? null,
+        documentoRegistroId: null,
+        usuarioCriadorId: ctx.userId,
+      },
+    });
+    return ok(reply, { idRecurso: created.id }, { message: 'Recurso criado' });
+  });
+
+  server.delete('/engenharia/licitacoes/:id/recursos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const { idRecurso } = z.object({ idRecurso: z.coerce.number().int().positive() }).parse(request.query || {});
+    await prisma.engenhariaLicitacaoRecurso.deleteMany({ where: { tenantId: ctx.tenantId, licitacaoId: id, id: Number(idRecurso) } });
+    return ok(reply, {}, { message: 'Recurso removido' });
+  });
+
+  server.get('/engenharia/licitacoes/:id/validar', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    return ok(reply, { resumo: { criticos: 0, alertas: 0, infos: 0 }, issues: [] });
+  });
+
+  server.get('/engenharia/licitacoes/:id/dossie', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    return ok(reply, { documentos: [], checklist: [], acervo: [], andamento: [], comunicacoes: [], recursos: [] });
+  });
+
+  server.post('/engenharia/licitacoes/:id/declaracoes/gerar', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    z.object({ template: z.string().min(2) }).passthrough().parse(request.body || {});
+    return ok(reply, { abrirUrl: null }, { message: 'Declaração gerada (placeholder)' });
   });
 }

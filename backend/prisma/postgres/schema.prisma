@@ -122,6 +122,15 @@ model Tenant {
   governancaPiiScanResultados GovernancaPiiScanResultado[]
   governancaClassificacaoSugestoes GovernancaClassificacaoSugestao[]
   governancaDadosAuditorias GovernancaDadosAuditoria[]
+  engenhariaLicitacoes EngenhariaLicitacao[]
+  engenhariaLicitacaoChecklistItens EngenhariaLicitacaoChecklistItem[]
+  engenhariaDocumentosEmpresa EngenhariaDocumentoEmpresa[]
+  engenhariaLicitacoesDocumentos EngenhariaLicitacaoDocumento[]
+  engenhariaAcervoEmpresa EngenhariaAcervoEmpresa[]
+  engenhariaLicitacoesAcervo EngenhariaLicitacaoAcervo[]
+  engenhariaLicitacoesAndamento EngenhariaLicitacaoAndamentoEvento[]
+  engenhariaLicitacoesComunicacoes EngenhariaLicitacaoComunicacao[]
+  engenhariaLicitacoesRecursos EngenhariaLicitacaoRecurso[]
 }
 
 model User {
@@ -2464,4 +2473,205 @@ model GrcMatrizRiscoSnapshot {
 
   @@index([tenantId])
   @@index([tenantId, periodoRef])
+}
+
+model EngenhariaLicitacao {
+  id              Int      @id @default(autoincrement())
+  tenantId         Int
+  titulo           String
+  orgaoContratante String?
+  objeto           String?
+  status           String   @default("EM_ANALISE")
+  fase             String?
+  dataAbertura     DateTime?
+  dataEncerramento DateTime?
+  orcamentoId      Int?
+  responsavelNome  String?
+  portalUrl        String?
+  observacoes      String?
+  ativo            Boolean  @default(true)
+  usuarioCriadorId Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  checklistItens   EngenhariaLicitacaoChecklistItem[]
+  documentosVinculos EngenhariaLicitacaoDocumento[]
+  acervoVinculos    EngenhariaLicitacaoAcervo[]
+  andamentoEventos  EngenhariaLicitacaoAndamentoEvento[]
+  comunicacoes      EngenhariaLicitacaoComunicacao[]
+  recursos          EngenhariaLicitacaoRecurso[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+}
+
+model EngenhariaLicitacaoChecklistItem {
+  id              Int      @id @default(autoincrement())
+  tenantId         Int
+  licitacaoId      Int
+  categoria        String
+  nome             String
+  obrigatorio      Boolean  @default(true)
+  diasAlerta       Int      @default(30)
+  ordem            Int      @default(0)
+  ativo            Boolean  @default(true)
+  usuarioCriadorId Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  licitacao        EngenhariaLicitacao @relation(fields: [licitacaoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, licitacaoId])
+}
+
+model EngenhariaDocumentoEmpresa {
+  id               Int      @id @default(autoincrement())
+  tenantId          Int
+  categoria         String
+  nome              String
+  numero            String?
+  orgaoEmissor      String?
+  dataEmissao       DateTime?
+  dataValidade      DateTime?
+  documentoRegistroId Int?
+  ativo             Boolean  @default(true)
+  usuarioCriadorId  Int
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vinculos          EngenhariaLicitacaoDocumento[]
+
+  @@index([tenantId])
+  @@index([tenantId, categoria])
+}
+
+model EngenhariaLicitacaoDocumento {
+  id               Int      @id @default(autoincrement())
+  tenantId          Int
+  licitacaoId       Int
+  documentoEmpresaId Int
+  usuarioCriadorId  Int
+  createdAt         DateTime @default(now())
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  licitacao         EngenhariaLicitacao @relation(fields: [licitacaoId], references: [id], onDelete: Cascade)
+  documentoEmpresa  EngenhariaDocumentoEmpresa @relation(fields: [documentoEmpresaId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, licitacaoId, documentoEmpresaId])
+  @@index([tenantId])
+  @@index([tenantId, licitacaoId])
+}
+
+model EngenhariaAcervoEmpresa {
+  id                Int      @id @default(autoincrement())
+  tenantId           Int
+  titulo             String
+  descricao          String?
+  tipo               String   @default("ATESTADO")
+  numeroDocumento    String?
+  orgaoEmissor       String?
+  dataEmissao        DateTime?
+  nomeObra           String?
+  contratante        String?
+  localObra          String?
+  valorObra          Decimal? @db.Decimal(14, 2)
+  dataInicio         DateTime?
+  dataFim            DateTime?
+  categoria          String?
+  subcategoria       String?
+  porteObra          String?
+  documentoRegistroId Int?
+  ativo              Boolean  @default(true)
+  usuarioCriadorId   Int
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vinculos           EngenhariaLicitacaoAcervo[]
+
+  @@index([tenantId])
+  @@index([tenantId, tipo])
+}
+
+model EngenhariaLicitacaoAcervo {
+  id               Int      @id @default(autoincrement())
+  tenantId          Int
+  licitacaoId       Int
+  acervoEmpresaId   Int
+  usuarioCriadorId  Int
+  createdAt         DateTime @default(now())
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  licitacao         EngenhariaLicitacao @relation(fields: [licitacaoId], references: [id], onDelete: Cascade)
+  acervoEmpresa     EngenhariaAcervoEmpresa @relation(fields: [acervoEmpresaId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, licitacaoId, acervoEmpresaId])
+  @@index([tenantId])
+  @@index([tenantId, licitacaoId])
+}
+
+model EngenhariaLicitacaoAndamentoEvento {
+  id               Int      @id @default(autoincrement())
+  tenantId          Int
+  licitacaoId       Int
+  dataEvento        DateTime
+  tipo              String
+  titulo            String
+  descricao         String?
+  documentoRegistroId Int?
+  usuarioCriadorId  Int
+  createdAt         DateTime @default(now())
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  licitacao         EngenhariaLicitacao @relation(fields: [licitacaoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, licitacaoId, dataEvento])
+}
+
+model EngenhariaLicitacaoComunicacao {
+  id               Int      @id @default(autoincrement())
+  tenantId          Int
+  licitacaoId       Int
+  direcao           String
+  canal             String   @default("EMAIL")
+  dataReferencia    DateTime
+  assunto           String
+  descricao         String?
+  documentoRegistroId Int?
+  usuarioCriadorId  Int
+  createdAt         DateTime @default(now())
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  licitacao         EngenhariaLicitacao @relation(fields: [licitacaoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, licitacaoId, dataReferencia])
+}
+
+model EngenhariaLicitacaoRecurso {
+  id               Int      @id @default(autoincrement())
+  tenantId          Int
+  licitacaoId       Int
+  tipo              String
+  fase              String?
+  status            String   @default("RASCUNHO")
+  dataEnvio         DateTime?
+  prazoResposta     DateTime?
+  protocolo         String?
+  descricao         String?
+  documentoRegistroId Int?
+  usuarioCriadorId  Int
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  licitacao         EngenhariaLicitacao @relation(fields: [licitacaoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, licitacaoId])
 }

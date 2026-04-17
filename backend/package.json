@@ -11,8 +11,8 @@
     "postinstall": "npm run prisma:generate",
     "create-system-admin": "npm run prisma:generate && tsx scripts/create-system-admin.ts",
     "seed-demo-tenants": "tsx scripts/seed-demo-tenants.ts",
-    "build": "tsc",
-    "start": "node dist/server.js",
+    "build": "npm run prisma:generate && tsc",
+    "start": "npm run prisma:migrate:deploy && node dist/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
