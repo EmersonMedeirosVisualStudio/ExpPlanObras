@@ -3,8 +3,6 @@
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { useMemo } from "react";
 import { UserMenu } from "@/components/UserMenu";
-import { NotificationBell } from "@/components/layout/NotificationBell";
-import { GlobalSearchTrigger } from "@/components/search/GlobalSearchTrigger";
 
 export function AppHeader({ user }: { user: CurrentUser }) {
   const companyName = useMemo(() => {
@@ -24,14 +22,12 @@ export function AppHeader({ user }: { user: CurrentUser }) {
   }, [user.tenantId]);
 
   return (
-    <header className="flex items-center justify-between border-b bg-white px-6 py-4">
+    <header className="flex items-center justify-between border-b bg-white px-6 py-4 text-slate-900">
       <div className="min-w-0">
         <div className="text-lg font-semibold text-slate-900 truncate">{companyName}</div>
       </div>
 
       <div className="ml-6 flex items-center gap-3">
-        <GlobalSearchTrigger />
-        <NotificationBell />
         <UserMenu />
       </div>
     </header>

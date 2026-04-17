@@ -45,7 +45,7 @@ export function NotificationBell() {
     <>
       <button
         type="button"
-        className="relative rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
+        className="relative rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
         onClick={() => setOpen(true)}
         title="Notificações"
       >

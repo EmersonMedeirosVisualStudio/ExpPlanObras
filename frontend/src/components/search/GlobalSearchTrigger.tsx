@@ -21,8 +21,8 @@ export function GlobalSearchTrigger() {
 
   return (
     <>
-      <button type="button" className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50" onClick={() => setOpen(true)}>
-        Buscar <span className="hidden md:inline text-slate-400">Ctrl+K</span>
+      <button type="button" className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" onClick={() => setOpen(true)}>
+        Buscar <span className="hidden md:inline text-slate-500">Ctrl+K</span>
       </button>
       <CommandPalette open={open} onClose={() => setOpen(false)} />
     </>
