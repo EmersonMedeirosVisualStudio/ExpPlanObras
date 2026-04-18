@@ -10,6 +10,13 @@ export async function exportTenantBackup(tenantId: number) {
     orderBy: { id: 'asc' },
   });
 
+  const contratos = await prisma.contrato.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
+  const planilhasContratadas = await prisma.obraPlanilhaContratada.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
+  const planilhaIds = planilhasContratadas.map((p) => p.id);
+  const planilhasItens = planilhaIds.length
+    ? await prisma.obraPlanilhaContratadaItem.findMany({ where: { tenantId, planilhaId: { in: planilhaIds } }, orderBy: { id: 'asc' } })
+    : [];
+
   const obras = await prisma.obra.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
   const obraIds = obras.map((o) => o.id);
   const enderecosObra = await prisma.enderecoObra.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
@@ -37,12 +44,15 @@ export async function exportTenantBackup(tenantId: number) {
   });
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     exportedAt: new Date().toISOString(),
     tenant,
     users,
+    contratos,
     obras,
     enderecosObra,
+    planilhasContratadas,
+    planilhasItens,
     etapas,
     custos,
     documentos,
@@ -74,8 +84,11 @@ export async function restoreTenantBackup(tenantId: number, backup: any) {
     await tx.custo.deleteMany({ where: { tenantId } });
     await tx.documento.deleteMany({ where: { tenantId } });
     await tx.tarefa.deleteMany({ where: { tenantId } });
+    await tx.obraPlanilhaContratadaItem.deleteMany({ where: { tenantId } });
+    await tx.obraPlanilhaContratada.deleteMany({ where: { tenantId } });
     await tx.enderecoObra.deleteMany({ where: { tenantId } });
     await tx.obra.deleteMany({ where: { tenantId } });
+    await tx.contrato.deleteMany({ where: { tenantId } });
     await tx.responsavelTecnico.deleteMany({ where: { tenantId } });
     await tx.tenantHistoryAttachment.deleteMany({ where: { entry: { tenantId } } as any });
     await tx.tenantHistoryEntry.deleteMany({ where: { tenantId } });
@@ -96,11 +109,43 @@ export async function restoreTenantBackup(tenantId: number, backup: any) {
       responsavelIdMap.set(Number(r.id), created.id);
     }
 
+    const contratoIdMap = new Map<number, number>();
+    const contratos = Array.isArray(backup.contratos) ? backup.contratos : [];
+    for (const c of contratos) {
+      const created = await tx.contrato.create({
+        data: {
+          tenantId,
+          numeroContrato: c.numeroContrato,
+          descricao: c.descricao ?? null,
+          status: c.status ?? 'ATIVO',
+          dataInicio: c.dataInicio ? new Date(c.dataInicio) : null,
+          dataFim: c.dataFim ? new Date(c.dataFim) : null,
+          valorContratado: c.valorContratado ?? null,
+        },
+      });
+      contratoIdMap.set(Number(c.id), created.id);
+    }
+
+    const pendingContrato = await tx.contrato
+      .findFirst({ where: { tenantId, numeroContrato: 'PENDENTE' }, select: { id: true } })
+      .catch(() => null);
+    const pendingContratoId = pendingContrato
+      ? pendingContrato.id
+      : (
+          await tx.contrato.create({
+            data: { tenantId, numeroContrato: 'PENDENTE', descricao: 'Contrato pendente de definição', status: 'PENDENTE' },
+            select: { id: true },
+          })
+        ).id;
+
     const obraIdMap = new Map<number, number>();
     for (const o of backup.obras || []) {
+      const contratoIdOriginal = (o as any).contratoId != null ? Number((o as any).contratoId) : null;
+      const contratoId = contratoIdOriginal != null ? contratoIdMap.get(contratoIdOriginal) : null;
       const created = await tx.obra.create({
         data: {
           tenantId,
+          contratoId: contratoId ?? pendingContratoId,
           name: o.name,
           description: o.description,
           type: o.type,
@@ -109,6 +154,44 @@ export async function restoreTenantBackup(tenantId: number, backup: any) {
         },
       });
       obraIdMap.set(Number(o.id), created.id);
+    }
+
+    const planilhas = Array.isArray(backup.planilhasContratadas) ? backup.planilhasContratadas : [];
+    const planilhaIdMap = new Map<number, number>();
+    for (const p of planilhas) {
+      const obraId = obraIdMap.get(Number(p.obraId));
+      if (!obraId) continue;
+      const contratoIdOriginal = p.contratoId != null ? Number(p.contratoId) : null;
+      const contratoId = contratoIdOriginal != null ? contratoIdMap.get(contratoIdOriginal) : null;
+      const created = await tx.obraPlanilhaContratada.create({
+        data: {
+          tenantId,
+          obraId,
+          contratoId: contratoId ?? pendingContratoId,
+          nome: p.nome ?? 'Planilha contratada',
+          criadoEm: p.criadoEm ? new Date(p.criadoEm) : new Date(),
+          atualizadoEm: p.atualizadoEm ? new Date(p.atualizadoEm) : new Date(),
+        } as any,
+      });
+      planilhaIdMap.set(Number(p.id), created.id);
+    }
+
+    const itens = Array.isArray(backup.planilhasItens) ? backup.planilhasItens : [];
+    for (const it of itens) {
+      const planilhaId = planilhaIdMap.get(Number(it.planilhaId));
+      if (!planilhaId) continue;
+      await tx.obraPlanilhaContratadaItem.create({
+        data: {
+          tenantId,
+          planilhaId,
+          codigoServico: it.codigoServico,
+          descricao: it.descricao ?? null,
+          unidade: it.unidade ?? null,
+          quantidade: it.quantidade ?? null,
+          precoUnitario: it.precoUnitario ?? null,
+          criadoEm: it.criadoEm ? new Date(it.criadoEm) : new Date(),
+        } as any,
+      });
     }
 
     const enderecos = Array.isArray(backup.enderecosObra) ? backup.enderecosObra : [];

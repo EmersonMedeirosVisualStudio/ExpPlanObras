@@ -1,9 +1,11 @@
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import api from '@/lib/api';
 
 export interface ObraFormData {
   name: string;
+  contratoId: number;
   type: 'PUBLICA' | 'PARTICULAR';
   status: 'AGUARDANDO_RECURSOS' | 'AGUARDANDO_CONTRATO' | 'AGUARDANDO_OS' | 'NAO_INICIADA' | 'EM_ANDAMENTO' | 'PARADA' | 'FINALIZADA';
   cep?: string;
@@ -26,11 +28,14 @@ interface ObraFormModalProps {
   onSubmit: (data: ObraFormData) => Promise<void>;
   initialData?: ObraFormData;
   title: string;
+  contratos: Array<{ id: number; numeroContrato: string; status?: string | null }>;
+  onContratoCreated: (contrato: { id: number; numeroContrato: string; status?: string | null }) => void;
 }
 
-export function ObraFormModal({ isOpen, onClose, onSubmit, initialData, title }: ObraFormModalProps) {
+export function ObraFormModal({ isOpen, onClose, onSubmit, initialData, title, contratos, onContratoCreated }: ObraFormModalProps) {
   const [formData, setFormData] = useState<ObraFormData>({
     name: '',
+    contratoId: 0,
     type: 'PARTICULAR',
     status: 'NAO_INICIADA',
     cep: '',
@@ -47,6 +52,14 @@ export function ObraFormModal({ isOpen, onClose, onSubmit, initialData, title }:
     link: ''
   });
   const [loading, setLoading] = useState(false);
+  const [creatingContrato, setCreatingContrato] = useState(false);
+  const [novoNumeroContrato, setNovoNumeroContrato] = useState('');
+
+  const hasContratos = contratos.length > 0;
+  const contratoDefaultId = useMemo(() => {
+    const nonPending = contratos.find((c) => String(c.numeroContrato || '').toUpperCase() !== 'PENDENTE');
+    return (nonPending || contratos[0])?.id || 0;
+  }, [contratos]);
 
   const handleLinkParse = async () => {
     if (!formData.link) return;
@@ -113,6 +126,7 @@ export function ObraFormModal({ isOpen, onClose, onSubmit, initialData, title }:
     } else {
       setFormData({
         name: '',
+        contratoId: contratoDefaultId,
         type: 'PARTICULAR',
         status: 'NAO_INICIADA',
         cep: '',
@@ -126,10 +140,40 @@ export function ObraFormModal({ isOpen, onClose, onSubmit, initialData, title }:
         longitude: ''
       });
     }
-  }, [initialData, isOpen]);
+  }, [contratoDefaultId, initialData, isOpen]);
+
+  useEffect(() => {
+    if (!initialData && isOpen) {
+      setFormData((p) => ({ ...p, contratoId: p.contratoId || contratoDefaultId }));
+    }
+  }, [contratoDefaultId, initialData, isOpen]);
+
+  const contratoSelecionado = useMemo(() => contratos.find((c) => c.id === formData.contratoId) || null, [contratos, formData.contratoId]);
+  const precisaCriarContrato = useMemo(() => !hasContratos || formData.contratoId === -1, [hasContratos, formData.contratoId]);
+
+  const criarContrato = async () => {
+    const numeroContrato = novoNumeroContrato.trim();
+    if (numeroContrato.length < 2) return;
+    setCreatingContrato(true);
+    try {
+      const { data } = await api.post('/api/contratos', { numeroContrato });
+      const created = { id: Number(data?.id), numeroContrato: String(data?.numeroContrato || numeroContrato), status: data?.status ?? null };
+      if (created.id > 0) {
+        onContratoCreated(created);
+        setFormData((p) => ({ ...p, contratoId: created.id }));
+        setNovoNumeroContrato('');
+      }
+    } finally {
+      setCreatingContrato(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.contratoId || formData.contratoId <= 0) {
+      alert('Selecione um contrato válido.');
+      return;
+    }
     setLoading(true);
     try {
       await onSubmit(formData);
@@ -165,6 +209,47 @@ export function ObraFormModal({ isOpen, onClose, onSubmit, initialData, title }:
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Contrato *</label>
+            <select
+              value={String(formData.contratoId > 0 ? formData.contratoId : -1)}
+              onChange={(e) => setFormData({ ...formData, contratoId: Number(e.target.value) })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {!hasContratos ? <option value={-1}>Criar contrato</option> : null}
+              {hasContratos ? <option value={-1}>Criar novo contrato</option> : null}
+              {contratos.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.numeroContrato}
+                </option>
+              ))}
+            </select>
+            {contratoSelecionado ? <p className="text-xs text-gray-500 mt-1">Selecionado: {contratoSelecionado.numeroContrato}</p> : null}
+          </div>
+
+          {precisaCriarContrato ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Número do contrato</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={novoNumeroContrato}
+                  onChange={(e) => setNovoNumeroContrato(e.target.value)}
+                  placeholder="Ex: CT-2026-001"
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={criarContrato}
+                  disabled={creatingContrato || novoNumeroContrato.trim().length < 2}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors text-sm font-medium disabled:opacity-50"
+                >
+                  {creatingContrato ? 'Criando...' : 'Criar'}
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Obra *</label>

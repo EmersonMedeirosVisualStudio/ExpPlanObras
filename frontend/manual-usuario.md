@@ -36,6 +36,31 @@ Observação:
 
 ---
 
+## 2.1 Como cadastrar uma obra (regra: contrato obrigatório)
+
+Para cadastrar uma obra, primeiro você precisa ter um **contrato** cadastrado.
+
+### ETAPA 1 — Onde acessar
+- Menu lateral → **Engenharia → Cadastro de Obra**
+
+### ETAPA 2 — O que clicar
+- Em **Contrato**, selecione um contrato existente
+- Se não existir, preencha **Novo contrato** e clique em **Criar**
+
+### ETAPA 3 — O que preencher
+- Nome da obra
+- Tipo e Status
+- Endereço (Rua, Número, Bairro, Cidade, UF) ou cole um link/CEP quando disponível
+
+### ETAPA 4 — O que esperar
+- A obra será criada e aparecerá na lista
+- O sistema cria a **planilha mínima** com o serviço `SER-0001` para liberar Programação e Apropriação
+
+### ETAPA 5 — Como validar
+- Vá em **Engenharia → Obras → Selecionar Obra** e confirme que a obra nova aparece
+
+---
+
 ## 3. Menu da obra (Planejamento e Execução)
 
 Depois que você define a obra ativa, o menu de **Engenharia → Obras** passa a ter atalhos para:
@@ -96,3 +121,32 @@ Antes de lançar diário, medição ou apropriação:
 - Confirme se você selecionou a obra correta em **Engenharia → Obras → Selecionar Obra**.
 
 Isso evita lançar dados na obra errada.
+
+---
+
+## 7. Suprimentos (como navegar)
+
+O sistema separa suprimentos em contextos diferentes para evitar mistura de processos:
+
+- **Suprimentos (Central)**: compras, parâmetros, fornecedores, monitoramento.
+- **Suprimentos (Obra)**: solicitações, recebimento, transferências e apropriação.
+- **Unidades de Estoque**: apoio logístico e armazenagem.
+- **Unidades de Venda**: PDV e histórico de vendas.
+
+### ETAPA 1 — Onde acessar
+- Menu lateral → **Suprimentos**
+- Para obra ativa: **Engenharia → Obras → Execução → Suprimentos (Obra)**
+
+### ETAPA 2 — O que clicar
+- Use **Dashboard** para ver KPIs e alertas
+- Use **Solicitações** para pedir material
+- Use **Recebimento/Transferências** para movimentar estoque
+
+### ETAPA 3 — O que esperar
+- O painel mostra indicadores de estoque, compras e consumo
+- Cada contexto mostra apenas as ações permitidas para aquele tipo de operação
+
+### ETAPA 4 — Como validar
+- Crie uma solicitação e acompanhe o status
+- Verifique se o saldo atualiza após recebimento
+- Em obra, valide se a apropriação aceita apenas serviços válidos da planilha

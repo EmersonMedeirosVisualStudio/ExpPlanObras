@@ -38,8 +38,9 @@ const DEFAULTS: Record<string, any[]> = {
     { widgetCodigo: 'CARDS_SUPRIMENTOS', ordemExibicao: 1, largura: 12, altura: 1, visivel: true },
     { widgetCodigo: 'ALERTAS_SUPRIMENTOS', ordemExibicao: 2, largura: 6, altura: 1, visivel: true },
     { widgetCodigo: 'SERIES_SUPRIMENTOS', ordemExibicao: 3, largura: 6, altura: 1, visivel: true },
-    { widgetCodigo: 'ESTOQUE_CRITICO', ordemExibicao: 4, largura: 12, altura: 1, visivel: true },
-    { widgetCodigo: 'COMPRAS_ANDAMENTO', ordemExibicao: 5, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'CONSUMO_POR_OBRA', ordemExibicao: 4, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'ESTOQUE_CRITICO', ordemExibicao: 5, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'COMPRAS_ANDAMENTO', ordemExibicao: 6, largura: 12, altura: 1, visivel: true },
   ],
   ENGENHARIA: [
     { widgetCodigo: 'CARDS_ENGENHARIA', ordemExibicao: 1, largura: 12, altura: 1, visivel: true },

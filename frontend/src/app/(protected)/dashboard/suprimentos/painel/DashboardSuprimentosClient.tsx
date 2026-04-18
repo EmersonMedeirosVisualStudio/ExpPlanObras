@@ -15,6 +15,7 @@ export default function DashboardSuprimentosClient() {
   const [resumo, setResumo] = useState<any | null>(null);
   const [alertas, setAlertas] = useState<any[]>([]);
   const [series, setSeries] = useState<any[]>([]);
+  const [consumoPorObra, setConsumoPorObra] = useState<any[]>([]);
   const [estoqueCritico, setEstoqueCritico] = useState<any[]>([]);
   const [comprasAndamento, setComprasAndamento] = useState<any[]>([]);
   const [layout, setLayout] = useState<any>({ dashboardCodigo: "SUPRIMENTOS", widgets: [] });
@@ -36,16 +37,18 @@ export default function DashboardSuprimentosClient() {
   async function carregarDados() {
     try {
       setError(null);
-      const [r, a, s, e, c] = await Promise.all([
+      const [r, a, s, co, e, c] = await Promise.all([
         DashboardSuprimentosApi.resumo(filtroQuery),
         DashboardSuprimentosApi.alertas(filtroQuery),
         DashboardSuprimentosApi.series(filtroQuery),
+        DashboardSuprimentosApi.consumoPorObra(filtroQuery),
         DashboardSuprimentosApi.estoqueCritico(filtroQuery),
         DashboardSuprimentosApi.comprasAndamento(filtroQuery),
       ]);
       setResumo(r);
       setAlertas(a);
       setSeries(s);
+      setConsumoPorObra(co);
       setEstoqueCritico(e);
       setComprasAndamento(c);
     } catch (e: any) {
@@ -214,6 +217,20 @@ export default function DashboardSuprimentosClient() {
           </section>
         )}
       </div>
+
+      {widgetsVisiveis.some((w: any) => w.widgetCodigo === "CONSUMO_POR_OBRA") && (
+        <section className="rounded-xl border bg-white p-4 shadow-sm">
+          <h2 className="mb-3 text-lg font-semibold">Consumo por Obra (proxy por solicitações)</h2>
+          {consumoPorObra.length ? (
+            <BlocoSerie
+              titulo="Top obras (últimos 90 dias)"
+              dados={consumoPorObra.map((x) => ({ periodo: x.nomeObra, total: Number(x.solicitacoes || 0) }))}
+            />
+          ) : (
+            <div className="text-sm text-slate-500">Sem dados suficientes.</div>
+          )}
+        </section>
+      )}
 
       {widgetsVisiveis.some((w: any) => w.widgetCodigo === "ESTOQUE_CRITICO") && (
         <section className="rounded-xl border bg-white p-4 shadow-sm">

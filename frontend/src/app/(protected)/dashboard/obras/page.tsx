@@ -8,6 +8,8 @@ import { ObraFormModal, type ObraFormData } from '@/components/ObraFormModal';
 
 interface Obra {
   id: number;
+  contratoId: number;
+  contrato?: { id: number; numeroContrato: string; status?: string | null } | null;
   name: string;
   type: 'PUBLICA' | 'PARTICULAR';
   status: 'AGUARDANDO_RECURSOS' | 'AGUARDANDO_CONTRATO' | 'AGUARDANDO_OS' | 'NAO_INICIADA' | 'EM_ANDAMENTO' | 'PARADA' | 'FINALIZADA';
@@ -51,6 +53,7 @@ const STATUS_COLOR_MAP: Record<string, string> = {
 
 export default function ObrasPage() {
   const [obras, setObras] = useState<Obra[]>([]);
+  const [contratos, setContratos] = useState<Array<{ id: number; numeroContrato: string; status?: string | null }>>([]);
   const [loading, setLoading] = useState(true);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -87,9 +90,24 @@ export default function ObrasPage() {
     fetchObras();
   }, []);
 
+  const fetchContratos = async () => {
+    try {
+      const response = await api.get('/api/contratos');
+      const data = Array.isArray(response.data) ? response.data : [];
+      setContratos(data.map((c: any) => ({ id: Number(c.id), numeroContrato: String(c.numeroContrato || ''), status: c.status ?? null })));
+    } catch {
+      setContratos([]);
+    }
+  };
+
+  useEffect(() => {
+    fetchContratos();
+  }, []);
+
   const handleCreateOrUpdate = async (data: ObraFormData) => {
     const obraPayload: any = {
       name: data.name,
+      contratoId: data.contratoId,
       type: data.type,
       status: data.status,
       description: data.description,
@@ -114,11 +132,15 @@ export default function ObrasPage() {
       if (hasEndereco) {
         await api.put(`/api/obras/${editingObra.id}/endereco`, enderecoPayload);
       }
+      await api.post(`/api/obras/${editingObra.id}/planilha/minima`).catch(() => null);
     } else {
       const created = await api.post('/api/obras', obraPayload);
       const id = Number(created.data?.id || created.data?.data?.id || created.data?.obra?.id || 0);
       if (hasEndereco && id > 0) {
         await api.put(`/api/obras/${id}/endereco`, enderecoPayload);
+      }
+      if (id > 0) {
+        await api.post(`/api/obras/${id}/planilha/minima`).catch(() => null);
       }
     }
     fetchObras();
@@ -231,6 +253,7 @@ export default function ObrasPage() {
                           ? `${obra.enderecoObra.logradouro}, ${obra.enderecoObra.numero || ''} - ${obra.enderecoObra.cidade || ''}/${obra.enderecoObra.uf || ''}`
                           : 'Sem endereço'}
                       </div>
+                      <div className="text-xs text-gray-500">{obra.contrato?.numeroContrato ? `Contrato: ${obra.contrato.numeroContrato}` : `Contrato ID: ${obra.contratoId}`}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{TYPE_MAP[obra.type] || obra.type}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -263,10 +286,13 @@ export default function ObrasPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSubmit={handleCreateOrUpdate}
+        contratos={contratos}
+        onContratoCreated={(c) => setContratos((p) => [c, ...p.filter((x) => x.id !== c.id)])}
         initialData={
           editingObra
             ? {
                 name: editingObra.name,
+                contratoId: editingObra.contratoId,
                 type: editingObra.type,
                 status: editingObra.status,
                 logradouro: editingObra.enderecoObra?.logradouro || '',

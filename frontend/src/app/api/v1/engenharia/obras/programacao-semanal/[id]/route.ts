@@ -56,6 +56,11 @@ async function ensureTables() {
       producao_min_por_hora DECIMAL(14,4) NULL,
       producao_prevista DECIMAL(14,4) NULL,
       observacao TEXT NULL,
+      servico_origem ENUM('PLANILHA','EXECUCAO') NOT NULL DEFAULT 'PLANILHA',
+      justificativa_excecao TEXT NULL,
+      anexos_json JSON NULL,
+      aprovacao_excecao_status ENUM('NAO_APLICAVEL','PENDENTE','APROVADO','REJEITADO') NOT NULL DEFAULT 'NAO_APLICAVEL',
+      aprovacao_excecao_motivo TEXT NULL,
       criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (id_item),
@@ -70,6 +75,15 @@ async function ensureTables() {
   await db.query(`ALTER TABLE engenharia_programacoes_semanais_itens ADD COLUMN id_centro_custo BIGINT UNSIGNED NULL AFTER codigo_centro_custo`).catch(() => null);
   await db.query(`ALTER TABLE engenharia_programacoes_semanais_itens ADD COLUMN id_equipe BIGINT UNSIGNED NULL AFTER id_centro_custo`).catch(() => null);
   await db.query(`ALTER TABLE engenharia_programacoes_semanais_itens ADD COLUMN frente_trabalho VARCHAR(120) NULL AFTER funcao_exercida`).catch(() => null);
+  await db.query(`ALTER TABLE engenharia_programacoes_semanais_itens ADD COLUMN servico_origem ENUM('PLANILHA','EXECUCAO') NOT NULL DEFAULT 'PLANILHA'`).catch(() => null);
+  await db.query(`ALTER TABLE engenharia_programacoes_semanais_itens ADD COLUMN justificativa_excecao TEXT NULL`).catch(() => null);
+  await db.query(`ALTER TABLE engenharia_programacoes_semanais_itens ADD COLUMN anexos_json JSON NULL`).catch(() => null);
+  await db
+    .query(
+      `ALTER TABLE engenharia_programacoes_semanais_itens ADD COLUMN aprovacao_excecao_status ENUM('NAO_APLICAVEL','PENDENTE','APROVADO','REJEITADO') NOT NULL DEFAULT 'NAO_APLICAVEL'`
+    )
+    .catch(() => null);
+  await db.query(`ALTER TABLE engenharia_programacoes_semanais_itens ADD COLUMN aprovacao_excecao_motivo TEXT NULL`).catch(() => null);
   await db.query(`ALTER TABLE engenharia_programacoes_semanais_itens ADD KEY idx_cc (tenant_id, id_centro_custo)`).catch(() => null);
   await db.query(`ALTER TABLE engenharia_programacoes_semanais_itens ADD KEY idx_cc_codigo (tenant_id, codigo_centro_custo)`).catch(() => null);
   await db.query(`ALTER TABLE engenharia_programacoes_semanais_itens DROP INDEX uk_item`).catch(() => null);
@@ -191,6 +205,77 @@ async function ensureTables() {
 
   await db.query(
     `
+    CREATE TABLE IF NOT EXISTS obras_servicos_execucao (
+      id_servico_execucao BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      tenant_id BIGINT UNSIGNED NOT NULL,
+      id_obra BIGINT UNSIGNED NOT NULL,
+      codigo_servico VARCHAR(80) NOT NULL,
+      descricao_servico VARCHAR(220) NULL,
+      unidade_medida VARCHAR(32) NULL,
+      justificativa TEXT NULL,
+      anexos_json JSON NULL,
+      status_aprovacao ENUM('NAO_APLICAVEL','PENDENTE','APROVADO','REJEITADO') NOT NULL DEFAULT 'NAO_APLICAVEL',
+      motivo_rejeicao TEXT NULL,
+      aprovado_em DATETIME NULL,
+      id_usuario_aprovador BIGINT UNSIGNED NULL,
+      id_usuario_criador BIGINT UNSIGNED NOT NULL,
+      criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id_servico_execucao),
+      UNIQUE KEY uk_obra_servico (tenant_id, id_obra, codigo_servico),
+      KEY idx_tenant (tenant_id),
+      KEY idx_obra (tenant_id, id_obra),
+      KEY idx_status (tenant_id, status_aprovacao)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `
+  );
+
+  await db.query(
+    `
+    CREATE TABLE IF NOT EXISTS engenharia_centros_custo (
+      id_centro_custo BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      tenant_id BIGINT UNSIGNED NOT NULL,
+      codigo VARCHAR(40) NOT NULL,
+      descricao VARCHAR(200) NOT NULL,
+      tipo VARCHAR(40) NULL,
+      unidade_medida VARCHAR(32) NULL,
+      ativo TINYINT(1) NOT NULL DEFAULT 1,
+      observacao TEXT NULL,
+      criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id_centro_custo),
+      UNIQUE KEY uk_codigo (tenant_id, codigo),
+      KEY idx_tenant (tenant_id),
+      KEY idx_ativo (tenant_id, ativo)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `
+  );
+
+  await db.query(
+    `
+    CREATE TABLE IF NOT EXISTS obras_responsaveis (
+      id_responsavel_obra BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      tenant_id BIGINT UNSIGNED NOT NULL,
+      id_obra BIGINT UNSIGNED NOT NULL,
+      tipo ENUM('RESPONSAVEL_TECNICO','FISCAL_OBRA') NOT NULL,
+      nome VARCHAR(255) NOT NULL,
+      registro_profissional VARCHAR(64) NULL,
+      cpf VARCHAR(20) NULL,
+      email VARCHAR(120) NULL,
+      telefone VARCHAR(40) NULL,
+      ativo TINYINT(1) NOT NULL DEFAULT 1,
+      criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id_responsavel_obra),
+      KEY idx_obra (tenant_id, id_obra),
+      KEY idx_tipo (tenant_id, tipo),
+      KEY idx_ativo (tenant_id, ativo)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `
+  );
+
+  await db.query(
+    `
     CREATE TABLE IF NOT EXISTS obras_composicoes_itens_overrides (
       id_override BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       tenant_id BIGINT UNSIGNED NOT NULL,
@@ -206,6 +291,32 @@ async function ensureTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `
   );
+}
+
+function normalizeAnexos(value: unknown) {
+  const arr = Array.isArray(value) ? value : [];
+  const out = arr
+    .map((x) => String(x ?? '').trim())
+    .filter(Boolean)
+    .slice(0, 20);
+  return out;
+}
+
+function makeCodigoCentroCustoAuto(codigoServico: string) {
+  const base = `CC-${String(codigoServico || '').trim().toUpperCase()}`.replace(/[^A-Z0-9\-_]/g, '');
+  return base.slice(0, 40);
+}
+
+function parseJsonArray(value: unknown) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function toNumber(v: unknown) {
@@ -327,7 +438,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         banco_horas_com_anuencia AS bancoHorasComAnuencia,
         producao_min_por_hora AS producaoMinPorHora,
         producao_prevista AS producaoPrevista,
-        observacao
+        observacao,
+        servico_origem AS servicoOrigem,
+        justificativa_excecao AS justificativaExcecao,
+        anexos_json AS anexosJson,
+        aprovacao_excecao_status AS aprovacaoExcecaoStatus,
+        aprovacao_excecao_motivo AS aprovacaoExcecaoMotivo
       FROM engenharia_programacoes_semanais_itens
       WHERE tenant_id = ? AND id_programacao = ?
       ORDER BY data_referencia ASC, id_funcionario ASC, codigo_servico ASC, COALESCE(codigo_centro_custo, '') ASC
@@ -528,6 +644,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         producaoMinPorHora,
         producaoPrevista,
         observacao: r.observacao ? String(r.observacao) : null,
+        servicoOrigem: r.servicoOrigem ? String(r.servicoOrigem) : 'PLANILHA',
+        excecao: r.servicoOrigem === 'EXECUCAO'
+          ? {
+              justificativa: r.justificativaExcecao ? String(r.justificativaExcecao) : null,
+              anexos: normalizeAnexos(parseJsonArray(r.anexosJson)),
+              status: r.aprovacaoExcecaoStatus ? String(r.aprovacaoExcecaoStatus) : 'NAO_APLICAVEL',
+              motivo: r.aprovacaoExcecaoMotivo ? String(r.aprovacaoExcecaoMotivo) : null,
+            }
+          : null,
         produtividadePrevistaPorHora: produtividadePrevistaPorHora == null ? null : Number(produtividadePrevistaPorHora.toFixed(6)),
         produtividadeExecutadaPorHora: produtividadeExecutadaPorHora == null ? null : Number(produtividadeExecutadaPorHora.toFixed(6)),
         proporcaoProdutividade: proporcaoProdutividade == null ? null : Number(proporcaoProdutividade.toFixed(6)),
@@ -637,6 +762,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ccMap.set(s, set);
     }
 
+    const [[fiscalRow]]: any = await conn.query(
+      `SELECT 1 AS ok FROM obras_responsaveis WHERE tenant_id = ? AND id_obra = ? AND tipo = 'FISCAL_OBRA' AND ativo = 1 LIMIT 1`,
+      [current.tenantId, Number(head.idObra)]
+    );
+    const fiscalAplicavel = !!fiscalRow?.ok;
+
     await conn.beginTransaction();
 
     await conn.query(
@@ -652,15 +783,101 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       const dataReferencia = normalizeDate(it?.dataReferencia);
       const idFuncionario = Number(it?.idFuncionario || 0);
       const codigoServico = String(it?.codigoServico || '').trim().toUpperCase();
-      const codigoCentroCusto = it?.codigoCentroCusto ? String(it.codigoCentroCusto).trim().toUpperCase() : null;
-      const idCentroCusto = it?.idCentroCusto ? Number(it.idCentroCusto) : null;
+      let codigoCentroCusto = it?.codigoCentroCusto ? String(it.codigoCentroCusto).trim().toUpperCase() : null;
+      let idCentroCusto = it?.idCentroCusto ? Number(it.idCentroCusto) : null;
       const idEquipe = it?.idEquipe ? Number(it.idEquipe) : null;
       const frenteTrabalho = it?.frenteTrabalho ? String(it.frenteTrabalho).trim() : null;
       if (!dataReferencia || !idFuncionario || !codigoServico) continue;
-      if (!allowed.has(codigoServico)) return fail(422, `Serviço inválido para a obra (não está na planilha): ${codigoServico}`);
-      if (codigoCentroCusto) {
-        const set = ccMap.get(codigoServico);
-        if (!set || !set.has(codigoCentroCusto)) return fail(422, `Centro de custo inválido para o serviço na obra: ${codigoServico}:${codigoCentroCusto}`);
+      const servicoPrevisto = allowed.has(codigoServico);
+      let servicoOrigem: 'PLANILHA' | 'EXECUCAO' = servicoPrevisto ? 'PLANILHA' : 'EXECUCAO';
+      let justificativaExcecao: string | null = null;
+      let anexosJson: any = null;
+      let aprovacaoExcecaoStatus: 'NAO_APLICAVEL' | 'PENDENTE' | 'APROVADO' | 'REJEITADO' = 'NAO_APLICAVEL';
+
+      if (servicoPrevisto) {
+        if (codigoCentroCusto) {
+          const set = ccMap.get(codigoServico);
+          if (!set || !set.has(codigoCentroCusto)) return fail(422, `Centro de custo inválido para o serviço na obra: ${codigoServico}:${codigoCentroCusto}`);
+        }
+      } else {
+        const justificativa = String(it?.excecao?.justificativa || '').trim();
+        const anexos = normalizeAnexos(it?.excecao?.anexos || it?.excecao?.fotos);
+        const descricaoServico = it?.servicoNovo?.descricaoServico ? String(it.servicoNovo.descricaoServico).trim() : null;
+        const unidadeMedida = it?.servicoNovo?.unidadeMedida ? String(it.servicoNovo.unidadeMedida).trim() : null;
+
+        if (!justificativa) return fail(422, 'Para serviço não previsto: justificativa é obrigatória.');
+        if (!anexos.length) return fail(422, 'Para serviço não previsto: anexar ao menos 1 foto/evidência é obrigatório.');
+
+        justificativaExcecao = justificativa;
+        anexosJson = JSON.stringify(anexos);
+        aprovacaoExcecaoStatus = fiscalAplicavel ? 'PENDENTE' : 'NAO_APLICAVEL';
+
+        await conn.query(
+          `
+          INSERT INTO obras_servicos_execucao
+            (tenant_id, id_obra, codigo_servico, descricao_servico, unidade_medida, justificativa, anexos_json, status_aprovacao, id_usuario_criador)
+          VALUES
+            (?,?,?,?,?,?,?,?,?)
+          ON DUPLICATE KEY UPDATE
+            descricao_servico = COALESCE(VALUES(descricao_servico), descricao_servico),
+            unidade_medida = COALESCE(VALUES(unidade_medida), unidade_medida),
+            justificativa = VALUES(justificativa),
+            anexos_json = VALUES(anexos_json),
+            status_aprovacao = VALUES(status_aprovacao),
+            atualizado_em = CURRENT_TIMESTAMP
+          `,
+          [current.tenantId, Number(head.idObra), codigoServico, descricaoServico, unidadeMedida, justificativa, anexosJson, aprovacaoExcecaoStatus, current.id]
+        );
+
+        if (descricaoServico && unidadeMedida) {
+          await conn.query(
+            `
+            INSERT INTO engenharia_servicos (tenant_id, codigo, descricao, unidade, grupo, preco_unitario, ativo)
+            VALUES (?,?,?,?,?,?,?)
+            ON DUPLICATE KEY UPDATE
+              descricao = VALUES(descricao),
+              unidade = VALUES(unidade),
+              grupo = COALESCE(grupo, VALUES(grupo)),
+              ativo = 1,
+              updated_at = CURRENT_TIMESTAMP
+            `,
+            [current.tenantId, codigoServico, descricaoServico, unidadeMedida, 'EXECUCAO', 0, 1]
+          );
+        }
+
+        codigoCentroCusto = makeCodigoCentroCustoAuto(codigoServico);
+        const descricaoCc = descricaoServico ? `Obra ${Number(head.idObra)} - ${descricaoServico}` : `Obra ${Number(head.idObra)} - ${codigoServico}`;
+        await conn.query(
+          `
+          INSERT INTO engenharia_centros_custo (tenant_id, codigo, descricao, ativo)
+          VALUES (?,?,?,1)
+          ON DUPLICATE KEY UPDATE
+            descricao = VALUES(descricao),
+            ativo = 1,
+            atualizado_em = CURRENT_TIMESTAMP
+          `,
+          [current.tenantId, codigoCentroCusto, descricaoCc.slice(0, 200)]
+        );
+
+        const [[ccIdRow]]: any = await conn.query(
+          `SELECT id_centro_custo AS idCentroCusto FROM engenharia_centros_custo WHERE tenant_id = ? AND codigo = ? LIMIT 1`,
+          [current.tenantId, codigoCentroCusto]
+        );
+        idCentroCusto = ccIdRow?.idCentroCusto ? Number(ccIdRow.idCentroCusto) : null;
+
+        await conn.query(
+          `
+          INSERT INTO obras_servicos_centros_custo
+            (tenant_id, id_obra, codigo_servico, codigo_centro_custo, origem, justificativa, id_usuario_criador)
+          VALUES
+            (?,?,?,?, 'MANUAL', ?, ?)
+          ON DUPLICATE KEY UPDATE
+            origem = 'MANUAL',
+            justificativa = VALUES(justificativa),
+            id_usuario_criador = VALUES(id_usuario_criador)
+          `,
+          [current.tenantId, Number(head.idObra), codigoServico, codigoCentroCusto, justificativa, current.id]
+        );
       }
 
       const funcaoExercida = it?.funcaoExercida ? String(it.funcaoExercida).trim() : null;
@@ -680,9 +897,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         INSERT INTO engenharia_programacoes_semanais_itens
           (tenant_id, id_programacao, data_referencia, id_funcionario, funcao_exercida, frente_trabalho, codigo_servico, codigo_centro_custo, id_centro_custo, id_equipe,
            hora_inicio_prevista, hora_fim_prevista, hora_inicio_executada, hora_fim_executada,
-           tipo_dia, he_prevista_minutos, banco_horas_com_anuencia, producao_min_por_hora, producao_prevista, observacao)
+           tipo_dia, he_prevista_minutos, banco_horas_com_anuencia, producao_min_por_hora, producao_prevista, observacao,
+           servico_origem, justificativa_excecao, anexos_json, aprovacao_excecao_status, aprovacao_excecao_motivo)
         VALUES
-          (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON DUPLICATE KEY UPDATE
           funcao_exercida = VALUES(funcao_exercida),
           frente_trabalho = VALUES(frente_trabalho),
@@ -698,7 +916,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           banco_horas_com_anuencia = VALUES(banco_horas_com_anuencia),
           producao_min_por_hora = VALUES(producao_min_por_hora),
           producao_prevista = VALUES(producao_prevista),
-          observacao = VALUES(observacao)
+          observacao = VALUES(observacao),
+          servico_origem = VALUES(servico_origem),
+          justificativa_excecao = VALUES(justificativa_excecao),
+          anexos_json = VALUES(anexos_json),
+          aprovacao_excecao_status = VALUES(aprovacao_excecao_status),
+          aprovacao_excecao_motivo = VALUES(aprovacao_excecao_motivo)
         `,
         [
           current.tenantId,
@@ -721,6 +944,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           producaoMinPorHora == null || Number.isNaN(producaoMinPorHora) ? null : producaoMinPorHora,
           producaoPrevista == null || Number.isNaN(producaoPrevista) ? null : producaoPrevista,
           observacao,
+          servicoOrigem,
+          justificativaExcecao,
+          anexosJson,
+          aprovacaoExcecaoStatus,
+          null,
         ]
       );
     }

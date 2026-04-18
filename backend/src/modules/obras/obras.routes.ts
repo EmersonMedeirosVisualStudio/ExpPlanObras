@@ -1,9 +1,10 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createObraSchema, updateObraSchema, updateOrcamentoSchema, createCustoSchema } from './obras.schema.js';
-import { createObra, getObras, getObraById, updateObra, deleteObra, getOrcamento, updateOrcamento, addCusto, removeCusto, getEnderecoObra, upsertEnderecoObra, type AbrangenciaContext, type OrigemEndereco } from './obras.service.js';
+import { createObra, getObras, getObraById, updateObra, deleteObra, getOrcamento, updateOrcamento, addCusto, removeCusto, getEnderecoObra, upsertEnderecoObra, ensurePlanilhaContratadaMinima, getPlanilhaContratadaResumo, listPlanilhaContratadaItens, addPlanilhaContratadaItem, type AbrangenciaContext, type OrigemEndereco } from './obras.service.js';
 import { authenticate } from '../../utils/authenticate.js';
 import { parseCSV } from '../../utils/csv.js';
+import { ensureContratoPendente } from '../contratos/contratos.service.js';
 
 export default async function obraRoutes(server: FastifyInstance) {
   server.addHook('onRequest', authenticate);
@@ -197,6 +198,81 @@ export default async function obraRoutes(server: FastifyInstance) {
     }
   );
 
+  server.get(
+    '/:id/planilha/resumo',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
+      const { id } = request.params as { id: number };
+      try {
+        const resumo = await getPlanilhaContratadaResumo(id, tenantId, scope);
+        return reply.send(resumo);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao carregar planilha' });
+      }
+    }
+  );
+
+  server.post(
+    '/:id/planilha/minima',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
+      const { id } = request.params as { id: number };
+      try {
+        const result = await ensurePlanilhaContratadaMinima(id, tenantId, scope);
+        return reply.send(result);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao criar planilha mínima' });
+      }
+    }
+  );
+
+  server.get(
+    '/:id/planilha/itens',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
+      const { id } = request.params as { id: number };
+      try {
+        const itens = await listPlanilhaContratadaItens(id, tenantId, scope);
+        return reply.send(itens);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao carregar itens da planilha' });
+      }
+    }
+  );
+
+  server.post(
+    '/:id/planilha/itens',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        body: z.object({
+          codigoServico: z.string().min(3),
+          descricao: z.string().optional().nullable(),
+          unidade: z.string().optional().nullable(),
+          quantidade: z.number().optional().nullable(),
+          precoUnitario: z.number().optional().nullable(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
+      const { id } = request.params as { id: number };
+      try {
+        const result = await addPlanilhaContratadaItem(id, tenantId, request.body as any, scope);
+        return reply.send(result);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao adicionar item na planilha' });
+      }
+    }
+  );
+
   server.post('/import', async (request, reply) => {
     const { tenantId } = request.user as any;
     const file = await (request as any).file();
@@ -223,12 +299,18 @@ export default async function obraRoutes(server: FastifyInstance) {
       return isNaN(n) ? undefined : n;
     };
 
+    const contratoPendenteId = await ensureContratoPendente(tenantId);
+
     const results = { imported: 0, errors: [] as Array<{ line: number; error: string }> };
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       try {
+        const contratoIdRaw = r[m('contratoid')] || r[m('contrato_id')] || r[m('id_contrato')] || '';
+        const contratoIdParsed = contratoIdRaw ? Number(String(contratoIdRaw).trim()) : NaN;
+        const contratoId = Number.isFinite(contratoIdParsed) && contratoIdParsed > 0 ? contratoIdParsed : contratoPendenteId;
         const input = {
           name: r[m('name')] || r[m('nome')] || '',
+          contratoId,
           type: (r[m('type')] || r[m('tipo')] || 'PARTICULAR').toUpperCase() as any,
           status: (r[m('status')] || 'NAO_INICIADA').toUpperCase() as any,
           description: r[m('description')] || r[m('descricao')] || undefined,

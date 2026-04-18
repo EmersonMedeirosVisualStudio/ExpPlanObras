@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const createObraSchema = z.object({
   name: z.string().min(3, "Nome da obra é obrigatório"),
+  contratoId: z.number().int().positive("Contrato é obrigatório"),
   type: z.enum(["PUBLICA", "PARTICULAR"]),
   status: z.enum([
     "AGUARDANDO_RECURSOS",
@@ -18,6 +19,7 @@ export const createObraSchema = z.object({
 
 export const updateObraSchema = z.object({
   name: z.string().min(3).optional(),
+  contratoId: z.number().int().positive().optional(),
   type: z.enum(["PUBLICA", "PARTICULAR"]).optional(),
   status: z.enum([
     "AGUARDANDO_RECURSOS",

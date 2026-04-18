@@ -42,7 +42,7 @@ export const DashboardSuprimentosApi = {
   series: (params?: FiltroParams) => api<DashboardSuprimentosSerieDTO[]>(`/api/v1/dashboard/suprimentos/series${qs(params)}`),
   estoqueCritico: (params?: FiltroParams) => api<DashboardSuprimentosEstoqueCriticoDTO[]>(`/api/v1/dashboard/suprimentos/estoque-critico${qs(params)}`),
   comprasAndamento: (params?: FiltroParams) => api<DashboardSuprimentosCompraAndamentoDTO[]>(`/api/v1/dashboard/suprimentos/compras-andamento${qs(params)}`),
+  consumoPorObra: (params?: FiltroParams) => api<any[]>(`/api/v1/dashboard/suprimentos/consumo-por-obra${qs(params)}`),
   obterLayout: () => api<any>('/api/v1/dashboard/me/layout?dashboard=SUPRIMENTOS'),
   salvarLayout: (payload: any) => api('/api/v1/dashboard/me/layout', { method: 'PUT', body: JSON.stringify(payload) }),
 };
-

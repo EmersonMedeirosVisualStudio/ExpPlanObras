@@ -15,9 +15,13 @@ export default function EngenhariaCadastroObraPage() {
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const [obras, setObras] = useState<ObraRow[]>([]);
+  const [contratos, setContratos] = useState<Array<{ id: number; numeroContrato: string }>>([]);
+  const [creatingContrato, setCreatingContrato] = useState(false);
+  const [novoNumeroContrato, setNovoNumeroContrato] = useState("");
 
   const [form, setForm] = useState({
     name: "",
+    contratoId: 0,
     type: "PARTICULAR",
     status: "NAO_INICIADA",
     street: "",
@@ -48,6 +52,38 @@ export default function EngenhariaCadastroObraPage() {
     }
   }
 
+  async function carregarContratos() {
+    try {
+      const res = await api.get("/api/contratos");
+      const data = Array.isArray(res.data) ? res.data : [];
+      const mapped = data.map((c: any) => ({ id: Number(c.id), numeroContrato: String(c.numeroContrato || "") }));
+      setContratos(mapped);
+      if (!form.contratoId && mapped.length > 0) {
+        const nonPending = mapped.find((c) => String(c.numeroContrato).toUpperCase() !== "PENDENTE");
+        setForm((p) => ({ ...p, contratoId: (nonPending || mapped[0]).id }));
+      }
+    } catch {
+      setContratos([]);
+    }
+  }
+
+  async function criarContrato() {
+    const numeroContrato = novoNumeroContrato.trim();
+    if (numeroContrato.length < 2) return;
+    setCreatingContrato(true);
+    try {
+      const { data } = await api.post("/api/contratos", { numeroContrato });
+      const created = { id: Number(data?.id), numeroContrato: String(data?.numeroContrato || numeroContrato) };
+      if (created.id > 0) {
+        setContratos((p) => [created, ...p.filter((x) => x.id !== created.id)]);
+        setForm((p) => ({ ...p, contratoId: created.id }));
+        setNovoNumeroContrato("");
+      }
+    } finally {
+      setCreatingContrato(false);
+    }
+  }
+
   async function salvar() {
     try {
       setLoading(true);
@@ -55,6 +91,7 @@ export default function EngenhariaCadastroObraPage() {
       setOkMsg(null);
       const obraPayload: any = {
         name: form.name.trim(),
+        contratoId: form.contratoId,
         type: form.type,
         status: form.status,
         description: form.description.trim() || undefined,
@@ -73,9 +110,13 @@ export default function EngenhariaCadastroObraPage() {
           uf: form.state.trim() || null,
         });
       }
+      if (id > 0) {
+        await api.post(`/api/obras/${id}/planilha/minima`).catch(() => null);
+      }
       setOkMsg("Obra cadastrada.");
       setForm({
         name: "",
+        contratoId: 0,
         type: "PARTICULAR",
         status: "NAO_INICIADA",
         street: "",
@@ -96,6 +137,7 @@ export default function EngenhariaCadastroObraPage() {
 
   useEffect(() => {
     carregarObras();
+    carregarContratos();
   }, []);
 
   return (
@@ -110,6 +152,26 @@ export default function EngenhariaCadastroObraPage() {
 
       <div className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
+          <div className="md:col-span-3">
+            <div className="text-sm text-slate-600">Contrato</div>
+            <select className="input" value={String(form.contratoId || "")} onChange={(e) => setForm((p) => ({ ...p, contratoId: Number(e.target.value) }))}>
+              <option value="">Selecione</option>
+              {contratos.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.numeroContrato}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="md:col-span-3">
+            <div className="text-sm text-slate-600">Novo contrato (se necessário)</div>
+            <div className="flex gap-2">
+              <input className="input" value={novoNumeroContrato} onChange={(e) => setNovoNumeroContrato(e.target.value)} placeholder="Ex: CT-2026-001" />
+              <button className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50" type="button" onClick={criarContrato} disabled={creatingContrato || novoNumeroContrato.trim().length < 2}>
+                {creatingContrato ? "Criando..." : "Criar"}
+              </button>
+            </div>
+          </div>
           <div className="md:col-span-4">
             <div className="text-sm text-slate-600">Nome</div>
             <input className="input" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="Ex: Obra X" />
@@ -166,7 +228,7 @@ export default function EngenhariaCadastroObraPage() {
           <button className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" type="button" onClick={carregarObras}>
             Recarregar
           </button>
-          <button className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white" type="button" disabled={loading || form.name.trim().length < 3} onClick={salvar}>
+          <button className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white" type="button" disabled={loading || form.name.trim().length < 3 || !form.contratoId} onClick={salvar}>
             {loading ? "Salvando..." : "Cadastrar"}
           </button>
         </div>

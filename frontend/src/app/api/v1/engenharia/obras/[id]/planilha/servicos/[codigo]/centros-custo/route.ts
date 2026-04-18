@@ -155,8 +155,23 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       [current.tenantId, idObra, codigoServico]
     );
     const codigoComposicao = plan?.codigoComposicao ? String(plan.codigoComposicao) : null;
+    const [manualRows]: any = await db.query(
+      `
+      SELECT codigo_centro_custo AS codigoCentroCusto, origem, justificativa
+      FROM obras_servicos_centros_custo
+      WHERE tenant_id = ? AND id_obra = ? AND codigo_servico = ?
+      ORDER BY codigo_centro_custo ASC
+      `,
+      [current.tenantId, idObra, codigoServico]
+    );
+    const manualSelecionados = (manualRows as any[]).map((r) => ({
+      codigoCentroCusto: String(r.codigoCentroCusto),
+      origem: r.origem ? String(r.origem) : 'MANUAL',
+      justificativa: r.justificativa ? String(r.justificativa) : null,
+    }));
+
     if (!codigoComposicao) {
-      return ok({ codigoServico, selecionados: [], sugeridos: [] });
+      return ok({ codigoServico, selecionados: manualSelecionados, sugeridos: [] });
     }
 
     const [[compRow]]: any = await db.query(`SELECT id_composicao AS idComposicao FROM engenharia_composicoes WHERE tenant_id = ? AND codigo = ? LIMIT 1`, [
@@ -180,15 +195,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       [idObra, current.tenantId, Number(compRow.idComposicao)]
     );
 
-    return ok({
-      codigoServico,
-      selecionados: (rows as any[]).map((r) => ({
-        codigoCentroCusto: String(r.codigoCentroCusto),
-        origem: 'COMPOSICAO',
-        justificativa: null,
-      })),
-      sugeridos: [],
-    });
+    const map = new Map<string, any>();
+    for (const r of rows as any[]) {
+      map.set(String(r.codigoCentroCusto), { codigoCentroCusto: String(r.codigoCentroCusto), origem: 'COMPOSICAO', justificativa: null });
+    }
+    for (const r of manualSelecionados) {
+      map.set(String(r.codigoCentroCusto), r);
+    }
+
+    return ok({ codigoServico, selecionados: Array.from(map.values()).sort((a, b) => a.codigoCentroCusto.localeCompare(b.codigoCentroCusto, 'pt-BR')), sugeridos: [] });
   } catch (e) {
     return handleApiError(e);
   }

@@ -30,6 +30,8 @@ async function withRLS<T>(tenantId: number, callback: (tx: any) => Promise<T>): 
 
 export async function createObra(input: CreateObraInput, tenantId: number) {
   return withRLS(tenantId, async (tx) => {
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: input.contratoId }, select: { id: true } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
     return tx.obra.create({
       data: {
         ...input,
@@ -55,7 +57,7 @@ export async function getObras(tenantId: number, scope?: AbrangenciaContext) {
     return tx.obra.findMany({
       orderBy: { createdAt: 'desc' },
       where: scopeWhere(tenantId, scope),
-      include: { enderecoObra: true },
+      include: { enderecoObra: true, contrato: { select: { id: true, numeroContrato: true, status: true } } },
     });
   });
 }
@@ -67,7 +69,7 @@ export async function getObraById(id: number, tenantId: number, scope?: Abrangen
   return withRLS(tenantId, async (tx) => {
     const obra = await tx.obra.findUnique({
       where: { id },
-      include: { enderecoObra: true },
+      include: { enderecoObra: true, contrato: { select: { id: true, numeroContrato: true, status: true } } },
     });
     
     // RLS policy in DB will prevent reading other tenant's data
@@ -85,6 +87,10 @@ export async function updateObra(id: number, input: UpdateObraInput, tenantId: n
     throw new Error("Access denied");
   }
   return withRLS(tenantId, async (tx) => {
+    if ((input as any).contratoId != null) {
+      const contrato = await tx.contrato.findFirst({ where: { tenantId, id: (input as any).contratoId }, select: { id: true } }).catch(() => null);
+      if (!contrato) throw new Error('Contrato não encontrado');
+    }
     // Verify ownership first or rely on RLS update policy
     // With RLS, if the row is not visible, update might affect 0 rows or throw
     const count = await tx.obra.updateMany({
@@ -199,6 +205,98 @@ export async function upsertEnderecoObra(obraId: number, tenantId: number, input
     });
 
     return saved;
+  });
+}
+
+export async function getPlanilhaContratadaResumo(obraId: number, tenantId: number, scope?: AbrangenciaContext) {
+  if (!canAccessObraId(obraId, scope)) throw new Error('Access denied');
+  return withRLS(tenantId, async (tx) => {
+    const obra = await tx.obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } });
+    if (!obra) throw new Error('Obra not found or access denied');
+    const planilha = await tx.obraPlanilhaContratada.findFirst({ where: { tenantId, obraId } }).catch(() => null);
+    if (!planilha) {
+      return { existe: false, itens: 0, temServicoMinimo: false };
+    }
+    const itens = await tx.obraPlanilhaContratadaItem.count({ where: { tenantId, planilhaId: planilha.id } });
+    const temServicoMinimo = await tx.obraPlanilhaContratadaItem
+      .findFirst({ where: { tenantId, planilhaId: planilha.id, codigoServico: 'SER-0001' }, select: { id: true } })
+      .then((r: any) => !!r)
+      .catch(() => false);
+    return { existe: true, itens, temServicoMinimo };
+  });
+}
+
+export async function ensurePlanilhaContratadaMinima(obraId: number, tenantId: number, scope?: AbrangenciaContext) {
+  if (!canAccessObraId(obraId, scope)) throw new Error('Access denied');
+  return withRLS(tenantId, async (tx) => {
+    const obra = await tx.obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true, contratoId: true } });
+    if (!obra) throw new Error('Obra not found or access denied');
+
+    const planilha = await tx.obraPlanilhaContratada.upsert({
+      where: { tenantId_obraId: { tenantId, obraId } },
+      create: { tenantId, obraId, contratoId: obra.contratoId, nome: 'Planilha contratada' },
+      update: { contratoId: obra.contratoId },
+    });
+
+    const has = await tx.obraPlanilhaContratadaItem
+      .findFirst({ where: { tenantId, planilhaId: planilha.id, codigoServico: 'SER-0001' }, select: { id: true } })
+      .catch(() => null);
+    if (!has) {
+      await tx.obraPlanilhaContratadaItem.create({
+        data: {
+          tenantId,
+          planilhaId: planilha.id,
+          codigoServico: 'SER-0001',
+          descricao: 'Serviço mínimo (base)',
+          unidade: 'UN',
+          quantidade: 0,
+          precoUnitario: 0,
+        },
+      });
+    }
+
+    return { planilhaId: planilha.id, codigoServicoMinimo: 'SER-0001' };
+  });
+}
+
+export async function listPlanilhaContratadaItens(obraId: number, tenantId: number, scope?: AbrangenciaContext) {
+  if (!canAccessObraId(obraId, scope)) throw new Error('Access denied');
+  return withRLS(tenantId, async (tx) => {
+    const planilha = await tx.obraPlanilhaContratada.findFirst({ where: { tenantId, obraId } }).catch(() => null);
+    if (!planilha) return [];
+    return tx.obraPlanilhaContratadaItem.findMany({ where: { tenantId, planilhaId: planilha.id }, orderBy: [{ codigoServico: 'asc' }, { id: 'asc' }] });
+  });
+}
+
+export async function addPlanilhaContratadaItem(
+  obraId: number,
+  tenantId: number,
+  input: { codigoServico: string; descricao?: string | null; unidade?: string | null; quantidade?: number | null; precoUnitario?: number | null },
+  scope?: AbrangenciaContext
+) {
+  if (!canAccessObraId(obraId, scope)) throw new Error('Access denied');
+  const codigoServico = String(input.codigoServico || '').trim().toUpperCase();
+  if (!codigoServico) throw new Error('Código do serviço é obrigatório');
+  return withRLS(tenantId, async (tx) => {
+    const obra = await tx.obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true, contratoId: true } });
+    if (!obra) throw new Error('Obra not found or access denied');
+    const planilha = await tx.obraPlanilhaContratada.upsert({
+      where: { tenantId_obraId: { tenantId, obraId } },
+      create: { tenantId, obraId, contratoId: obra.contratoId, nome: 'Planilha contratada' },
+      update: { contratoId: obra.contratoId },
+    });
+    await tx.obraPlanilhaContratadaItem.create({
+      data: {
+        tenantId,
+        planilhaId: planilha.id,
+        codigoServico,
+        descricao: input.descricao ?? null,
+        unidade: input.unidade ?? null,
+        quantidade: input.quantidade ?? null,
+        precoUnitario: input.precoUnitario ?? null,
+      },
+    });
+    return { planilhaId: planilha.id };
   });
 }
 

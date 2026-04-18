@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
           CONCAT('Solicitação urgente #', s.id_solicitacao_material) AS titulo,
           CONCAT('Status ', s.status_solicitacao, ' / ', s.regime_urgencia) AS subtitulo,
           s.id_solicitacao_material AS referenciaId,
-          '/dashboard/suprimentos/solicitacoes' AS rota,
+          '/dashboard/suprimentos/central/compras/solicitacoes' AS rota,
           CASE WHEN s.regime_urgencia = 'EMERGENCIAL' THEN 'CRITICA' ELSE 'ALTA' END AS criticidade
         FROM solicitacao_material s
         WHERE s.tenant_id = ?
@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
           CONCAT('Estoque abaixo do mínimo: ', COALESCE(i.descricao, i.codigo)) AS titulo,
           CONCAT('Saldo ', s.saldo_atual, ' / mínimo ', s.estoque_minimo) AS subtitulo,
           s.id_item AS referenciaId,
-          '/dashboard/suprimentos/estoque' AS rota,
+          '/dashboard/suprimentos/central/monitoramento/materiais-criticos' AS rota,
           'ALTA' AS criticidade
         FROM estoque_saldos s
         INNER JOIN estoque_itens i ON i.id_item = s.id_item
@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
           CONCAT('Entrega atrasada: ', p.numero_pedido) AS titulo,
           CONCAT('Prevista ', DATE_FORMAT(p.data_prevista_entrega, '%d/%m/%Y'), ' / status ', p.status) AS subtitulo,
           p.id_pedido AS referenciaId,
-          '/dashboard/suprimentos/compras' AS rota,
+          '/dashboard/suprimentos/central/compras/pedidos' AS rota,
           'ALTA' AS criticidade
         FROM compras_pedidos p
         WHERE p.tenant_id = ?
@@ -122,4 +122,3 @@ export async function GET(req: NextRequest) {
     return handleApiError(e);
   }
 }
-

@@ -1231,10 +1231,65 @@ Fluxo de uso (passo a passo):
    - Programação semanal (mão de obra/equipamentos/insumos);
    - Apropriação (por serviço e centro de custo).
 
-Impactos:
+Regras atualizadas — Programação e Apropriação:
 
-- Programação semanal passa a oferecer apenas serviços da planilha da obra e apenas centros de custo derivados da composição do serviço;
-- Apropriação passa a oferecer apenas serviços da planilha e apenas centros de custo válidos, evitando erro de lançamento.
+Programação:
+
+- aceita serviços previstos na planilha da obra;
+- aceita serviços não previstos, desde que sejam criados pelo engenheiro no momento da execução.
+
+Para serviços não previstos, é obrigatório:
+
+- informar justificativa;
+- anexar fotos/evidências (por upload no sistema ou por URL);
+- submeter para aprovação do fiscal (quando aplicável);
+- em caso de rejeição, o fiscal deve informar o motivo (obrigatório);
+- criar automaticamente o centro de custo vinculado ao novo serviço.
+
+Apropriação:
+
+- aceita apenas centros de custo da obra, independentemente de serem:
+  - oriundos da planilha original; ou
+  - criados durante a execução (via programação).
+
+Endpoints de apoio (serviço não previsto):
+
+- listar serviços criados na execução: `GET /api/v1/engenharia/obras/:id/servicos-execucao`
+- aprovar/rejeitar serviço criado: `PUT /api/v1/engenharia/obras/:id/servicos-execucao` (body: `codigoServico`, `acao=APROVAR|REJEITAR`)
+
+#### 11.1.4 Obra e Endereço (modelo definitivo)
+
+Diretriz:
+
+- toda obra deve estar vinculada a um contrato (obrigatório);
+- obra não armazena endereço; endereço é uma entidade separada vinculada a `obra_id` + `tenant_id`;
+- o backend é a única fonte da verdade (frontend apenas solicita ações por origem: LINK, CEP ou MANUAL).
+
+Modelo (conceitual):
+
+- Obra: `id`, `contrato_id`, `tenant_id`, `name`, `description`, `type`, `status`, `valorPrevisto`, `createdAt`, `updatedAt`.
+- EnderecoObra: `id`, `tenant_id`, `obra_id`, `cep`, `logradouro`, `numero`, `complemento`, `bairro`, `cidade`, `uf`, `latitude`, `longitude`, `origemEndereco`, `origemCoordenada`, `criadoEm`, `atualizadoEm`.
+
+Regras de origem:
+
+- prioridade de qualidade: `LINK > CEP > MANUAL`;
+- nunca sobrescrever automaticamente campos manualmente preenchidos;
+- CEP no banco: somente números (8 dígitos). Na tela: máscara `00000-000`.
+
+Endpoints (resumo):
+
+- listar contratos: `GET /api/contratos`
+- criar contrato: `POST /api/contratos`
+- criar obra (contrato obrigatório): `POST /api/obras`
+- salvar endereço: `PUT /api/obras/:id/endereco` (`origem=LINK|CEP|MANUAL`)
+- criar planilha mínima (SER-0001): `POST /api/obras/:id/planilha/minima`
+
+Fluxo recomendado:
+
+1) criar contrato (número do contrato);
+2) cadastrar obra escolhendo o contrato;
+3) cadastrar endereço (LINK, CEP ou MANUAL);
+4) cadastrar planilha contratada mínima com o serviço `SER-0001` para liberar programação e apropriação.
 
 ### 11.2 Contratos
 
@@ -1471,6 +1526,130 @@ Fluxo operacional:
 1. Cronograma contratado: cadastro do cronograma inicial da obra (baseline).
 2. Aditivo de cronograma: toda alteração cria um aditivo vinculado ao contrato e gera uma nova versão de cronograma da obra.
 3. Consulta: o sistema sempre exibe o cronograma vigente mais recente, preservando histórico de versões.
+
+---
+
+## 12. Suprimentos (Arquitetura Funcional)
+
+### 12.1 Estrutura de menus (implantação)
+
+Administração:
+
+- Suprimentos (Central)
+  - Dashboard
+  - Cadastros: Produtos, Categorias, Fornecedores, Unidades de medida, Tabela de preços
+  - Estrutura: Almoxarifados, Tipos de almoxarifado
+  - Planejamento e Controle: Parâmetros, Curva ABC, Controle de lotes
+  - Compras (núcleo): Solicitações, Análise de estoque, Cotações, Pedido de compra, Aprovações
+  - Monitoramento: Compras em andamento, Materiais críticos, Histórico de movimentações
+
+Engenharia:
+
+- Obras → Execução → Suprimentos (Obra)
+  - Dashboard da obra
+  - Solicitações (nova, minhas, status)
+  - Estoque da obra (saldo, movimentações, inventário)
+  - Recebimento (conferência de quantidade/lote)
+  - Transferências (solicitar, enviar, receber)
+  - Apropriação (essencial)
+  - Programação de materiais (semanal/mensal/por serviço/por centro de custo)
+
+Suprimentos:
+
+- Unidades de Estoque (filiais, bases e centros de apoio)
+- Unidades de Venda (PDV/loja)
+- Logística (opcional avançado)
+
+### 12.2 Quatro camadas operacionais (regra de desenho)
+
+- Central: compra e governança de estoque.
+- Obra: consumo, apropriação e programação.
+- Unidade de estoque: apoio/logística e armazenagem.
+- Unidade de venda: operação comercial (PDV).
+
+Regra de ouro:
+
+- o mesmo produto pode existir em todos os contextos;
+- cada contexto tem comportamento e permissões diferentes;
+- o backend deve separar regras por tipo de contexto para evitar mistura de processos.
+
+### 12.3 Matriz de permissões (simplificada)
+
+Perfis:
+
+- Administrador
+- Comprador
+- Engenheiro (obra)
+- Almoxarife (obra)
+- Almoxarife (unidade)
+- Vendedor (loja)
+- Financeiro
+- Diretor/Gestor
+
+Diretrizes:
+
+- engenheiro aprova solicitação técnica, mas não executa compra;
+- comprador executa compra, mas não dá baixa de consumo técnico da obra;
+- almoxarife movimenta estoque, mas não aprova financeiramente;
+- financeiro aprova pagamento, sem alterar saldos de estoque diretamente;
+- toda ação crítica deve ter trilha de auditoria (quem, quando, antes/depois).
+
+### 12.4 Fluxo automático de suprimentos (status)
+
+Fluxo alvo:
+
+1. SOLICITAÇÃO
+2. EM ANÁLISE
+3. VERIFICANDO ESTOQUE
+4. Se houver estoque: TRANSFERÊNCIA → RECEBIDO → FINALIZADO
+5. Se não houver: EM COTAÇÃO → APROVADA → EM COMPRA → AGUARDANDO PAGAMENTO → PAGO → EM TRANSPORTE → RECEBIDO → DISPONÍVEL
+
+Automações mínimas:
+
+- ao aprovar solicitação, abrir cotação automaticamente;
+- ao receber material, atualizar saldo de estoque automaticamente;
+- ao registrar transporte, status muda para “em trânsito”;
+- ao confirmar pagamento, pedido fica elegível para expedição;
+- ao detectar estoque abaixo do mínimo, gerar sugestão de reposição.
+
+### 12.5 Integração com obra e serviço (SER-0001)
+
+Regras obrigatórias:
+
+- obra deve possuir contrato válido;
+- obra deve possuir planilha contratada com ao menos um serviço `SER-0001`;
+- programação e apropriação só aceitam serviços previstos na planilha da obra;
+- centros de custo permitidos devem vir da composição vinculada ao serviço.
+
+### 12.6 Indicadores (KPIs) por domínio
+
+Obra:
+
+- Consumo real x previsto (%)
+- Custo por m²
+- Materiais em falta
+- Tempo médio de atendimento
+
+Estoque:
+
+- Giro de estoque
+- Cobertura (dias)
+- Ruptura
+- Valor total em estoque
+
+Compras:
+
+- Economia por cotação
+- Lead time (solicitação até entrega)
+- Prazo médio de compra
+- Fornecedor mais utilizado
+
+Venda (quando habilitada):
+
+- Ticket médio
+- Margem
+- Volume vendido
+- Produtos mais vendidos
 
 #### Acompanhamento do cronograma (planejado x executado)
 

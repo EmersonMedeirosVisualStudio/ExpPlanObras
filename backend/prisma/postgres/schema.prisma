@@ -36,8 +36,10 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   users     TenantUser[]
+  contratos Contrato[]
   obras     Obra[]
   enderecosObra EnderecoObra[]
+  obrasPlanilhasContratadas ObraPlanilhaContratada[]
   etapas    Etapa[]
   custos    Custo[]
   documentos Documento[]
@@ -280,6 +282,26 @@ model TenantUser {
   @@index([tenantId])
   @@index([funcionarioId])
 }
+model Contrato {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int
+  numeroContrato String
+  descricao      String?
+  status         String   @default("ATIVO")
+  dataInicio     DateTime?
+  dataFim        DateTime?
+  valorContratado Decimal?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  obras          Obra[]
+  planilhas      ObraPlanilhaContratada[]
+
+  @@unique([tenantId, numeroContrato])
+  @@index([tenantId])
+}
+
 
 model Obra {
   id        Int      @id @default(autoincrement())
@@ -287,11 +309,14 @@ model Obra {
   description String?
   type      String   @default("PARTICULAR")
   status    String   @default("NAO_INICIADA")
+  contratoId Int
   valorPrevisto Decimal?
   tenantId  Int
+  contrato  Contrato @relation(fields: [contratoId], references: [id])
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  planilhasContratadas ObraPlanilhaContratada[]
   enderecoObra EnderecoObra?
   etapas    Etapa[]
   custos    Custo[]
@@ -303,6 +328,7 @@ model Obra {
   usuarioAbrangencias UsuarioAbrangencia[]
   funcionarioLotacoes FuncionarioLotacao[]
   @@index([tenantId])
+  @@index([contratoId])
 }
 
 model EnderecoObra {
@@ -328,6 +354,44 @@ model EnderecoObra {
 
   @@unique([tenantId, obraId])
   @@index([tenantId])
+}
+
+model ObraPlanilhaContratada {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int
+  contratoId Int
+  obraId     Int
+  nome       String   @default("Planilha contratada")
+  criadoEm   DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contrato   Contrato @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+  obra       Obra     @relation(fields: [obraId], references: [id], onDelete: Cascade)
+  itens      ObraPlanilhaContratadaItem[]
+
+  @@unique([tenantId, obraId])
+  @@index([tenantId])
+  @@index([contratoId])
+  @@index([obraId])
+}
+
+model ObraPlanilhaContratadaItem {
+  id              Int      @id @default(autoincrement())
+  tenantId        Int
+  planilhaId      Int
+  codigoServico   String
+  descricao       String?
+  unidade         String?
+  quantidade      Decimal?
+  precoUnitario   Decimal?
+  criadoEm        DateTime @default(now())
+
+  planilha        ObraPlanilhaContratada @relation(fields: [planilhaId], references: [id], onDelete: Cascade)
+
+  @@unique([planilhaId, codigoServico])
+  @@index([tenantId])
+  @@index([planilhaId])
 }
 
 model Etapa {

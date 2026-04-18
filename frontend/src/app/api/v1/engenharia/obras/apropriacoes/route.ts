@@ -74,6 +74,7 @@ async function ensureTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `
   );
+  await db.query(`ALTER TABLE obras_planilhas_itens ADD COLUMN codigo_composicao VARCHAR(64) NULL AFTER codigo_servico`).catch(() => null);
 
   await db.query(
     `
@@ -95,6 +96,34 @@ async function ensureTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `
   );
+
+  await db.query(
+    `
+    CREATE TABLE IF NOT EXISTS obras_servicos_execucao (
+      id_servico_execucao BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      tenant_id BIGINT UNSIGNED NOT NULL,
+      id_obra BIGINT UNSIGNED NOT NULL,
+      codigo_servico VARCHAR(80) NOT NULL,
+      descricao_servico VARCHAR(220) NULL,
+      unidade_medida VARCHAR(32) NULL,
+      justificativa TEXT NULL,
+      anexos_json JSON NULL,
+      status_aprovacao ENUM('NAO_APLICAVEL','PENDENTE','APROVADO','REJEITADO') NOT NULL DEFAULT 'NAO_APLICAVEL',
+      motivo_rejeicao TEXT NULL,
+      aprovado_em DATETIME NULL,
+      id_usuario_aprovador BIGINT UNSIGNED NULL,
+      id_usuario_criador BIGINT UNSIGNED NOT NULL,
+      criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id_servico_execucao),
+      UNIQUE KEY uk_obra_servico (tenant_id, id_obra, codigo_servico),
+      KEY idx_tenant (tenant_id),
+      KEY idx_obra (tenant_id, id_obra),
+      KEY idx_status (tenant_id, status_aprovacao)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `
+  );
+  await db.query(`ALTER TABLE obras_servicos_execucao ADD COLUMN motivo_rejeicao TEXT NULL`).catch(() => null);
 
   await db.query(
     `
@@ -231,40 +260,48 @@ export async function POST(req: NextRequest) {
     if (policy.bloquearSalvamento && !codigoCentroCusto) return fail(422, 'Centro de custo é obrigatório');
     if (!codigoCentroCusto && !policy.permitirSemCentroCusto) return fail(422, 'Centro de custo é obrigatório (ou habilite a permissão para apropriar sem centro de custo)');
 
-    const [[svc]]: any = await db.query(
-      `SELECT id_item AS id FROM obras_planilhas_itens WHERE tenant_id = ? AND id_obra = ? AND codigo_servico = ? LIMIT 1`,
+    const [[svcPlan]]: any = await db.query(
+      `SELECT 1 AS ok FROM obras_planilhas_itens WHERE tenant_id = ? AND id_obra = ? AND codigo_servico = ? LIMIT 1`,
       [current.tenantId, idObra, codigoServico]
     );
-    if (!svc) return fail(422, `Serviço inválido para a obra (não está na planilha): ${codigoServico}`);
-
-    if (codigoCentroCusto) {
-      const [[plan]]: any = await db.query(
-        `SELECT codigo_composicao AS codigoComposicao FROM obras_planilhas_itens WHERE tenant_id = ? AND id_obra = ? AND codigo_servico = ? LIMIT 1`,
+    const servicoPrevisto = !!svcPlan?.ok;
+    if (!servicoPrevisto) {
+      const [[svcExec]]: any = await db.query(
+        `SELECT status_aprovacao AS statusAprovacao FROM obras_servicos_execucao WHERE tenant_id = ? AND id_obra = ? AND codigo_servico = ? LIMIT 1`,
         [current.tenantId, idObra, codigoServico]
       );
-      const codigoComposicao = plan?.codigoComposicao ? String(plan.codigoComposicao) : null;
-      if (!codigoComposicao) return fail(422, `Serviço sem composição vinculada na obra: ${codigoServico}`);
+      if (!svcExec) return fail(422, `Serviço inválido para a obra: ${codigoServico}`);
+      const status = String(svcExec.statusAprovacao || 'NAO_APLICAVEL').toUpperCase();
+      if (status === 'REJEITADO') return fail(422, `Serviço não previsto rejeitado: ${codigoServico}`);
+      if (status === 'PENDENTE') return fail(422, `Serviço não previsto pendente de aprovação: ${codigoServico}`);
+    }
 
-      const [[compRow]]: any = await db.query(`SELECT id_composicao AS idComposicao FROM engenharia_composicoes WHERE tenant_id = ? AND codigo = ? LIMIT 1`, [
-        current.tenantId,
-        codigoComposicao,
-      ]);
-      if (!compRow?.idComposicao) return fail(422, `Composição inválida para o serviço na obra: ${codigoServico}`);
-
+    if (codigoCentroCusto) {
       const [[okCc]]: any = await db.query(
         `
         SELECT 1 AS ok
-        FROM engenharia_composicoes_itens i
-        LEFT JOIN obras_composicoes_itens_overrides o
-          ON o.tenant_id = i.tenant_id AND o.id_obra = ? AND o.id_item_base = i.id_item
-        WHERE i.tenant_id = ?
-          AND i.id_composicao = ?
-          AND COALESCE(o.codigo_centro_custo, i.codigo_centro_custo) = ?
+        FROM (
+          SELECT DISTINCT
+            COALESCE(o.codigo_centro_custo, i.codigo_centro_custo) AS codigoCentroCusto
+          FROM obras_planilhas_itens p
+          INNER JOIN engenharia_composicoes c ON c.tenant_id = p.tenant_id AND c.codigo = p.codigo_composicao
+          INNER JOIN engenharia_composicoes_itens i ON i.tenant_id = c.tenant_id AND i.id_composicao = c.id_composicao
+          LEFT JOIN obras_composicoes_itens_overrides o
+            ON o.tenant_id = i.tenant_id AND o.id_obra = p.id_obra AND o.id_item_base = i.id_item
+          WHERE p.tenant_id = ? AND p.id_obra = ?
+            AND COALESCE(o.codigo_centro_custo, i.codigo_centro_custo) IS NOT NULL
+          UNION
+          SELECT DISTINCT
+            codigo_centro_custo AS codigoCentroCusto
+          FROM obras_servicos_centros_custo
+          WHERE tenant_id = ? AND id_obra = ?
+        ) x
+        WHERE x.codigoCentroCusto = ?
         LIMIT 1
         `,
-        [idObra, current.tenantId, Number(compRow.idComposicao), codigoCentroCusto]
+        [current.tenantId, idObra, current.tenantId, idObra, codigoCentroCusto]
       );
-      if (!okCc) return fail(422, `Centro de custo inválido para o serviço na obra (não está na composição): ${codigoServico}:${codigoCentroCusto}`);
+      if (!okCc) return fail(422, `Centro de custo inválido para a obra: ${codigoCentroCusto}`);
     }
 
     const [ins]: any = await db.query(

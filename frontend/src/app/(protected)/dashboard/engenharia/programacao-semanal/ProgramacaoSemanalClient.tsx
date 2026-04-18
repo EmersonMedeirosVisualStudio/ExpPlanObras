@@ -54,6 +54,9 @@ type ProgramacaoDetalhe = {
     };
     treinamentoApto?: boolean;
     observacao: string | null;
+    servicoOrigem?: "PLANILHA" | "EXECUCAO";
+    servicoNovo?: null | { descricaoServico: string; unidadeMedida: string };
+    excecao?: null | { justificativa: string | null; anexos: string[]; status?: string | null; motivo?: string | null };
     execucao: null | { quantidade: number; unidadeMedida: string | null; horas: number; semApropriacao: boolean };
   }>;
   lotados: Array<{ idFuncionario: number; nome: string; funcao: string | null }>;
@@ -100,6 +103,7 @@ export default function ProgramacaoSemanalClient({ idObraFixed }: { idObraFixed?
   });
   const [servicosPlanilha, setServicosPlanilha] = useState<Array<{ codigoServico: string; descricaoServico: string | null }>>([]);
   const [ccOptions, setCcOptions] = useState<string[]>([]);
+  const [uploadingMidia, setUploadingMidia] = useState(false);
 
   const [lista, setLista] = useState<ProgramacaoResumo[]>([]);
   const [idSelecionado, setIdSelecionado] = useState<number | null>(null);
@@ -110,7 +114,12 @@ export default function ProgramacaoSemanalClient({ idObraFixed }: { idObraFixed?
     dataReferencia: new Date().toISOString().slice(0, 10),
     idFuncionario: "",
     funcaoExercida: "",
+    servicoNaoPrevisto: false,
     codigoServico: "",
+    descricaoServicoNovo: "",
+    unidadeMedidaNovo: "",
+    justificativaExcecao: "",
+    anexosExcecao: "",
     codigoCentroCusto: "",
     horaInicioPrevista: "07:00",
     horaFimPrevista: "17:00",
@@ -132,6 +141,14 @@ export default function ProgramacaoSemanalClient({ idObraFixed }: { idObraFixed?
 
   const idObraNum = useMemo(() => Number(idObra || 0), [idObra]);
   const codigoServicoNorm = useMemo(() => novoItem.codigoServico.trim().toUpperCase(), [novoItem.codigoServico]);
+  const anexosExcecaoList = useMemo(
+    () =>
+      novoItem.anexosExcecao
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    [novoItem.anexosExcecao]
+  );
 
   async function carregarPolicy() {
     try {
@@ -390,7 +407,27 @@ export default function ProgramacaoSemanalClient({ idObraFixed }: { idObraFixed?
     if (!det) return;
     const idFunc = Number(novoItem.idFuncionario || 0);
     const codigoCentroCusto = novoItem.codigoCentroCusto ? String(novoItem.codigoCentroCusto).trim().toUpperCase() : null;
-    if (!idFunc || !novoItem.codigoServico.trim() || !novoItem.dataReferencia) return;
+    const codigoServico = novoItem.codigoServico.trim().toUpperCase();
+    if (!idFunc || !codigoServico || !novoItem.dataReferencia) return;
+    if (novoItem.servicoNaoPrevisto) {
+      const justificativa = novoItem.justificativaExcecao.trim();
+      const anexos = novoItem.anexosExcecao
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (!justificativa) {
+        setErr("Para serviço não previsto: justificativa é obrigatória.");
+        return;
+      }
+      if (!anexos.length) {
+        setErr("Para serviço não previsto: inclua ao menos 1 foto/evidência (URL) em Anexos.");
+        return;
+      }
+      if (!novoItem.descricaoServicoNovo.trim() || !novoItem.unidadeMedidaNovo.trim()) {
+        setErr("Para serviço não previsto: informe descrição e unidade de medida.");
+        return;
+      }
+    }
 
     const producaoPrevista = novoItem.producaoPrevista ? Number(String(novoItem.producaoPrevista).replace(",", ".")) : null;
     const producaoMinPorHora = novoItem.producaoMinPorHora ? Number(String(novoItem.producaoMinPorHora).replace(",", ".")) : null;
@@ -406,8 +443,8 @@ export default function ProgramacaoSemanalClient({ idObraFixed }: { idObraFixed?
             dataReferencia: novoItem.dataReferencia,
             idFuncionario: idFunc,
             funcaoExercida: novoItem.funcaoExercida || null,
-            codigoServico: novoItem.codigoServico.trim().toUpperCase(),
-            codigoCentroCusto: codigoCentroCusto || null,
+            codigoServico,
+            codigoCentroCusto: novoItem.servicoNaoPrevisto ? null : codigoCentroCusto || null,
             horaInicioPrevista: novoItem.horaInicioPrevista || null,
             horaFimPrevista: novoItem.horaFimPrevista || null,
             tipoDia: novoItem.tipoDia,
@@ -416,13 +453,78 @@ export default function ProgramacaoSemanalClient({ idObraFixed }: { idObraFixed?
             producaoMinPorHora: producaoMinPorHora == null || !Number.isFinite(producaoMinPorHora) ? null : producaoMinPorHora,
             producaoPrevista: producaoPrevista == null || !Number.isFinite(producaoPrevista) ? null : producaoPrevista,
             observacao: novoItem.observacao || null,
+            servicoNovo: novoItem.servicoNaoPrevisto
+              ? { descricaoServico: novoItem.descricaoServicoNovo.trim(), unidadeMedida: novoItem.unidadeMedidaNovo.trim() }
+              : null,
+            excecao: novoItem.servicoNaoPrevisto
+              ? {
+                  justificativa: novoItem.justificativaExcecao.trim(),
+                  anexos: novoItem.anexosExcecao
+                    .split("\n")
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                  status: "PENDENTE",
+                  motivo: null,
+                }
+              : null,
             execucao: null,
           },
         ],
       };
     });
 
-    setNovoItem((p) => ({ ...p, codigoServico: "", producaoPrevista: "", observacao: "" }));
+    setNovoItem((p) => ({
+      ...p,
+      servicoNaoPrevisto: false,
+      codigoServico: "",
+      descricaoServicoNovo: "",
+      unidadeMedidaNovo: "",
+      justificativaExcecao: "",
+      anexosExcecao: "",
+      codigoCentroCusto: "",
+      producaoPrevista: "",
+      observacao: "",
+    }));
+  }
+
+  async function enviarMidias(files: FileList | null) {
+    if (!files || !files.length) return;
+    setUploadingMidia(true);
+    setErr(null);
+    try {
+      const urls: string[] = [];
+      for (const f of Array.from(files)) {
+        const res = await fetch("/api/v1/uploads", {
+          method: "POST",
+          headers: { "Content-Type": f.type || "application/octet-stream", "X-Filename": f.name },
+          body: f,
+        });
+        const json = (await res.json().catch(() => null)) as any;
+        if (!res.ok || !json?.success) throw new Error(json?.message || "Falha ao enviar mídia.");
+        const url = String(json.data?.url || "").trim();
+        if (url) urls.push(url);
+      }
+      if (urls.length) {
+        setNovoItem((p) => ({ ...p, anexosExcecao: [p.anexosExcecao, ...urls].filter(Boolean).join("\n") }));
+      }
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao enviar mídia.");
+    } finally {
+      setUploadingMidia(false);
+    }
+  }
+
+  function removerAnexoExcecao(url: string) {
+    const target = String(url || "").trim();
+    if (!target) return;
+    setNovoItem((p) => {
+      const list = p.anexosExcecao
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .filter((u) => u !== target);
+      return { ...p, anexosExcecao: list.join("\n") };
+    });
   }
 
   useEffect(() => {
@@ -615,19 +717,108 @@ export default function ProgramacaoSemanalClient({ idObraFixed }: { idObraFixed?
                 </div>
                 <div className="md:col-span-2">
                   <div className="text-sm text-slate-600">Serviço (SER-0001)</div>
-                  <div className="flex gap-2">
-                    <select className="input" value={novoItem.codigoServico} onChange={(e) => setNovoItem((p) => ({ ...p, codigoServico: e.target.value }))}>
-                      <option value="">Selecione</option>
-                      {servicosPlanilha.map((s) => (
-                        <option key={s.codigoServico} value={s.codigoServico}>
-                          {s.codigoServico} {s.descricaoServico ? `— ${s.descricaoServico}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <button className="rounded-lg border px-3 py-2 text-sm" type="button" onClick={buscarMinPorHora}>
-                      Sugestão
-                    </button>
+                  <div className="mb-2 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={!!novoItem.servicoNaoPrevisto}
+                      onChange={(e) =>
+                        setNovoItem((p) => ({
+                          ...p,
+                          servicoNaoPrevisto: e.target.checked,
+                          codigoServico: "",
+                          codigoCentroCusto: "",
+                          descricaoServicoNovo: "",
+                          unidadeMedidaNovo: "",
+                          justificativaExcecao: "",
+                          anexosExcecao: "",
+                        }))
+                      }
+                    />
+                    <span className="text-sm text-slate-700">Serviço não previsto (criar na execução)</span>
                   </div>
+
+                  {!novoItem.servicoNaoPrevisto ? (
+                    <div className="flex gap-2">
+                      <select className="input" value={novoItem.codigoServico} onChange={(e) => setNovoItem((p) => ({ ...p, codigoServico: e.target.value }))}>
+                        <option value="">Selecione</option>
+                        {servicosPlanilha.map((s) => (
+                          <option key={s.codigoServico} value={s.codigoServico}>
+                            {s.codigoServico} {s.descricaoServico ? `— ${s.descricaoServico}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <button className="rounded-lg border px-3 py-2 text-sm" type="button" onClick={buscarMinPorHora}>
+                        Sugestão
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <input
+                        className="input"
+                        value={novoItem.codigoServico}
+                        onChange={(e) => setNovoItem((p) => ({ ...p, codigoServico: e.target.value }))}
+                        placeholder="Código do serviço (ex: SER-9001)"
+                      />
+                      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                        <input
+                          className="input"
+                          value={novoItem.descricaoServicoNovo}
+                          onChange={(e) => setNovoItem((p) => ({ ...p, descricaoServicoNovo: e.target.value }))}
+                          placeholder="Descrição do serviço"
+                        />
+                        <input
+                          className="input"
+                          value={novoItem.unidadeMedidaNovo}
+                          onChange={(e) => setNovoItem((p) => ({ ...p, unidadeMedidaNovo: e.target.value }))}
+                          placeholder="Unidade (m2, m3, un...)"
+                        />
+                      </div>
+                      <input
+                        className="input"
+                        value={novoItem.justificativaExcecao}
+                        onChange={(e) => setNovoItem((p) => ({ ...p, justificativaExcecao: e.target.value }))}
+                        placeholder="Justificativa (obrigatória)"
+                      />
+                      <div className="rounded-lg border bg-slate-50 p-3">
+                        <div className="text-sm text-slate-700">Mídias (fotos/evidências)</div>
+                        <div className="mt-2 flex items-center gap-3 flex-wrap">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            disabled={uploadingMidia}
+                            onChange={async (e) => {
+                              const files = e.target.files;
+                              e.target.value = "";
+                              await enviarMidias(files);
+                            }}
+                          />
+                          <div className="text-xs text-slate-500">{uploadingMidia ? "Enviando..." : "Você pode enviar imagens ou colar URLs abaixo."}</div>
+                        </div>
+                        {anexosExcecaoList.length ? (
+                          <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                            {anexosExcecaoList.map((u) => (
+                              <div key={u} className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2">
+                                <a className="truncate text-xs text-blue-700 underline" href={u} target="_blank">
+                                  {u}
+                                </a>
+                                <button className="rounded border px-2 py-1 text-xs text-slate-700 hover:bg-slate-50" type="button" onClick={() => removerAnexoExcecao(u)}>
+                                  Remover
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                      <textarea
+                        className="input min-h-24"
+                        value={novoItem.anexosExcecao}
+                        onChange={(e) => setNovoItem((p) => ({ ...p, anexosExcecao: e.target.value }))}
+                        placeholder="Anexos (URLs de fotos/evidências, 1 por linha)"
+                      />
+                      <div className="text-xs text-slate-500">Centro de custo será criado automaticamente e vinculado ao novo serviço.</div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -654,7 +845,7 @@ export default function ProgramacaoSemanalClient({ idObraFixed }: { idObraFixed?
                     className="input"
                     value={novoItem.codigoCentroCusto}
                     onChange={(e) => setNovoItem((p) => ({ ...p, codigoCentroCusto: e.target.value }))}
-                    disabled={!novoItem.codigoServico}
+                    disabled={!novoItem.codigoServico || !!novoItem.servicoNaoPrevisto}
                   >
                     <option value="">{policy.permitirSemCentroCusto ? "(sem centro de custo)" : "Selecione"}</option>
                     {ccOptions.map((cc) => (
@@ -681,12 +872,12 @@ export default function ProgramacaoSemanalClient({ idObraFixed }: { idObraFixed?
                 </div>
               </div>
 
-              {policy.exibirAlerta && novoItem.codigoServico && !ccOptions.length ? (
+              {policy.exibirAlerta && novoItem.codigoServico && !novoItem.servicoNaoPrevisto && !ccOptions.length ? (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                   ⚠️ Serviço sem centros de custo vinculados na planilha. Ajuste em “Planilha contratada” antes de iniciar a execução.
                 </div>
               ) : null}
-              {policy.exibirAlerta && novoItem.codigoServico && ccOptions.length && !novoItem.codigoCentroCusto ? (
+              {policy.exibirAlerta && novoItem.codigoServico && !novoItem.servicoNaoPrevisto && ccOptions.length && !novoItem.codigoCentroCusto ? (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">⚠️ Centro de custo não informado.</div>
               ) : null}
 
@@ -757,7 +948,25 @@ export default function ProgramacaoSemanalClient({ idObraFixed }: { idObraFixed?
                     <tr key={`${i.idItem}-${idx}`} className="border-t">
                       <td className="px-3 py-2">{i.dataReferencia}</td>
                       <td className="px-3 py-2">{formatFuncionarioRef(i.idFuncionario)}</td>
-                      <td className="px-3 py-2">{i.codigoServico}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span>{i.codigoServico}</span>
+                          {i.servicoOrigem === "EXECUCAO" ? (
+                            <span
+                              title={i.excecao?.motivo ? `Motivo: ${i.excecao.motivo}` : undefined}
+                              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                String(i.excecao?.status || "").toUpperCase() === "APROVADO"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : String(i.excecao?.status || "").toUpperCase() === "REJEITADO"
+                                    ? "bg-red-100 text-red-700"
+                                    : "bg-amber-100 text-amber-700"
+                              }`}
+                            >
+                              {String(i.excecao?.status || "PENDENTE").toUpperCase()}
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
                       <td className="px-3 py-2">{i.codigoCentroCusto ?? "-"}</td>
                       <td className="px-3 py-2">{i.horaInicioPrevista && i.horaFimPrevista ? `${i.horaInicioPrevista}–${i.horaFimPrevista}` : "-"}</td>
                       <td className="px-3 py-2">{i.producaoPrevista == null ? "-" : Number(i.producaoPrevista).toFixed(2)}</td>
