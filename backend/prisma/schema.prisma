@@ -38,6 +38,7 @@ model Tenant {
   
   users     TenantUser[]
   obras     Obra[]
+  enderecosObra EnderecoObra[]
   etapas    Etapa[]
   custos    Custo[]
   documentos Documento[]
@@ -168,22 +169,14 @@ model Obra {
   description String? // Descrição da Obra
   type      String   @default("PARTICULAR") // PUBLICA, PARTICULAR
   status    String   @default("NAO_INICIADA") // AGUARDANDO_RECURSOS, AGUARDANDO_CONTRATO, AGUARDANDO_OS, NAO_INICIADA, EM_ANDAMENTO, PARADA, FINALIZADA
-  
-  // Endereço Detalhado
-  street       String?
-  number       String?
-  neighborhood String?
-  city         String?
-  state        String?
-  latitude     String?
-  longitude    String?
-  
   valorPrevisto Decimal? // Valor previsto total
   
   tenantId  Int
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  enderecoObra EnderecoObra?
 
   etapas    Etapa[]
   custos    Custo[]
@@ -196,6 +189,31 @@ model Obra {
   usuarioAbrangencias UsuarioAbrangencia[]
   funcionarioLotacoes FuncionarioLotacao[]
 
+  @@index([tenantId])
+}
+
+model EnderecoObra {
+  id               Int      @id @default(autoincrement())
+  tenantId          Int
+  obraId            Int      @unique
+  cep               String?
+  logradouro        String?
+  numero            String?
+  complemento       String?
+  bairro            String?
+  cidade            String?
+  uf                String?
+  latitude          String?
+  longitude         String?
+  origemEndereco    String   @default("MANUAL")
+  origemCoordenada  String   @default("MANUAL")
+  criadoEm          DateTime @default(now())
+  atualizadoEm      DateTime @updatedAt
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  obra              Obra     @relation(fields: [obraId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, obraId])
   @@index([tenantId])
 }
 

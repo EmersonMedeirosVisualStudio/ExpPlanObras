@@ -11,14 +11,17 @@ interface Obra {
   name: string;
   type: 'PUBLICA' | 'PARTICULAR';
   status: 'AGUARDANDO_RECURSOS' | 'AGUARDANDO_CONTRATO' | 'AGUARDANDO_OS' | 'NAO_INICIADA' | 'EM_ANDAMENTO' | 'PARADA' | 'FINALIZADA';
-  address?: string;
-  street?: string;
-  number?: string;
-  neighborhood?: string;
-  city?: string;
-  state?: string;
-  latitude?: string;
-  longitude?: string;
+  enderecoObra?: {
+    cep?: string | null;
+    logradouro?: string | null;
+    numero?: string | null;
+    complemento?: string | null;
+    bairro?: string | null;
+    cidade?: string | null;
+    uf?: string | null;
+    latitude?: string | null;
+    longitude?: string | null;
+  } | null;
 }
 
 const STATUS_MAP = {
@@ -85,10 +88,38 @@ export default function ObrasPage() {
   }, []);
 
   const handleCreateOrUpdate = async (data: ObraFormData) => {
+    const obraPayload: any = {
+      name: data.name,
+      type: data.type,
+      status: data.status,
+      description: data.description,
+      valorPrevisto: data.valorPrevisto,
+    };
+    const enderecoPayload: any = {
+      origem: 'MANUAL',
+      cep: data.cep,
+      logradouro: data.logradouro,
+      numero: data.numero,
+      complemento: data.complemento,
+      bairro: data.bairro,
+      cidade: data.cidade,
+      uf: data.uf,
+      latitude: data.latitude,
+      longitude: data.longitude,
+    };
+    const hasEndereco =
+      !!(enderecoPayload.cep || enderecoPayload.logradouro || enderecoPayload.numero || enderecoPayload.bairro || enderecoPayload.cidade || enderecoPayload.uf || enderecoPayload.latitude || enderecoPayload.longitude);
     if (editingObra) {
-      await api.put(`/api/obras/${editingObra.id}`, data);
+      await api.put(`/api/obras/${editingObra.id}`, obraPayload);
+      if (hasEndereco) {
+        await api.put(`/api/obras/${editingObra.id}/endereco`, enderecoPayload);
+      }
     } else {
-      await api.post('/api/obras', data);
+      const created = await api.post('/api/obras', obraPayload);
+      const id = Number(created.data?.id || created.data?.data?.id || created.data?.obra?.id || 0);
+      if (hasEndereco && id > 0) {
+        await api.put(`/api/obras/${id}/endereco`, enderecoPayload);
+      }
     }
     fetchObras();
   };
@@ -196,7 +227,9 @@ export default function ObrasPage() {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">{obra.name}</div>
                       <div className="text-xs text-gray-500">
-                        {obra.street ? `${obra.street}, ${obra.number || ''} - ${obra.city}/${obra.state}` : obra.address || 'Sem endereço'}
+                        {obra.enderecoObra?.logradouro
+                          ? `${obra.enderecoObra.logradouro}, ${obra.enderecoObra.numero || ''} - ${obra.enderecoObra.cidade || ''}/${obra.enderecoObra.uf || ''}`
+                          : 'Sem endereço'}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{TYPE_MAP[obra.type] || obra.type}</td>
@@ -236,13 +269,15 @@ export default function ObrasPage() {
                 name: editingObra.name,
                 type: editingObra.type,
                 status: editingObra.status,
-                street: editingObra.street,
-                number: editingObra.number,
-                neighborhood: editingObra.neighborhood,
-                city: editingObra.city,
-                state: editingObra.state,
-                latitude: editingObra.latitude,
-                longitude: editingObra.longitude,
+                logradouro: editingObra.enderecoObra?.logradouro || '',
+                numero: editingObra.enderecoObra?.numero || '',
+                bairro: editingObra.enderecoObra?.bairro || '',
+                cidade: editingObra.enderecoObra?.cidade || '',
+                uf: editingObra.enderecoObra?.uf || '',
+                cep: editingObra.enderecoObra?.cep || '',
+                complemento: editingObra.enderecoObra?.complemento || '',
+                latitude: editingObra.enderecoObra?.latitude || '',
+                longitude: editingObra.enderecoObra?.longitude || '',
               }
             : undefined
         }

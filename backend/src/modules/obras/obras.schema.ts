@@ -12,13 +12,6 @@ export const createObraSchema = z.object({
     "PARADA",
     "FINALIZADA"
   ]),
-  street: z.string().optional(),
-  number: z.string().optional(),
-  neighborhood: z.string().optional(),
-  city: z.string().optional(),
-  state: z.string().optional(),
-  latitude: z.string().optional(),
-  longitude: z.string().optional(),
   description: z.string().optional(),
   valorPrevisto: z.number().optional(),
 });
@@ -35,13 +28,6 @@ export const updateObraSchema = z.object({
     "PARADA",
     "FINALIZADA"
   ]).optional(),
-  street: z.string().optional(),
-  number: z.string().optional(),
-  neighborhood: z.string().optional(),
-  city: z.string().optional(),
-  state: z.string().optional(),
-  latitude: z.string().optional(),
-  longitude: z.string().optional(),
   description: z.string().optional(),
   valorPrevisto: z.number().optional(),
 });

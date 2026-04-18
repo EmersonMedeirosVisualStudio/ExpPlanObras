@@ -2,6 +2,21 @@ import prisma, { setTenantContext } from "../../plugins/prisma.js";
 import { CreateObraInput, UpdateObraInput } from "./obras.schema.js";
 
 export type AbrangenciaContext = { empresa: boolean; obras: number[]; unidades: number[] };
+export type OrigemEndereco = 'LINK' | 'CEP' | 'MANUAL';
+
+export type EnderecoObraInput = {
+  cep?: string | null;
+  logradouro?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  cidade?: string | null;
+  uf?: string | null;
+  latitude?: string | null;
+  longitude?: string | null;
+  origemEndereco?: OrigemEndereco;
+  origemCoordenada?: OrigemEndereco;
+};
 
 // Helper to execute with RLS context
 // This ensures that the tenant_id is set for the transaction session
@@ -40,6 +55,7 @@ export async function getObras(tenantId: number, scope?: AbrangenciaContext) {
     return tx.obra.findMany({
       orderBy: { createdAt: 'desc' },
       where: scopeWhere(tenantId, scope),
+      include: { enderecoObra: true },
     });
   });
 }
@@ -51,6 +67,7 @@ export async function getObraById(id: number, tenantId: number, scope?: Abrangen
   return withRLS(tenantId, async (tx) => {
     const obra = await tx.obra.findUnique({
       where: { id },
+      include: { enderecoObra: true },
     });
     
     // RLS policy in DB will prevent reading other tenant's data
@@ -103,6 +120,85 @@ export async function deleteObra(id: number, tenantId: number, scope?: Abrangenc
     }
     
     return { success: true };
+  });
+}
+
+function isEmptyValue(v: unknown) {
+  const s = typeof v === 'string' ? v.trim() : '';
+  return !s;
+}
+
+export async function getEnderecoObra(obraId: number, tenantId: number, scope?: AbrangenciaContext) {
+  if (!canAccessObraId(obraId, scope)) throw new Error('Access denied');
+  return withRLS(tenantId, async (tx) => {
+    const obra = await tx.obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } });
+    if (!obra) throw new Error('Obra not found or access denied');
+    return tx.enderecoObra.findFirst({ where: { tenantId, obraId } });
+  });
+}
+
+export async function upsertEnderecoObra(obraId: number, tenantId: number, input: EnderecoObraInput, scope?: AbrangenciaContext) {
+  if (!canAccessObraId(obraId, scope)) throw new Error('Access denied');
+  const origemEndereco: OrigemEndereco = (String(input.origemEndereco || 'MANUAL').toUpperCase() as OrigemEndereco) || 'MANUAL';
+  const origemCoordenada: OrigemEndereco = (String(input.origemCoordenada || 'MANUAL').toUpperCase() as OrigemEndereco) || 'MANUAL';
+
+  return withRLS(tenantId, async (tx) => {
+    const obra = await tx.obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } });
+    if (!obra) throw new Error('Obra not found or access denied');
+
+    const current = await tx.enderecoObra.findFirst({ where: { tenantId, obraId } }).catch(() => null);
+
+    const addrPatch: any = {};
+    const coordPatch: any = {};
+
+    const setAddrField = (key: string, value: any) => {
+      if (value === undefined) return;
+      if (current && String(current.origemEndereco || '').toUpperCase() === 'MANUAL' && origemEndereco !== 'MANUAL' && !isEmptyValue((current as any)[key])) {
+        return;
+      }
+      addrPatch[key] = value === '' ? null : value;
+    };
+
+    const setCoordField = (key: string, value: any) => {
+      if (value === undefined) return;
+      if (current && String(current.origemCoordenada || '').toUpperCase() === 'MANUAL' && origemCoordenada !== 'MANUAL' && !isEmptyValue((current as any)[key])) {
+        return;
+      }
+      coordPatch[key] = value === '' ? null : value;
+    };
+
+    setAddrField('cep', input.cep);
+    setAddrField('logradouro', input.logradouro);
+    setAddrField('numero', input.numero);
+    setAddrField('complemento', input.complemento);
+    setAddrField('bairro', input.bairro);
+    setAddrField('cidade', input.cidade);
+    setAddrField('uf', input.uf);
+
+    setCoordField('latitude', input.latitude);
+    setCoordField('longitude', input.longitude);
+
+    const origemEnderecoFinal =
+      origemEndereco === 'MANUAL' ? 'MANUAL' : current && String(current.origemEndereco || '').toUpperCase() === 'MANUAL' ? 'MANUAL' : origemEndereco;
+    const origemCoordenadaFinal =
+      origemCoordenada === 'MANUAL' ? 'MANUAL' : current && String(current.origemCoordenada || '').toUpperCase() === 'MANUAL' ? 'MANUAL' : origemCoordenada;
+
+    const dataToWrite: any = {
+      tenantId,
+      obraId,
+      ...addrPatch,
+      ...coordPatch,
+      origemEndereco: origemEnderecoFinal,
+      origemCoordenada: origemCoordenadaFinal,
+    };
+
+    const saved = await tx.enderecoObra.upsert({
+      where: { obraId },
+      create: dataToWrite,
+      update: dataToWrite,
+    });
+
+    return saved;
   });
 }
 

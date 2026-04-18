@@ -6,12 +6,13 @@ export interface ObraFormData {
   name: string;
   type: 'PUBLICA' | 'PARTICULAR';
   status: 'AGUARDANDO_RECURSOS' | 'AGUARDANDO_CONTRATO' | 'AGUARDANDO_OS' | 'NAO_INICIADA' | 'EM_ANDAMENTO' | 'PARADA' | 'FINALIZADA';
-  address?: string;
-  street?: string;
-  number?: string;
-  neighborhood?: string;
-  city?: string;
-  state?: string;
+  cep?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cidade?: string;
+  uf?: string;
   latitude?: string;
   longitude?: string;
   description?: string;
@@ -32,11 +33,13 @@ export function ObraFormModal({ isOpen, onClose, onSubmit, initialData, title }:
     name: '',
     type: 'PARTICULAR',
     status: 'NAO_INICIADA',
-    street: '',
-    number: '',
-    neighborhood: '',
-    city: '',
-    state: '',
+    cep: '',
+    logradouro: '',
+    numero: '',
+    complemento: '',
+    bairro: '',
+    cidade: '',
+    uf: '',
     latitude: '',
     longitude: '',
     description: '',
@@ -85,11 +88,11 @@ export function ObraFormModal({ isOpen, onClose, onSubmit, initialData, title }:
             if (data && data.address) {
                 setFormData(prev => ({
                     ...prev,
-                    street: data.address.road || data.address.street || '',
-                    number: data.address.house_number || '',
-                    neighborhood: data.address.suburb || data.address.neighbourhood || '',
-                    city: data.address.city || data.address.town || data.address.village || '',
-                    state: data.address.state || '',
+                    logradouro: data.address.road || data.address.street || '',
+                    numero: data.address.house_number || '',
+                    bairro: data.address.suburb || data.address.neighbourhood || '',
+                    cidade: data.address.city || data.address.town || data.address.village || '',
+                    uf: data.address.state || '',
                     // Keep existing values if API returns empty
                     latitude: lat,
                     longitude: lon
@@ -112,7 +115,13 @@ export function ObraFormModal({ isOpen, onClose, onSubmit, initialData, title }:
         name: '',
         type: 'PARTICULAR',
         status: 'NAO_INICIADA',
-        address: '',
+        cep: '',
+        logradouro: '',
+        numero: '',
+        complemento: '',
+        bairro: '',
+        cidade: '',
+        uf: '',
         latitude: '',
         longitude: ''
       });
@@ -214,8 +223,8 @@ export function ObraFormModal({ isOpen, onClose, onSubmit, initialData, title }:
                     <label className="block text-xs font-medium text-gray-500 mb-1">Rua</label>
                     <input
                         type="text"
-                        value={formData.street || ''}
-                        onChange={(e) => setFormData({ ...formData, street: e.target.value })}
+                        value={formData.logradouro || ''}
+                        onChange={(e) => setFormData({ ...formData, logradouro: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                 </div>
@@ -223,8 +232,8 @@ export function ObraFormModal({ isOpen, onClose, onSubmit, initialData, title }:
                     <label className="block text-xs font-medium text-gray-500 mb-1">Número</label>
                     <input
                         type="text"
-                        value={formData.number || ''}
-                        onChange={(e) => setFormData({ ...formData, number: e.target.value })}
+                        value={formData.numero || ''}
+                        onChange={(e) => setFormData({ ...formData, numero: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                 </div>
@@ -232,8 +241,8 @@ export function ObraFormModal({ isOpen, onClose, onSubmit, initialData, title }:
                     <label className="block text-xs font-medium text-gray-500 mb-1">Bairro</label>
                     <input
                         type="text"
-                        value={formData.neighborhood || ''}
-                        onChange={(e) => setFormData({ ...formData, neighborhood: e.target.value })}
+                        value={formData.bairro || ''}
+                        onChange={(e) => setFormData({ ...formData, bairro: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                 </div>
@@ -241,8 +250,8 @@ export function ObraFormModal({ isOpen, onClose, onSubmit, initialData, title }:
                     <label className="block text-xs font-medium text-gray-500 mb-1">Cidade</label>
                     <input
                         type="text"
-                        value={formData.city || ''}
-                        onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                        value={formData.cidade || ''}
+                        onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                 </div>
@@ -250,8 +259,8 @@ export function ObraFormModal({ isOpen, onClose, onSubmit, initialData, title }:
                     <label className="block text-xs font-medium text-gray-500 mb-1">Estado</label>
                     <input
                         type="text"
-                        value={formData.state || ''}
-                        onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                        value={formData.uf || ''}
+                        onChange={(e) => setFormData({ ...formData, uf: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                 </div>

@@ -12,6 +12,7 @@ export async function exportTenantBackup(tenantId: number) {
 
   const obras = await prisma.obra.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
   const obraIds = obras.map((o) => o.id);
+  const enderecosObra = await prisma.enderecoObra.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
 
   const etapas = await prisma.etapa.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
   const custos = await prisma.custo.findMany({ where: { tenantId }, orderBy: { id: 'asc' } });
@@ -36,11 +37,12 @@ export async function exportTenantBackup(tenantId: number) {
   });
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAt: new Date().toISOString(),
     tenant,
     users,
     obras,
+    enderecosObra,
     etapas,
     custos,
     documentos,
@@ -72,6 +74,7 @@ export async function restoreTenantBackup(tenantId: number, backup: any) {
     await tx.custo.deleteMany({ where: { tenantId } });
     await tx.documento.deleteMany({ where: { tenantId } });
     await tx.tarefa.deleteMany({ where: { tenantId } });
+    await tx.enderecoObra.deleteMany({ where: { tenantId } });
     await tx.obra.deleteMany({ where: { tenantId } });
     await tx.responsavelTecnico.deleteMany({ where: { tenantId } });
     await tx.tenantHistoryAttachment.deleteMany({ where: { entry: { tenantId } } as any });
@@ -102,17 +105,63 @@ export async function restoreTenantBackup(tenantId: number, backup: any) {
           description: o.description,
           type: o.type,
           status: o.status,
-          street: o.street,
-          number: o.number,
-          neighborhood: o.neighborhood,
-          city: o.city,
-          state: o.state,
-          latitude: o.latitude,
-          longitude: o.longitude,
           valorPrevisto: o.valorPrevisto,
         },
       });
       obraIdMap.set(Number(o.id), created.id);
+    }
+
+    const enderecos = Array.isArray(backup.enderecosObra) ? backup.enderecosObra : [];
+    if (enderecos.length > 0) {
+      for (const e of enderecos) {
+        const obraId = obraIdMap.get(Number(e.obraId));
+        if (!obraId) continue;
+        await tx.enderecoObra.create({
+          data: {
+            tenantId,
+            obraId,
+            cep: e.cep ?? null,
+            logradouro: e.logradouro ?? null,
+            numero: e.numero ?? null,
+            complemento: e.complemento ?? null,
+            bairro: e.bairro ?? null,
+            cidade: e.cidade ?? null,
+            uf: e.uf ?? null,
+            latitude: e.latitude ?? null,
+            longitude: e.longitude ?? null,
+            origemEndereco: e.origemEndereco ?? 'MANUAL',
+            origemCoordenada: e.origemCoordenada ?? 'MANUAL',
+            criadoEm: e.criadoEm ? new Date(e.criadoEm) : new Date(),
+            atualizadoEm: e.atualizadoEm ? new Date(e.atualizadoEm) : new Date(),
+          } as any,
+        });
+      }
+    } else {
+      for (const o of backup.obras || []) {
+        const obraId = obraIdMap.get(Number(o.id));
+        if (!obraId) continue;
+        const hasAny = !!(o.street || o.number || o.neighborhood || o.city || o.state || o.latitude || o.longitude);
+        if (!hasAny) continue;
+        await tx.enderecoObra.create({
+          data: {
+            tenantId,
+            obraId,
+            cep: null,
+            logradouro: o.street ?? null,
+            numero: o.number ?? null,
+            complemento: null,
+            bairro: o.neighborhood ?? null,
+            cidade: o.city ?? null,
+            uf: o.state ?? null,
+            latitude: o.latitude ?? null,
+            longitude: o.longitude ?? null,
+            origemEndereco: 'MANUAL',
+            origemCoordenada: 'MANUAL',
+            criadoEm: o.createdAt ? new Date(o.createdAt) : new Date(),
+            atualizadoEm: o.updatedAt ? new Date(o.updatedAt) : new Date(),
+          } as any,
+        });
+      }
     }
 
     for (const e of backup.etapas || []) {

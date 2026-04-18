@@ -20,9 +20,10 @@ interface Obra {
   name: string;
   type: 'PUBLICA' | 'PARTICULAR';
   status: 'AGUARDANDO_RECURSOS' | 'AGUARDANDO_CONTRATO' | 'AGUARDANDO_OS' | 'NAO_INICIADA' | 'EM_ANDAMENTO' | 'PARADA' | 'FINALIZADA';
-  address?: string;
-  latitude?: string;
-  longitude?: string;
+  enderecoObra?: {
+    latitude?: string | null;
+    longitude?: string | null;
+  } | null;
   valorPrevisto?: number;
 }
 
@@ -64,11 +65,17 @@ export default function MapaObras({ obras }: MapaObrasProps) {
   // Dynamic import in the page already avoids SSR issues for Leaflet.
 
   // Filter obras with valid coordinates
-  const validObras = obras.filter(o => o.latitude && o.longitude && !isNaN(parseFloat(o.latitude)) && !isNaN(parseFloat(o.longitude)));
+  const validObras = obras.filter(
+    (o) =>
+      o.enderecoObra?.latitude &&
+      o.enderecoObra?.longitude &&
+      !isNaN(parseFloat(o.enderecoObra.latitude)) &&
+      !isNaN(parseFloat(o.enderecoObra.longitude))
+  );
 
   // Default center (Brazil approx or first obra)
   const defaultCenter: [number, number] = validObras.length > 0 
-    ? [parseFloat(validObras[0].latitude!), parseFloat(validObras[0].longitude!)]
+    ? [parseFloat(validObras[0].enderecoObra!.latitude!), parseFloat(validObras[0].enderecoObra!.longitude!)]
     : [-15.7801, -47.9292]; // Brasilia
 
   return (
@@ -79,8 +86,8 @@ export default function MapaObras({ obras }: MapaObrasProps) {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         {validObras.map((obra) => {
-            const lat = parseFloat(obra.latitude!);
-            const lng = parseFloat(obra.longitude!);
+            const lat = parseFloat(obra.enderecoObra!.latitude!);
+            const lng = parseFloat(obra.enderecoObra!.longitude!);
             const color = STATUS_COLOR_MAP[obra.status] || "#3B82F6";
 
             return (

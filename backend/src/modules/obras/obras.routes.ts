@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createObraSchema, updateObraSchema, updateOrcamentoSchema, createCustoSchema } from './obras.schema.js';
-import { createObra, getObras, getObraById, updateObra, deleteObra, getOrcamento, updateOrcamento, addCusto, removeCusto, type AbrangenciaContext } from './obras.service.js';
+import { createObra, getObras, getObraById, updateObra, deleteObra, getOrcamento, updateOrcamento, addCusto, removeCusto, getEnderecoObra, upsertEnderecoObra, type AbrangenciaContext, type OrigemEndereco } from './obras.service.js';
 import { authenticate } from '../../utils/authenticate.js';
 import { parseCSV } from '../../utils/csv.js';
 
@@ -14,6 +14,188 @@ export default async function obraRoutes(server: FastifyInstance) {
       return reply.code(403).send({ message: 'Tenant não selecionado' });
     }
   });
+
+  function onlyDigits(value: string) {
+    return String(value || '').replace(/\D/g, '');
+  }
+
+  function normalizeCep(value: string) {
+    const d = onlyDigits(value);
+    return d.length === 8 ? d : '';
+  }
+
+  function parseLatLngFromText(value: string) {
+    const s = String(value || '').trim();
+    const m = s.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/) || s.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+    if (!m) return null;
+    const lat = Number(m[1]);
+    const lng = Number(m[2]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { latitude: String(lat), longitude: String(lng) };
+  }
+
+  async function resolveUrl(input: string) {
+    const raw = String(input || '').trim();
+    if (!raw) return '';
+    let url = raw;
+    if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+    try {
+      const u = new URL(url);
+      if (u.hostname.includes('maps.app.goo.gl') || u.hostname.includes('goo.gl')) {
+        const r = await fetch(url, { redirect: 'follow' as any });
+        return r.url || url;
+      }
+      return url;
+    } catch {
+      return '';
+    }
+  }
+
+  async function reverseGeocode(latitude: string, longitude: string) {
+    const provider = String(process.env.GEOCODING_PROVIDER || 'NOMINATIM').toUpperCase();
+    if (provider !== 'NOMINATIM') return null;
+    const lat = String(latitude || '').trim();
+    const lon = String(longitude || '').trim();
+    if (!lat || !lon) return null;
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&addressdetails=1`;
+    const r = await fetch(url, { headers: { 'User-Agent': 'ExpPlanObras/1.0' } } as any).catch(() => null);
+    if (!r || !r.ok) return null;
+    const json: any = await r.json().catch(() => null);
+    const a = json?.address;
+    if (!a) return null;
+    return {
+      logradouro: a.road || a.pedestrian || a.highway || null,
+      bairro: a.suburb || a.neighbourhood || a.quarter || null,
+      cidade: a.city || a.town || a.village || null,
+      uf: a.state_code || a.state || null,
+      cep: a.postcode ? normalizeCep(String(a.postcode)) : null,
+    };
+  }
+
+  async function lookupCep(cepDigits: string) {
+    const cep = normalizeCep(cepDigits);
+    if (!cep) return null;
+    const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`).catch(() => null);
+    if (!r || !r.ok) return null;
+    const json: any = await r.json().catch(() => null);
+    if (!json || json.erro) return null;
+    return {
+      cep,
+      logradouro: json.logradouro || null,
+      complemento: json.complemento || null,
+      bairro: json.bairro || null,
+      cidade: json.localidade || null,
+      uf: json.uf || null,
+    };
+  }
+
+  server.get(
+    '/:id/endereco',
+    { schema: { params: z.object({ id: z.coerce.number().int() }) } },
+    async (request, reply) => {
+      const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
+      const { id } = request.params as { id: number };
+      try {
+        const endereco = await getEnderecoObra(id, tenantId, scope);
+        return reply.send(endereco);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao carregar endereço' });
+      }
+    }
+  );
+
+  server.put(
+    '/:id/endereco',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int() }),
+        body: z
+          .object({
+            origem: z.enum(['LINK', 'CEP', 'MANUAL']),
+            link: z.string().optional(),
+            cep: z.string().optional(),
+            logradouro: z.string().optional().nullable(),
+            numero: z.string().optional().nullable(),
+            complemento: z.string().optional().nullable(),
+            bairro: z.string().optional().nullable(),
+            cidade: z.string().optional().nullable(),
+            uf: z.string().optional().nullable(),
+            latitude: z.string().optional().nullable(),
+            longitude: z.string().optional().nullable(),
+          })
+          .passthrough(),
+      },
+    },
+    async (request, reply) => {
+      const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
+      const { id } = request.params as { id: number };
+      const body = request.body as any;
+      const origem = String(body.origem || 'MANUAL').toUpperCase() as OrigemEndereco;
+
+      try {
+        if (origem === 'CEP') {
+          const base = await lookupCep(String(body.cep || ''));
+          if (!base) return reply.code(400).send({ message: 'CEP inválido' });
+          const saved = await upsertEnderecoObra(
+            id,
+            tenantId,
+            {
+              ...base,
+              numero: body.numero ?? null,
+              origemEndereco: 'CEP',
+              origemCoordenada: 'CEP',
+            },
+            scope
+          );
+          return reply.send(saved);
+        }
+
+        if (origem === 'LINK') {
+          const resolved = await resolveUrl(String(body.link || ''));
+          const coords = parseLatLngFromText(resolved) || parseLatLngFromText(String(body.link || ''));
+          if (!coords) return reply.code(400).send({ message: 'Não foi possível extrair latitude/longitude do link' });
+          const addr = await reverseGeocode(coords.latitude, coords.longitude);
+          const saved = await upsertEnderecoObra(
+            id,
+            tenantId,
+            {
+              ...(addr || {}),
+              latitude: coords.latitude,
+              longitude: coords.longitude,
+              origemEndereco: addr ? 'LINK' : 'MANUAL',
+              origemCoordenada: 'LINK',
+            },
+            scope
+          );
+          return reply.send(saved);
+        }
+
+        const saved = await upsertEnderecoObra(
+          id,
+          tenantId,
+          {
+            cep: body.cep ? normalizeCep(String(body.cep)) || null : null,
+            logradouro: body.logradouro ?? null,
+            numero: body.numero ?? null,
+            complemento: body.complemento ?? null,
+            bairro: body.bairro ?? null,
+            cidade: body.cidade ?? null,
+            uf: body.uf ?? null,
+            latitude: body.latitude ?? null,
+            longitude: body.longitude ?? null,
+            origemEndereco: 'MANUAL',
+            origemCoordenada: body.latitude || body.longitude ? 'MANUAL' : 'MANUAL',
+          },
+          scope
+        );
+        return reply.send(saved);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao salvar endereço' });
+      }
+    }
+  );
 
   server.post('/import', async (request, reply) => {
     const { tenantId } = request.user as any;
@@ -49,20 +231,41 @@ export default async function obraRoutes(server: FastifyInstance) {
           name: r[m('name')] || r[m('nome')] || '',
           type: (r[m('type')] || r[m('tipo')] || 'PARTICULAR').toUpperCase() as any,
           status: (r[m('status')] || 'NAO_INICIADA').toUpperCase() as any,
-          street: r[m('street')] || r[m('rua')] || undefined,
-          number: r[m('number')] || r[m('numero')] || undefined,
-          neighborhood: r[m('neighborhood')] || r[m('bairro')] || undefined,
-          city: r[m('city')] || r[m('cidade')] || undefined,
-          state: r[m('state')] || r[m('uf')] || r[m('estado')] || undefined,
-          latitude: r[m('latitude')] || undefined,
-          longitude: r[m('longitude')] || undefined,
           description: r[m('description')] || r[m('descricao')] || undefined,
           valorPrevisto: toNumber(r[m('valorprevisto')] || r[m('valor_previsto')])
         };
         if (!input.name || input.name.length < 3) {
           throw new Error('Nome da obra é obrigatório (mín. 3 caracteres)');
         }
-        await createObra(input as any, tenantId);
+        const created = await createObra(input as any, tenantId);
+
+        const logradouro = r[m('street')] || r[m('rua')] || undefined;
+        const numero = r[m('number')] || r[m('numero')] || undefined;
+        const bairro = r[m('neighborhood')] || r[m('bairro')] || undefined;
+        const cidade = r[m('city')] || r[m('cidade')] || undefined;
+        const uf = r[m('state')] || r[m('uf')] || r[m('estado')] || undefined;
+        const latitude = r[m('latitude')] || undefined;
+        const longitude = r[m('longitude')] || undefined;
+        const hasAny = !!(logradouro || numero || bairro || cidade || uf || latitude || longitude);
+
+        if (hasAny) {
+          await upsertEnderecoObra(
+            Number(created.id),
+            tenantId,
+            {
+              logradouro: logradouro ? String(logradouro) : null,
+              numero: numero ? String(numero) : null,
+              bairro: bairro ? String(bairro) : null,
+              cidade: cidade ? String(cidade) : null,
+              uf: uf ? String(uf) : null,
+              latitude: latitude ? String(latitude) : null,
+              longitude: longitude ? String(longitude) : null,
+              origemEndereco: 'MANUAL',
+              origemCoordenada: 'MANUAL',
+            },
+            { empresa: true, obras: [], unidades: [] }
+          );
+        }
         results.imported++;
       } catch (e: any) {
         results.errors.push({ line: i + 2, error: e.message || String(e) });

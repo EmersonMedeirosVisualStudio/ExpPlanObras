@@ -19,9 +19,10 @@ interface Obra {
   name: string;
   type: 'PUBLICA' | 'PARTICULAR';
   status: 'AGUARDANDO_RECURSOS' | 'AGUARDANDO_CONTRATO' | 'AGUARDANDO_OS' | 'NAO_INICIADA' | 'EM_ANDAMENTO' | 'PARADA' | 'FINALIZADA';
-  address?: string;
-  latitude?: string;
-  longitude?: string;
+  enderecoObra?: {
+    latitude?: string | null;
+    longitude?: string | null;
+  } | null;
   valorPrevisto?: number;
 }
 
@@ -99,4 +100,3 @@ export default function ObrasMapaPage() {
     </div>
   );
 }
-

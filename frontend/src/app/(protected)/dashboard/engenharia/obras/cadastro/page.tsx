@@ -53,19 +53,26 @@ export default function EngenhariaCadastroObraPage() {
       setLoading(true);
       setErr(null);
       setOkMsg(null);
-      const payload: any = {
+      const obraPayload: any = {
         name: form.name.trim(),
         type: form.type,
         status: form.status,
-        street: form.street.trim() || undefined,
-        number: form.number.trim() || undefined,
-        neighborhood: form.neighborhood.trim() || undefined,
-        city: form.city.trim() || undefined,
-        state: form.state.trim() || undefined,
         description: form.description.trim() || undefined,
         valorPrevisto: form.valorPrevisto.trim() ? Number(form.valorPrevisto) : undefined,
       };
-      await api.post("/api/obras", payload);
+      const created = await api.post("/api/obras", obraPayload);
+      const id = Number(created.data?.id || created.data?.obra?.id || created.data?.data?.id || 0);
+      const hasEndereco = !!(form.street.trim() || form.number.trim() || form.neighborhood.trim() || form.city.trim() || form.state.trim());
+      if (id > 0 && hasEndereco) {
+        await api.put(`/api/obras/${id}/endereco`, {
+          origem: "MANUAL",
+          logradouro: form.street.trim() || null,
+          numero: form.number.trim() || null,
+          bairro: form.neighborhood.trim() || null,
+          cidade: form.city.trim() || null,
+          uf: form.state.trim() || null,
+        });
+      }
       setOkMsg("Obra cadastrada.");
       setForm({
         name: "",
@@ -200,4 +207,3 @@ export default function EngenhariaCadastroObraPage() {
     </div>
   );
 }
-
