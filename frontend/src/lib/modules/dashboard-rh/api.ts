@@ -23,7 +23,7 @@ export const DashboardRhApi = {
   resumo: (f?: { idObra?: number | null; idUnidade?: number | null }) => api<any>(`/api/v1/dashboard/rh/resumo${qs(f)}`),
   alertas: (f?: { idObra?: number | null; idUnidade?: number | null }) => api<any[]>(`/api/v1/dashboard/rh/alertas${qs(f)}`),
   series: (f?: { idObra?: number | null; idUnidade?: number | null }) => api<any>(`/api/v1/dashboard/rh/series${qs(f)}`),
+  distribuicao: (f?: { idObra?: number | null; idUnidade?: number | null }) => api<any>(`/api/v1/dashboard/rh/distribuicao${qs(f)}`),
   obterLayout: () => api<any>('/api/v1/dashboard/me/layout?dashboard=RH'),
   salvarLayout: (payload: any) => api('/api/v1/dashboard/me/layout', { method: 'PUT', body: JSON.stringify(payload) }),
 };
-

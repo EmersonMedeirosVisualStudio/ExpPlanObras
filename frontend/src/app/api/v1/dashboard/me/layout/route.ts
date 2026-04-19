@@ -27,6 +27,7 @@ const DEFAULTS: Record<string, any[]> = {
     { widgetCodigo: 'MOVIMENTACAO_RH', ordemExibicao: 2, largura: 6, altura: 1, visivel: true },
     { widgetCodigo: 'ALERTAS_RH', ordemExibicao: 3, largura: 6, altura: 1, visivel: true },
     { widgetCodigo: 'SERIES_RH', ordemExibicao: 4, largura: 12, altura: 1, visivel: true },
+    { widgetCodigo: 'DISTRIBUICAO_RH', ordemExibicao: 5, largura: 12, altura: 1, visivel: true },
   ],
   SST: [
     { widgetCodigo: 'CARDS_SST', ordemExibicao: 1, largura: 12, altura: 1, visivel: true },

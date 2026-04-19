@@ -11,7 +11,7 @@ export type SearchQuickAction = {
 };
 
 export const SEARCH_QUICK_ACTIONS: SearchQuickAction[] = [
-  { key: 'abrir.painel.rh', titulo: 'Abrir Painel RH', rota: '/dashboard/rh/painel', permission: 'dashboard.rh.view', modulo: 'RH' },
+  { key: 'abrir.painel.rh', titulo: 'Abrir Dashboard RH', rota: '/dashboard/rh/painel', permission: 'dashboard.rh.view', modulo: 'RH' },
   { key: 'abrir.painel.sst', titulo: 'Abrir Painel SST', rota: '/dashboard/sst/painel', permission: 'sst.painel.view', modulo: 'SST' },
   { key: 'abrir.painel.engenharia', titulo: 'Abrir Painel Engenharia', rota: '/dashboard/engenharia/painel', permission: 'dashboard.engenharia.view', modulo: 'ENGENHARIA' },
   { key: 'abrir.relatorios.agendados', titulo: 'Abrir Relatórios Agendados', rota: '/dashboard/relatorios/agendados', permission: 'relatorios.agendados.view', modulo: 'ADMIN' },

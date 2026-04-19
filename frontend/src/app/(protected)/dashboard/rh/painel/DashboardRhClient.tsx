@@ -14,6 +14,7 @@ export default function DashboardRhClient() {
   const [resumo, setResumo] = useState<any | null>(null);
   const [alertas, setAlertas] = useState<any[]>([]);
   const [series, setSeries] = useState<any | null>(null);
+  const [distribuicao, setDistribuicao] = useState<{ porObra: Array<{ id: number; nome: string; total: number }>; porUnidade: Array<{ id: number; nome: string; total: number }>} | null>(null);
   const [layout, setLayout] = useState<any>({ dashboardCodigo: "RH", widgets: [] });
   const [error, setError] = useState<string | null>(null);
 
@@ -33,10 +34,16 @@ export default function DashboardRhClient() {
   async function carregarDados() {
     try {
       setError(null);
-      const [r, a, s] = await Promise.all([DashboardRhApi.resumo(filtroQuery), DashboardRhApi.alertas(filtroQuery), DashboardRhApi.series(filtroQuery)]);
+      const [r, a, s, d] = await Promise.all([
+        DashboardRhApi.resumo(filtroQuery),
+        DashboardRhApi.alertas(filtroQuery),
+        DashboardRhApi.series(filtroQuery),
+        DashboardRhApi.distribuicao(filtroQuery),
+      ]);
       setResumo(r);
       setAlertas(a);
       setSeries(s);
+      setDistribuicao(d);
     } catch (e: any) {
       setError(e?.message || "Erro ao carregar dados do dashboard.");
     }
@@ -195,6 +202,16 @@ export default function DashboardRhClient() {
           </div>
         </section>
       )}
+
+      {widgetsVisiveis.some((w: any) => w.widgetCodigo === "DISTRIBUICAO_RH") && (
+        <section className="rounded-xl border bg-white p-4 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold">Indicadores de Funcionários por Local</h2>
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <BlocoDistribuicao titulo="Funcionários por Obra" dados={distribuicao?.porObra || []} />
+            <BlocoDistribuicao titulo="Funcionários por Unidade" dados={distribuicao?.porUnidade || []} />
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -246,6 +263,39 @@ function BlocoSerie({ titulo, dados }: { titulo: string; dados: any[] }) {
         ) : (
           <div className="text-sm text-slate-500">Sem dados.</div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function BlocoDistribuicao({ titulo, dados }: { titulo: string; dados: Array<{ id: number; nome: string; total: number }> }) {
+  return (
+    <div>
+      <h3 className="mb-2 font-medium">{titulo}</h3>
+      <div className="overflow-auto rounded-lg border">
+        <table className="min-w-full text-sm">
+          <thead className="bg-slate-50 text-left text-slate-700">
+            <tr>
+              <th className="px-3 py-2">Local</th>
+              <th className="px-3 py-2 text-right">Qtd.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {dados.map((d) => (
+              <tr key={`${d.id}-${d.nome}`} className="border-t">
+                <td className="px-3 py-2">{d.nome}</td>
+                <td className="px-3 py-2 text-right font-semibold">{d.total}</td>
+              </tr>
+            ))}
+            {!dados.length ? (
+              <tr>
+                <td className="px-3 py-6 text-center text-slate-500" colSpan={2}>
+                  Sem dados.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
       </div>
     </div>
   );

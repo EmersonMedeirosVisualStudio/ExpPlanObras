@@ -6,6 +6,14 @@ const nextConfig: NextConfig = {
     const apiMode = String(process.env.NEXT_PUBLIC_API_MODE || process.env.API_MODE || "").trim().toLowerCase();
     const backendOnly = apiMode !== "next";
 
+    // These RH/dashboard endpoints are implemented in Next itself and must not be proxied
+    // even when backend-only mode is enabled.
+    const localRules = [
+      { source: "/api/v1/rh/:path*", destination: "/api/v1/rh/:path*" },
+      { source: "/api/v1/dashboard/rh/:path*", destination: "/api/v1/dashboard/rh/:path*" },
+      { source: "/api/v1/dashboard/me/:path*", destination: "/api/v1/dashboard/me/:path*" },
+    ];
+
     const rules = [
       { source: "/api/v1/:path*", destination: `${apiOrigin}/api/v1/:path*` },
       { source: "/api/auth/:path*", destination: `${apiOrigin}/api/auth/:path*` },
@@ -16,7 +24,7 @@ const nextConfig: NextConfig = {
       { source: "/api/maintenance/:path*", destination: `${apiOrigin}/api/maintenance/:path*` },
     ];
     return {
-      beforeFiles: backendOnly ? rules : [],
+      beforeFiles: backendOnly ? [...localRules, ...rules] : localRules,
       afterFiles: [],
       fallback: backendOnly ? [] : rules,
     };

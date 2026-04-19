@@ -477,7 +477,7 @@ export const APP_MENU: MenuSectionConfig[] = [
     items: [
       {
         key: 'painel-rh',
-        label: 'Painel RH',
+        label: 'Dashboard RH',
         href: '/dashboard/rh/painel',
         icon: 'users',
         permission: PERMISSIONS.DASHBOARD_RH_VIEW,
