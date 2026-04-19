@@ -39,14 +39,23 @@ export default function FuncionariosClient() {
     arquivo: null,
   });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [modalNovo, setModalNovo] = useState(false);
   const [form, setForm] = useState<any>(vazio);
 
   async function carregar() {
-    setLoading(true);
-    const rows = await FuncionariosApi.listar(busca);
-    setLista(rows);
-    setLoading(false);
+    try {
+      setLoading(true);
+      setError(null);
+      const q = busca.trim();
+      const rows = await FuncionariosApi.listar(q, q ? 500 : 200);
+      setLista(rows);
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao carregar funcionários');
+      setLista([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function abrir(id: number) {
@@ -93,10 +102,10 @@ export default function FuncionariosClient() {
   }, []);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 text-slate-900">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Funcionários</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Funcionários</h1>
           <p className="text-sm text-slate-600">Cadastro, lotação, supervisão, jornada e horas extras.</p>
         </div>
         <button onClick={() => setModalNovo(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white" type="button">
@@ -112,12 +121,15 @@ export default function FuncionariosClient() {
           </button>
         </div>
 
+        {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
+        {!busca.trim() ? <div className="mb-2 text-xs text-slate-500">Mostrando os primeiros 200 registros. Use a busca para refinar.</div> : null}
+
         {loading ? (
-          <div>Carregando...</div>
+          <div className="text-sm text-slate-600">Carregando...</div>
         ) : (
           <div className="overflow-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left">
+              <thead className="bg-slate-50 text-left text-slate-700">
                 <tr>
                   <th className="px-3 py-2">Alertas</th>
                   <th className="px-3 py-2">Matrícula</th>
@@ -148,6 +160,13 @@ export default function FuncionariosClient() {
                     <td className="px-3 py-2">{item.statusCadastroRh}</td>
                   </tr>
                 ))}
+                {lista.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-3 py-6 text-center text-slate-500">
+                      Nenhum funcionário encontrado.
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>

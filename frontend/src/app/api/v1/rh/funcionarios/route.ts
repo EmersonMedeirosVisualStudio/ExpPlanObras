@@ -11,6 +11,9 @@ export async function GET(req: Request) {
     const user = await requireApiPermission(PERMISSIONS.RH_FUNCIONARIOS_VIEW);
     const { searchParams } = new URL(req.url);
     const q = (searchParams.get('q') || '').trim();
+    const limitParam = searchParams.get('limit');
+    const requested = limitParam ? Number(limitParam) : NaN;
+    const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 1000) : q ? 500 : 200;
 
     let sql = `
       SELECT
@@ -33,7 +36,7 @@ export async function GET(req: Request) {
       params.push(`%${q}%`, `%${q}%`, `%${q}%`);
     }
 
-    sql += ` ORDER BY f.nome_completo`;
+    sql += ` ORDER BY f.nome_completo LIMIT ${limit}`;
 
     const [rows]: any = await db.query(sql, params);
     return ok(rows);

@@ -86,7 +86,7 @@ export default function TerceirizadosClient() {
   }, []);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 text-slate-900">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Terceirizados</h2>
@@ -182,4 +182,3 @@ export default function TerceirizadosClient() {
     </div>
   );
 }
-

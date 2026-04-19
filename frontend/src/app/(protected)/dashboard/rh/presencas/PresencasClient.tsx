@@ -225,10 +225,10 @@ export default function PresencasClient() {
   if (loading) return <div className="rounded-xl border bg-white p-6">Carregando presenças...</div>;
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl">
+    <div className="p-6 space-y-6 max-w-7xl text-slate-900">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold">Presença digital</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Presença digital</h1>
           <p className="text-sm text-slate-600">Fichas por obra/unidade, assinatura do funcionário e envio ao RH.</p>
         </div>
         <button onClick={() => setModalNova(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white" type="button">
@@ -258,10 +258,10 @@ export default function PresencasClient() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <section className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-1">
-          <h2 className="mb-3 text-lg font-semibold">Fichas</h2>
+          <h2 className="mb-3 text-lg font-semibold text-slate-900">Fichas</h2>
           <div className="overflow-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left">
+              <thead className="bg-slate-50 text-left text-slate-700">
                 <tr>
                   <th className="px-3 py-2">Data</th>
                   <th className="px-3 py-2">Local</th>
@@ -296,7 +296,7 @@ export default function PresencasClient() {
 
         <section className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-2">
           <div className="mb-3 flex items-center justify-between gap-2 flex-wrap">
-            <h2 className="text-lg font-semibold">Detalhe</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Detalhe</h2>
             {detail && (
               <div className="flex gap-2 flex-wrap">
                 <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => setModalItem(true)}>
@@ -336,7 +336,7 @@ export default function PresencasClient() {
 
               <div className="overflow-auto">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-slate-50 text-left">
+                  <thead className="bg-slate-50 text-left text-slate-700">
                     <tr>
                       <th className="px-3 py-2">Funcionário</th>
                       <th className="px-3 py-2">Situação</th>
