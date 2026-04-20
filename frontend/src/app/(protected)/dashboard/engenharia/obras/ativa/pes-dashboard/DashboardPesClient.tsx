@@ -343,9 +343,33 @@ export default function DashboardPesClient({ idObra }: { idObra: number }) {
         </section>
 
         <section className="col-span-12 grid grid-cols-1 gap-4 md:grid-cols-3">
-          <RecursoCard titulo="Mão de Obra" linhas={[{ label: "Necessário", value: data?.recursos?.maoObra?.necessario }, { label: "Alocado", value: data?.recursos?.maoObra?.alocado }, { label: "Déficit", value: data?.recursos?.maoObra?.deficit }]} acaoLabel="Solicitar RH" />
-          <RecursoCard titulo="Equipamentos" linhas={[{ label: "Necessário", value: data?.recursos?.equipamentos?.necessario }, { label: "Disponível", value: data?.recursos?.equipamentos?.disponivel }, { label: "Déficit", value: data?.recursos?.equipamentos?.deficit }]} acaoLabel="Solicitar Equipamento" />
-          <RecursoCard titulo="Insumos" linhas={[{ label: "Necessário", value: data?.recursos?.insumos?.necessario }, { label: "Disponível", value: data?.recursos?.insumos?.disponivel }, { label: "Déficit", value: data?.recursos?.insumos?.deficit }]} acaoLabel="Requisitar Suprimentos" />
+          <RecursoCard
+            titulo="Mão de Obra"
+            linhas={[
+              { label: "Necessário", value: data?.recursos?.maoObra?.necessario ?? null },
+              { label: "Alocado", value: data?.recursos?.maoObra?.alocado ?? null },
+              { label: "Déficit", value: data?.recursos?.maoObra?.deficit ?? null },
+            ]}
+            acaoLabel="Solicitar RH"
+          />
+          <RecursoCard
+            titulo="Equipamentos"
+            linhas={[
+              { label: "Necessário", value: data?.recursos?.equipamentos?.necessario ?? null },
+              { label: "Disponível", value: data?.recursos?.equipamentos?.disponivel ?? null },
+              { label: "Déficit", value: data?.recursos?.equipamentos?.deficit ?? null },
+            ]}
+            acaoLabel="Solicitar Equipamento"
+          />
+          <RecursoCard
+            titulo="Insumos"
+            linhas={[
+              { label: "Necessário", value: data?.recursos?.insumos?.necessario ?? null },
+              { label: "Disponível", value: data?.recursos?.insumos?.disponivel ?? null },
+              { label: "Déficit", value: data?.recursos?.insumos?.deficit ?? null },
+            ]}
+            acaoLabel="Requisitar Suprimentos"
+          />
         </section>
 
         <section className="col-span-12 grid grid-cols-1 gap-4 lg:grid-cols-2">
