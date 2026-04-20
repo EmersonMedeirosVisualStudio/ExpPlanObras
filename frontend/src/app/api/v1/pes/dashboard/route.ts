@@ -808,6 +808,7 @@ function buildGanttData(
           eq: eqRecursos,
           ins,
         },
+      });
     }
   }
 
