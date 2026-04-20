@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRealtimeEvent } from "@/lib/realtime/hooks";
 
 function startOfWeekMonday(dateIso: string) {
   const d = new Date(`${dateIso}T00:00:00`);
@@ -104,6 +105,17 @@ export default function DashboardPesClient({ idObra }: { idObra: number }) {
       setLoading(false);
     }
   }
+
+  useRealtimeEvent("pes", "pes.refresh", () => {
+    carregar();
+  });
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      carregar();
+    }, 5 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [idObra, semanaInicio]);
 
   async function autoReplanejar() {
     if (!data) return;

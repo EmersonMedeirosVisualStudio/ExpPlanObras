@@ -1186,6 +1186,29 @@ Gantt operacional:
 - setas de dependência entre CCs;
 - marcação visual de conflito e caminho crítico.
 
+#### 9.7.7.3 PES Workspace (telas do produto)
+
+No sistema:
+
+- Engenharia → Execução → PES (Workspace)
+
+Abas:
+
+- Dashboard
+- Planejamento (PES)
+- Gantt
+- Recursos
+- Alertas
+- Cenários
+- Otimização
+
+Otimização (MVP):
+
+- endpoint: `POST /api/v1/pes/optimize`
+- objetivo: minimizar custo + (pesoPrazo × prazo)
+- respeita dependências e capacidade (via auto-replanejamento)
+- resultado retorna novo Gantt e métricas (prazo/custo/score)
+
 #### 9.7.8 Avaliação do funcionário na apropriação (nota por dia/serviço)
 
 A apropriação pode registrar uma avaliação por funcionário, por dia e por serviço, combinando:

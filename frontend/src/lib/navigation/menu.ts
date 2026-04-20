@@ -319,6 +319,13 @@ export const APP_MENU: MenuSectionConfig[] = [
             icon: 'activity',
             children: [
               {
+                key: 'engenharia-obras-ativa-pes-workspace',
+                label: 'PES (Workspace)',
+                href: '/dashboard/engenharia/obras/ativa/pes',
+                icon: 'layout-dashboard',
+                permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+              },
+              {
                 key: 'engenharia-obras-ativa-pes-dashboard',
                 label: 'Dashboard PES',
                 href: '/dashboard/engenharia/obras/ativa/pes-dashboard',
