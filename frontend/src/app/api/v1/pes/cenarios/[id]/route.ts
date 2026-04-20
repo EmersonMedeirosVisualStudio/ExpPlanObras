@@ -7,12 +7,12 @@ import { canAccessObra } from '@/lib/auth/access';
 
 export const runtime = 'nodejs';
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireApiPermission(req, PERMISSIONS.ENG_PES_VIEW);
     if (!auth.granted) return fail(auth.status, auth.message);
 
-    const { id } = await params;
+    const { id } = await context.params;
 
     const [rows]: any = await db.query(
       `SELECT id, id_obra as idObra, nome, tipo, dados, created_at as createdAt, updated_at as updatedAt 
@@ -36,12 +36,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireApiPermission(req, PERMISSIONS.ENG_PES_EDIT);
     if (!auth.granted) return fail(auth.status, auth.message);
 
-    const { id } = await params;
+    const { id } = await context.params;
 
     const [rows]: any = await db.query(
       `SELECT id_obra as idObra FROM engenharia_pes_cenarios WHERE id = ? AND tenant_id = ?`,
