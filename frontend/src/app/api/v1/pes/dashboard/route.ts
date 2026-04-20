@@ -540,6 +540,7 @@ type BuildDataResult = {
   desempenhoCc: Array<{
     cc: string | null;
     servico: string;
+    firstDate: string;
     planejadoQtd: number;
     totalServicoQtd: number;
     pctParteServico: number | null;
