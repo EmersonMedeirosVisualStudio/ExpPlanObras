@@ -9,8 +9,7 @@ export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireApiPermission(req, PERMISSIONS.ENG_PES_VIEW);
-    if (!auth.granted) return fail(auth.status, auth.message);
+    const current = await requireApiPermission(PERMISSIONS.ENG_PES_VIEW);
 
     const { id } = await context.params;
 
@@ -18,14 +17,13 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
       `SELECT id, id_obra as idObra, nome, tipo, dados, created_at as createdAt, updated_at as updatedAt 
        FROM engenharia_pes_cenarios 
        WHERE id = ? AND tenant_id = ?`,
-      [id, auth.tenant.id]
+      [id, current.tenantId]
     );
 
     if (!rows.length) return fail(404, 'Cenário não encontrado.');
 
     const cenario = rows[0];
-    const hasAccess = await canAccessObra(auth.user.id, cenario.idObra);
-    if (!hasAccess) return fail(403, 'Acesso negado a esta obra.');
+    if (!canAccessObra(current as any, cenario.idObra)) return fail(403, 'Acesso negado a esta obra.');
 
     return ok({
       ...cenario,
@@ -38,22 +36,20 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
 
 export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireApiPermission(req, PERMISSIONS.ENG_PES_EDIT);
-    if (!auth.granted) return fail(auth.status, auth.message);
+    const current = await requireApiPermission(PERMISSIONS.ENG_PES_EDIT);
 
     const { id } = await context.params;
 
     const [rows]: any = await db.query(
       `SELECT id_obra as idObra FROM engenharia_pes_cenarios WHERE id = ? AND tenant_id = ?`,
-      [id, auth.tenant.id]
+      [id, current.tenantId]
     );
 
     if (!rows.length) return fail(404, 'Cenário não encontrado.');
 
-    const hasAccess = await canAccessObra(auth.user.id, rows[0].idObra);
-    if (!hasAccess) return fail(403, 'Acesso negado a esta obra.');
+    if (!canAccessObra(current as any, rows[0].idObra)) return fail(403, 'Acesso negado a esta obra.');
 
-    await db.query(`DELETE FROM engenharia_pes_cenarios WHERE id = ? AND tenant_id = ?`, [id, auth.tenant.id]);
+    await db.query(`DELETE FROM engenharia_pes_cenarios WHERE id = ? AND tenant_id = ?`, [id, current.tenantId]);
 
     return ok({ message: 'Cenário excluído com sucesso.' });
   } catch (error) {

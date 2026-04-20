@@ -26,16 +26,14 @@ async function initTable() {
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = await requireApiPermission(req, PERMISSIONS.ENG_PES_VIEW);
-    if (!auth.granted) return fail(auth.status, auth.message);
+    const current = await requireApiPermission(PERMISSIONS.ENG_PES_VIEW);
 
     const { searchParams } = new URL(req.url);
     const idObraStr = searchParams.get('idObra');
     if (!idObraStr) return fail(400, 'idObra é obrigatório.');
 
     const idObra = parseInt(idObraStr, 10);
-    const hasAccess = await canAccessObra(auth.user.id, idObra);
-    if (!hasAccess) return fail(403, 'Acesso negado a esta obra.');
+    if (!canAccessObra(current as any, idObra)) return fail(403, 'Acesso negado a esta obra.');
 
     await initTable();
 
@@ -44,7 +42,7 @@ export async function GET(req: NextRequest) {
        FROM engenharia_pes_cenarios 
        WHERE tenant_id = ? AND id_obra = ? 
        ORDER BY updated_at DESC`,
-      [auth.tenant.id, idObra]
+      [current.tenantId, idObra]
     );
 
     const formattedRows = rows.map((r: any) => ({
@@ -60,8 +58,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = await requireApiPermission(req, PERMISSIONS.ENG_PES_EDIT);
-    if (!auth.granted) return fail(auth.status, auth.message);
+    const current = await requireApiPermission(PERMISSIONS.ENG_PES_EDIT);
 
     const body = await req.json();
     const { idObra, nome, tipo, dados } = body;
@@ -70,15 +67,14 @@ export async function POST(req: NextRequest) {
       return fail(400, 'idObra, nome e dados são obrigatórios.');
     }
 
-    const hasAccess = await canAccessObra(auth.user.id, idObra);
-    if (!hasAccess) return fail(403, 'Acesso negado a esta obra.');
+    if (!canAccessObra(current as any, idObra)) return fail(403, 'Acesso negado a esta obra.');
 
     await initTable();
 
     const [result]: any = await db.query(
       `INSERT INTO engenharia_pes_cenarios (tenant_id, id_obra, nome, tipo, dados) 
        VALUES (?, ?, ?, ?, ?)`,
-      [auth.tenant.id, idObra, nome, tipo || 'MANUAL', JSON.stringify(dados)]
+      [current.tenantId, idObra, nome, tipo || 'MANUAL', JSON.stringify(dados)]
     );
 
     return ok({ id: result.insertId, message: 'Cenário salvo com sucesso.' });
