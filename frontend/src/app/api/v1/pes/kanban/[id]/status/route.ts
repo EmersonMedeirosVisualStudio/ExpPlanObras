@@ -274,10 +274,11 @@ function normalizeStatus(v: unknown) {
     .toUpperCase();
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const current = await requireApiPermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
-    const id = Number(params.id || 0);
+    const { id: idParam } = await context.params;
+    const id = Number(idParam || 0);
     if (!Number.isFinite(id) || id <= 0) return fail(422, 'id inválido');
 
     const body = await req.json().catch(() => null);

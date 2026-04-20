@@ -34,10 +34,11 @@ async function ensureTables() {
   await db.query(`ALTER TABLE engenharia_pes_insumos_extras ADD COLUMN codigo_insumo VARCHAR(80) NULL AFTER codigo_centro_custo`).catch(() => null);
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const current = await requireApiPermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
-    const idExtra = Number(params.id || 0);
+    const { id } = await context.params;
+    const idExtra = Number(id || 0);
     if (!Number.isFinite(idExtra) || idExtra <= 0) return fail(422, 'id inválido');
 
     await ensureTables();
