@@ -104,8 +104,10 @@ function detectarConflitosComCapacidade(ccs: CcNode[], capacidade: Record<string
   for (const [tempo, slot] of timeline.entries()) {
     for (const recurso of Object.keys(slot)) {
       const usado = slot[recurso].usado;
-      const cap = Number(capacidade[recurso] || 0);
-      if (cap > 0 && usado > cap) conflitos.push({ tempo, recurso, usado, capacidade: cap, ccs: Array.from(slot[recurso].ccs) });
+      if (!Object.prototype.hasOwnProperty.call(capacidade, recurso)) continue;
+      const cap = Number(capacidade[recurso]);
+      if (!Number.isFinite(cap)) continue;
+      if (usado > cap) conflitos.push({ tempo, recurso, usado, capacidade: cap, ccs: Array.from(slot[recurso].ccs) });
     }
   }
   return conflitos.sort((a, b) => (a.tempo === b.tempo ? a.recurso.localeCompare(b.recurso, 'pt-BR') : a.tempo - b.tempo));
@@ -178,12 +180,20 @@ function calcPrazo(ccs: CcNode[]) {
 
 function calcCusto(ccs: CcNode[]) {
   const rates: Record<string, number> = { MO_TOTAL: 90, EQ_GERAL: 140, INS_GERAL: 18 };
+  function rateOf(tipo: string) {
+    const t = String(tipo || '').toUpperCase();
+    if (rates[t] != null) return rates[t];
+    if (t.startsWith('MO_')) return 90;
+    if (t.startsWith('EQ_')) return 140;
+    if (t.startsWith('INS_')) return 18;
+    return 0;
+  }
   let total = 0;
   for (const cc of ccs) {
     const horas = (cc.fim - cc.inicio) * 8;
-    for (const r of cc.recursos.mo) total += (rates[r.tipo] || 0) * (r.qtd || 0) * horas;
-    for (const r of cc.recursos.eq) total += (rates[r.tipo] || 0) * (r.qtd || 0) * horas;
-    for (const r of cc.recursos.ins) total += (rates[r.tipo] || 0) * (r.qtd || 0) * horas;
+    for (const r of cc.recursos.mo) total += rateOf(r.tipo) * (r.qtd || 0) * horas;
+    for (const r of cc.recursos.eq) total += rateOf(r.tipo) * (r.qtd || 0) * horas;
+    for (const r of cc.recursos.ins) total += rateOf(r.tipo) * (r.qtd || 0) * horas;
   }
   return Number(total.toFixed(2));
 }
@@ -212,7 +222,7 @@ function gerarVizinho(base: CcNode[], r: () => number) {
     const rr = cc.recursos.mo[0];
     if (rr) rr.qtd = Math.max(1, rr.qtd + (r() > 0.5 ? 1 : -1));
   } else {
-    const rr = cc.recursos.eq[0];
+    const rr = cc.recursos.eq.length ? cc.recursos.eq[Math.floor(r() * cc.recursos.eq.length)] : null;
     if (rr) rr.qtd = Math.max(1, rr.qtd + (r() > 0.5 ? 1 : -1));
   }
   return ccs;
@@ -267,4 +277,3 @@ export async function POST(req: NextRequest) {
     return handleApiError(e);
   }
 }
-
