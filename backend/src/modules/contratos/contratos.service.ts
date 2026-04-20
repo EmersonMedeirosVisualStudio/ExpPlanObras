@@ -42,6 +42,127 @@ export async function listContratos(tenantId: number) {
   });
 }
 
+export async function getContratoById(tenantId: number, id: number) {
+  return withRLS(tenantId, async (tx) => {
+    const contrato = await tx.contrato
+      .findFirst({
+        where: { tenantId, id },
+        include: {
+          obras: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              valorPrevisto: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+            orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+          },
+        },
+      })
+      .catch(() => null);
+
+    if (!contrato) return null;
+
+    const obraIds = (contrato.obras || []).map((o: any) => Number(o.id)).filter((n: number) => Number.isFinite(n));
+
+    const [execAgg, pagoAgg] = await Promise.all([
+      tx.medicao.aggregate({
+        _sum: { amount: true },
+        where: { obraId: { in: obraIds } },
+      }),
+      tx.pagamento.aggregate({
+        _sum: { amount: true },
+        where: { obraId: { in: obraIds } },
+      }),
+    ]);
+
+    const valorExecutado = execAgg?._sum?.amount ?? null;
+    const valorPago = pagoAgg?._sum?.amount ?? null;
+
+    return {
+      ...contrato,
+      indicadores: {
+        valorExecutado,
+        valorPago,
+      },
+    };
+  });
+}
+
+export async function getContratosDashboard(tenantId: number, input?: { status?: string | null }) {
+  return withRLS(tenantId, async (tx) => {
+    const status = input?.status ? String(input.status).trim().toUpperCase() : null;
+    const whereContrato: any = { tenantId };
+    if (status) whereContrato.status = status;
+
+    const now = new Date();
+    const in30 = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
+
+    const [totalContratos, somaContratado, vencendo, atrasados] = await Promise.all([
+      tx.contrato.count({ where: whereContrato }),
+      tx.contrato.aggregate({ _sum: { valorContratado: true }, where: whereContrato }),
+      tx.contrato.count({
+        where: {
+          ...whereContrato,
+          dataFim: { gte: now, lte: in30 },
+        },
+      }),
+      tx.contrato.count({
+        where: {
+          ...whereContrato,
+          dataFim: { lt: now },
+          status: { notIn: ['ENCERRADO', 'FINALIZADO', 'CANCELADO', 'RESCINDIDO'] },
+        },
+      }),
+    ]);
+
+    const [valorExecutadoAgg, valorPagoAgg] = await Promise.all([
+      tx.medicao.aggregate({
+        _sum: { amount: true },
+        where: {
+          obra: {
+            tenantId,
+            contrato: status ? { status } : undefined,
+          },
+        },
+      }),
+      tx.pagamento.aggregate({
+        _sum: { amount: true },
+        where: {
+          obra: {
+            tenantId,
+            contrato: status ? { status } : undefined,
+          },
+        },
+      }),
+    ]);
+
+    const valorContratado = somaContratado?._sum?.valorContratado ?? null;
+    const valorExecutado = valorExecutadoAgg?._sum?.amount ?? null;
+    const valorPago = valorPagoAgg?._sum?.amount ?? null;
+
+    const vc = typeof valorContratado === 'number' ? valorContratado : valorContratado ? Number(valorContratado) : 0;
+    const ve = typeof valorExecutado === 'number' ? valorExecutado : valorExecutado ? Number(valorExecutado) : 0;
+    const vp = typeof valorPago === 'number' ? valorPago : valorPago ? Number(valorPago) : 0;
+
+    return {
+      kpis: {
+        totalContratos,
+        valorContratado: vc,
+        valorExecutado: ve,
+        valorPago: vp,
+        saldoAReceber: vc - vp,
+        saldoAExecutar: vc - ve,
+        percentualExecucaoFinanceira: vc > 0 ? Number(((ve / vc) * 100).toFixed(2)) : null,
+        vencendoEm30Dias: vencendo,
+        atrasados,
+      },
+    };
+  });
+}
+
 export async function createContrato(tenantId: number, input: CreateContratoInput) {
   return withRLS(tenantId, async (tx) => {
     const numeroContrato = String(input.numeroContrato).trim();
@@ -79,3 +200,177 @@ export async function updateContrato(tenantId: number, id: number, input: Update
   });
 }
 
+export async function listContratoServicos(tenantId: number, contratoId: number) {
+  return withRLS(tenantId, async (tx) => {
+    return tx.contratoServico.findMany({
+      where: { tenantId, contratoId },
+      orderBy: [{ codigo: 'asc' }, { id: 'asc' }],
+    });
+  });
+}
+
+export async function createContratoServico(
+  tenantId: number,
+  contratoId: number,
+  input: { codigo: string; nome: string; unidade?: string | null; quantidade?: number | null; valorUnitario?: number | null; percentualPeso?: number | null }
+) {
+  return withRLS(tenantId, async (tx) => {
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId }, select: { id: true } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
+
+    const codigo = String(input.codigo || '').trim();
+    const nome = String(input.nome || '').trim();
+    if (!codigo) throw new Error('codigo é obrigatório');
+    if (!nome) throw new Error('nome é obrigatório');
+
+    const quantidade = input.quantidade == null ? null : Number(input.quantidade);
+    const valorUnitario = input.valorUnitario == null ? null : Number(input.valorUnitario);
+    const percentualPeso = input.percentualPeso == null ? null : Number(input.percentualPeso);
+
+    const valorTotal =
+      quantidade != null && Number.isFinite(quantidade) && valorUnitario != null && Number.isFinite(valorUnitario)
+        ? quantidade * valorUnitario
+        : null;
+
+    const created = await tx.contratoServico.create({
+      data: {
+        tenantId,
+        contratoId,
+        codigo,
+        nome,
+        unidade: input.unidade ?? null,
+        quantidade: quantidade == null || !Number.isFinite(quantidade) ? null : quantidade,
+        valorUnitario: valorUnitario == null || !Number.isFinite(valorUnitario) ? null : valorUnitario,
+        valorTotal: valorTotal == null || !Number.isFinite(valorTotal) ? null : valorTotal,
+        percentualPeso: percentualPeso == null || !Number.isFinite(percentualPeso) ? null : percentualPeso,
+      },
+    });
+    return created;
+  });
+}
+
+export async function seedCronogramaFromServicos(tenantId: number, contratoId: number, input?: { duracaoDiasPadrao?: number | null }) {
+  return withRLS(tenantId, async (tx) => {
+    const duracao = Math.max(1, Number(input?.duracaoDiasPadrao || 7));
+    const servicos = await tx.contratoServico.findMany({ where: { tenantId, contratoId }, orderBy: [{ codigo: 'asc' }, { id: 'asc' }] });
+    if (!servicos.length) return { created: 0 };
+
+    const existing = await tx.contratoCronogramaItem.findMany({ where: { tenantId, contratoId }, select: { servicoId: true } });
+    const existingSet = new Set<number>(existing.map((e: any) => Number(e.servicoId)));
+
+    const now = new Date();
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    let cursor = start;
+    let createdCount = 0;
+
+    for (const s of servicos) {
+      if (existingSet.has(s.id)) continue;
+      const dataInicio = cursor;
+      const dataFim = new Date(cursor.getTime() + duracao * 24 * 3600 * 1000);
+      await tx.contratoCronogramaItem.create({
+        data: {
+          tenantId,
+          contratoId,
+          servicoId: s.id,
+          dataInicio,
+          dataFim,
+          duracaoDias: duracao,
+          progresso: 0,
+        },
+      });
+      createdCount += 1;
+      cursor = dataFim;
+    }
+
+    return { created: createdCount };
+  });
+}
+
+export async function getContratoCronograma(tenantId: number, contratoId: number) {
+  return withRLS(tenantId, async (tx) => {
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId }, select: { id: true } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
+
+    const items = await tx.contratoCronogramaItem.findMany({
+      where: { tenantId, contratoId },
+      include: {
+        servico: { select: { id: true, codigo: true, nome: true } },
+      },
+      orderBy: [{ dataInicio: 'asc' }, { id: 'asc' }],
+    });
+
+    const deps = await tx.contratoCronogramaDependencia.findMany({
+      where: { tenantId, contratoId },
+      orderBy: [{ id: 'asc' }],
+    });
+
+    return {
+      items: items.map((i: any) => ({
+        id: i.id,
+        servicoId: i.servicoId,
+        codigo: i.servico?.codigo || '',
+        nome: i.servico?.nome || '',
+        dataInicio: i.dataInicio,
+        dataFim: i.dataFim,
+        duracaoDias: i.duracaoDias,
+        progresso: i.progresso == null ? null : Number(i.progresso),
+      })),
+      dependencias: deps.map((d: any) => ({
+        id: d.id,
+        origemItemId: d.origemItemId,
+        destinoItemId: d.destinoItemId,
+        tipo: d.tipo,
+      })),
+    };
+  });
+}
+
+export async function updateCronogramaItemDatas(
+  tenantId: number,
+  contratoId: number,
+  itemId: number,
+  input: { dataInicio: string; dataFim: string }
+) {
+  return withRLS(tenantId, async (tx) => {
+    const current = await tx.contratoCronogramaItem.findFirst({ where: { tenantId, contratoId, id: itemId } }).catch(() => null);
+    if (!current) throw new Error('Item não encontrado');
+
+    const ini = parseDateOnly(input.dataInicio);
+    const fim = parseDateOnly(input.dataFim);
+    if (!ini || !fim) throw new Error('datas inválidas');
+    const dur = Math.max(1, Math.round((fim.getTime() - ini.getTime()) / (24 * 3600 * 1000)));
+
+    const updated = await tx.contratoCronogramaItem.update({
+      where: { id: itemId },
+      data: { dataInicio: ini, dataFim: fim, duracaoDias: dur },
+    });
+    return updated;
+  });
+}
+
+export async function createCronogramaDependencia(
+  tenantId: number,
+  contratoId: number,
+  input: { origemItemId: number; destinoItemId: number; tipo?: string | null }
+) {
+  return withRLS(tenantId, async (tx) => {
+    const tipo = input.tipo ? String(input.tipo).trim().toUpperCase() : 'FS';
+    const origem = await tx.contratoCronogramaItem.findFirst({ where: { tenantId, contratoId, id: input.origemItemId }, select: { id: true } }).catch(() => null);
+    const destino = await tx.contratoCronogramaItem.findFirst({ where: { tenantId, contratoId, id: input.destinoItemId }, select: { id: true } }).catch(() => null);
+    if (!origem || !destino) throw new Error('Dependência inválida');
+    if (input.origemItemId === input.destinoItemId) throw new Error('Origem e destino devem ser diferentes');
+    const created = await tx.contratoCronogramaDependencia.create({
+      data: { tenantId, contratoId, origemItemId: input.origemItemId, destinoItemId: input.destinoItemId, tipo },
+    });
+    return created;
+  });
+}
+
+export async function deleteCronogramaDependencia(tenantId: number, contratoId: number, depId: number) {
+  return withRLS(tenantId, async (tx) => {
+    const current = await tx.contratoCronogramaDependencia.findFirst({ where: { tenantId, contratoId, id: depId }, select: { id: true } }).catch(() => null);
+    if (!current) throw new Error('Dependência não encontrada');
+    await tx.contratoCronogramaDependencia.delete({ where: { id: depId } });
+    return { ok: true };
+  });
+}

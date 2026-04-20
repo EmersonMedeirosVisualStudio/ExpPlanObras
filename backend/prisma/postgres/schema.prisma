@@ -38,6 +38,9 @@ model Tenant {
   updatedAt DateTime @updatedAt
   users     TenantUser[]
   contratos Contrato[]
+  contratosServicos ContratoServico[]
+  contratosCronogramaItens ContratoCronogramaItem[]
+  contratosCronogramaDependencias ContratoCronogramaDependencia[]
   obras     Obra[]
   enderecosObra EnderecoObra[]
   obrasPlanilhasContratadas ObraPlanilhaContratada[]
@@ -298,9 +301,80 @@ model Contrato {
   tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   obras          Obra[]
   planilhas      ObraPlanilhaContratada[]
+  servicos       ContratoServico[]
+  cronogramaItens ContratoCronogramaItem[]
+  cronogramaDependencias ContratoCronogramaDependencia[]
 
   @@unique([tenantId, numeroContrato])
   @@index([tenantId])
+}
+
+model ContratoServico {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int
+  contratoId     Int
+  codigo         String
+  nome           String
+  unidade        String?
+  quantidade     Decimal?
+  valorUnitario  Decimal?
+  valorTotal     Decimal?
+  percentualPeso Decimal?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contrato       Contrato @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+  cronogramaItens ContratoCronogramaItem[]
+
+  @@unique([tenantId, contratoId, codigo])
+  @@index([tenantId])
+  @@index([contratoId])
+}
+
+model ContratoCronogramaItem {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int
+  contratoId  Int
+  servicoId   Int
+  dataInicio  DateTime
+  dataFim     DateTime
+  duracaoDias Int
+  progresso   Decimal? @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contrato    Contrato       @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+  servico     ContratoServico @relation(fields: [servicoId], references: [id], onDelete: Cascade)
+  dependenciasOrigem ContratoCronogramaDependencia[] @relation("ContratoCronogramaDepOrigem")
+  dependenciasDestino ContratoCronogramaDependencia[] @relation("ContratoCronogramaDepDestino")
+
+  @@unique([tenantId, contratoId, servicoId])
+  @@index([tenantId])
+  @@index([contratoId])
+  @@index([servicoId])
+}
+
+model ContratoCronogramaDependencia {
+  id           Int      @id @default(autoincrement())
+  tenantId     Int
+  contratoId   Int
+  origemItemId Int
+  destinoItemId Int
+  tipo         String   @default("FS")
+  createdAt    DateTime @default(now())
+
+  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contrato     Contrato             @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+  origemItem   ContratoCronogramaItem @relation("ContratoCronogramaDepOrigem", fields: [origemItemId], references: [id], onDelete: Cascade)
+  destinoItem  ContratoCronogramaItem @relation("ContratoCronogramaDepDestino", fields: [destinoItemId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, contratoId, origemItemId, destinoItemId, tipo])
+  @@index([tenantId])
+  @@index([contratoId])
+  @@index([origemItemId])
+  @@index([destinoItemId])
 }
 
 
