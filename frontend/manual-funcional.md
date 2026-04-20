@@ -960,36 +960,134 @@ Quando uma obra solicitar devolução de funcionário ao RH central, deve regist
 
 A decisão final é competência do RH central, com registro e auditoria.
 
-#### 9.7.7 Programação semanal da obra (planejado x executado)
+#### 9.7.7 PES — Programação de Execução de Serviços (planejado x executado)
 
-A programação semanal é o planejamento operacional da obra e serve como base para o apontamento real (apropriação), mantendo a diretriz:
+Conceito final do sistema:
 
-OBRA → SERVIÇO → APROPRIAÇÃO
+Serviço (contratual) → Centro de Custo (execução real) → Equipe (produção) → Recursos (MO, equipamentos, insumos)
 
-Regras principais:
+Princípio central:
 
-- a programação é planejada por semana, com antecedência mínima de 1 semana (7 dias) em relação ao início da semana;
-- é permitido programar em feriados e finais de semana, desde que:
-  - exista previsão de hora extra (HE) ou banco de horas com anuência do funcionário;
-  - haja aprovação prévia do Diretor (quando aplicável);
-- um mesmo trabalhador pode ser alocado em múltiplos serviços no mesmo dia;
-- a apropriação registra o executado e permite comparação com o planejado (por serviço).
+- a unidade de planejamento não é o serviço;
+- a unidade de planejamento é o centro de custo (CC).
 
-Estrutura do item de programação (mínimo):
+Diretrizes:
 
-- data;
-- funcionário;
-- função exercida;
-- serviço (código);
-- hora de início/fim prevista;
-- tipo do dia (útil/fim de semana/feriado);
-- HE prevista e/ou banco de horas com anuência (quando aplicável);
-- produção mínima por hora (quando houver histórico);
-- produção prevista (calculada).
+- serviço representa o contrato;
+- CC representa a execução real;
+- produção e cálculo são por equipe, dentro do CC;
+- a PES é planejada por semana, com antecedência mínima de 1 semana (7 dias) em relação ao início da semana.
+
+Tela PES (estrutura funcional):
+
+Topo:
+
+- Obra
+- Semana
+- Botões:
+  - Adicionar Serviço
+  - Serviço Não Previsto
+
+Seleção de serviço (obrigatório):
+
+- formato: [Código | Nome | Quantidade da planilha]
+- exemplo: 205 | Pilar Concreto Armado | 10 m³
+
+Tabela principal (núcleo do sistema): Programação por Centro de Custo (CC)
+
+Colunas mínimas (CC):
+
+- CC: código único
+- Descrição: nome do CC
+- Unidade: cada CC tem sua unidade própria
+- Equipes: número de equipes
+- Produção: h / unidade do CC
+- Dependências: CC anterior (pode ser múltiplo)
+- Latência: dias (cura/espera)
+- Horas necessárias: calculado
+
+Regras dos campos:
+
+- unidade do CC: cada CC pode ter unidade diferente (ex.: fôrma = m²; concretagem = m³)
+- produção: formato h/unidade (ex.: 2 h/m²)
+- equipes: número inteiro; hover pode mostrar composição
+- dependência: término do anterior; permitir múltiplas dependências
+- latência: início = fim da dependência + latência
+
+Ordenação:
+
+- permitir reordenar CC manualmente (drag and drop)
+
+Cálculos (definitivo):
+
+- horas necessárias = quantidade × produção
+- horas reais com equipes = horas necessárias ÷ número de equipes
+
+Exemplo:
+
+- fôrma: qtd 10 m²; produção 2 h/m² → 20h ÷ 2 equipes = 10h
+
+Caminho crítico (automático):
+
+- sistema calcula cadeia de dependências e maior duração;
+- destacar graficamente o fluxo crítico.
+
+Abas:
+
+- mão de obra: CC | Função | Qtde | Horas
+- equipamentos: CC | Equipamento | Qtde | Horas
+- insumos: CC | Insumo | Quantidade total | Consumo/dia
+
+Regras de recursos:
+
+- mão de obra: total = equipes × composição
+- equipamentos: total = equipamentos por equipe × número de equipes
+- insumos: total = coeficiente × quantidade
+- consumo/dia: produção diária × coeficiente
+
+Alertas (obrigatório):
+
+- falta de mão de obra
+- falta de equipamento
+- falta de insumo
+
+Ações de alerta:
+
+- solicitar RH
+- solicitar equipamento
+- requisitar suprimentos
+
+Fluxo operacional:
+
+1. selecionar serviço
+2. criar CCs
+3. definir produção (equipe)
+4. definir dependências
+5. sistema calcula horas
+6. sistema monta cronograma
+7. sistema calcula recursos
+8. valida disponibilidade
+9. gera alertas
+10. usuário solicita recursos
+11. execução
+12. apropriação
+
+Regras críticas:
+
+- bloquear:
+  - CC sem unidade
+  - CC sem produção
+  - CC sem quantidade
+  - dependência inválida
+  - horas inconsistentes
+- alertar:
+  - produção fora do padrão
+  - latência alta
+  - conflito de recurso
 
 No sistema:
 
-- Engenharia → Programação Semanal: criar/abrir semana, registrar itens, enviar para aprovação e comparar execução (presença/produção) com o planejado.
+- Engenharia → PES (Programação de Execução de Serviços): criar/abrir semana, programar por CC, registrar recursos e comparar execução (presença/produção) com o planejado.
 
 #### 9.7.8 Avaliação do funcionário na apropriação (nota por dia/serviço)
 
@@ -1015,7 +1113,7 @@ Regras para evitar distorções:
 
 No sistema:
 
-- Engenharia → Programação Semanal → coluna “Avaliar” registra as notas e calcula automaticamente produtividade e nota final.
+- Engenharia → PES → coluna “Avaliar” registra as notas e calcula automaticamente produtividade e nota final.
 
 ---
 
@@ -1037,7 +1135,7 @@ Seu papel é apoiar a gestão de segurança e saúde ocupacional.
 #### Validação
 
 - Checklists reprovados devem gerar rastreabilidade e, quando definido, não conformidade automaticamente
-- Treinamentos vinculados a serviços devem impactar alertas na Programação Semanal (apto/não apto)
+- Treinamentos vinculados a serviços devem impactar alertas na PES (apto/não apto)
 
 ### 10.1 Funcionalidades principais
 
@@ -1105,7 +1203,7 @@ No sistema:
 
 - SST → Treinamentos SST → em “Modelos”, botão “Serviços” vincula códigos de serviço ao treinamento;
 - SST → Treinamentos SST → “Aptos por serviço” lista os funcionários aptos para um serviço;
-- Engenharia → Programação Semanal indica pendência de treinamento quando o funcionário não possui registro apto para o serviço.
+- Engenharia → PES indica pendência de treinamento quando o funcionário não possui registro apto para o serviço.
 
 ---
 
@@ -1150,7 +1248,7 @@ A obra é o principal ponto de ligação entre os módulos.
 #### Implementação (no sistema)
 
 - Engenharia → Obras → selecionar obra
-- Janelas por obra: Programação Semanal, Apropriação, Cronograma, Fiscalização e Medições, Suprimentos e Consumos
+- Janelas por obra: PES, Apropriação, Cronograma, Fiscalização e Medições, Suprimentos e Consumos
 
 #### Validação
 
@@ -1165,7 +1263,7 @@ Para reduzir burocracia e aumentar eficiência, a navegação do módulo Engenha
 
 Estrutura das janelas (obra selecionada):
 
-- **Programação Semanal**
+- **PES (Programação de Execução de Serviços)**
   - Mão de obra: planejamento por dia/funcionário/serviço, comparação com executado (presença/produção), avaliação e alertas.
   - Equipamentos: planejamento por dia/ativo/serviço (horas previstas e frente de trabalho).
   - Insumos: planejamento por dia/serviço/insumo (quantidade prevista e origem).
@@ -1228,7 +1326,7 @@ Fluxo de uso (passo a passo):
    - o gestor da obra ajusta o CC de cada insumo (por etapa) quando necessário;
    - a estrutura da composição corporativa não é alterada, apenas a versão da obra.
 3) após existir pelo menos um serviço na planilha, a obra libera:
-   - Programação semanal (mão de obra/equipamentos/insumos);
+   - PES (mão de obra/equipamentos/insumos);
    - Apropriação (por serviço e centro de custo).
 
 Regras atualizadas — Programação e Apropriação:

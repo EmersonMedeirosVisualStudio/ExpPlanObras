@@ -95,8 +95,8 @@ export default function EngenhariaObraHomePage() {
     () => [
       {
         key: "programacao",
-        titulo: "Programação Semanal",
-        desc: "Mão de obra, equipamentos e insumos (planejado x executado).",
+        titulo: "PES (Programação de Execução de Serviços)",
+        desc: "Planejamento operacional por centro de custo, com mão de obra, equipamentos e insumos.",
         href: (id) => `/dashboard/engenharia/obras/${id}/programacao`,
         nivel: "OPERACAO",
       },

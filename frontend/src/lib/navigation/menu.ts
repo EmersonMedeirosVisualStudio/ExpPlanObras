@@ -299,7 +299,7 @@ export const APP_MENU: MenuSectionConfig[] = [
               },
               {
                 key: 'engenharia-obras-ativa-cronograma',
-                label: 'Cronograma',
+                label: 'PES (Programação de Execução de Serviços)',
                 href: '/dashboard/engenharia/obras/ativa/programacao-semanal',
                 icon: 'calendar',
                 permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
@@ -320,7 +320,7 @@ export const APP_MENU: MenuSectionConfig[] = [
             children: [
               {
                 key: 'engenharia-obras-ativa-programacao',
-                label: 'Programação Semanal',
+                label: 'PES (Programação de Execução de Serviços)',
                 href: '/dashboard/engenharia/obras/ativa/programacao-semanal',
                 icon: 'calendar',
                 permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,

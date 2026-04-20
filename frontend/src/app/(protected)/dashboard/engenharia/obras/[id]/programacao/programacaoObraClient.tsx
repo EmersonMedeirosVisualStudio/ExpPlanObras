@@ -12,9 +12,9 @@ export default function ProgramacaoObraClient({ idObra }: { idObra: number }) {
   const [planilhaOk, setPlanilhaOk] = useState<boolean | null>(null);
 
   const titulo = useMemo(() => {
-    if (tab === "MAO_OBRA") return "Programação semanal — Mão de obra";
-    if (tab === "EQUIPAMENTOS") return "Programação semanal — Equipamentos";
-    return "Programação semanal — Insumos";
+    if (tab === "MAO_OBRA") return "PES — Mão de obra";
+    if (tab === "EQUIPAMENTOS") return "PES — Equipamentos";
+    return "PES — Insumos";
   }, [tab]);
 
   useEffect(() => {
@@ -48,7 +48,7 @@ export default function ProgramacaoObraClient({ idObra }: { idObra: number }) {
       <div className="p-6 space-y-4 max-w-5xl">
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
           <div className="font-semibold text-amber-900">A obra só pode iniciar após cadastrar a planilha orçamentária</div>
-          <div className="mt-1 text-sm text-amber-900">Cadastre a planilha contratada da obra e selecione os centros de custo por serviço. Depois disso, a programação semanal será liberada.</div>
+          <div className="mt-1 text-sm text-amber-900">Cadastre a planilha contratada da obra e selecione os centros de custo por serviço. Depois disso, a PES será liberada.</div>
         </div>
         <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white" type="button" onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha`)}>
           Abrir planilha contratada

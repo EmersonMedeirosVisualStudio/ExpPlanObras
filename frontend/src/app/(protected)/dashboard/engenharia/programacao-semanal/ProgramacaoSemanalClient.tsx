@@ -572,8 +572,8 @@ export default function ProgramacaoSemanalClient({ idObraFixed }: { idObraFixed?
     <div className="p-6 space-y-6 max-w-7xl">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold">Obras — Planejamento → Programação Semanal</h1>
-          <div className="text-sm text-slate-600">Planejamento operacional integrado com serviço e apropriação (produção).</div>
+          <h1 className="text-2xl font-semibold">Obras — PES (Programação de Execução de Serviços)</h1>
+          <div className="text-sm text-slate-600">Planejamento por centro de custo (execução real), integrado com recursos e apropriação.</div>
         </div>
         <div className="flex gap-2 flex-wrap">
           <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={carregarLista} disabled={loading}>
