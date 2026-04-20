@@ -1148,6 +1148,44 @@ Visão diária (campo):
 - execução em tempo real
 - paradas com motivo obrigatório (recurso, clima, dependência)
 
+#### 9.7.7.2 Engine de dependências e auto-replanejamento (PES)
+
+Regra fundamental:
+
+- dependente nunca pode começar antes do predecessor;
+- início do CC = max(fim das dependências + latência).
+
+Estratégia de cálculo:
+
+- não recalcular somente um CC;
+- recalcular em cascata um subgrafo inteiro, com ordenação topológica.
+
+Algoritmo:
+
+1. ordenar topologicamente os CCs
+2. recalcular início/fim respeitando dependências e latência
+3. preservar ajuste manual apenas no CC alterado, sem violar predecessor
+4. recalcular todos os dependentes automaticamente
+
+Detecção de conflitos de recurso:
+
+- conflito ocorre quando há sobreposição de período e consumo acima da capacidade;
+- avaliar por slot de tempo (dia) e por tipo de recurso (MO, equipamento, insumo);
+- gerar lista com tempo, recurso, uso, capacidade e CCs envolvidos.
+
+Auto-replanejamento:
+
+- resolver conflitos movendo o CC de menor prioridade (não crítico primeiro);
+- aplicar deslocamentos incrementais e recalcular dependências a cada iteração;
+- parar quando não houver conflitos ou ao atingir limite de iterações.
+
+Gantt operacional:
+
+- linha vertical de “Hoje”;
+- barra planejada + progresso executado (%);
+- setas de dependência entre CCs;
+- marcação visual de conflito e caminho crítico.
+
 #### 9.7.8 Avaliação do funcionário na apropriação (nota por dia/serviço)
 
 A apropriação pode registrar uma avaliação por funcionário, por dia e por serviço, combinando:
