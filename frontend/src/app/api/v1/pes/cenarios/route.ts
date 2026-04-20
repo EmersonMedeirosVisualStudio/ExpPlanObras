@@ -26,7 +26,7 @@ async function initTable() {
 
 export async function GET(req: NextRequest) {
   try {
-    const current = await requireApiPermission(PERMISSIONS.ENG_PES_VIEW);
+    const current = await requireApiPermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
 
     const { searchParams } = new URL(req.url);
     const idObraStr = searchParams.get('idObra');
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const current = await requireApiPermission(PERMISSIONS.ENG_PES_EDIT);
+    const current = await requireApiPermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
 
     const body = await req.json();
     const { idObra, nome, tipo, dados } = body;

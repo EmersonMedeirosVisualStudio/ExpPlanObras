@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const current = await requireApiPermission(PERMISSIONS.ENG_PES_VIEW);
+    const current = await requireApiPermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
 
     const { id } = await context.params;
 
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ id: str
 
 export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
-    const current = await requireApiPermission(PERMISSIONS.ENG_PES_EDIT);
+    const current = await requireApiPermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
 
     const { id } = await context.params;
 
