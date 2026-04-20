@@ -4,6 +4,9 @@
   "description": "",
   "main": "dist/server.js",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "prisma:generate": "prisma generate --schema=./prisma/postgres/schema.prisma",
