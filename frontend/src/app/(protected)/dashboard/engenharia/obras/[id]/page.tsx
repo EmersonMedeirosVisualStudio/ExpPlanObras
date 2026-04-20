@@ -101,6 +101,13 @@ export default function EngenhariaObraHomePage() {
         nivel: "OPERACAO",
       },
       {
+        key: "pes-dashboard",
+        titulo: "Dashboard PES",
+        desc: "Painel integrado: KPIs, caminho crítico, programação, recursos, alertas e visão diária.",
+        href: () => `/dashboard/engenharia/obras/ativa/pes-dashboard`,
+        nivel: "GESTAO",
+      },
+      {
         key: "planilha",
         titulo: "Planilha contratada",
         desc: "Base oficial de serviços da obra (pré-requisito para iniciar programação e apropriação).",

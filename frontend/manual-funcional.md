@@ -1089,6 +1089,65 @@ No sistema:
 
 - Engenharia → PES (Programação de Execução de Serviços): criar/abrir semana, programar por CC, registrar recursos e comparar execução (presença/produção) com o planejado.
 
+#### 9.7.7.1 Dashboard final integrado — PES (versão produto)
+
+Layout (grid 12 colunas):
+
+- KPIs gerais (12)
+- Caminho crítico (12)
+- Programação semanal (12)
+- Mão de obra (4) | Equipamentos (4) | Insumos (4)
+- Desempenho por CC (6) | Produtividade (6)
+- Alertas (6) | Solicitações (6)
+- Visão diária (12)
+
+KPIs (semana selecionada):
+
+- execução física (%): executado acumulado ÷ planejado acumulado
+- prazo (dias): baseado no caminho crítico
+- custo (variação %): comparação previsto × realizado (quando disponível)
+- produtividade (índice): produção real ÷ produção prevista ou produção real ÷ horas reais (definir padrão por CC)
+
+Caminho crítico (core):
+
+- baseado em grafo de dependências (DAG)
+- maior caminho em duração (critical path)
+- destaque de etapa atual, atrasos e bloqueios
+
+Programação semanal (grid):
+
+- dia | CC | serviço | status | equipes/pessoas | produção planejada | execução (%)
+- status por cores: concluído (verde), atrasado (vermelho), em risco (amarelo)
+- interação: clique abre detalhe do CC
+
+Recursos (integrado):
+
+- mão de obra: necessário (equipes × composição), alocado (RH), déficit
+- equipamentos: necessário (por equipe), disponível, déficit
+- insumos: necessário (coeficiente × quantidade), estoque, déficit, consumo diário
+
+Desempenho por CC:
+
+- planejado (%) | executado (%) | desvio
+- identificar gargalos e atrasos acumulados
+
+Alertas inteligentes:
+
+- falta de recurso (RH/equip/insumo)
+- atraso no caminho crítico
+- baixa produtividade
+- consumo acima
+
+Solicitações:
+
+- RH, equipamentos e suprimentos com status (pendente, em atendimento, aprovado, negado)
+
+Visão diária (campo):
+
+- serviços do dia
+- execução em tempo real
+- paradas com motivo obrigatório (recurso, clima, dependência)
+
 #### 9.7.8 Avaliação do funcionário na apropriação (nota por dia/serviço)
 
 A apropriação pode registrar uma avaliação por funcionário, por dia e por serviço, combinando:

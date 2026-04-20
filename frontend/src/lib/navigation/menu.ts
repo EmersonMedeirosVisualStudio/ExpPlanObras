@@ -319,6 +319,13 @@ export const APP_MENU: MenuSectionConfig[] = [
             icon: 'activity',
             children: [
               {
+                key: 'engenharia-obras-ativa-pes-dashboard',
+                label: 'Dashboard PES',
+                href: '/dashboard/engenharia/obras/ativa/pes-dashboard',
+                icon: 'layout-dashboard',
+                permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+              },
+              {
                 key: 'engenharia-obras-ativa-programacao',
                 label: 'PES (Programação de Execução de Serviços)',
                 href: '/dashboard/engenharia/obras/ativa/programacao-semanal',
