@@ -139,7 +139,7 @@ export const APP_MENU: MenuSectionConfig[] = [
   },
   {
     key: 'contratos',
-    label: 'Contratos (Engenharia)',
+    label: 'Contratos',
     ordem: 2,
     items: [
       {
