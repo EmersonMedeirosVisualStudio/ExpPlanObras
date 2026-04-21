@@ -1603,6 +1603,201 @@ export async function getContratosDashboard(tenantId: number, input?: { status?:
   });
 }
 
+function parseMonthYYYYMM(v: string) {
+  const s = String(v || '').trim();
+  const m = /^(\d{4})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(y) || !Number.isFinite(mm) || mm < 1 || mm > 12) return null;
+  return { y, m: mm };
+}
+
+function monthStartUTC(y: number, m: number) {
+  return new Date(Date.UTC(y, m - 1, 1, 0, 0, 0, 0));
+}
+
+function nextMonthStartUTC(y: number, m: number) {
+  return new Date(Date.UTC(y, m, 1, 0, 0, 0, 0));
+}
+
+function buildMonthRange(startYm: string, endYm: string) {
+  const a = parseMonthYYYYMM(startYm);
+  const b = parseMonthYYYYMM(endYm);
+  if (!a || !b) return null;
+  const start = monthStartUTC(a.y, a.m);
+  const endNext = nextMonthStartUTC(b.y, b.m);
+  if (endNext.getTime() <= start.getTime()) return null;
+  const months: string[] = [];
+  let cy = a.y;
+  let cm = a.m;
+  while (true) {
+    months.push(`${cy}-${String(cm).padStart(2, '0')}`);
+    if (cy === b.y && cm === b.m) break;
+    cm += 1;
+    if (cm > 12) {
+      cm = 1;
+      cy += 1;
+    }
+    if (months.length > 36) break;
+  }
+  return { start, endNext, months };
+}
+
+export async function getContratosFaturamento(
+  tenantId: number,
+  input: {
+    start: string;
+    end: string;
+    contratoId?: number | null;
+    empresa?: string | null;
+  }
+) {
+  return withRLS(tenantId, async (tx) => {
+    const range = buildMonthRange(input.start, input.end);
+    if (!range) throw new Error('Período inválido');
+    const { start, endNext, months } = range;
+
+    const contratoId = input.contratoId != null ? Number(input.contratoId) : null;
+    const empresaQ = String(input.empresa || '').trim();
+
+    let contratoIds: number[] | null = null;
+
+    if (contratoId && Number.isFinite(contratoId)) {
+      contratoIds = [contratoId];
+    } else if (empresaQ) {
+      const rows = await tx.contrato.findMany({
+        where: {
+          tenantId,
+          contratoPrincipalId: null,
+          empresaParceiraNome: { contains: empresaQ, mode: 'insensitive' } as any,
+        },
+        select: { id: true },
+        take: 200,
+      });
+      const ids = (rows || []).map((r: any) => Number(r.id)).filter((n: number) => Number.isFinite(n));
+      contratoIds = ids.length ? ids : [];
+    }
+
+    const receitaRows: Array<{ mes: string; total: any }> =
+      contratoIds == null
+        ? await tx.$queryRaw`
+            SELECT to_char(date_trunc('month', p."date"), 'YYYY-MM') AS "mes", COALESCE(SUM(p."amount"), 0) AS "total"
+            FROM "Pagamento" p
+            JOIN "Obra" o ON o."id" = p."obraId"
+            WHERE o."tenantId" = ${tenantId}
+              AND o."contratoId" IS NOT NULL
+              AND p."date" >= ${start} AND p."date" < ${endNext}
+            GROUP BY 1
+            ORDER BY 1 ASC
+          `
+        : contratoIds.length
+          ? await tx.$queryRaw`
+              SELECT to_char(date_trunc('month', p."date"), 'YYYY-MM') AS "mes", COALESCE(SUM(p."amount"), 0) AS "total"
+              FROM "Pagamento" p
+              JOIN "Obra" o ON o."id" = p."obraId"
+              WHERE o."tenantId" = ${tenantId}
+                AND o."contratoId" IN (${Prisma.join(contratoIds)})
+                AND p."date" >= ${start} AND p."date" < ${endNext}
+              GROUP BY 1
+              ORDER BY 1 ASC
+            `
+          : [];
+
+    const custoRows: Array<{ mes: string; total: any }> =
+      contratoIds == null
+        ? await tx.$queryRaw`
+            SELECT to_char(date_trunc('month', c."date"), 'YYYY-MM') AS "mes", COALESCE(SUM(c."amount"), 0) AS "total"
+            FROM "Custo" c
+            JOIN "Obra" o ON o."id" = c."obraId"
+            WHERE o."tenantId" = ${tenantId}
+              AND o."contratoId" IS NOT NULL
+              AND c."date" >= ${start} AND c."date" < ${endNext}
+            GROUP BY 1
+            ORDER BY 1 ASC
+          `
+        : contratoIds.length
+          ? await tx.$queryRaw`
+              SELECT to_char(date_trunc('month', c."date"), 'YYYY-MM') AS "mes", COALESCE(SUM(c."amount"), 0) AS "total"
+              FROM "Custo" c
+              JOIN "Obra" o ON o."id" = c."obraId"
+              WHERE o."tenantId" = ${tenantId}
+                AND o."contratoId" IN (${Prisma.join(contratoIds)})
+                AND c."date" >= ${start} AND c."date" < ${endNext}
+              GROUP BY 1
+              ORDER BY 1 ASC
+            `
+          : [];
+
+    const subPagRows: Array<{ mes: string; total: any }> = contratoId && Number.isFinite(contratoId)
+      ? await tx.$queryRaw`
+          SELECT to_char(date_trunc('month', p."date"), 'YYYY-MM') AS "mes", COALESCE(SUM(p."amount"), 0) AS "total"
+          FROM "ContratoPagamento" p
+          JOIN "Contrato" c ON c."id" = p."contratoId"
+          WHERE c."tenantId" = ${tenantId}
+            AND c."contratoPrincipalId" = ${contratoId}
+            AND p."date" >= ${start} AND p."date" < ${endNext}
+          GROUP BY 1
+          ORDER BY 1 ASC
+        `
+      : await tx.$queryRaw`
+          SELECT to_char(date_trunc('month', p."date"), 'YYYY-MM') AS "mes", COALESCE(SUM(p."amount"), 0) AS "total"
+          FROM "ContratoPagamento" p
+          JOIN "Contrato" c ON c."id" = p."contratoId"
+          WHERE c."tenantId" = ${tenantId}
+            AND c."contratoPrincipalId" IS NOT NULL
+            AND p."date" >= ${start} AND p."date" < ${endNext}
+          GROUP BY 1
+          ORDER BY 1 ASC
+        `;
+
+    const receitaByMes = new Map<string, number>();
+    for (const r of receitaRows || []) {
+      const mes = String((r as any).mes || '');
+      const v = (r as any).total;
+      const n = typeof v === 'number' ? v : v ? Number(v) : 0;
+      if (mes) receitaByMes.set(mes, Number.isFinite(n) ? n : 0);
+    }
+    const custoByMes = new Map<string, number>();
+    for (const r of custoRows || []) {
+      const mes = String((r as any).mes || '');
+      const v = (r as any).total;
+      const n = typeof v === 'number' ? v : v ? Number(v) : 0;
+      if (mes) custoByMes.set(mes, Number.isFinite(n) ? n : 0);
+    }
+    const subPagByMes = new Map<string, number>();
+    for (const r of subPagRows || []) {
+      const mes = String((r as any).mes || '');
+      const v = (r as any).total;
+      const n = typeof v === 'number' ? v : v ? Number(v) : 0;
+      if (mes) subPagByMes.set(mes, Number.isFinite(n) ? n : 0);
+    }
+
+    const serie = months.map((mes) => {
+      const receita = receitaByMes.get(mes) ?? 0;
+      const despesa = (custoByMes.get(mes) ?? 0) + (subPagByMes.get(mes) ?? 0);
+      const liquida = receita - despesa;
+      return { mes, receita, despesa, liquida };
+    });
+
+    const receitaTotal = serie.reduce((a, b) => a + (b.receita || 0), 0);
+    const despesaTotal = serie.reduce((a, b) => a + (b.despesa || 0), 0);
+    const lucroTotal = receitaTotal - despesaTotal;
+    const margem = receitaTotal > 0 ? lucroTotal / receitaTotal : null;
+
+    return {
+      periodo: { start: input.start, end: input.end },
+      serie,
+      resumo: {
+        receitaTotal,
+        despesaTotal,
+        lucroTotal,
+        margem,
+      },
+    };
+  });
+}
+
 export async function createContrato(tenantId: number, input: CreateContratoInput) {
   return withRLS(tenantId, async (tx) => {
     const numeroContrato = String(input.numeroContrato).trim();

@@ -20,6 +20,7 @@ import {
   getContratoById,
   getContratoCronograma,
   getContratosDashboard,
+  getContratosFaturamento,
   getSubcontratosResumo,
   createContratoObservacao,
   downloadContratoEventoAnexo,
@@ -120,6 +121,35 @@ export default async function contratosRoutes(server: FastifyInstance) {
       const q = request.query as any;
       const data = await getContratosDashboard(tenantId, { status: q?.status });
       return reply.send(data);
+    }
+  );
+
+  server.get(
+    '/faturamento',
+    {
+      schema: {
+        querystring: z.object({
+          start: z.string().min(7),
+          end: z.string().min(7),
+          contratoId: z.coerce.number().int().positive().optional(),
+          empresa: z.string().optional(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const q = request.query as any;
+      try {
+        const data = await getContratosFaturamento(tenantId, {
+          start: String(q.start),
+          end: String(q.end),
+          contratoId: q.contratoId != null ? Number(q.contratoId) : null,
+          empresa: q.empresa != null ? String(q.empresa) : null,
+        });
+        return reply.send(data);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao carregar faturamento' });
+      }
     }
   );
 
