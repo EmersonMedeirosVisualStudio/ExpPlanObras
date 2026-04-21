@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
+import { realtimeClient } from "@/lib/realtime/client";
 
 type ContratoLite = {
   id: number;
@@ -35,6 +36,27 @@ type AditivoRow = {
   aplicadoEm: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+type EventoAnexo = {
+  id: number;
+  nomeArquivo: string;
+  mimeType: string;
+  tamanhoBytes: number;
+  criadoEm: string;
+  downloadUrl: string;
+};
+
+type EventoRow = {
+  id: number;
+  tipoOrigem: "CONTRATO" | "ADITIVO" | "OBRA" | "DOCUMENTO";
+  origemId: number | null;
+  tipoEvento: "INFO" | "CRIACAO" | "EDICAO" | "APROVACAO" | "CANCELAMENTO" | "OBSERVACAO";
+  descricao: string;
+  observacaoTexto: string | null;
+  nivelObservacao: "NORMAL" | "ALERTA" | "CRITICO" | null;
+  criadoEm: string;
+  anexos: EventoAnexo[];
 };
 
 type Consolidado = {
@@ -80,11 +102,46 @@ function addDays(dateIso: string, days: number) {
   return result.toISOString().slice(0, 10);
 }
 
+function iconByTipoOrigem(t: string) {
+  const v = String(t || "").toUpperCase();
+  if (v === "ADITIVO") return "📝";
+  if (v === "OBRA") return "🏗️";
+  if (v === "DOCUMENTO") return "📄";
+  return "📘";
+}
+
+function iconByEvento(e: EventoRow) {
+  if (e.tipoEvento === "OBSERVACAO") return "💬";
+  return iconByTipoOrigem(e.tipoOrigem);
+}
+
+async function fileToBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const comma = result.indexOf(",");
+      if (comma >= 0) resolve(result.slice(comma + 1));
+      else resolve(result);
+    };
+    reader.onerror = () => reject(new Error("Falha ao ler arquivo"));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function AditivosClient() {
   const router = useRouter();
   const sp = useSearchParams();
   const contratoId = sp.get("contratoId");
   const tab = sp.get("tab") || "dashboard";
+  const apiBase = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
+  const tokenForLinks = useMemo(() => {
+    try {
+      return localStorage.getItem("token") || "";
+    } catch {
+      return "";
+    }
+  }, []);
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -93,6 +150,18 @@ export default function AditivosClient() {
 
   const [consolidado, setConsolidado] = useState<Consolidado | null>(null);
   const [aditivos, setAditivos] = useState<AditivoRow[]>([]);
+  const [eventos, setEventos] = useState<EventoRow[]>([]);
+
+  const [filtroContrato, setFiltroContrato] = useState(true);
+  const [filtroAditivos, setFiltroAditivos] = useState(true);
+  const [filtroObras, setFiltroObras] = useState(false);
+  const [filtroDocumentos, setFiltroDocumentos] = useState(false);
+  const [filtroObservacoes, setFiltroObservacoes] = useState(true);
+
+  const [obsTexto, setObsTexto] = useState("");
+  const [obsNivel, setObsNivel] = useState<"NORMAL" | "ALERTA" | "CRITICO">("NORMAL");
+  const [obsFiles, setObsFiles] = useState<File[]>([]);
+  const [filePreview, setFilePreview] = useState<{ file: File; url: string } | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
   const [numeroAditivo, setNumeroAditivo] = useState("1");
@@ -173,6 +242,32 @@ export default function AditivosClient() {
     }
   }
 
+  async function carregarEventos() {
+    if (!contratoId) return;
+    const origens: string[] = [];
+    if (filtroContrato) origens.push("CONTRATO");
+    if (filtroAditivos) origens.push("ADITIVO");
+    if (filtroObras) origens.push("OBRA");
+    if (filtroDocumentos) origens.push("DOCUMENTO");
+    try {
+      setLoading(true);
+      setErr(null);
+      const res = await api.get(`/api/contratos/${contratoId}/eventos`, {
+        params: {
+          origens: origens.join(","),
+          incluirObservacoes: filtroObservacoes ? "true" : "false",
+          limit: 200,
+        },
+      });
+      setEventos((res.data as any[]) ?? []);
+    } catch (e: any) {
+      setEventos([]);
+      setErr(e?.response?.data?.message || e?.message || "Erro ao carregar histórico");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     carregarContratos();
   }, []);
@@ -180,6 +275,31 @@ export default function AditivosClient() {
   useEffect(() => {
     carregarContratoSelecionado();
   }, [contratoId]);
+
+  useEffect(() => {
+    if (tab !== "eventos") return;
+    carregarEventos();
+  }, [tab, contratoId, filtroContrato, filtroAditivos, filtroObras, filtroDocumentos, filtroObservacoes]);
+
+  useEffect(() => {
+    if (!contratoId) return;
+    realtimeClient.start(["contratos", `contrato:${contratoId}`]);
+    const unsubs = [
+      realtimeClient.subscribe(`contrato:${contratoId}`, "contrato_atualizado", () => {
+        carregarContratoSelecionado();
+        if (tab === "eventos") carregarEventos();
+      }),
+      realtimeClient.subscribe(`contrato:${contratoId}`, "evento_criado", () => {
+        if (tab === "eventos") carregarEventos();
+      }),
+      realtimeClient.subscribe(`contrato:${contratoId}`, "anexo_criado", () => {
+        if (tab === "eventos") carregarEventos();
+      }),
+    ];
+    return () => {
+      for (const u of unsubs) u();
+    };
+  }, [contratoId, tab, filtroContrato, filtroAditivos, filtroObras, filtroDocumentos, filtroObservacoes]);
 
   useEffect(() => {
     if (!aditivos.length) return;
@@ -192,7 +312,7 @@ export default function AditivosClient() {
     if (maxNum) setNumeroAditivo(String(maxNum + 1));
   }, [aditivos]);
 
-  const preview = useMemo(() => {
+  const impactPreview = useMemo(() => {
     const c = consolidado?.contrato;
     if (!c) return null;
     const tipoContrato = String(c.tipoContratante || "PRIVADO").toUpperCase();
@@ -270,6 +390,57 @@ export default function AditivosClient() {
     await carregarContratoSelecionado();
   }
 
+  async function salvarObservacao() {
+    if (!contratoId) return;
+    const texto = obsTexto.trim();
+    if (!texto) {
+      setErr("Digite uma observação.");
+      return;
+    }
+    try {
+      setLoading(true);
+      setErr(null);
+      const res = await api.post(`/api/contratos/${contratoId}/observacoes`, { texto, nivel: obsNivel });
+      const eventoId = Number((res.data as any)?.id || 0);
+      if (!eventoId) throw new Error("Falha ao criar observação");
+
+      for (const file of obsFiles) {
+        const base64 = await fileToBase64(file);
+        await api.post(`/api/contratos/${contratoId}/eventos/${eventoId}/anexos`, {
+          nomeArquivo: file.name,
+          mimeType: file.type || "application/octet-stream",
+          conteudoBase64: base64,
+        });
+      }
+
+      setObsTexto("");
+      setObsNivel("NORMAL");
+      setObsFiles([]);
+      await carregarContratoSelecionado();
+      await carregarEventos();
+      setQuery({ tab: "eventos" });
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Erro ao salvar observação");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function abrirPreviewArquivo(file: File) {
+    const url = URL.createObjectURL(file);
+    setFilePreview({ file, url });
+  }
+
+  function fecharPreviewArquivo() {
+    if (filePreview?.url) {
+      try {
+        URL.revokeObjectURL(filePreview.url);
+      } catch {
+      }
+    }
+    setFilePreview(null);
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -320,6 +491,9 @@ export default function AditivosClient() {
               </button>
               <button className={`rounded-lg px-3 py-2 text-sm ${tab === "lista" ? "bg-slate-900 text-white" : "border bg-white hover:bg-slate-50"}`} type="button" onClick={() => setQuery({ tab: "lista" })}>
                 Aditivos (CRUD)
+              </button>
+              <button className={`rounded-lg px-3 py-2 text-sm ${tab === "eventos" ? "bg-slate-900 text-white" : "border bg-white hover:bg-slate-50"}`} type="button" onClick={() => setQuery({ tab: "eventos" })}>
+                Eventos
               </button>
               <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white" type="button" onClick={() => setFormOpen(true)}>
                 Novo aditivo
@@ -405,7 +579,152 @@ export default function AditivosClient() {
               </div>
             </div>
           ) : null}
+
+          {tab === "eventos" ? (
+            <div className="space-y-4">
+              <div className="rounded-xl border bg-slate-50 p-3">
+                <div className="flex gap-4 flex-wrap items-center">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={filtroContrato} onChange={(e) => setFiltroContrato(e.target.checked)} />
+                    Contrato
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={filtroAditivos} onChange={(e) => setFiltroAditivos(e.target.checked)} />
+                    Aditivos
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={filtroObras} onChange={(e) => setFiltroObras(e.target.checked)} />
+                    Obras
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={filtroDocumentos} onChange={(e) => setFiltroDocumentos(e.target.checked)} />
+                    Documentos
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={filtroObservacoes} onChange={(e) => setFiltroObservacoes(e.target.checked)} />
+                    Observações
+                  </label>
+                  <button
+                    className="ml-auto text-sm underline"
+                    type="button"
+                    onClick={() => {
+                      setFiltroContrato(true);
+                      setFiltroAditivos(true);
+                      setFiltroObras(true);
+                      setFiltroDocumentos(true);
+                      setFiltroObservacoes(true);
+                    }}
+                  >
+                    Marcar todos
+                  </button>
+                  <button
+                    className="text-sm underline"
+                    type="button"
+                    onClick={() => {
+                      setFiltroContrato(false);
+                      setFiltroAditivos(false);
+                      setFiltroObras(false);
+                      setFiltroDocumentos(false);
+                      setFiltroObservacoes(false);
+                    }}
+                  >
+                    Limpar
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="text-sm font-semibold">Adicionar observação</div>
+                  <select className="input w-[160px]" value={obsNivel} onChange={(e) => setObsNivel(e.target.value as any)}>
+                    <option value="NORMAL">Normal</option>
+                    <option value="ALERTA">Alerta</option>
+                    <option value="CRITICO">Crítico</option>
+                  </select>
+                </div>
+                <textarea className="input min-h-[90px]" value={obsTexto} onChange={(e) => setObsTexto(e.target.value)} placeholder="Digite sua observação..." />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input
+                    type="file"
+                    multiple
+                    accept="application/pdf,image/*"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      setObsFiles(files);
+                    }}
+                  />
+                  <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50" type="button" onClick={salvarObservacao} disabled={loading || !obsTexto.trim()}>
+                    Salvar
+                  </button>
+                </div>
+
+                {obsFiles.length ? (
+                  <div className="space-y-2">
+                    {obsFiles.map((f) => (
+                      <div key={f.name + f.size} className="flex items-center justify-between gap-2 rounded-lg border bg-slate-50 p-2 text-sm">
+                        <div className="truncate">📎 {f.name}</div>
+                        <button className="rounded-lg border bg-white px-3 py-1 text-sm hover:bg-slate-50" type="button" onClick={() => abrirPreviewArquivo(f)}>
+                          Preview
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="rounded-xl border bg-white p-4 shadow-sm">
+                <div className="text-sm font-semibold">Linha do tempo</div>
+                <div className="mt-3 space-y-2">
+                  {eventos.map((ev) => (
+                    <div key={ev.id} className="flex gap-3 items-start border-b py-2">
+                      <div className="w-6">{iconByEvento(ev)}</div>
+                      <div className="flex-1">
+                        {ev.tipoEvento === "OBSERVACAO" ? (
+                          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-2 rounded">
+                            <div className="text-sm">{ev.observacaoTexto}</div>
+                            {ev.anexos?.length ? (
+                              <div className="mt-2 flex flex-col gap-1">
+                                {ev.anexos.map((a) => (
+                                  <a key={a.id} href={`${apiBase}${a.downloadUrl}?token=${encodeURIComponent(tokenForLinks)}`} target="_blank" className="text-blue-600 text-xs underline">
+                                    📎 {a.nomeArquivo}
+                                  </a>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <div className="text-sm">{ev.descricao}</div>
+                        )}
+                        <div className="text-xs text-slate-500 mt-1">{new Date(ev.criadoEm).toLocaleString("pt-BR")}</div>
+                      </div>
+                    </div>
+                  ))}
+                  {!eventos.length ? <div className="text-sm text-slate-500">Sem eventos.</div> : null}
+                </div>
+              </div>
+            </div>
+          ) : null}
         </section>
+      ) : null}
+
+      {filePreview ? (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={fecharPreviewArquivo}>
+          <div className="bg-white p-4 rounded w-[90%] h-[90%] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm">{filePreview.file.name}</span>
+              <button className="rounded-lg border bg-white px-3 py-1 text-sm hover:bg-slate-50" type="button" onClick={fecharPreviewArquivo}>
+                Fechar
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto">
+              {filePreview.file.type.includes("image") ? <img src={filePreview.url} className="max-w-full mx-auto" /> : null}
+              {filePreview.file.type === "application/pdf" ? <iframe src={filePreview.url} className="w-full h-full" /> : null}
+              {!filePreview.file.type.includes("image") && filePreview.file.type !== "application/pdf" ? (
+                <div className="text-center text-slate-500 mt-10">Preview não disponível para este tipo de arquivo.</div>
+              ) : null}
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {formOpen ? (
@@ -446,13 +765,13 @@ export default function AditivosClient() {
                   <div>
                     <div className="text-sm text-slate-600">Antes → Depois</div>
                     <div className="text-sm">
-                      {(preview?.prazoAtual ?? "—")} → {(preview?.novoPrazo ?? "—")} ({preview?.deltaPrazo ? `+${preview.deltaPrazo}` : "+0"}d)
+                      {(impactPreview?.prazoAtual ?? "—")} → {(impactPreview?.novoPrazo ?? "—")} ({impactPreview?.deltaPrazo ? `+${impactPreview.deltaPrazo}` : "+0"}d)
                     </div>
                   </div>
                   <div>
                     <div className="text-sm text-slate-600">Vigência atual</div>
                     <div className="text-sm">
-                      {(preview?.vigAtual ?? "—")} → {(preview?.novaVigencia ?? "—")}
+                      {(impactPreview?.vigAtual ?? "—")} → {(impactPreview?.novaVigencia ?? "—")}
                     </div>
                   </div>
                 </div>
@@ -475,7 +794,7 @@ export default function AditivosClient() {
                     <div>
                       <div className="text-sm text-slate-600">Antes → Depois</div>
                       <div className="text-sm">
-                        {moeda(preview?.valorAtual ?? 0)} → {moeda(preview?.novoValor ?? 0)} ({moeda(preview?.deltaValor ?? 0)})
+                        {moeda(impactPreview?.valorAtual ?? 0)} → {moeda(impactPreview?.novoValor ?? 0)} ({moeda(impactPreview?.deltaValor ?? 0)})
                       </div>
                     </div>
                   </div>
@@ -488,7 +807,7 @@ export default function AditivosClient() {
                     <div className="md:col-span-2">
                       <div className="text-sm text-slate-600">Antes → Depois</div>
                       <div className="text-sm">
-                        {moeda(preview?.valorAtual ?? 0)} → {moeda(preview?.novoValor ?? 0)} ({moeda(preview?.deltaValor ?? 0)})
+                        {moeda(impactPreview?.valorAtual ?? 0)} → {moeda(impactPreview?.novoValor ?? 0)} ({moeda(impactPreview?.deltaValor ?? 0)})
                       </div>
                     </div>
                   </div>
@@ -521,4 +840,3 @@ export default function AditivosClient() {
     </div>
   );
 }
-

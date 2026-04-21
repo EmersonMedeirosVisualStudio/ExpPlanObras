@@ -18,17 +18,20 @@ class RealtimeClient {
   private connect() {
     this.connecting = true;
     const qs = encodeURIComponent(this.topics.join(','));
-    const es = new EventSource(`/api/v1/realtime/stream?topics=${qs}`);
+    const base = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/+$/, '');
+    let token = '';
+    try {
+      token = localStorage.getItem('token') || '';
+    } catch {
+      token = '';
+    }
+    const tokenQs = encodeURIComponent(token);
+    const es = new EventSource(`${base}/api/contratos/realtime/stream?topics=${qs}&token=${tokenQs}`);
     this.es = es;
-
-    es.addEventListener('connected', () => {
-      this.backoff = 2000;
-    });
-    es.addEventListener('heartbeat', () => {});
-    es.addEventListener('error', () => {});
 
     es.onopen = () => {
       this.connecting = false;
+      this.backoff = 2000;
     };
 
     es.onerror = () => {
@@ -38,8 +41,8 @@ class RealtimeClient {
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data || '{}');
-        const eventName = e.type || 'message';
         const topic = data?.topic ? String(data.topic) : null;
+        const eventName = data?.event ? String(data.event) : 'message';
         if (!topic) return;
         const key = `${topic}:${eventName}`;
         const hs = this.handlers.get(key);
@@ -74,4 +77,3 @@ class RealtimeClient {
 }
 
 export const realtimeClient = new RealtimeClient();
-
