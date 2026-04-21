@@ -1,5 +1,6 @@
 import prisma, { setTenantContext } from '../../plugins/prisma.js';
 import type { CreateContratoInput, UpdateContratoInput } from './contratos.schema.js';
+import { publish } from './contratos.realtime.js';
 
 async function withRLS<T>(tenantId: number, callback: (tx: any) => Promise<T>): Promise<T> {
   return prisma.$transaction(async (tx) => {
@@ -160,6 +161,25 @@ function computeStatusEAlertas(row: any) {
   }
 
   return { statusCalc, alerta, issues };
+}
+
+async function createContratoEvento(tx: any, input: { tenantId: number; contratoId: number; tipoOrigem: string; origemId?: number | null; tipoEvento: string; descricao: string; observacaoTexto?: string | null; nivelObservacao?: string | null; actorUserId?: number | null }) {
+  const created = await tx.contratoEvento.create({
+    data: {
+      tenantId: input.tenantId,
+      contratoId: input.contratoId,
+      tipoOrigem: input.tipoOrigem,
+      origemId: input.origemId ?? null,
+      tipoEvento: input.tipoEvento,
+      descricao: input.descricao,
+      observacaoTexto: input.observacaoTexto ?? null,
+      nivelObservacao: input.nivelObservacao ?? null,
+      actorUserId: input.actorUserId ?? null,
+    },
+  });
+  publish(`contrato:${input.contratoId}`, 'evento_criado', { contratoId: input.contratoId, eventoId: created.id });
+  publish('contratos', 'evento_criado', { contratoId: input.contratoId, eventoId: created.id });
+  return created;
 }
 
 export async function ensureContratoPendente(tenantId: number) {
@@ -374,6 +394,21 @@ export async function createContratoAditivo(
         valorProprioAdicionado: valorProprioAdicionado == null ? null : valorProprioAdicionado,
       },
     });
+
+    await createContratoEvento(tx, {
+      tenantId,
+      contratoId,
+      tipoOrigem: 'ADITIVO',
+      origemId: created.id,
+      tipoEvento: 'CRIACAO',
+      descricao: `Aditivo ${numeroAditivo} criado (${tipo})`,
+      observacaoTexto: null,
+      nivelObservacao: null,
+      actorUserId: null,
+    });
+
+    publish(`contrato:${contratoId}`, 'contrato_atualizado', { contratoId });
+    publish('contratos', 'contrato_atualizado', { contratoId });
     return created;
   });
 }
@@ -421,6 +456,21 @@ export async function cancelarContratoAditivo(tenantId: number, contratoId: numb
     if (!current) throw new Error('Aditivo não encontrado');
     if (String(current.status).toUpperCase() === 'APROVADO') throw new Error('Aditivo aprovado não pode ser cancelado');
     const updated = await tx.contratoAditivo.update({ where: { id: aditivoId }, data: { status: 'CANCELADO' } });
+
+    await createContratoEvento(tx, {
+      tenantId,
+      contratoId,
+      tipoOrigem: 'ADITIVO',
+      origemId: aditivoId,
+      tipoEvento: 'CANCELAMENTO',
+      descricao: `Aditivo ${String(current.numeroAditivo)} cancelado`,
+      observacaoTexto: null,
+      nivelObservacao: null,
+      actorUserId: null,
+    });
+
+    publish(`contrato:${contratoId}`, 'contrato_atualizado', { contratoId });
+    publish('contratos', 'contrato_atualizado', { contratoId });
     return updated;
   });
 }
@@ -491,6 +541,21 @@ export async function aprovarContratoAditivo(tenantId: number, contratoId: numbe
       },
     });
 
+    await createContratoEvento(tx, {
+      tenantId,
+      contratoId,
+      tipoOrigem: 'ADITIVO',
+      origemId: aditivoId,
+      tipoEvento: 'APROVACAO',
+      descricao: `Aditivo ${String(updatedAditivo.numeroAditivo)} aprovado e aplicado no contrato`,
+      observacaoTexto: null,
+      nivelObservacao: null,
+      actorUserId: null,
+    });
+
+    publish(`contrato:${contratoId}`, 'contrato_atualizado', { contratoId });
+    publish('contratos', 'contrato_atualizado', { contratoId });
+
     return { aditivo: updatedAditivo, contrato: updatedContrato };
   });
 }
@@ -552,6 +617,159 @@ export async function getContratoConsolidado(tenantId: number, contratoId: numbe
         aditivosEmAberto: abertos,
       },
     };
+  });
+}
+
+export async function listContratoEventos(
+  tenantId: number,
+  contratoId: number,
+  input?: { tiposOrigem?: string[]; incluirObservacoes?: boolean; limit?: number }
+) {
+  return withRLS(tenantId, async (tx) => {
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId }, select: { id: true } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
+
+    const tiposOrigem = (input?.tiposOrigem || []).map((s) => String(s).trim().toUpperCase()).filter(Boolean);
+    const incluirObservacoes = input?.incluirObservacoes !== false;
+    const limit = Math.min(200, Math.max(1, Number(input?.limit || 100)));
+
+    const where: any = { tenantId, contratoId };
+    if (tiposOrigem.length) where.tipoOrigem = { in: tiposOrigem };
+    if (!incluirObservacoes) where.tipoEvento = { not: 'OBSERVACAO' };
+
+    const eventos = await tx.contratoEvento.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit,
+    });
+
+    const eventoIds = eventos.map((e: any) => e.id);
+    const anexos = eventoIds.length
+      ? await tx.contratoEventoAnexo.findMany({
+          where: { tenantId, contratoId, eventoId: { in: eventoIds } },
+          select: { id: true, eventoId: true, nomeArquivo: true, mimeType: true, tamanhoBytes: true, createdAt: true },
+          orderBy: [{ id: 'asc' }],
+        })
+      : [];
+
+    const anexosByEventoId = new Map<number, any[]>();
+    for (const a of anexos) {
+      const list = anexosByEventoId.get(Number(a.eventoId)) || [];
+      list.push({
+        id: a.id,
+        nomeArquivo: a.nomeArquivo,
+        mimeType: a.mimeType,
+        tamanhoBytes: a.tamanhoBytes,
+        criadoEm: a.createdAt,
+        downloadUrl: `/api/contratos/${contratoId}/eventos/${a.eventoId}/anexos/${a.id}`,
+      });
+      anexosByEventoId.set(Number(a.eventoId), list);
+    }
+
+    return eventos.map((e: any) => ({
+      id: e.id,
+      tipoOrigem: e.tipoOrigem,
+      origemId: e.origemId,
+      tipoEvento: e.tipoEvento,
+      descricao: e.descricao,
+      observacaoTexto: e.observacaoTexto,
+      nivelObservacao: e.nivelObservacao,
+      actorUserId: e.actorUserId,
+      criadoEm: e.createdAt,
+      anexos: anexosByEventoId.get(Number(e.id)) || [],
+    }));
+  });
+}
+
+export async function createContratoObservacao(
+  tenantId: number,
+  contratoId: number,
+  input: { texto: string; nivel?: string | null; tipoOrigem?: string | null; origemId?: number | null; actorUserId?: number | null }
+) {
+  return withRLS(tenantId, async (tx) => {
+    const texto = String(input.texto || '').trim();
+    if (!texto) throw new Error('Observação é obrigatória');
+
+    const tipoOrigem = input.tipoOrigem ? String(input.tipoOrigem).trim().toUpperCase() : 'CONTRATO';
+    const nivel = input.nivel ? String(input.nivel).trim().toUpperCase() : 'NORMAL';
+
+    const created = await createContratoEvento(tx, {
+      tenantId,
+      contratoId,
+      tipoOrigem,
+      origemId: input.origemId ?? null,
+      tipoEvento: 'OBSERVACAO',
+      descricao: 'Observação registrada',
+      observacaoTexto: texto,
+      nivelObservacao: nivel,
+      actorUserId: input.actorUserId ?? null,
+    });
+
+    return created;
+  });
+}
+
+export async function addContratoEventoAnexo(
+  tenantId: number,
+  contratoId: number,
+  eventoId: number,
+  input: { nomeArquivo: string; mimeType: string; conteudoBase64: string; actorUserId?: number | null }
+) {
+  return withRLS(tenantId, async (tx) => {
+    const evento = await tx.contratoEvento.findFirst({ where: { tenantId, contratoId, id: eventoId }, select: { id: true } }).catch(() => null);
+    if (!evento) throw new Error('Evento não encontrado');
+
+    const nomeArquivo = String(input.nomeArquivo || '').trim();
+    const mimeType = String(input.mimeType || '').trim().toLowerCase();
+    if (!nomeArquivo) throw new Error('nomeArquivo é obrigatório');
+    if (!mimeType) throw new Error('mimeType é obrigatório');
+
+    const allowed = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
+    if (!allowed.includes(mimeType)) throw new Error('Tipo de arquivo não permitido');
+
+    const bytes = Buffer.from(String(input.conteudoBase64 || ''), 'base64');
+    if (!bytes.length) throw new Error('Arquivo vazio');
+    const maxBytes = 10 * 1024 * 1024;
+    if (bytes.length > maxBytes) throw new Error('Arquivo excede 10MB');
+
+    const created = await tx.contratoEventoAnexo.create({
+      data: {
+        tenantId,
+        contratoId,
+        eventoId,
+        nomeArquivo,
+        mimeType,
+        tamanhoBytes: bytes.length,
+        conteudo: bytes,
+        actorUserId: input.actorUserId ?? null,
+      },
+      select: { id: true, eventoId: true, nomeArquivo: true, mimeType: true, tamanhoBytes: true, createdAt: true },
+    });
+
+    publish(`contrato:${contratoId}`, 'anexo_criado', { contratoId, eventoId, anexoId: created.id });
+    publish('contratos', 'anexo_criado', { contratoId, eventoId, anexoId: created.id });
+
+    return {
+      id: created.id,
+      nomeArquivo: created.nomeArquivo,
+      mimeType: created.mimeType,
+      tamanhoBytes: created.tamanhoBytes,
+      criadoEm: created.createdAt,
+      downloadUrl: `/api/contratos/${contratoId}/eventos/${eventoId}/anexos/${created.id}`,
+    };
+  });
+}
+
+export async function downloadContratoEventoAnexo(tenantId: number, contratoId: number, eventoId: number, anexoId: number) {
+  return withRLS(tenantId, async (tx) => {
+    const anexo = await tx.contratoEventoAnexo
+      .findFirst({
+        where: { tenantId, contratoId, eventoId, id: anexoId },
+        select: { nomeArquivo: true, mimeType: true, tamanhoBytes: true, conteudo: true },
+      })
+      .catch(() => null);
+    if (!anexo) throw new Error('Anexo não encontrado');
+    return anexo;
   });
 }
 

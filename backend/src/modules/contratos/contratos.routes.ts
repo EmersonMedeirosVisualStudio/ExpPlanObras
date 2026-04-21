@@ -2,18 +2,23 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticate } from '../../utils/authenticate.js';
 import { createContratoSchema, updateContratoSchema } from './contratos.schema.js';
+import { subscribe } from './contratos.realtime.js';
 import {
   createContrato,
   createContratoAditivo,
   createContratoServico,
   createCronogramaDependencia,
   cancelarContratoAditivo,
+  addContratoEventoAnexo,
   deleteCronogramaDependencia,
   getContratoConsolidado,
   getContratoById,
   getContratoCronograma,
   getContratosDashboard,
+  createContratoObservacao,
+  downloadContratoEventoAnexo,
   listContratoAditivos,
+  listContratoEventos,
   listContratoServicos,
   listContratos,
   aprovarContratoAditivo,
@@ -32,6 +37,57 @@ export default async function contratosRoutes(server: FastifyInstance) {
       return reply.code(403).send({ message: 'Tenant não selecionado' });
     }
   });
+
+  server.get(
+    '/realtime/stream',
+    {
+      schema: {
+        querystring: z.object({
+          topics: z.string().optional(),
+          contratoId: z.coerce.number().int().positive().optional(),
+          token: z.string().optional(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const { topics, contratoId } = request.query as any;
+      const topicList = String(topics || '')
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
+
+      if (contratoId) topicList.push(`contrato:${Number(contratoId)}`);
+      if (!topicList.length) topicList.push('contratos');
+
+      reply.raw.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
+      reply.raw.setHeader('Connection', 'keep-alive');
+      reply.raw.flushHeaders?.();
+
+      const send = (data: any) => {
+        reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
+      };
+
+      send({ topic: 'system', event: 'connected', payload: { ok: true, topics: topicList } });
+
+      const unsubs = topicList.map((t) =>
+        subscribe(t, (msg) => {
+          send(msg);
+        })
+      );
+
+      const interval = setInterval(() => {
+        send({ topic: 'system', event: 'heartbeat', payload: { ts: Date.now() } });
+      }, 20000);
+
+      request.raw.on('close', () => {
+        clearInterval(interval);
+        for (const u of unsubs) u();
+      });
+
+      return reply;
+    }
+  );
 
   server.get('/', async (request, reply) => {
     const tenantId = (request.user as any).tenantId as number;
@@ -79,6 +135,108 @@ export default async function contratosRoutes(server: FastifyInstance) {
         return reply.send(data);
       } catch (e: any) {
         return reply.code(400).send({ message: e?.message || 'Erro ao carregar consolidado' });
+      }
+    }
+  );
+
+  server.get(
+    '/:id/eventos',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        querystring: z
+          .object({
+            origens: z.string().optional(),
+            incluirObservacoes: z.coerce.boolean().optional(),
+            limit: z.coerce.number().int().positive().optional(),
+          })
+          .optional(),
+      },
+    },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id } = request.params as any;
+      const q = (request.query as any) || {};
+      const tiposOrigem = String(q.origens || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const incluirObservacoes = q.incluirObservacoes !== undefined ? Boolean(q.incluirObservacoes) : true;
+      const limit = q.limit != null ? Number(q.limit) : 100;
+      try {
+        const data = await listContratoEventos(tenantId, id, { tiposOrigem, incluirObservacoes, limit });
+        return reply.send(data);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao listar eventos' });
+      }
+    }
+  );
+
+  server.post(
+    '/:id/observacoes',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        body: z.object({
+          texto: z.string().min(1),
+          nivel: z.enum(['NORMAL', 'ALERTA', 'CRITICO']).optional().nullable(),
+          tipoOrigem: z.enum(['CONTRATO', 'ADITIVO', 'OBRA', 'DOCUMENTO']).optional().nullable(),
+          origemId: z.coerce.number().int().optional().nullable(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const userId = (request.user as any).userId as number | undefined;
+      const { id } = request.params as any;
+      try {
+        const created = await createContratoObservacao(tenantId, id, { ...(request.body as any), actorUserId: userId ?? null });
+        return reply.send(created);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao criar observação' });
+      }
+    }
+  );
+
+  server.post(
+    '/:id/eventos/:eventoId/anexos',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive(), eventoId: z.coerce.number().int().positive() }),
+        body: z.object({
+          nomeArquivo: z.string().min(1),
+          mimeType: z.string().min(1),
+          conteudoBase64: z.string().min(1),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const userId = (request.user as any).userId as number | undefined;
+      const { id, eventoId } = request.params as any;
+      try {
+        const created = await addContratoEventoAnexo(tenantId, id, eventoId, { ...(request.body as any), actorUserId: userId ?? null });
+        return reply.send(created);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao anexar arquivo' });
+      }
+    }
+  );
+
+  server.get(
+    '/:id/eventos/:eventoId/anexos/:anexoId',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive(), eventoId: z.coerce.number().int().positive(), anexoId: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id, eventoId, anexoId } = request.params as any;
+      try {
+        const file = await downloadContratoEventoAnexo(tenantId, id, eventoId, anexoId);
+        reply.header('Content-Type', file.mimeType);
+        reply.header('Content-Length', String(file.tamanhoBytes));
+        reply.header('Content-Disposition', `inline; filename="${encodeURIComponent(file.nomeArquivo)}"`);
+        return reply.send(file.conteudo);
+      } catch (e: any) {
+        return reply.code(404).send({ message: e?.message || 'Anexo não encontrado' });
       }
     }
   );

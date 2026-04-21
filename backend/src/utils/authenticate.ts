@@ -13,7 +13,16 @@ function isTrialExpired(tenant: { subscriptionStatus?: string | null; trialEndsA
 
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   try {
-    await request.jwtVerify();
+    const authHeader = request.headers?.authorization;
+    const queryToken = (request.query as any)?.token;
+    const url = String((request as any).url || '');
+
+    const allowQueryToken = url.includes('/realtime/') || (url.includes('/eventos/') && url.includes('/anexos/'));
+    if (!authHeader && typeof queryToken === 'string' && queryToken && allowQueryToken) {
+      await request.jwtVerify({ token: queryToken });
+    } else {
+      await request.jwtVerify();
+    }
     const user = request.user as any;
     if (user?.isSystemAdmin) return;
 

@@ -42,6 +42,8 @@ model Tenant {
   contratosCronogramaItens ContratoCronogramaItem[]
   contratosCronogramaDependencias ContratoCronogramaDependencia[]
   contratosAditivos ContratoAditivo[]
+  contratosEventos ContratoEvento[]
+  contratosEventosAnexos ContratoEventoAnexo[]
   obras     Obra[]
   enderecosObra EnderecoObra[]
   obrasPlanilhasContratadas ObraPlanilhaContratada[]
@@ -322,6 +324,8 @@ model Contrato {
   cronogramaItens ContratoCronogramaItem[]
   cronogramaDependencias ContratoCronogramaDependencia[]
   aditivos       ContratoAditivo[]
+  eventos        ContratoEvento[]
+  eventosAnexos  ContratoEventoAnexo[]
 
   @@unique([tenantId, numeroContrato])
   @@index([tenantId])
@@ -361,6 +365,49 @@ model ContratoAditivo {
   @@index([tenantId])
   @@index([contratoId])
   @@index([tenantId, status])
+}
+
+model ContratoEvento {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int
+  contratoId     Int
+  tipoOrigem     String   @default("CONTRATO") // CONTRATO | ADITIVO | OBRA | DOCUMENTO
+  origemId       Int?
+  tipoEvento     String   @default("INFO") // INFO | CRIACAO | EDICAO | APROVACAO | CANCELAMENTO | OBSERVACAO
+  descricao      String
+  observacaoTexto String?
+  nivelObservacao String? // NORMAL | ALERTA | CRITICO
+  actorUserId    Int?
+  createdAt      DateTime @default(now())
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contrato       Contrato @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+  anexos         ContratoEventoAnexo[]
+
+  @@index([tenantId])
+  @@index([contratoId])
+  @@index([tenantId, contratoId, createdAt])
+}
+
+model ContratoEventoAnexo {
+  id           Int      @id @default(autoincrement())
+  tenantId     Int
+  contratoId   Int
+  eventoId     Int
+  nomeArquivo  String
+  mimeType     String
+  tamanhoBytes Int
+  conteudo     Bytes
+  createdAt    DateTime @default(now())
+  actorUserId  Int?
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contrato     Contrato      @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+  evento       ContratoEvento @relation(fields: [eventoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([contratoId])
+  @@index([eventoId])
 }
 
 model ContratoServico {
