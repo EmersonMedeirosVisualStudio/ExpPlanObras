@@ -2,22 +2,53 @@ import { z } from 'zod';
 
 export const createContratoSchema = z.object({
   numeroContrato: z.string().min(2),
+  nome: z.string().optional().nullable(),
+  objeto: z.string().optional().nullable(),
   descricao: z.string().optional().nullable(),
+  tipoContratante: z.enum(['PUBLICO', 'PRIVADO', 'PF']).optional().nullable(),
+  empresaParceiraNome: z.string().optional().nullable(),
+  empresaParceiraDocumento: z.string().optional().nullable(),
   status: z.string().optional().nullable(),
   dataInicio: z.string().optional().nullable(),
   dataFim: z.string().optional().nullable(),
+  dataAssinatura: z.string().optional().nullable(),
+  dataOS: z.string().optional().nullable(),
+  prazoDias: z.number().int().optional().nullable(),
+  vigenciaInicial: z.string().optional().nullable(),
+  vigenciaAtual: z.string().optional().nullable(),
   valorContratado: z.number().optional().nullable(),
+  valorConcedenteInicial: z.number().optional().nullable(),
+  valorProprioInicial: z.number().optional().nullable(),
+  valorTotalInicial: z.number().optional().nullable(),
+  valorConcedenteAtual: z.number().optional().nullable(),
+  valorProprioAtual: z.number().optional().nullable(),
+  valorTotalAtual: z.number().optional().nullable(),
 });
 
 export const updateContratoSchema = z.object({
   numeroContrato: z.string().min(2).optional(),
+  nome: z.string().optional().nullable(),
+  objeto: z.string().optional().nullable(),
   descricao: z.string().optional().nullable(),
+  tipoContratante: z.enum(['PUBLICO', 'PRIVADO', 'PF']).optional().nullable(),
+  empresaParceiraNome: z.string().optional().nullable(),
+  empresaParceiraDocumento: z.string().optional().nullable(),
   status: z.string().optional().nullable(),
   dataInicio: z.string().optional().nullable(),
   dataFim: z.string().optional().nullable(),
+  dataAssinatura: z.string().optional().nullable(),
+  dataOS: z.string().optional().nullable(),
+  prazoDias: z.number().int().optional().nullable(),
+  vigenciaInicial: z.string().optional().nullable(),
+  vigenciaAtual: z.string().optional().nullable(),
   valorContratado: z.number().optional().nullable(),
+  valorConcedenteInicial: z.number().optional().nullable(),
+  valorProprioInicial: z.number().optional().nullable(),
+  valorTotalInicial: z.number().optional().nullable(),
+  valorConcedenteAtual: z.number().optional().nullable(),
+  valorProprioAtual: z.number().optional().nullable(),
+  valorTotalAtual: z.number().optional().nullable(),
 });
 
 export type CreateContratoInput = z.infer<typeof createContratoSchema>;
 export type UpdateContratoInput = z.infer<typeof updateContratoSchema>;
-
