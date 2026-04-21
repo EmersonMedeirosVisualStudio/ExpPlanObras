@@ -12,6 +12,8 @@ type ContratoRow = {
   objeto: string | null;
   tipoContratante: "PUBLICO" | "PRIVADO" | "PF";
   empresaParceiraNome: string | null;
+  empresaParceiraDocumento?: string | null;
+  descricao?: string | null;
   status: string;
   statusCalculado?: "EM_ANDAMENTO" | "A_VENCER" | "VENCIDO" | "CONCLUIDO" | "SEM_RECURSOS" | "NAO_INICIADO" | "CANCELADO";
   alerta?: "OK" | "PENDENTE" | "CRITICO";
@@ -21,7 +23,11 @@ type ContratoRow = {
   prazoDias: number | null;
   vigenciaInicial: string | null;
   vigenciaAtual: string | null;
+  valorConcedenteInicial?: number | null;
+  valorProprioInicial?: number | null;
   valorTotalInicial: number | null;
+  valorConcedenteAtual?: number | null;
+  valorProprioAtual?: number | null;
   valorTotalAtual: number | null;
   createdAt: string;
   updatedAt: string;
@@ -34,6 +40,35 @@ type ContratoDetail = ContratoRow & {
 
 function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function parseMoneyBR(input: string) {
+  const s = String(input || "")
+    .replace(/\./g, "")
+    .replace(",", ".")
+    .replace(/[^\d.]/g, "");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatMoneyBRFromDigits(digits: string) {
+  const onlyDigits = (digits || "").replace(/\D/g, "");
+  const cents = onlyDigits ? Number(onlyDigits) : 0;
+  const value = cents / 100;
+  return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function normalizeTipoContratante(v: unknown): ContratoRow["tipoContratante"] {
+  const t = String(v || "PRIVADO").toUpperCase();
+  if (t === "PUBLICO" || t === "PRIVADO" || t === "PF") return t;
+  return "PRIVADO";
+}
+
+function toDateInputValue(v: unknown) {
+  if (!v) return "";
+  const d = new Date(String(v));
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
 }
 
 function alertaUi(alerta?: "OK" | "PENDENTE" | "CRITICO") {
@@ -75,8 +110,64 @@ export default function ContratosClient() {
   const [detailErr, setDetailErr] = useState<string | null>(null);
   const [detail, setDetail] = useState<ContratoDetail | null>(null);
 
+  const [editOpen, setEditOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editErr, setEditErr] = useState<string | null>(null);
+
+  const [eNumeroContrato, setENumeroContrato] = useState("");
+  const [eNome, setENome] = useState("");
+  const [eObjeto, setEObjeto] = useState("");
+  const [eDescricao, setEDescricao] = useState("");
+  const [eTipoContratante, setETipoContratante] = useState<ContratoRow["tipoContratante"]>("PRIVADO");
+  const [eEmpresaParceiraNome, setEEmpresaParceiraNome] = useState("");
+  const [eEmpresaParceiraDocumento, setEEmpresaParceiraDocumento] = useState("");
+  const [eStatus, setEStatus] = useState("ATIVO");
+  const [eDataAssinatura, setEDataAssinatura] = useState("");
+  const [eDataOS, setEDataOS] = useState("");
+  const [ePrazoDias, setEPrazoDias] = useState("");
+  const [eVigenciaCalculada, setEVigenciaCalculada] = useState("");
+
+  const [eValorConcedenteInicial, setEValorConcedenteInicial] = useState("0,00");
+  const [eValorProprioInicial, setEValorProprioInicial] = useState("0,00");
+  const [eValorConcedenteAtual, setEValorConcedenteAtual] = useState("0,00");
+  const [eValorProprioAtual, setEValorProprioAtual] = useState("0,00");
+  const [eValorTotalInicial, setEValorTotalInicial] = useState("0,00");
+  const [eValorTotalAtual, setEValorTotalAtual] = useState("0,00");
+
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
+
+  const eIsPublico = eTipoContratante === "PUBLICO";
+  const eBaseDate = useMemo(() => eDataOS || eDataAssinatura || "", [eDataOS, eDataAssinatura]);
+
+  useEffect(() => {
+    if (!editOpen) return;
+    const prazo = Number(ePrazoDias || 0);
+    if (!eBaseDate || !prazo || prazo <= 0) {
+      setEVigenciaCalculada("");
+      return;
+    }
+    const base = new Date(`${eBaseDate}T00:00:00`);
+    if (Number.isNaN(base.getTime())) {
+      setEVigenciaCalculada("");
+      return;
+    }
+    const result = new Date(base);
+    result.setDate(result.getDate() + prazo);
+    setEVigenciaCalculada(result.toISOString().slice(0, 10));
+  }, [editOpen, eBaseDate, ePrazoDias]);
+
+  useEffect(() => {
+    if (!editOpen || !eIsPublico) return;
+    const total = parseMoneyBR(eValorConcedenteInicial) + parseMoneyBR(eValorProprioInicial);
+    setEValorTotalInicial(formatMoneyBRFromDigits(String(Math.round(total * 100))));
+  }, [editOpen, eIsPublico, eValorConcedenteInicial, eValorProprioInicial]);
+
+  useEffect(() => {
+    if (!editOpen || !eIsPublico) return;
+    const total = parseMoneyBR(eValorConcedenteAtual) + parseMoneyBR(eValorProprioAtual);
+    setEValorTotalAtual(formatMoneyBRFromDigits(String(Math.round(total * 100))));
+  }, [editOpen, eIsPublico, eValorConcedenteAtual, eValorProprioAtual]);
 
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
@@ -96,9 +187,13 @@ export default function ContratosClient() {
       setRows(
         (res.data as any[])?.map((x) => ({
           ...x,
-          tipoContratante: String(x.tipoContratante || "PRIVADO").toUpperCase(),
+          tipoContratante: normalizeTipoContratante(x.tipoContratante),
           prazoDias: x.prazoDias == null ? null : Number(x.prazoDias),
+          valorConcedenteInicial: x.valorConcedenteInicial == null ? null : Number(x.valorConcedenteInicial),
+          valorProprioInicial: x.valorProprioInicial == null ? null : Number(x.valorProprioInicial),
           valorTotalInicial: x.valorTotalInicial == null ? null : Number(x.valorTotalInicial),
+          valorConcedenteAtual: x.valorConcedenteAtual == null ? null : Number(x.valorConcedenteAtual),
+          valorProprioAtual: x.valorProprioAtual == null ? null : Number(x.valorProprioAtual),
           valorTotalAtual: x.valorTotalAtual == null ? null : Number(x.valorTotalAtual),
         })) ?? []
       );
@@ -119,9 +214,13 @@ export default function ContratosClient() {
       const d = res.data as any;
       setDetail({
         ...d,
-        tipoContratante: String(d.tipoContratante || "PRIVADO").toUpperCase(),
+        tipoContratante: normalizeTipoContratante(d.tipoContratante),
         prazoDias: d.prazoDias == null ? null : Number(d.prazoDias),
+        valorConcedenteInicial: d.valorConcedenteInicial == null ? null : Number(d.valorConcedenteInicial),
+        valorProprioInicial: d.valorProprioInicial == null ? null : Number(d.valorProprioInicial),
         valorTotalInicial: d.valorTotalInicial == null ? null : Number(d.valorTotalInicial),
+        valorConcedenteAtual: d.valorConcedenteAtual == null ? null : Number(d.valorConcedenteAtual),
+        valorProprioAtual: d.valorProprioAtual == null ? null : Number(d.valorProprioAtual),
         valorTotalAtual: d.valorTotalAtual == null ? null : Number(d.valorTotalAtual),
         obras: (d.obras || []).map((o: any) => ({ ...o, valorPrevisto: Number(o.valorPrevisto || 0) })),
       });
@@ -164,31 +263,116 @@ export default function ContratosClient() {
     }
   }, [contratoId]);
 
+  function abrirEdicao() {
+    if (!detail) return;
+    setEditErr(null);
+    setEditLoading(false);
+    setENumeroContrato(detail.numeroContrato || "");
+    setENome(detail.nome || "");
+    setEObjeto(detail.objeto || "");
+    setEDescricao((detail.descricao as any) || "");
+    setETipoContratante(normalizeTipoContratante(detail.tipoContratante));
+    setEEmpresaParceiraNome(detail.empresaParceiraNome || "");
+    setEEmpresaParceiraDocumento((detail.empresaParceiraDocumento as any) || "");
+    setEStatus(String(detail.status || "ATIVO"));
+    setEDataAssinatura(toDateInputValue(detail.dataAssinatura));
+    setEDataOS(toDateInputValue(detail.dataOS));
+    setEPrazoDias(detail.prazoDias == null ? "" : String(detail.prazoDias));
+
+    const vci = Number((detail as any).valorConcedenteInicial || 0);
+    const vpi = Number((detail as any).valorProprioInicial || 0);
+    const vca = Number((detail as any).valorConcedenteAtual || 0);
+    const vpa = Number((detail as any).valorProprioAtual || 0);
+    const vti = Number((detail as any).valorTotalInicial || 0);
+    const vta = Number((detail as any).valorTotalAtual || 0);
+
+    setEValorConcedenteInicial(formatMoneyBRFromDigits(String(Math.round(vci * 100))));
+    setEValorProprioInicial(formatMoneyBRFromDigits(String(Math.round(vpi * 100))));
+    setEValorConcedenteAtual(formatMoneyBRFromDigits(String(Math.round(vca * 100))));
+    setEValorProprioAtual(formatMoneyBRFromDigits(String(Math.round(vpa * 100))));
+    setEValorTotalInicial(formatMoneyBRFromDigits(String(Math.round(vti * 100))));
+    setEValorTotalAtual(formatMoneyBRFromDigits(String(Math.round(vta * 100))));
+
+    setEditOpen(true);
+  }
+
+  async function salvarEdicao() {
+    if (!contratoId) return;
+    try {
+      setEditLoading(true);
+      setEditErr(null);
+      const prazo = Number(ePrazoDias || 0);
+      if (!eBaseDate || !prazo || prazo <= 0) {
+        setEditErr("Informe a data base (OS ou Assinatura) e o prazo (dias).");
+        return;
+      }
+
+      const payload: any = {
+        numeroContrato: eNumeroContrato,
+        nome: eNome || null,
+        objeto: eObjeto || null,
+        descricao: eDescricao || null,
+        tipoContratante: eTipoContratante,
+        empresaParceiraNome: eEmpresaParceiraNome || null,
+        empresaParceiraDocumento: eEmpresaParceiraDocumento || null,
+        status: eStatus || null,
+        dataAssinatura: eDataAssinatura ? new Date(`${eDataAssinatura}T00:00:00`).toISOString() : null,
+        dataOS: eDataOS ? new Date(`${eDataOS}T00:00:00`).toISOString() : null,
+        prazoDias: prazo,
+        vigenciaInicial: eVigenciaCalculada ? new Date(`${eVigenciaCalculada}T00:00:00`).toISOString() : null,
+        vigenciaAtual: eVigenciaCalculada ? new Date(`${eVigenciaCalculada}T00:00:00`).toISOString() : null,
+        valorConcedenteInicial: eIsPublico ? parseMoneyBR(eValorConcedenteInicial) : null,
+        valorProprioInicial: eIsPublico ? parseMoneyBR(eValorProprioInicial) : null,
+        valorTotalInicial: parseMoneyBR(eValorTotalInicial),
+        valorConcedenteAtual: eIsPublico ? parseMoneyBR(eValorConcedenteAtual) : null,
+        valorProprioAtual: eIsPublico ? parseMoneyBR(eValorProprioAtual) : null,
+        valorTotalAtual: parseMoneyBR(eValorTotalAtual),
+      };
+
+      await api.put(`/api/contratos/${contratoId}`, payload);
+      setEditOpen(false);
+      await carregarLista();
+      await carregarDetalhe(contratoId);
+    } catch (e: any) {
+      setEditErr(e?.response?.data?.message || e?.message || "Erro ao salvar alterações");
+    } finally {
+      setEditLoading(false);
+    }
+  }
+
   if (contratoId) {
     return (
-      <div className="p-6 space-y-4">
+      <div className="p-6 space-y-4 text-slate-900 dark:text-slate-100">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl font-semibold">Contrato #{contratoId}</h1>
-            <div className="text-sm text-slate-600">Detalhes, financeiro e vínculos com obras.</div>
+            <div className="text-sm text-slate-600 dark:text-slate-300">Detalhes, financeiro e vínculos com obras.</div>
           </div>
           <div className="flex gap-2">
             <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
               type="button"
               onClick={() => router.push(`/dashboard/contratos/planejamento?id=${contratoId}`)}
             >
               Planejamento (Gantt)
             </button>
             <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
               type="button"
               onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}`)}
             >
               Aditivos
             </button>
             <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
+              type="button"
+              onClick={abrirEdicao}
+              disabled={!detail}
+            >
+              Editar contrato
+            </button>
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
               type="button"
               onClick={() => router.push("/dashboard/contratos")}
             >
@@ -198,55 +382,55 @@ export default function ContratosClient() {
         </div>
 
         {detailErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{detailErr}</div> : null}
-        {detailLoading ? <div className="text-sm text-slate-500">Carregando...</div> : null}
+        {detailLoading ? <div className="text-sm text-slate-500 dark:text-slate-300">Carregando...</div> : null}
 
         {detail ? (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <section className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-2">
-              <div className="text-sm text-slate-500">Número</div>
+            <section className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-2 dark:bg-slate-900 dark:border-slate-700">
+              <div className="text-sm text-slate-500 dark:text-slate-300">Número</div>
               <div className="text-xl font-semibold">{detail.numeroContrato}</div>
-              <div className="mt-2 text-sm text-slate-600">{detail.nome || detail.objeto || "—"}</div>
+              <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">{detail.nome || detail.objeto || "—"}</div>
 
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                <div className="rounded-lg border bg-slate-50 p-3">
-                  <div className="text-xs text-slate-500">Status</div>
+                <div className="rounded-lg border bg-slate-50 p-3 dark:bg-slate-800 dark:border-slate-700">
+                  <div className="text-xs text-slate-500 dark:text-slate-300">Status</div>
                   <div className={`font-semibold ${statusUi(detail.statusCalculado).className}`}>
                     {statusUi(detail.statusCalculado).icon} {statusUi(detail.statusCalculado).label}
                   </div>
                 </div>
-                <div className="rounded-lg border bg-slate-50 p-3">
-                  <div className="text-xs text-slate-500">Vigência inicial</div>
+                <div className="rounded-lg border bg-slate-50 p-3 dark:bg-slate-800 dark:border-slate-700">
+                  <div className="text-xs text-slate-500 dark:text-slate-300">Vigência inicial</div>
                   <div className="font-semibold">{detail.vigenciaInicial ? new Date(detail.vigenciaInicial).toLocaleDateString("pt-BR") : "—"}</div>
                 </div>
-                <div className="rounded-lg border bg-slate-50 p-3">
-                  <div className="text-xs text-slate-500">Vigência atual</div>
+                <div className="rounded-lg border bg-slate-50 p-3 dark:bg-slate-800 dark:border-slate-700">
+                  <div className="text-xs text-slate-500 dark:text-slate-300">Vigência atual</div>
                   <div className="font-semibold">{detail.vigenciaAtual ? new Date(detail.vigenciaAtual).toLocaleDateString("pt-BR") : "—"}</div>
                 </div>
               </div>
             </section>
 
-            <section className="rounded-xl border bg-white p-4 shadow-sm">
+            <section className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
               <div className="text-sm font-semibold">Financeiro</div>
               <div className="mt-3 space-y-2 text-sm">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-slate-600">Valor atual</div>
+                  <div className="text-slate-600 dark:text-slate-300">Valor atual</div>
                   <div className="font-semibold">{moeda(Number(detail.valorTotalAtual || 0))}</div>
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-slate-600">Executado (medições)</div>
+                  <div className="text-slate-600 dark:text-slate-300">Executado (medições)</div>
                   <div className="font-semibold">{moeda(Number(detail.indicadores?.valorExecutado || 0))}</div>
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-slate-600">Pago</div>
+                  <div className="text-slate-600 dark:text-slate-300">Pago</div>
                   <div className="font-semibold">{moeda(Number(detail.indicadores?.valorPago || 0))}</div>
                 </div>
               </div>
             </section>
 
             {detail.alerta && detail.alerta !== "OK" ? (
-              <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm lg:col-span-3">
+              <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm lg:col-span-3 dark:border-amber-900 dark:bg-amber-950/30">
                 <div className="text-sm font-semibold">Alertas</div>
-                <div className="mt-2 text-sm text-amber-800">
+                <div className="mt-2 text-sm text-amber-800 dark:text-amber-200">
                   {(detail.alertas || []).length ? (
                     <ul className="list-disc pl-6">
                       {(detail.alertas || []).map((m) => (
@@ -260,14 +444,14 @@ export default function ContratosClient() {
               </section>
             ) : null}
 
-            <section className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-3">
+            <section className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-3 dark:bg-slate-900 dark:border-slate-700">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="text-sm font-semibold">Obras vinculadas</div>
-                <div className="text-xs text-slate-500">Regra: toda obra tem contrato; um contrato pode ter várias obras.</div>
+                <div className="text-xs text-slate-500 dark:text-slate-300">Regra: toda obra tem contrato; um contrato pode ter várias obras.</div>
               </div>
               <div className="mt-3 overflow-auto">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-slate-700">
+                  <thead className="bg-slate-50 text-left text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                     <tr>
                       <th className="px-3 py-2">Obra</th>
                       <th className="px-3 py-2">Status</th>
@@ -276,7 +460,7 @@ export default function ContratosClient() {
                   </thead>
                   <tbody>
                     {detail.obras.map((o) => (
-                      <tr key={o.id} className="border-t">
+                      <tr key={o.id} className="border-t dark:border-slate-700">
                         <td className="px-3 py-2">{o.name}</td>
                         <td className="px-3 py-2">{o.status}</td>
                         <td className="px-3 py-2 text-right">{moeda(o.valorPrevisto)}</td>
@@ -284,7 +468,7 @@ export default function ContratosClient() {
                     ))}
                     {!detail.obras.length ? (
                       <tr>
-                        <td colSpan={3} className="px-3 py-6 text-center text-slate-500">
+                        <td colSpan={3} className="px-3 py-6 text-center text-slate-500 dark:text-slate-300">
                           Nenhuma obra vinculada a este contrato.
                         </td>
                       </tr>
@@ -295,30 +479,171 @@ export default function ContratosClient() {
             </section>
           </div>
         ) : null}
+
+        {editOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setEditOpen(false)}>
+            <div className="w-full max-w-4xl rounded-xl border bg-white p-4 shadow-xl dark:bg-slate-900 dark:border-slate-700" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <div className="text-lg font-semibold">Editar contrato</div>
+                  <div className="text-sm text-slate-600 dark:text-slate-300">Atualize dados básicos, datas e valores.</div>
+                </div>
+                <div className="flex gap-2">
+                  <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800" type="button" onClick={() => setEditOpen(false)}>
+                    Cancelar
+                  </button>
+                  <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50" type="button" onClick={salvarEdicao} disabled={editLoading}>
+                    {editLoading ? "Salvando..." : "Salvar alterações"}
+                  </button>
+                </div>
+              </div>
+
+              {editErr ? <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{editErr}</div> : null}
+
+              <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3 dark:bg-slate-900 dark:border-slate-700">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div>
+                      <div className="text-sm text-slate-600 dark:text-slate-300">Número do contrato</div>
+                      <input className="input" value={eNumeroContrato} onChange={(e) => setENumeroContrato(e.target.value)} />
+                    </div>
+                    <div>
+                      <div className="text-sm text-slate-600 dark:text-slate-300">Status</div>
+                      <select className="input" value={eStatus} onChange={(e) => setEStatus(e.target.value)}>
+                        <option value="ATIVO">Ativo</option>
+                        <option value="PENDENTE">Pendente</option>
+                        <option value="PARALISADO">Paralisado</option>
+                        <option value="ENCERRADO">Encerrado</option>
+                        <option value="FINALIZADO">Finalizado</option>
+                        <option value="CANCELADO">Cancelado</option>
+                        <option value="RESCINDIDO">Rescindido</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div className="text-sm text-slate-600 dark:text-slate-300">Tipo de contratante</div>
+                      <select className="input" value={eTipoContratante} onChange={(e) => setETipoContratante(normalizeTipoContratante(e.target.value))}>
+                        <option value="PUBLICO">Órgão público</option>
+                        <option value="PRIVADO">Empresa privada (PJ)</option>
+                        <option value="PF">Pessoa física (PF)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div className="text-sm text-slate-600 dark:text-slate-300">Nome do contrato</div>
+                      <input className="input" value={eNome} onChange={(e) => setENome(e.target.value)} />
+                    </div>
+                    <div className="md:col-span-2">
+                      <div className="text-sm text-slate-600 dark:text-slate-300">Objeto</div>
+                      <textarea className="input min-h-[90px]" value={eObjeto} onChange={(e) => setEObjeto(e.target.value)} />
+                    </div>
+                    <div className="md:col-span-2">
+                      <div className="text-sm text-slate-600 dark:text-slate-300">Descrição</div>
+                      <textarea className="input min-h-[90px]" value={eDescricao} onChange={(e) => setEDescricao(e.target.value)} />
+                    </div>
+                  </div>
+                </section>
+
+                <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3 dark:bg-slate-900 dark:border-slate-700">
+                  <div className="text-sm font-semibold">Datas</div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <div>
+                      <div className="text-sm text-slate-600 dark:text-slate-300">Data assinatura</div>
+                      <input className="input" type="date" value={eDataAssinatura} onChange={(e) => setEDataAssinatura(e.target.value)} />
+                    </div>
+                    <div>
+                      <div className="text-sm text-slate-600 dark:text-slate-300">Data OS (preferencial)</div>
+                      <input className="input" type="date" value={eDataOS} onChange={(e) => setEDataOS(e.target.value)} />
+                    </div>
+                    <div>
+                      <div className="text-sm text-slate-600 dark:text-slate-300">Prazo (dias)</div>
+                      <input className="input" value={ePrazoDias} onChange={(e) => setEPrazoDias(e.target.value)} placeholder="Ex: 180" />
+                    </div>
+                    <div className="md:col-span-3">
+                      <div className="text-sm text-slate-600 dark:text-slate-300">Vigência (calculada)</div>
+                      <input className="input" value={eVigenciaCalculada || "—"} disabled />
+                    </div>
+                  </div>
+
+                  <div className="mt-2 text-sm font-semibold">Empresa parceira</div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div>
+                      <div className="text-sm text-slate-600 dark:text-slate-300">Nome</div>
+                      <input className="input" value={eEmpresaParceiraNome} onChange={(e) => setEEmpresaParceiraNome(e.target.value)} />
+                    </div>
+                    <div>
+                      <div className="text-sm text-slate-600 dark:text-slate-300">Documento</div>
+                      <input className="input" value={eEmpresaParceiraDocumento} onChange={(e) => setEEmpresaParceiraDocumento(e.target.value)} placeholder="CNPJ/CPF" />
+                    </div>
+                  </div>
+
+                  <div className="mt-2 text-sm font-semibold">Valores</div>
+                  {eIsPublico ? (
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div>
+                        <div className="text-sm text-slate-600 dark:text-slate-300">Concedente (inicial)</div>
+                        <input className="input" value={eValorConcedenteInicial} onChange={(e) => setEValorConcedenteInicial(formatMoneyBRFromDigits(e.target.value))} />
+                      </div>
+                      <div>
+                        <div className="text-sm text-slate-600 dark:text-slate-300">Próprio (inicial)</div>
+                        <input className="input" value={eValorProprioInicial} onChange={(e) => setEValorProprioInicial(formatMoneyBRFromDigits(e.target.value))} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <div className="text-sm text-slate-600 dark:text-slate-300">Total (inicial)</div>
+                        <input className="input" value={eValorTotalInicial} disabled />
+                      </div>
+                      <div>
+                        <div className="text-sm text-slate-600 dark:text-slate-300">Concedente (atual)</div>
+                        <input className="input" value={eValorConcedenteAtual} onChange={(e) => setEValorConcedenteAtual(formatMoneyBRFromDigits(e.target.value))} />
+                      </div>
+                      <div>
+                        <div className="text-sm text-slate-600 dark:text-slate-300">Próprio (atual)</div>
+                        <input className="input" value={eValorProprioAtual} onChange={(e) => setEValorProprioAtual(formatMoneyBRFromDigits(e.target.value))} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <div className="text-sm text-slate-600 dark:text-slate-300">Total (atual)</div>
+                        <input className="input" value={eValorTotalAtual} disabled />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div>
+                        <div className="text-sm text-slate-600 dark:text-slate-300">Valor total (inicial)</div>
+                        <input className="input" value={eValorTotalInicial} onChange={(e) => setEValorTotalInicial(formatMoneyBRFromDigits(e.target.value))} />
+                      </div>
+                      <div>
+                        <div className="text-sm text-slate-600 dark:text-slate-300">Valor total (atual)</div>
+                        <input className="input" value={eValorTotalAtual} onChange={(e) => setEValorTotalAtual(formatMoneyBRFromDigits(e.target.value))} />
+                      </div>
+                    </div>
+                  )}
+                </section>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 text-slate-900 dark:text-slate-100">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold">Contratos</h1>
-          <div className="text-sm text-slate-600">Cadastre, acompanhe e integre com medições/pagamentos e obras.</div>
+          <div className="text-sm text-slate-600 dark:text-slate-300">Cadastre, acompanhe e integre com medições/pagamentos e obras.</div>
         </div>
         <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white" type="button" onClick={() => router.push("/dashboard/contratos/novo")}>
           Novo contrato
         </button>
       </div>
 
-      <section className="rounded-xl border bg-white p-4 shadow-sm">
+      <section className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <div>
-            <div className="text-sm text-slate-600">Busca</div>
+            <div className="text-sm text-slate-600 dark:text-slate-300">Busca</div>
             <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Número/nome/empresa" />
           </div>
           <div>
-            <div className="text-sm text-slate-600">Status</div>
+            <div className="text-sm text-slate-600 dark:text-slate-300">Status</div>
             <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">Todos</option>
               <option value="A_VENCER">A vencer</option>
@@ -331,7 +656,12 @@ export default function ContratosClient() {
             </select>
           </div>
           <div className="flex items-end md:col-span-2 justify-end gap-2">
-            <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50" type="button" onClick={carregarLista} disabled={loading}>
+            <button
+              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
+              type="button"
+              onClick={carregarLista}
+              disabled={loading}
+            >
               {loading ? "Atualizando..." : "Atualizar"}
             </button>
           </div>
@@ -339,11 +669,11 @@ export default function ContratosClient() {
         {err ? <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
       </section>
 
-      <section className="rounded-xl border bg-white p-4 shadow-sm">
+      <section className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
         <div className="text-sm font-semibold">Lista</div>
         <div className="mt-3 overflow-auto">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-700">
+            <thead className="bg-slate-50 text-left text-slate-700 dark:bg-slate-800 dark:text-slate-200">
               <tr>
                 <th className="px-3 py-2">Alerta</th>
                 <th className="px-3 py-2">Nº</th>
@@ -355,11 +685,11 @@ export default function ContratosClient() {
                 <th className="px-3 py-2">Status</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="text-slate-900 dark:text-slate-100">
               {filtered.map((r) => (
                 <tr
                   key={r.id}
-                  className="border-t hover:bg-slate-50 cursor-pointer"
+                  className="border-t hover:bg-slate-50 cursor-pointer dark:border-slate-700 dark:hover:bg-slate-800/60"
                   onClick={() => router.push(`/dashboard/contratos?id=${r.id}`)}
                 >
                   <td className="px-3 py-2">
@@ -380,7 +710,7 @@ export default function ContratosClient() {
               ))}
               {!filtered.length ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={8} className="px-3 py-6 text-center text-slate-500 dark:text-slate-300">
                     Nenhum contrato encontrado.
                   </td>
                 </tr>
