@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
     const backendOnly = apiMode !== "next";
 
     const localRules = [
+      { source: "/api/v1/me/:path*", destination: "/api/v1/me/:path*" },
+      { source: "/api/v1/realtime/:path*", destination: "/api/v1/realtime/:path*" },
       { source: "/api/v1/rh/:path*", destination: "/api/v1/rh/:path*" },
       { source: "/api/v1/dashboard/rh/:path*", destination: "/api/v1/dashboard/rh/:path*" },
       { source: "/api/v1/dashboard/me/:path*", destination: "/api/v1/dashboard/me/:path*" },
