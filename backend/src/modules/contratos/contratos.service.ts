@@ -107,6 +107,9 @@ function computeStatusEAlertas(row: any) {
   const dataAss = row.dataAssinatura ? new Date(row.dataAssinatura) : null;
   const prazo = typeof row.prazoDias === 'number' ? row.prazoDias : row.prazoDias != null ? Number(row.prazoDias) : null;
   const vigAtual = row.vigenciaAtual ? new Date(row.vigenciaAtual) : null;
+  const valorPagoContrato = toNumberOrNull(row.valorPagoContrato) ?? 0;
+  const valorExecutadoContrato = toNumberOrNull(row.valorExecutadoContrato) ?? 0;
+  const valorTotalAtual = toNumberOrNull(row.valorTotalAtual) ?? 0;
 
   if (!dataOS && !dataAss) issues.push('Falta data de OS ou assinatura');
   if (!prazo || prazo <= 0) issues.push('Falta prazo (dias)');
@@ -124,13 +127,28 @@ function computeStatusEAlertas(row: any) {
 
   const now = new Date();
   const end = vigAtual;
-  let statusCalc: 'ATIVO' | 'A_VENCER' | 'VENCIDO' | 'ENCERRADO' | 'EM_ADITIVO' = 'ATIVO';
+  const statusManual = String(row.status || '').toUpperCase();
 
-  if (String(row.status || '').toUpperCase() === 'ENCERRADO') statusCalc = 'ENCERRADO';
+  let statusCalc:
+    | 'EM_ANDAMENTO'
+    | 'A_VENCER'
+    | 'VENCIDO'
+    | 'CONCLUIDO'
+    | 'SEM_RECURSOS'
+    | 'NAO_INICIADO'
+    | 'CANCELADO' = 'EM_ANDAMENTO';
+
+  if (['CANCELADO', 'RESCINDIDO'].includes(statusManual)) statusCalc = 'CANCELADO';
+  else if (['ENCERRADO', 'FINALIZADO', 'CONCLUIDO'].includes(statusManual)) statusCalc = 'CONCLUIDO';
+  else if (valorTotalAtual > 0 && valorPagoContrato >= valorTotalAtual) statusCalc = 'SEM_RECURSOS';
+  else if (!dataOS && valorExecutadoContrato <= 0) statusCalc = 'NAO_INICIADO';
   else if (end) {
     const diffDays = Math.ceil((dateOnly(end).getTime() - dateOnly(now).getTime()) / (24 * 3600 * 1000));
     if (diffDays < 0) statusCalc = 'VENCIDO';
     else if (diffDays <= 30) statusCalc = 'A_VENCER';
+    else statusCalc = 'EM_ANDAMENTO';
+  } else {
+    statusCalc = 'EM_ANDAMENTO';
   }
 
   let alerta: 'OK' | 'PENDENTE' | 'CRITICO' = 'OK';
@@ -162,8 +180,45 @@ export async function ensureContratoPendente(tenantId: number) {
 export async function listContratos(tenantId: number) {
   return withRLS(tenantId, async (tx) => {
     const rows = await tx.contrato.findMany({ where: { tenantId }, orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }] });
+
+    const [pagos, execs] = await Promise.all([
+      tx.$queryRaw`
+        SELECT o."contratoId" AS "contratoId", COALESCE(SUM(p."amount"), 0) AS "valorPago"
+        FROM "Pagamento" p
+        JOIN "Obra" o ON o."id" = p."obraId"
+        WHERE o."tenantId" = ${tenantId}
+        GROUP BY o."contratoId"
+      `,
+      tx.$queryRaw`
+        SELECT o."contratoId" AS "contratoId", COALESCE(SUM(m."amount"), 0) AS "valorExecutado"
+        FROM "Medicao" m
+        JOIN "Obra" o ON o."id" = m."obraId"
+        WHERE o."tenantId" = ${tenantId}
+        GROUP BY o."contratoId"
+      `,
+    ]);
+
+    const valorPagoByContratoId = new Map<number, number>();
+    for (const r of (pagos as any[])) {
+      const id = Number(r.contratoId);
+      if (!Number.isFinite(id)) continue;
+      valorPagoByContratoId.set(id, toNumberOrNull(r.valorPago) ?? 0);
+    }
+
+    const valorExecutadoByContratoId = new Map<number, number>();
+    for (const r of (execs as any[])) {
+      const id = Number(r.contratoId);
+      if (!Number.isFinite(id)) continue;
+      valorExecutadoByContratoId.set(id, toNumberOrNull(r.valorExecutado) ?? 0);
+    }
+
     return rows.map((r: any) => {
-      const extra = computeStatusEAlertas(r);
+      const enriched = {
+        ...r,
+        valorPagoContrato: valorPagoByContratoId.get(Number(r.id)) ?? 0,
+        valorExecutadoContrato: valorExecutadoByContratoId.get(Number(r.id)) ?? 0,
+      };
+      const extra = computeStatusEAlertas(enriched);
       return { ...r, statusCalculado: extra.statusCalc, alerta: extra.alerta, alertas: extra.issues };
     });
   });
@@ -192,7 +247,6 @@ export async function getContratoById(tenantId: number, id: number) {
 
     if (!contrato) return null;
 
-    const extra = computeStatusEAlertas(contrato);
     const obraIds = (contrato.obras || []).map((o: any) => Number(o.id)).filter((n: number) => Number.isFinite(n));
 
     const [execAgg, pagoAgg] = await Promise.all([
@@ -208,6 +262,12 @@ export async function getContratoById(tenantId: number, id: number) {
 
     const valorExecutado = execAgg?._sum?.amount ?? null;
     const valorPago = pagoAgg?._sum?.amount ?? null;
+
+    const extra = computeStatusEAlertas({
+      ...contrato,
+      valorExecutadoContrato: valorExecutado,
+      valorPagoContrato: valorPago,
+    });
 
     return {
       ...contrato,

@@ -12,7 +12,7 @@ type ContratoRow = {
   tipoContratante: "PUBLICO" | "PRIVADO" | "PF";
   empresaParceiraNome: string | null;
   status: string;
-  statusCalculado?: "ATIVO" | "A_VENCER" | "VENCIDO" | "EM_ADITIVO" | "ENCERRADO";
+  statusCalculado?: "EM_ANDAMENTO" | "A_VENCER" | "VENCIDO" | "CONCLUIDO" | "SEM_RECURSOS" | "NAO_INICIADO" | "CANCELADO";
   alerta?: "OK" | "PENDENTE" | "CRITICO";
   alertas?: string[];
   dataAssinatura: string | null;
@@ -33,6 +33,32 @@ type ContratoDetail = ContratoRow & {
 
 function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function alertaUi(alerta?: "OK" | "PENDENTE" | "CRITICO") {
+  if (alerta === "CRITICO") return { icon: "✖", className: "text-red-600" };
+  if (alerta === "PENDENTE") return { icon: "⚠", className: "text-amber-600" };
+  return { icon: "✔", className: "text-emerald-600" };
+}
+
+function statusUi(status?: ContratoRow["statusCalculado"] | null) {
+  const s = status || "EM_ANDAMENTO";
+  switch (s) {
+    case "A_VENCER":
+      return { label: "A vencer", icon: "🟡", className: "text-amber-700" };
+    case "VENCIDO":
+      return { label: "Vencido", icon: "🔴", className: "text-red-700" };
+    case "CONCLUIDO":
+      return { label: "Concluído", icon: "🔵", className: "text-blue-700" };
+    case "SEM_RECURSOS":
+      return { label: "Sem recursos", icon: "🟣", className: "text-purple-700" };
+    case "NAO_INICIADO":
+      return { label: "Não iniciado", icon: "⚪", className: "text-slate-600" };
+    case "CANCELADO":
+      return { label: "Cancelado", icon: "⚫", className: "text-slate-800" };
+    default:
+      return { label: "Em andamento", icon: "🟢", className: "text-emerald-700" };
+  }
 }
 
 export default function ContratosClient() {
@@ -157,7 +183,9 @@ export default function ContratosClient() {
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div className="rounded-lg border bg-slate-50 p-3">
                   <div className="text-xs text-slate-500">Status</div>
-                  <div className="font-semibold">{detail.statusCalculado || detail.status}</div>
+                  <div className={`font-semibold ${statusUi(detail.statusCalculado).className}`}>
+                    {statusUi(detail.statusCalculado).icon} {statusUi(detail.statusCalculado).label}
+                  </div>
                 </div>
                 <div className="rounded-lg border bg-slate-50 p-3">
                   <div className="text-xs text-slate-500">Vigência inicial</div>
@@ -266,11 +294,13 @@ export default function ContratosClient() {
             <div className="text-sm text-slate-600">Status</div>
             <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">Todos</option>
-              <option value="ATIVO">Ativo</option>
               <option value="A_VENCER">A vencer</option>
               <option value="VENCIDO">Vencido</option>
-              <option value="EM_ADITIVO">Em aditivo</option>
-              <option value="ENCERRADO">Encerrado</option>
+              <option value="EM_ANDAMENTO">Em andamento</option>
+              <option value="CONCLUIDO">Concluído</option>
+              <option value="SEM_RECURSOS">Sem recursos</option>
+              <option value="NAO_INICIADO">Não iniciado</option>
+              <option value="CANCELADO">Cancelado</option>
             </select>
           </div>
           <div className="flex items-end md:col-span-2 justify-end gap-2">
@@ -306,12 +336,9 @@ export default function ContratosClient() {
                   onClick={() => router.push(`/dashboard/contratos?id=${r.id}`)}
                 >
                   <td className="px-3 py-2">
-                    <span
-                      className={`inline-flex h-2 w-2 rounded-full ${
-                        r.alerta === "CRITICO" ? "bg-red-600" : r.alerta === "PENDENTE" ? "bg-amber-500" : "bg-emerald-600"
-                      }`}
-                      title={(r.alertas || []).join(" • ")}
-                    />
+                    <span className={`font-semibold ${alertaUi(r.alerta).className}`} title={(r.alertas || []).join(" • ")}>
+                      {alertaUi(r.alerta).icon}
+                    </span>
                   </td>
                   <td className="px-3 py-2 font-semibold">{r.numeroContrato}</td>
                   <td className="px-3 py-2">{r.nome || r.objeto || "—"}</td>
@@ -319,7 +346,9 @@ export default function ContratosClient() {
                   <td className="px-3 py-2">{r.empresaParceiraNome || "—"}</td>
                   <td className="px-3 py-2 text-right">{moeda(Number(r.valorTotalAtual || 0))}</td>
                   <td className="px-3 py-2">{r.vigenciaAtual ? new Date(r.vigenciaAtual).toLocaleDateString("pt-BR") : "—"}</td>
-                  <td className="px-3 py-2">{r.statusCalculado || r.status}</td>
+                  <td className={`px-3 py-2 ${statusUi(r.statusCalculado).className}`}>
+                    {statusUi(r.statusCalculado).icon} {statusUi(r.statusCalculado).label}
+                  </td>
                 </tr>
               ))}
               {!filtered.length ? (
