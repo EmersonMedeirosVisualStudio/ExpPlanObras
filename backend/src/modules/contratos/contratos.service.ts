@@ -110,10 +110,12 @@ function computeStatusEAlertas(row: any) {
   const valorPagoContrato = toNumberOrNull(row.valorPagoContrato) ?? 0;
   const valorExecutadoContrato = toNumberOrNull(row.valorExecutadoContrato) ?? 0;
   const valorTotalAtual = toNumberOrNull(row.valorTotalAtual) ?? 0;
+  const temAditivoAberto = Boolean(row.temAditivoAberto);
 
   if (!dataOS && !dataAss) issues.push('Falta data de OS ou assinatura');
   if (!prazo || prazo <= 0) issues.push('Falta prazo (dias)');
   if (!row.empresaParceiraNome) issues.push('Empresa parceira não vinculada');
+  if (temAditivoAberto) issues.push('Aditivo em aberto');
 
   if (isPublico) {
     const vci = toNumberOrNull(row.valorConcedenteInicial);
@@ -198,6 +200,13 @@ export async function listContratos(tenantId: number) {
       `,
     ]);
 
+    const aditivosAbertos = await tx.$queryRaw`
+      SELECT "contratoId" AS "contratoId", COUNT(*)::int AS "abertos"
+      FROM "ContratoAditivo"
+      WHERE "tenantId" = ${tenantId} AND "status" = 'RASCUNHO'
+      GROUP BY "contratoId"
+    `;
+
     const valorPagoByContratoId = new Map<number, number>();
     for (const r of (pagos as any[])) {
       const id = Number(r.contratoId);
@@ -212,11 +221,19 @@ export async function listContratos(tenantId: number) {
       valorExecutadoByContratoId.set(id, toNumberOrNull(r.valorExecutado) ?? 0);
     }
 
+    const aditivosAbertosByContratoId = new Map<number, number>();
+    for (const r of (aditivosAbertos as any[])) {
+      const id = Number(r.contratoId);
+      if (!Number.isFinite(id)) continue;
+      aditivosAbertosByContratoId.set(id, Number(r.abertos || 0));
+    }
+
     return rows.map((r: any) => {
       const enriched = {
         ...r,
         valorPagoContrato: valorPagoByContratoId.get(Number(r.id)) ?? 0,
         valorExecutadoContrato: valorExecutadoByContratoId.get(Number(r.id)) ?? 0,
+        temAditivoAberto: (aditivosAbertosByContratoId.get(Number(r.id)) ?? 0) > 0,
       };
       const extra = computeStatusEAlertas(enriched);
       return { ...r, statusCalculado: extra.statusCalc, alerta: extra.alerta, alertas: extra.issues };
@@ -263,10 +280,18 @@ export async function getContratoById(tenantId: number, id: number) {
     const valorExecutado = execAgg?._sum?.amount ?? null;
     const valorPago = pagoAgg?._sum?.amount ?? null;
 
+    const abertos: any[] = await tx.$queryRaw`
+      SELECT COUNT(*)::int AS "abertos"
+      FROM "ContratoAditivo"
+      WHERE "tenantId" = ${tenantId} AND "contratoId" = ${id} AND "status" = 'RASCUNHO'
+    `;
+    const temAditivoAberto = (abertos?.[0]?.abertos ?? 0) > 0;
+
     const extra = computeStatusEAlertas({
       ...contrato,
       valorExecutadoContrato: valorExecutado,
       valorPagoContrato: valorPago,
+      temAditivoAberto,
     });
 
     return {
@@ -277,6 +302,254 @@ export async function getContratoById(tenantId: number, id: number) {
       indicadores: {
         valorExecutado,
         valorPago,
+      },
+    };
+  });
+}
+
+export async function listContratoAditivos(tenantId: number, contratoId: number) {
+  return withRLS(tenantId, async (tx) => {
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId }, select: { id: true } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
+    return tx.contratoAditivo.findMany({
+      where: { tenantId, contratoId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+  });
+}
+
+export async function createContratoAditivo(
+  tenantId: number,
+  contratoId: number,
+  input: {
+    numeroAditivo: string;
+    tipo: 'PRAZO' | 'VALOR' | 'AMBOS';
+    dataAssinatura?: string | null;
+    justificativa?: string | null;
+    descricao?: string | null;
+    prazoAdicionadoDias?: number | null;
+    valorTotalAdicionado?: number | null;
+    valorConcedenteAdicionado?: number | null;
+    valorProprioAdicionado?: number | null;
+  }
+) {
+  return withRLS(tenantId, async (tx) => {
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
+
+    const numeroAditivo = String(input.numeroAditivo || '').trim();
+    if (!numeroAditivo) throw new Error('numeroAditivo é obrigatório');
+    const tipo = String(input.tipo || 'PRAZO').trim().toUpperCase() as any;
+
+    const prazoAdicionadoDias = input.prazoAdicionadoDias == null ? null : Math.trunc(Number(input.prazoAdicionadoDias));
+    const valorTotalAdicionado = toNumberOrNull(input.valorTotalAdicionado);
+    const valorConcedenteAdicionado = toNumberOrNull(input.valorConcedenteAdicionado);
+    const valorProprioAdicionado = toNumberOrNull(input.valorProprioAdicionado);
+
+    if ((tipo === 'PRAZO' || tipo === 'AMBOS') && (!prazoAdicionadoDias || prazoAdicionadoDias <= 0)) throw new Error('prazoAdicionadoDias deve ser > 0');
+    if (tipo === 'VALOR' || tipo === 'AMBOS') {
+      const isPublico = String(contrato.tipoContratante || '').toUpperCase() === 'PUBLICO';
+      if (isPublico) {
+        const c = valorConcedenteAdicionado ?? 0;
+        const p = valorProprioAdicionado ?? 0;
+        if (c <= 0 && p <= 0) throw new Error('Informe valor concedente e/ou próprio adicionados');
+      } else {
+        if (!valorTotalAdicionado || valorTotalAdicionado <= 0) throw new Error('valorTotalAdicionado deve ser > 0');
+      }
+    }
+
+    const created = await tx.contratoAditivo.create({
+      data: {
+        tenantId,
+        contratoId,
+        numeroAditivo,
+        tipo,
+        status: 'RASCUNHO',
+        dataAssinatura: input.dataAssinatura ? parseDateOnly(input.dataAssinatura) : null,
+        justificativa: input.justificativa ?? null,
+        descricao: input.descricao ?? null,
+        prazoAdicionadoDias,
+        valorTotalAdicionado: valorTotalAdicionado == null ? null : valorTotalAdicionado,
+        valorConcedenteAdicionado: valorConcedenteAdicionado == null ? null : valorConcedenteAdicionado,
+        valorProprioAdicionado: valorProprioAdicionado == null ? null : valorProprioAdicionado,
+      },
+    });
+    return created;
+  });
+}
+
+export async function updateContratoAditivo(
+  tenantId: number,
+  contratoId: number,
+  aditivoId: number,
+  input: Partial<{
+    tipo: 'PRAZO' | 'VALOR' | 'AMBOS';
+    dataAssinatura: string | null;
+    justificativa: string | null;
+    descricao: string | null;
+    prazoAdicionadoDias: number | null;
+    valorTotalAdicionado: number | null;
+    valorConcedenteAdicionado: number | null;
+    valorProprioAdicionado: number | null;
+  }>
+) {
+  return withRLS(tenantId, async (tx) => {
+    const current = await tx.contratoAditivo.findFirst({ where: { tenantId, contratoId, id: aditivoId } }).catch(() => null);
+    if (!current) throw new Error('Aditivo não encontrado');
+    if (String(current.status).toUpperCase() !== 'RASCUNHO') throw new Error('Somente aditivos em rascunho podem ser alterados');
+
+    const updated = await tx.contratoAditivo.update({
+      where: { id: aditivoId },
+      data: {
+        tipo: input.tipo != null ? String(input.tipo).trim().toUpperCase() : undefined,
+        dataAssinatura: input.dataAssinatura != null ? parseDateOnly(input.dataAssinatura) : undefined,
+        justificativa: input.justificativa ?? undefined,
+        descricao: input.descricao ?? undefined,
+        prazoAdicionadoDias: input.prazoAdicionadoDias != null ? Math.trunc(Number(input.prazoAdicionadoDias)) : undefined,
+        valorTotalAdicionado: input.valorTotalAdicionado != null ? toNumberOrNull(input.valorTotalAdicionado) : undefined,
+        valorConcedenteAdicionado: input.valorConcedenteAdicionado != null ? toNumberOrNull(input.valorConcedenteAdicionado) : undefined,
+        valorProprioAdicionado: input.valorProprioAdicionado != null ? toNumberOrNull(input.valorProprioAdicionado) : undefined,
+      },
+    });
+    return updated;
+  });
+}
+
+export async function cancelarContratoAditivo(tenantId: number, contratoId: number, aditivoId: number) {
+  return withRLS(tenantId, async (tx) => {
+    const current = await tx.contratoAditivo.findFirst({ where: { tenantId, contratoId, id: aditivoId } }).catch(() => null);
+    if (!current) throw new Error('Aditivo não encontrado');
+    if (String(current.status).toUpperCase() === 'APROVADO') throw new Error('Aditivo aprovado não pode ser cancelado');
+    const updated = await tx.contratoAditivo.update({ where: { id: aditivoId }, data: { status: 'CANCELADO' } });
+    return updated;
+  });
+}
+
+export async function aprovarContratoAditivo(tenantId: number, contratoId: number, aditivoId: number) {
+  return withRLS(tenantId, async (tx) => {
+    const ad = await tx.contratoAditivo.findFirst({ where: { tenantId, contratoId, id: aditivoId } }).catch(() => null);
+    if (!ad) throw new Error('Aditivo não encontrado');
+    if (String(ad.status).toUpperCase() !== 'RASCUNHO') throw new Error('Aditivo já foi processado');
+
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
+
+    const tipo = String(ad.tipo || 'PRAZO').toUpperCase();
+    const isPublico = String(contrato.tipoContratante || '').toUpperCase() === 'PUBLICO';
+
+    const prazoAtual = contrato.prazoDias == null ? null : Number(contrato.prazoDias);
+    const vigAtual = contrato.vigenciaAtual ? new Date(contrato.vigenciaAtual) : null;
+    const baseForPrazo = vigAtual || (contrato.dataOS ? new Date(contrato.dataOS) : contrato.dataAssinatura ? new Date(contrato.dataAssinatura) : null);
+
+    const prazoAdd = ad.prazoAdicionadoDias == null ? 0 : Number(ad.prazoAdicionadoDias);
+    const novoPrazo = prazoAtual != null ? prazoAtual + prazoAdd : prazoAdd > 0 ? prazoAdd : null;
+
+    let novaVigenciaAtual: Date | null = vigAtual;
+    if (tipo === 'PRAZO' || tipo === 'AMBOS') {
+      if (!prazoAdd || prazoAdd <= 0) throw new Error('prazoAdicionadoDias deve ser > 0');
+      if (vigAtual) novaVigenciaAtual = addDays(dateOnly(vigAtual), prazoAdd);
+      else if (baseForPrazo && novoPrazo != null) {
+        const computed = computeVigencias({ dataOS: contrato.dataOS ? new Date(contrato.dataOS) : null, dataAssinatura: contrato.dataAssinatura ? new Date(contrato.dataAssinatura) : null, prazoDias: novoPrazo, vigenciaInicial: contrato.vigenciaInicial ?? null, vigenciaAtual: null });
+        novaVigenciaAtual = computed.vigenciaAtual;
+      }
+    }
+
+    let nextValores: any = {};
+    if (tipo === 'VALOR' || tipo === 'AMBOS') {
+      if (isPublico) {
+        const ca = (toNumberOrNull(contrato.valorConcedenteAtual) ?? 0) + (toNumberOrNull(ad.valorConcedenteAdicionado) ?? 0);
+        const pa = (toNumberOrNull(contrato.valorProprioAtual) ?? 0) + (toNumberOrNull(ad.valorProprioAdicionado) ?? 0);
+        const ta = ca + pa;
+        nextValores = { valorConcedenteAtual: ca, valorProprioAtual: pa, valorTotalAtual: ta };
+      } else {
+        const add = toNumberOrNull(ad.valorTotalAdicionado) ?? 0;
+        if (add <= 0) throw new Error('valorTotalAdicionado deve ser > 0');
+        const ta = (toNumberOrNull(contrato.valorTotalAtual) ?? 0) + add;
+        nextValores = { valorTotalAtual: ta };
+      }
+    }
+
+    const updatedContrato = await tx.contrato.update({
+      where: { id: contratoId },
+      data: {
+        prazoDias: novoPrazo != null ? Math.trunc(novoPrazo) : undefined,
+        vigenciaAtual: novaVigenciaAtual ?? undefined,
+        ...nextValores,
+      },
+    });
+
+    const updatedAditivo = await tx.contratoAditivo.update({
+      where: { id: aditivoId },
+      data: {
+        status: 'APROVADO',
+        aplicadoEm: new Date(),
+        snapshotPrazoDias: prazoAtual != null ? Math.trunc(prazoAtual) : null,
+        snapshotVigenciaAtual: vigAtual,
+        snapshotValorTotalAtual: contrato.valorTotalAtual ?? null,
+        snapshotValorConcedenteAtual: contrato.valorConcedenteAtual ?? null,
+        snapshotValorProprioAtual: contrato.valorProprioAtual ?? null,
+      },
+    });
+
+    return { aditivo: updatedAditivo, contrato: updatedContrato };
+  });
+}
+
+export async function getContratoConsolidado(tenantId: number, contratoId: number) {
+  return withRLS(tenantId, async (tx) => {
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
+
+    const obraIds = await tx.obra.findMany({ where: { tenantId, contratoId }, select: { id: true } });
+    const ids = obraIds.map((o: any) => o.id);
+
+    const [execAgg, pagoAgg, abertos] = await Promise.all([
+      tx.medicao.aggregate({ _sum: { amount: true }, where: { obraId: { in: ids } } }),
+      tx.pagamento.aggregate({ _sum: { amount: true }, where: { obraId: { in: ids } } }),
+      tx.contratoAditivo.count({ where: { tenantId, contratoId, status: 'RASCUNHO' } }),
+    ]);
+
+    const valorExecutado = execAgg?._sum?.amount ?? 0;
+    const valorPago = pagoAgg?._sum?.amount ?? 0;
+
+    const prazoTotal = contrato.prazoDias == null ? null : Number(contrato.prazoDias);
+    const vigInicio = contrato.vigenciaInicial ? new Date(contrato.vigenciaInicial) : null;
+    const vigAtual = contrato.vigenciaAtual ? new Date(contrato.vigenciaAtual) : null;
+    const now = new Date();
+
+    const diasRestantes = vigAtual ? Math.ceil((dateOnly(vigAtual).getTime() - dateOnly(now).getTime()) / (24 * 3600 * 1000)) : null;
+    const diasDecorridos = vigInicio ? Math.max(0, Math.floor((dateOnly(now).getTime() - dateOnly(vigInicio).getTime()) / (24 * 3600 * 1000))) : null;
+    const percentualPrazo = prazoTotal && diasDecorridos != null ? Math.min(1, diasDecorridos / prazoTotal) : null;
+
+    const valorTotalAtual = toNumberOrNull(contrato.valorTotalAtual) ?? 0;
+    const percentualFinanceiro = valorTotalAtual > 0 ? Math.min(1, (toNumberOrNull(valorExecutado) ?? 0) / valorTotalAtual) : null;
+    const desvio = percentualFinanceiro != null && percentualPrazo != null ? Number((percentualFinanceiro - percentualPrazo).toFixed(4)) : null;
+
+    const extra = computeStatusEAlertas({
+      ...contrato,
+      valorExecutadoContrato: valorExecutado,
+      valorPagoContrato: valorPago,
+      temAditivoAberto: abertos > 0,
+    });
+
+    return {
+      contrato: {
+        ...contrato,
+        statusCalculado: extra.statusCalc,
+        alerta: extra.alerta,
+        alertas: extra.issues,
+      },
+      kpis: {
+        prazoTotal,
+        diasDecorridos,
+        diasRestantes,
+        percentualPrazo,
+        valorTotalAtual,
+        valorExecutado: toNumberOrNull(valorExecutado) ?? 0,
+        valorPago: toNumberOrNull(valorPago) ?? 0,
+        percentualFinanceiro,
+        desvio,
+        aditivosEmAberto: abertos,
       },
     };
   });

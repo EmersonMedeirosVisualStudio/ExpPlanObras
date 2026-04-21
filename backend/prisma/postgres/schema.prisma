@@ -41,6 +41,7 @@ model Tenant {
   contratosServicos ContratoServico[]
   contratosCronogramaItens ContratoCronogramaItem[]
   contratosCronogramaDependencias ContratoCronogramaDependencia[]
+  contratosAditivos ContratoAditivo[]
   obras     Obra[]
   enderecosObra EnderecoObra[]
   obrasPlanilhasContratadas ObraPlanilhaContratada[]
@@ -320,10 +321,46 @@ model Contrato {
   servicos       ContratoServico[]
   cronogramaItens ContratoCronogramaItem[]
   cronogramaDependencias ContratoCronogramaDependencia[]
+  aditivos       ContratoAditivo[]
 
   @@unique([tenantId, numeroContrato])
   @@index([tenantId])
   @@index([tenantId, tipoContratante])
+}
+
+model ContratoAditivo {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int
+  contratoId     Int
+  numeroAditivo  String
+  tipo           String   @default("PRAZO") // PRAZO | VALOR | AMBOS
+  status         String   @default("RASCUNHO") // RASCUNHO | APROVADO | CANCELADO
+  dataAssinatura DateTime?
+  justificativa  String?
+  descricao      String?
+
+  prazoAdicionadoDias Int?
+  valorTotalAdicionado Decimal?
+  valorConcedenteAdicionado Decimal?
+  valorProprioAdicionado Decimal?
+
+  snapshotPrazoDias Int?
+  snapshotVigenciaAtual DateTime?
+  snapshotValorTotalAtual Decimal?
+  snapshotValorConcedenteAtual Decimal?
+  snapshotValorProprioAtual Decimal?
+
+  aplicadoEm DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contrato   Contrato @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, contratoId, numeroAditivo])
+  @@index([tenantId])
+  @@index([contratoId])
+  @@index([tenantId, status])
 }
 
 model ContratoServico {

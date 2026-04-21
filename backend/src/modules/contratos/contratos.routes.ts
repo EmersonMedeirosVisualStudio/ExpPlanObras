@@ -4,16 +4,22 @@ import { authenticate } from '../../utils/authenticate.js';
 import { createContratoSchema, updateContratoSchema } from './contratos.schema.js';
 import {
   createContrato,
+  createContratoAditivo,
   createContratoServico,
   createCronogramaDependencia,
+  cancelarContratoAditivo,
   deleteCronogramaDependencia,
+  getContratoConsolidado,
   getContratoById,
   getContratoCronograma,
   getContratosDashboard,
+  listContratoAditivos,
   listContratoServicos,
   listContratos,
+  aprovarContratoAditivo,
   seedCronogramaFromServicos,
   updateContrato,
+  updateContratoAditivo,
   updateCronogramaItemDatas,
 } from './contratos.service.js';
 
@@ -59,6 +65,125 @@ export default async function contratosRoutes(server: FastifyInstance) {
       const row = await getContratoById(tenantId, id);
       if (!row) return reply.code(404).send({ message: 'Contrato não encontrado' });
       return reply.send(row);
+    }
+  );
+
+  server.get(
+    '/:id/consolidado',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id } = request.params as any;
+      try {
+        const data = await getContratoConsolidado(tenantId, id);
+        return reply.send(data);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao carregar consolidado' });
+      }
+    }
+  );
+
+  server.get(
+    '/:id/aditivos',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id } = request.params as any;
+      try {
+        const rows = await listContratoAditivos(tenantId, id);
+        return reply.send(rows);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao listar aditivos' });
+      }
+    }
+  );
+
+  server.post(
+    '/:id/aditivos',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        body: z.object({
+          numeroAditivo: z.string().min(1),
+          tipo: z.enum(['PRAZO', 'VALOR', 'AMBOS']),
+          dataAssinatura: z.string().optional().nullable(),
+          justificativa: z.string().optional().nullable(),
+          descricao: z.string().optional().nullable(),
+          prazoAdicionadoDias: z.number().int().optional().nullable(),
+          valorTotalAdicionado: z.number().optional().nullable(),
+          valorConcedenteAdicionado: z.number().optional().nullable(),
+          valorProprioAdicionado: z.number().optional().nullable(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id } = request.params as any;
+      try {
+        const created = await createContratoAditivo(tenantId, id, request.body as any);
+        return reply.send(created);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao criar aditivo' });
+      }
+    }
+  );
+
+  server.put(
+    '/:id/aditivos/:aditivoId',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive(), aditivoId: z.coerce.number().int().positive() }),
+        body: z.object({
+          tipo: z.enum(['PRAZO', 'VALOR', 'AMBOS']).optional(),
+          dataAssinatura: z.string().optional().nullable(),
+          justificativa: z.string().optional().nullable(),
+          descricao: z.string().optional().nullable(),
+          prazoAdicionadoDias: z.number().int().optional().nullable(),
+          valorTotalAdicionado: z.number().optional().nullable(),
+          valorConcedenteAdicionado: z.number().optional().nullable(),
+          valorProprioAdicionado: z.number().optional().nullable(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id, aditivoId } = request.params as any;
+      try {
+        const updated = await updateContratoAditivo(tenantId, id, aditivoId, request.body as any);
+        return reply.send(updated);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao atualizar aditivo' });
+      }
+    }
+  );
+
+  server.post(
+    '/:id/aditivos/:aditivoId/aprovar',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive(), aditivoId: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id, aditivoId } = request.params as any;
+      try {
+        const data = await aprovarContratoAditivo(tenantId, id, aditivoId);
+        return reply.send(data);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao aprovar aditivo' });
+      }
+    }
+  );
+
+  server.post(
+    '/:id/aditivos/:aditivoId/cancelar',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive(), aditivoId: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id, aditivoId } = request.params as any;
+      try {
+        const data = await cancelarContratoAditivo(tenantId, id, aditivoId);
+        return reply.send(data);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao cancelar aditivo' });
+      }
     }
   );
 
