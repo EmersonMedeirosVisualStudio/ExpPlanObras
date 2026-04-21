@@ -179,12 +179,12 @@ export default function ContratosClient() {
         const data = await res.json().catch(() => null);
         if (!res.ok) throw new Error(data?.message || "Erro ao buscar empresas");
         if (cancelled) return;
-        const rows = (Array.isArray(data) ? data : []).map((r: any) => ({
+        const rows: ContraparteLite[] = (Array.isArray(data) ? data : []).map((r: any) => ({
           idContraparte: Number(r.idContraparte),
-          tipo: r.tipo === "PF" ? "PF" : "PJ",
+          tipo: (r.tipo === "PF" ? "PF" : "PJ") as ContraparteLite["tipo"],
           nomeRazao: String(r.nomeRazao || ""),
           documento: r.documento ? String(r.documento) : null,
-          status: r.status === "INATIVO" ? "INATIVO" : "ATIVO",
+          status: (r.status === "INATIVO" ? "INATIVO" : "ATIVO") as NonNullable<ContraparteLite["status"]>,
         }));
         setEmpresaSugestoes(rows.filter((r: ContraparteLite) => Number.isFinite(r.idContraparte) && r.nomeRazao));
       } catch {

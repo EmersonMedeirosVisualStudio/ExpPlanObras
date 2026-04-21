@@ -1,4 +1,5 @@
 import prisma, { setTenantContext } from '../../plugins/prisma.js';
+import { Prisma } from '@prisma/client';
 import type { CreateContratoInput, UpdateContratoInput } from './contratos.schema.js';
 import { publish } from './contratos.realtime.js';
 
@@ -337,14 +338,14 @@ export async function listSubcontratos(tenantId: number, contratoPrincipalId: nu
     const medAprovRows: any[] = await tx.$queryRaw`
       SELECT "contratoId" AS "contratoId", COALESCE(SUM("amount"), 0) AS "medAprov"
       FROM "ContratoMedicao"
-      WHERE "tenantId" = ${tenantId} AND "contratoId" IN (${prisma.join(ids)}) AND "status" = 'APROVADO'
+      WHERE "tenantId" = ${tenantId} AND "contratoId" IN (${Prisma.join(ids)}) AND "status" = 'APROVADO'
       GROUP BY "contratoId"
     `;
 
     const pagRows: any[] = await tx.$queryRaw`
       SELECT "contratoId" AS "contratoId", COALESCE(SUM("amount"), 0) AS "pago"
       FROM "ContratoPagamento"
-      WHERE "tenantId" = ${tenantId} AND "contratoId" IN (${prisma.join(ids)})
+      WHERE "tenantId" = ${tenantId} AND "contratoId" IN (${Prisma.join(ids)})
       GROUP BY "contratoId"
     `;
 
