@@ -7,11 +7,21 @@ import api from "@/lib/api";
 type ContratoRow = {
   id: number;
   numeroContrato: string;
-  descricao: string | null;
+  nome: string | null;
+  objeto: string | null;
+  tipoContratante: "PUBLICO" | "PRIVADO" | "PF";
+  empresaParceiraNome: string | null;
   status: string;
-  dataInicio: string;
-  dataFim: string | null;
-  valorContratado: number;
+  statusCalculado?: "ATIVO" | "A_VENCER" | "VENCIDO" | "EM_ADITIVO" | "ENCERRADO";
+  alerta?: "OK" | "PENDENTE" | "CRITICO";
+  alertas?: string[];
+  dataAssinatura: string | null;
+  dataOS: string | null;
+  prazoDias: number | null;
+  vigenciaInicial: string | null;
+  vigenciaAtual: string | null;
+  valorTotalInicial: number | null;
+  valorTotalAtual: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -44,9 +54,10 @@ export default function ContratosClient() {
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
     return rows.filter((r) => {
-      if (status && String(r.status).toUpperCase() !== status) return false;
+      if (status && String(r.statusCalculado || r.status).toUpperCase() !== status) return false;
       if (!qq) return true;
-      return String(r.numeroContrato || "").toLowerCase().includes(qq) || String(r.descricao || "").toLowerCase().includes(qq);
+      const hay = `${r.numeroContrato || ""} ${r.nome || ""} ${r.objeto || ""} ${r.empresaParceiraNome || ""}`.toLowerCase();
+      return hay.includes(qq);
     });
   }, [rows, q, status]);
 
@@ -55,7 +66,15 @@ export default function ContratosClient() {
       setLoading(true);
       setErr(null);
       const res = await api.get("/api/contratos");
-      setRows((res.data as any[])?.map((x) => ({ ...x, valorContratado: Number(x.valorContratado || 0) })) ?? []);
+      setRows(
+        (res.data as any[])?.map((x) => ({
+          ...x,
+          tipoContratante: String(x.tipoContratante || "PRIVADO").toUpperCase(),
+          prazoDias: x.prazoDias == null ? null : Number(x.prazoDias),
+          valorTotalInicial: x.valorTotalInicial == null ? null : Number(x.valorTotalInicial),
+          valorTotalAtual: x.valorTotalAtual == null ? null : Number(x.valorTotalAtual),
+        })) ?? []
+      );
     } catch (e: any) {
       setErr(e?.response?.data?.message || e?.message || "Erro ao carregar contratos");
       setRows([]);
@@ -73,7 +92,10 @@ export default function ContratosClient() {
       const d = res.data as any;
       setDetail({
         ...d,
-        valorContratado: Number(d.valorContratado || 0),
+        tipoContratante: String(d.tipoContratante || "PRIVADO").toUpperCase(),
+        prazoDias: d.prazoDias == null ? null : Number(d.prazoDias),
+        valorTotalInicial: d.valorTotalInicial == null ? null : Number(d.valorTotalInicial),
+        valorTotalAtual: d.valorTotalAtual == null ? null : Number(d.valorTotalAtual),
         obras: (d.obras || []).map((o: any) => ({ ...o, valorPrevisto: Number(o.valorPrevisto || 0) })),
       });
     } catch (e: any) {
@@ -130,20 +152,20 @@ export default function ContratosClient() {
             <section className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-2">
               <div className="text-sm text-slate-500">Número</div>
               <div className="text-xl font-semibold">{detail.numeroContrato}</div>
-              <div className="mt-2 text-sm text-slate-600">{detail.descricao || "—"}</div>
+              <div className="mt-2 text-sm text-slate-600">{detail.nome || detail.objeto || "—"}</div>
 
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div className="rounded-lg border bg-slate-50 p-3">
                   <div className="text-xs text-slate-500">Status</div>
-                  <div className="font-semibold">{detail.status}</div>
+                  <div className="font-semibold">{detail.statusCalculado || detail.status}</div>
                 </div>
                 <div className="rounded-lg border bg-slate-50 p-3">
-                  <div className="text-xs text-slate-500">Início</div>
-                  <div className="font-semibold">{new Date(detail.dataInicio).toLocaleDateString("pt-BR")}</div>
+                  <div className="text-xs text-slate-500">Vigência inicial</div>
+                  <div className="font-semibold">{detail.vigenciaInicial ? new Date(detail.vigenciaInicial).toLocaleDateString("pt-BR") : "—"}</div>
                 </div>
                 <div className="rounded-lg border bg-slate-50 p-3">
-                  <div className="text-xs text-slate-500">Fim</div>
-                  <div className="font-semibold">{detail.dataFim ? new Date(detail.dataFim).toLocaleDateString("pt-BR") : "—"}</div>
+                  <div className="text-xs text-slate-500">Vigência atual</div>
+                  <div className="font-semibold">{detail.vigenciaAtual ? new Date(detail.vigenciaAtual).toLocaleDateString("pt-BR") : "—"}</div>
                 </div>
               </div>
             </section>
@@ -152,8 +174,8 @@ export default function ContratosClient() {
               <div className="text-sm font-semibold">Financeiro</div>
               <div className="mt-3 space-y-2 text-sm">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-slate-600">Valor contratado</div>
-                  <div className="font-semibold">{moeda(detail.valorContratado)}</div>
+                  <div className="text-slate-600">Valor atual</div>
+                  <div className="font-semibold">{moeda(Number(detail.valorTotalAtual || 0))}</div>
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-slate-600">Executado (medições)</div>
@@ -165,6 +187,23 @@ export default function ContratosClient() {
                 </div>
               </div>
             </section>
+
+            {detail.alerta && detail.alerta !== "OK" ? (
+              <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm lg:col-span-3">
+                <div className="text-sm font-semibold">Alertas</div>
+                <div className="mt-2 text-sm text-amber-800">
+                  {(detail.alertas || []).length ? (
+                    <ul className="list-disc pl-6">
+                      {(detail.alertas || []).map((m) => (
+                        <li key={m}>{m}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    "Pendências encontradas."
+                  )}
+                </div>
+              </section>
+            ) : null}
 
             <section className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -221,19 +260,17 @@ export default function ContratosClient() {
         <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <div>
             <div className="text-sm text-slate-600">Busca</div>
-            <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Número/objeto" />
+            <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Número/nome/empresa" />
           </div>
           <div>
             <div className="text-sm text-slate-600">Status</div>
             <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">Todos</option>
               <option value="ATIVO">Ativo</option>
-              <option value="PENDENTE">Pendente</option>
-              <option value="PARALISADO">Paralisado</option>
+              <option value="A_VENCER">A vencer</option>
+              <option value="VENCIDO">Vencido</option>
+              <option value="EM_ADITIVO">Em aditivo</option>
               <option value="ENCERRADO">Encerrado</option>
-              <option value="FINALIZADO">Finalizado</option>
-              <option value="CANCELADO">Cancelado</option>
-              <option value="RESCINDIDO">Rescindido</option>
             </select>
           </div>
           <div className="flex items-end md:col-span-2 justify-end gap-2">
@@ -251,11 +288,14 @@ export default function ContratosClient() {
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50 text-left text-slate-700">
               <tr>
-                <th className="px-3 py-2">Número</th>
+                <th className="px-3 py-2">Alerta</th>
+                <th className="px-3 py-2">Nº</th>
+                <th className="px-3 py-2">Nome</th>
+                <th className="px-3 py-2">Tipo</th>
+                <th className="px-3 py-2">Empresa</th>
+                <th className="px-3 py-2 text-right">Valor atual</th>
+                <th className="px-3 py-2">Vigência atual</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Início</th>
-                <th className="px-3 py-2">Fim</th>
-                <th className="px-3 py-2 text-right">Valor</th>
               </tr>
             </thead>
             <tbody>
@@ -265,16 +305,26 @@ export default function ContratosClient() {
                   className="border-t hover:bg-slate-50 cursor-pointer"
                   onClick={() => router.push(`/dashboard/contratos?id=${r.id}`)}
                 >
+                  <td className="px-3 py-2">
+                    <span
+                      className={`inline-flex h-2 w-2 rounded-full ${
+                        r.alerta === "CRITICO" ? "bg-red-600" : r.alerta === "PENDENTE" ? "bg-amber-500" : "bg-emerald-600"
+                      }`}
+                      title={(r.alertas || []).join(" • ")}
+                    />
+                  </td>
                   <td className="px-3 py-2 font-semibold">{r.numeroContrato}</td>
-                  <td className="px-3 py-2">{r.status}</td>
-                  <td className="px-3 py-2">{new Date(r.dataInicio).toLocaleDateString("pt-BR")}</td>
-                  <td className="px-3 py-2">{r.dataFim ? new Date(r.dataFim).toLocaleDateString("pt-BR") : "—"}</td>
-                  <td className="px-3 py-2 text-right">{moeda(Number(r.valorContratado || 0))}</td>
+                  <td className="px-3 py-2">{r.nome || r.objeto || "—"}</td>
+                  <td className="px-3 py-2">{r.tipoContratante}</td>
+                  <td className="px-3 py-2">{r.empresaParceiraNome || "—"}</td>
+                  <td className="px-3 py-2 text-right">{moeda(Number(r.valorTotalAtual || 0))}</td>
+                  <td className="px-3 py-2">{r.vigenciaAtual ? new Date(r.vigenciaAtual).toLocaleDateString("pt-BR") : "—"}</td>
+                  <td className="px-3 py-2">{r.statusCalculado || r.status}</td>
                 </tr>
               ))}
               {!filtered.length ? (
                 <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={8} className="px-3 py-6 text-center text-slate-500">
                     Nenhum contrato encontrado.
                   </td>
                 </tr>
