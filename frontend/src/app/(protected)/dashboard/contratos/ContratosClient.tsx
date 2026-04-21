@@ -163,6 +163,13 @@ export default function ContratosClient() {
             <button
               className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
               type="button"
+              onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}`)}
+            >
+              Aditivos
+            </button>
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+              type="button"
               onClick={() => router.push("/dashboard/contratos")}
             >
               Voltar

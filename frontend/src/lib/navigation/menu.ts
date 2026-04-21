@@ -186,7 +186,7 @@ export const APP_MENU: MenuSectionConfig[] = [
           },
           {
             key: 'contratos-aditivos',
-            label: 'Aditivos',
+            label: 'Aditivos (selecionar contrato)',
             href: '/dashboard/contratos/aditivos',
             icon: 'file-pen',
             permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,

@@ -3032,3 +3032,86 @@ O sistema foi pensado para ser:
 - seguro no acesso;
 - útil na operação real;
 - confiável para análise e decisão.
+
+---
+
+## 21. Implementações recentes (Contratos, Planejamento e Aditivos)
+
+Esta seção documenta o que já está implementado no sistema, com foco em **Contratos**, **Planejamento (Gantt)**, **Aditivos** e como isso conversa com **Execução, Medição e Financeiro**.
+
+### 21.1 Contratos (módulo de Engenharia)
+
+Regras-base (modelo correto de contrato de obra):
+
+- datas de controle: **assinatura**, **OS**, **prazo (dias)**, **vigência inicial** (não muda) e **vigência atual** (muda via aditivo).
+- valores: suporta contrato **Público** (Concedente + Próprio) e **Privado/PF** (Valor total).
+- o contrato pode existir sem obra; obras podem ser vinculadas depois.
+- toda obra possui contrato (quando obra ainda não tem, usa-se contrato “PENDENTE” interno).
+
+Telas:
+
+- Lista/Detalhe: `/dashboard/contratos`
+- Novo contrato: `/dashboard/contratos/novo`
+
+Colunas e inteligência (lista):
+
+- **ALERTA**: ✔ OK (verde) / ⚠ Pendente (amarelo) / ✖ Crítico (vermelho) com tooltip das pendências.
+- **STATUS** (calculado): 🟢 Em andamento / 🟡 A vencer / 🔴 Vencido / 🔵 Concluído / 🟣 Sem recursos / ⚪ Não iniciado / ⚫ Cancelado.
+
+Dashboard de contratos:
+
+- `/dashboard/contratos/dashboard` (KPIs consolidados)
+
+### 21.2 Planejamento (Gantt) por contrato
+
+Conceito:
+
+Contrato → EAP (Serviços/WBS) → Cronograma (Gantt) → (próximo passo: Execução/Kanban) → Medição/Financeiro
+
+Tela:
+
+- Planejamento: `/dashboard/contratos/planejamento?id={ID_CONTRATO}`
+
+Funcionalidades já implementadas:
+
+- cadastro de **Serviços/EAP** do contrato
+- gerar cronograma inicial (seed)
+- **drag** para mover tarefas no tempo
+- **resize** para alterar duração
+- dependências (FS/SS/FF/SF) com **linhas visuais** (tipo MS Project)
+
+### 21.3 Aditivos (fluxo obrigatório por contrato)
+
+Princípio:
+
+- aditivo é histórico (evento), e o “vigente” é o **contrato consolidado**
+- aprovação do aditivo atualiza automaticamente: prazo atual, vigência atual, valores atuais
+
+Fluxo de tela (novo padrão):
+
+1) selecionar contrato
+2) acessar abas: Dashboard / Aditivos (CRUD) / Novo aditivo
+
+Tela:
+
+- Aditivos: `/dashboard/contratos/aditivos`
+- Para abrir já com contrato selecionado: `/dashboard/contratos/aditivos?contratoId={ID_CONTRATO}`
+
+Comportamentos:
+
+- aditivo inicia como **RASCUNHO**
+- ao **aprovar**, aplica no contrato e registra snapshot (antes/depois)
+- enquanto existir aditivo em rascunho, o contrato apresenta pendência “Aditivo em aberto” (ALERTA)
+
+### 21.4 Integração com Centro de Custo (CC) e Suprimentos
+
+Diretriz do sistema:
+
+- Serviço (contratual) conecta com **Centro de Custo (execução real)**.
+- CC é a unidade operacional para produção, apropriação e análise de custo.
+
+Importante:
+
+- Contratos/Planejamento/Aditivos formam o “topo” (prazo e valor contratual).
+- Execução/Medição/Pagamento/CC/Suprimentos formam a “base real” (o que aconteceu).
+- O dashboard deve consolidar sempre o **real vs contratado**.
