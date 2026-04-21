@@ -150,6 +150,13 @@ export const APP_MENU: MenuSectionConfig[] = [
         permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
       },
       {
+        key: 'contratos-faturamento',
+        label: 'Faturamento',
+        href: '/dashboard/contratos/faturamento',
+        icon: 'receipt',
+        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+      },
+      {
         key: 'contratos-crud',
         label: 'Contratos',
         href: '/dashboard/contratos',
@@ -205,13 +212,6 @@ export const APP_MENU: MenuSectionConfig[] = [
         label: 'Medições',
         href: '/dashboard/contratos/medicoes',
         icon: 'clipboard-check',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
-        key: 'contratos-faturamento',
-        label: 'Faturamento',
-        href: '/dashboard/contratos/faturamento',
-        icon: 'receipt',
         permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
       },
       {
