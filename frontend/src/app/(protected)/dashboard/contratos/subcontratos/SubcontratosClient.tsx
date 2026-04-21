@@ -521,14 +521,14 @@ export default function SubcontratosClient() {
   const medicoesAprovadas = useMemo(() => medicoes.filter((m) => m.status === "APROVADO"), [medicoes]);
 
   return (
-    <div className="p-6 space-y-4 text-slate-900 dark:text-slate-100">
+    <div className="space-y-4 text-[#111827]">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold">Subcontratos</h1>
-          <div className="text-sm text-slate-600 dark:text-slate-300">Vincule subcontratos ao contrato principal e controle medições/pagamentos por subcontrato.</div>
+          <div className="text-sm text-[#6B7280]">Vincule subcontratos ao contrato principal e controle medições/pagamentos por subcontrato.</div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="text-sm text-slate-600 dark:text-slate-300">Contrato principal</div>
+          <div className="text-sm text-[#6B7280]">Contrato principal</div>
           <select
             className="input min-w-[280px]"
             value={principalId ?? ""}
@@ -542,7 +542,7 @@ export default function SubcontratosClient() {
               </option>
             ))}
           </select>
-          <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800" type="button" onClick={carregarContratos}>
+          <button className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]" type="button" onClick={carregarContratos}>
             Recarregar
           </button>
         </div>

@@ -36,71 +36,92 @@ function resolveIconComponent(icon?: string): ComponentType<SidebarIconProps> | 
   return icons[pascal] ?? (LucideIcons.Circle as unknown as ComponentType<SidebarIconProps>);
 }
 
-function BadgePill({ badge }: { badge: NonNullable<MenuBadgesMapDTO[string]> }) {
+function BadgePill({ badge, compact }: { badge: NonNullable<MenuBadgesMapDTO[string]>; compact?: boolean }) {
   const color =
     badge.tone === "DANGER"
-      ? "bg-red-100 text-red-700"
+      ? "bg-red-500/20 text-red-200"
       : badge.tone === "WARNING"
-        ? "bg-amber-100 text-amber-700"
+        ? "bg-amber-500/20 text-amber-200"
         : badge.tone === "INFO"
-          ? "bg-blue-100 text-blue-700"
-          : "bg-slate-100 text-slate-700";
+          ? "bg-blue-500/20 text-blue-200"
+          : "bg-slate-500/20 text-slate-200";
 
   const value = badge.value > 99 ? "99+" : String(badge.value);
 
   return (
     <span
       title={badge.tooltip}
-      className={`inline-flex min-w-[1.5rem] items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold ${color} ${
-        badge.pulse ? "animate-pulse" : ""
-      }`}
+      className={`inline-flex items-center justify-center rounded-full text-xs font-semibold ${color} ${
+        compact ? "min-w-[1.25rem] px-1.5 py-0.5" : "min-w-[1.5rem] px-2 py-0.5"
+      } ${badge.pulse ? "animate-pulse" : ""}`}
     >
       {badge.label || value}
     </span>
   );
 }
 
-function MenuNode({ item, pathname, badges }: { item: MenuItemDTO; pathname: string; badges: MenuBadgesMapDTO }) {
+function MenuNode({
+  item,
+  pathname,
+  badges,
+  depth,
+  collapsed,
+}: {
+  item: MenuItemDTO;
+  pathname: string;
+  badges: MenuBadgesMapDTO;
+  depth: number;
+  collapsed: boolean;
+}) {
   const active = isActive(pathname, item);
   const [open, setOpen] = useState(active);
   const badge = badges[item.key];
   const Icon = resolveIconComponent(item.icon);
+  const isSub = depth > 0;
+  const baseItemClass = "flex items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors";
+  const activeClass = "bg-[#2563EB] font-medium text-white";
+  const inactiveClass = isSub
+    ? "text-[#D1D5DB] hover:bg-[#374151] hover:text-white"
+    : "text-[#D1D5DB] hover:bg-[#1F2937] hover:text-white";
+  const iconClass = `h-4 w-4 shrink-0 ${active ? "text-white" : "text-[#9CA3AF]"}`;
+
+  useEffect(() => {
+    if (active) setOpen(true);
+  }, [active]);
 
   return (
     <div className="space-y-1">
       {item.href ? (
         <Link
           href={item.href}
-          className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
-            active ? "bg-blue-50 font-medium text-blue-700" : "text-slate-700 hover:bg-slate-50"
-          }`}
+          className={`${baseItemClass} ${active ? activeClass : inactiveClass}`}
+          title={collapsed ? item.label : undefined}
         >
           <span className="flex min-w-0 items-center gap-2">
-            {Icon ? <Icon className="h-4 w-4 shrink-0 opacity-80" /> : null}
-            <span className="truncate">{item.label}</span>
+            {Icon ? <Icon className={iconClass} /> : null}
+            {collapsed ? null : <span className="truncate">{item.label}</span>}
           </span>
-          {badge ? <BadgePill badge={badge} /> : null}
+          {badge ? <BadgePill badge={badge} compact={collapsed} /> : null}
         </Link>
       ) : (
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm ${
-            active ? "bg-blue-50 font-medium text-blue-700" : "text-slate-700 hover:bg-slate-50"
-          }`}
+          className={`${baseItemClass} w-full ${active ? activeClass : inactiveClass}`}
+          title={collapsed ? item.label : undefined}
         >
           <span className="flex min-w-0 items-center gap-2">
-            {Icon ? <Icon className="h-4 w-4 shrink-0 opacity-80" /> : null}
-            <span className="truncate">{item.label}</span>
+            {Icon ? <Icon className={iconClass} /> : null}
+            {collapsed ? null : <span className="truncate">{item.label}</span>}
           </span>
-          {badge ? <BadgePill badge={badge} /> : null}
+          {badge ? <BadgePill badge={badge} compact={collapsed} /> : null}
         </button>
       )}
 
-      {item.children?.length ? (
-        <div className={`ml-3 space-y-1 border-l pl-3 ${open ? "" : "hidden"}`}>
+      {item.children?.length && !collapsed ? (
+        <div className={`${open ? "" : "hidden"} ml-2 rounded-lg bg-[#1F2937] p-2 space-y-1`}>
           {item.children.map((child) => (
-            <MenuNode key={child.key} item={child} pathname={pathname} badges={badges} />
+            <MenuNode key={child.key} item={child} pathname={pathname} badges={badges} depth={depth + 1} collapsed={collapsed} />
           ))}
         </div>
       ) : null}
@@ -119,6 +140,7 @@ export function SidebarNav({ secoes, initialBadges = {} }: { secoes: MenuSection
   const pathname = usePathname();
   const [badges, setBadges] = useState<MenuBadgesMapDTO>(initialBadges);
   const [favoritos, setFavoritos] = useState<string[]>([]);
+  const [collapsed, setCollapsed] = useState(false);
 
   const itemsMap = useMemo(() => {
     const m = new Map<string, MenuItemDTO>();
@@ -184,13 +206,28 @@ export function SidebarNav({ secoes, initialBadges = {} }: { secoes: MenuSection
   }
 
   return (
-    <aside className="w-72 border-r bg-white">
-      <div className="p-4 text-lg font-semibold">Sistema</div>
+    <aside className={`border-r border-white/10 bg-[#111827] ${collapsed ? "w-16" : "w-60"} transition-all`}>
+      <div className="p-4">
+        <div className="flex items-center justify-between gap-2">
+          <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
+            <div className="h-9 w-9 rounded-lg bg-white/10 flex items-center justify-center text-white font-semibold">EO</div>
+            {collapsed ? null : <div className="text-base font-semibold text-white truncate">ExpPlanObras</div>}
+          </Link>
+          <button
+            type="button"
+            onClick={() => setCollapsed((v) => !v)}
+            className="rounded-lg p-2 text-[#9CA3AF] hover:bg-[#1F2937] hover:text-white"
+            title={collapsed ? "Expandir menu" : "Recolher menu"}
+          >
+            <LucideIcons.Menu className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
 
-      <nav className="space-y-6 p-4">
+      <nav className="space-y-6 px-3 pb-6">
         {favoritos.length ? (
           <div key="favoritos">
-            <div className="mb-2 text-xs font-semibold uppercase text-slate-500">Favoritos</div>
+            {collapsed ? null : <div className="mb-2 px-2 text-xs font-semibold uppercase text-[#9CA3AF]">Favoritos</div>}
             <div className="space-y-1">
               {favoritos
                 .map((k) => itemsMap.get(k))
@@ -203,15 +240,16 @@ export function SidebarNav({ secoes, initialBadges = {} }: { secoes: MenuSection
                     <Link
                       key={`fav-${it.key}`}
                       href={it.href!}
-                      className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
-                        active ? "bg-blue-50 font-medium text-blue-700" : "text-slate-700 hover:bg-slate-50"
+                      className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors ${
+                        active ? "bg-[#2563EB] font-medium text-white" : "text-[#D1D5DB] hover:bg-[#1F2937] hover:text-white"
                       }`}
+                      title={collapsed ? it.label : undefined}
                     >
                       <span className="flex min-w-0 items-center gap-2">
-                        {Icon ? <Icon className="h-4 w-4 shrink-0 opacity-80" /> : null}
-                        <span className="truncate">{it.label}</span>
+                        {Icon ? <Icon className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-[#9CA3AF]"}`} /> : null}
+                        {collapsed ? null : <span className="truncate">{it.label}</span>}
                       </span>
-                      {badge ? <BadgePill badge={badge} /> : null}
+                      {badge ? <BadgePill badge={badge} compact={collapsed} /> : null}
                     </Link>
                   );
                 })}
@@ -220,11 +258,11 @@ export function SidebarNav({ secoes, initialBadges = {} }: { secoes: MenuSection
         ) : null}
         {secoes.map((secao) => (
           <div key={secao.key}>
-            <div className="mb-2 text-xs font-semibold uppercase text-slate-500">{secao.label}</div>
+            {collapsed ? null : <div className="mb-2 px-2 text-xs font-semibold uppercase text-[#9CA3AF]">{secao.label}</div>}
 
             <div className="space-y-1">
               {secao.items.map((item) => (
-                <MenuNode key={item.key} item={item} pathname={pathname} badges={badges} />
+                <MenuNode key={item.key} item={item} pathname={pathname} badges={badges} depth={0} collapsed={collapsed} />
               ))}
             </div>
           </div>

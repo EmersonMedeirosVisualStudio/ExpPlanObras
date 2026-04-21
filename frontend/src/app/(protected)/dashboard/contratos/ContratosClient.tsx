@@ -403,43 +403,43 @@ export default function ContratosClient() {
 
   if (contratoId) {
     return (
-      <div className="p-6 space-y-4 text-slate-900 dark:text-slate-100">
+      <div className="space-y-4 text-[#111827]">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl font-semibold">Contrato #{contratoId}</h1>
-            <div className="text-sm text-slate-600 dark:text-slate-300">Detalhes, financeiro e vínculos com obras.</div>
+            <div className="text-sm text-[#6B7280]">Detalhes, financeiro e vínculos com obras.</div>
           </div>
           <div className="flex gap-2">
             <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
+              className="rounded-lg bg-[#2563EB] px-3 py-2 text-sm text-white hover:bg-[#1D4ED8]"
               type="button"
               onClick={() => router.push(`/dashboard/contratos/planejamento?id=${contratoId}`)}
             >
               Planejamento (Gantt)
             </button>
             <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
+              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
               type="button"
               onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}`)}
             >
               Aditivos
             </button>
             <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
+              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
               type="button"
               onClick={() => router.push(`/dashboard/contratos/subcontratos?contratoId=${contratoId}`)}
             >
               Subcontratos
             </button>
             <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
+              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
               type="button"
               onClick={() => router.push(`/dashboard/contratos/medicoes?contratoId=${contratoId}`)}
             >
               Medições
             </button>
             <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
+              className="rounded-lg bg-[#2563EB] px-3 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-60"
               type="button"
               onClick={abrirEdicao}
               disabled={!detail}
@@ -447,7 +447,7 @@ export default function ContratosClient() {
               Editar contrato
             </button>
             <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
+              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
               type="button"
               onClick={() => router.push("/dashboard/contratos")}
             >
@@ -457,55 +457,55 @@ export default function ContratosClient() {
         </div>
 
         {detailErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{detailErr}</div> : null}
-        {detailLoading ? <div className="text-sm text-slate-500 dark:text-slate-300">Carregando...</div> : null}
+        {detailLoading ? <div className="text-sm text-[#6B7280]">Carregando...</div> : null}
 
         {detail ? (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <section className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-2 dark:bg-slate-900 dark:border-slate-700">
-              <div className="text-sm text-slate-500 dark:text-slate-300">Número</div>
+            <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-2">
+              <div className="text-sm text-[#6B7280]">Número</div>
               <div className="text-xl font-semibold">{detail.numeroContrato}</div>
-              <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">{detail.nome || detail.objeto || "—"}</div>
+              <div className="mt-2 text-sm text-[#6B7280]">{detail.nome || detail.objeto || "—"}</div>
 
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                <div className="rounded-lg border bg-slate-50 p-3 dark:bg-slate-800 dark:border-slate-700">
-                  <div className="text-xs text-slate-500 dark:text-slate-300">Status</div>
+                <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
+                  <div className="text-xs text-[#6B7280]">Status</div>
                   <div className={`font-semibold ${statusUi(detail.statusCalculado).className}`}>
                     {statusUi(detail.statusCalculado).icon} {statusUi(detail.statusCalculado).label}
                   </div>
                 </div>
-                <div className="rounded-lg border bg-slate-50 p-3 dark:bg-slate-800 dark:border-slate-700">
-                  <div className="text-xs text-slate-500 dark:text-slate-300">Vigência inicial</div>
+                <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
+                  <div className="text-xs text-[#6B7280]">Vigência inicial</div>
                   <div className="font-semibold">{detail.vigenciaInicial ? new Date(detail.vigenciaInicial).toLocaleDateString("pt-BR") : "—"}</div>
                 </div>
-                <div className="rounded-lg border bg-slate-50 p-3 dark:bg-slate-800 dark:border-slate-700">
-                  <div className="text-xs text-slate-500 dark:text-slate-300">Vigência atual</div>
+                <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
+                  <div className="text-xs text-[#6B7280]">Vigência atual</div>
                   <div className="font-semibold">{detail.vigenciaAtual ? new Date(detail.vigenciaAtual).toLocaleDateString("pt-BR") : "—"}</div>
                 </div>
               </div>
             </section>
 
-            <section className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
+            <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
               <div className="text-sm font-semibold">Financeiro</div>
               <div className="mt-3 space-y-2 text-sm">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-slate-600 dark:text-slate-300">Valor atual</div>
+                  <div className="text-[#6B7280]">Valor atual</div>
                   <div className="font-semibold">{moeda(Number(detail.valorTotalAtual || 0))}</div>
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-slate-600 dark:text-slate-300">Executado (medições)</div>
+                  <div className="text-[#6B7280]">Executado (medições)</div>
                   <div className="font-semibold">{moeda(Number(detail.indicadores?.valorExecutado || 0))}</div>
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-slate-600 dark:text-slate-300">Pago</div>
+                  <div className="text-[#6B7280]">Pago</div>
                   <div className="font-semibold">{moeda(Number(detail.indicadores?.valorPago || 0))}</div>
                 </div>
               </div>
             </section>
 
             {detail.alerta && detail.alerta !== "OK" ? (
-              <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm lg:col-span-3 dark:border-amber-900 dark:bg-amber-950/30">
+              <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm lg:col-span-3">
                 <div className="text-sm font-semibold">Alertas</div>
-                <div className="mt-2 text-sm text-amber-800 dark:text-amber-200">
+                <div className="mt-2 text-sm text-amber-800">
                   {(detail.alertas || []).length ? (
                     <ul className="list-disc pl-6">
                       {(detail.alertas || []).map((m) => (
@@ -519,14 +519,14 @@ export default function ContratosClient() {
               </section>
             ) : null}
 
-            <section className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-3 dark:bg-slate-900 dark:border-slate-700">
+            <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="text-sm font-semibold">Obras vinculadas</div>
-                <div className="text-xs text-slate-500 dark:text-slate-300">Regra: toda obra tem contrato; um contrato pode ter várias obras.</div>
+                <div className="text-xs text-[#6B7280]">Regra: toda obra tem contrato; um contrato pode ter várias obras.</div>
               </div>
               <div className="mt-3 overflow-auto">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  <thead className="bg-[#F9FAFB] text-left text-[#111827]">
                     <tr>
                       <th className="px-3 py-2">Obra</th>
                       <th className="px-3 py-2">Status</th>
@@ -535,7 +535,7 @@ export default function ContratosClient() {
                   </thead>
                   <tbody>
                     {detail.obras.map((o) => (
-                      <tr key={o.id} className="border-t dark:border-slate-700">
+                      <tr key={o.id} className="border-t border-[#E5E7EB]">
                         <td className="px-3 py-2">{o.name}</td>
                         <td className="px-3 py-2">{o.status}</td>
                         <td className="px-3 py-2 text-right">{moeda(o.valorPrevisto)}</td>
@@ -543,7 +543,7 @@ export default function ContratosClient() {
                     ))}
                     {!detail.obras.length ? (
                       <tr>
-                        <td colSpan={3} className="px-3 py-6 text-center text-slate-500 dark:text-slate-300">
+                        <td colSpan={3} className="px-3 py-6 text-center text-[#6B7280]">
                           Nenhuma obra vinculada a este contrato.
                         </td>
                       </tr>
@@ -557,17 +557,22 @@ export default function ContratosClient() {
 
         {editOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setEditOpen(false)}>
-            <div className="w-full max-w-4xl rounded-xl border bg-white p-4 shadow-xl dark:bg-slate-900 dark:border-slate-700" onClick={(e) => e.stopPropagation()}>
+            <div className="w-full max-w-4xl rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div>
                   <div className="text-lg font-semibold">Editar contrato</div>
-                  <div className="text-sm text-slate-600 dark:text-slate-300">Atualize dados básicos, datas e valores.</div>
+                  <div className="text-sm text-[#6B7280]">Atualize dados básicos, datas e valores.</div>
                 </div>
                 <div className="flex gap-2">
-                  <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800" type="button" onClick={() => setEditOpen(false)}>
+                  <button className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]" type="button" onClick={() => setEditOpen(false)}>
                     Cancelar
                   </button>
-                  <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50" type="button" onClick={salvarEdicao} disabled={editLoading}>
+                  <button
+                    className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50"
+                    type="button"
+                    onClick={salvarEdicao}
+                    disabled={editLoading}
+                  >
                     {editLoading ? "Salvando..." : "Salvar alterações"}
                   </button>
                 </div>
@@ -576,14 +581,14 @@ export default function ContratosClient() {
               {editErr ? <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{editErr}</div> : null}
 
               <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3 dark:bg-slate-900 dark:border-slate-700">
+                <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-3">
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div>
-                      <div className="text-sm text-slate-600 dark:text-slate-300">Número do contrato</div>
+                      <div className="text-sm text-[#6B7280]">Número do contrato</div>
                       <input className="input" value={eNumeroContrato} onChange={(e) => setENumeroContrato(e.target.value)} />
                     </div>
                     <div>
-                      <div className="text-sm text-slate-600 dark:text-slate-300">Status</div>
+                      <div className="text-sm text-[#6B7280]">Status</div>
                       <select className="input" value={eStatus} onChange={(e) => setEStatus(e.target.value)}>
                         <option value="ATIVO">Ativo</option>
                         <option value="PENDENTE">Pendente</option>
@@ -595,7 +600,7 @@ export default function ContratosClient() {
                       </select>
                     </div>
                     <div>
-                      <div className="text-sm text-slate-600 dark:text-slate-300">Tipo de contratante</div>
+                      <div className="text-sm text-[#6B7280]">Tipo de contratante</div>
                       <select className="input" value={eTipoContratante} onChange={(e) => setETipoContratante(normalizeTipoContratante(e.target.value))}>
                         <option value="PUBLICO">Órgão público</option>
                         <option value="PRIVADO">Empresa privada (PJ)</option>
@@ -603,33 +608,33 @@ export default function ContratosClient() {
                       </select>
                     </div>
                     <div>
-                      <div className="text-sm text-slate-600 dark:text-slate-300">Nome do contrato</div>
+                      <div className="text-sm text-[#6B7280]">Nome do contrato</div>
                       <input className="input" value={eNome} onChange={(e) => setENome(e.target.value)} />
                     </div>
                     <div className="md:col-span-2">
-                      <div className="text-sm text-slate-600 dark:text-slate-300">Objeto</div>
+                      <div className="text-sm text-[#6B7280]">Objeto</div>
                       <textarea className="input min-h-[90px]" value={eObjeto} onChange={(e) => setEObjeto(e.target.value)} />
                     </div>
                     <div className="md:col-span-2">
-                      <div className="text-sm text-slate-600 dark:text-slate-300">Descrição</div>
+                      <div className="text-sm text-[#6B7280]">Descrição</div>
                       <textarea className="input min-h-[90px]" value={eDescricao} onChange={(e) => setEDescricao(e.target.value)} />
                     </div>
                   </div>
                 </section>
 
-                <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3 dark:bg-slate-900 dark:border-slate-700">
+                <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-3">
                   <div className="text-sm font-semibold">Datas</div>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                     <div>
-                      <div className="text-sm text-slate-600 dark:text-slate-300">Data assinatura</div>
+                      <div className="text-sm text-[#6B7280]">Data assinatura</div>
                       <input className="input" type="date" value={eDataAssinatura} onChange={(e) => setEDataAssinatura(e.target.value)} />
                     </div>
                     <div>
-                      <div className="text-sm text-slate-600 dark:text-slate-300">Data OS (preferencial)</div>
+                      <div className="text-sm text-[#6B7280]">Data OS (preferencial)</div>
                       <input className="input" type="date" value={eDataOS} onChange={(e) => setEDataOS(e.target.value)} />
                     </div>
                     <div>
-                      <div className="text-sm text-slate-600 dark:text-slate-300">Prazo</div>
+                      <div className="text-sm text-[#6B7280]">Prazo</div>
                       <div className="flex gap-2">
                         <input className="input" value={ePrazoValor} onChange={(e) => setEPrazoValor(e.target.value)} placeholder="Ex: 180" />
                         <select className="input w-[140px]" value={ePrazoUnidade} onChange={(e) => setEPrazoUnidade(e.target.value as any)}>
@@ -640,7 +645,7 @@ export default function ContratosClient() {
                       </div>
                     </div>
                     <div className="md:col-span-3">
-                      <div className="text-sm text-slate-600 dark:text-slate-300">Vigência (calculada)</div>
+                      <div className="text-sm text-[#6B7280]">Vigência (calculada)</div>
                       <input className="input" value={eVigenciaCalculada || "—"} disabled />
                     </div>
                   </div>
@@ -649,9 +654,9 @@ export default function ContratosClient() {
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div>
                       <div className="flex items-end justify-between gap-2">
-                        <div className="text-sm text-slate-600 dark:text-slate-300">Nome / Razão social (autocompletar)</div>
+                        <div className="text-sm text-[#6B7280]">Nome / Razão social (autocompletar)</div>
                         <button
-                          className="text-xs font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                          className="text-xs font-semibold text-[#2563EB] hover:underline"
                           type="button"
                           onClick={() => router.push("/dashboard/engenharia/contrapartes")}
                         >
@@ -671,16 +676,16 @@ export default function ContratosClient() {
                           placeholder="Digite nome ou CNPJ/CPF"
                         />
                         {empresaSugestoesOpen ? (
-                          <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border bg-white shadow-lg dark:bg-slate-900 dark:border-slate-700">
+                          <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-[#E5E7EB] bg-white shadow-lg">
                             {empresaSugestoesLoading ? (
-                              <div className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">Buscando…</div>
+                              <div className="px-3 py-2 text-sm text-[#6B7280]">Buscando…</div>
                             ) : empresaSugestoes.length ? (
                               <div className="max-h-64 overflow-auto">
                                 {empresaSugestoes.slice(0, 30).map((r) => (
                                   <button
                                     key={r.idContraparte}
                                     type="button"
-                                    className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
+                                    className="w-full px-3 py-2 text-left text-sm hover:bg-[#F9FAFB]"
                                     onMouseDown={(e) => e.preventDefault()}
                                     onClick={() => {
                                       setEEmpresaParceiraNome(r.nomeRazao);
@@ -688,22 +693,22 @@ export default function ContratosClient() {
                                       setEmpresaSugestoesOpen(false);
                                     }}
                                   >
-                                    <div className="font-semibold text-slate-900 dark:text-slate-100">{r.nomeRazao}</div>
-                                    <div className="text-xs text-slate-600 dark:text-slate-300">
+                                    <div className="font-semibold text-[#111827]">{r.nomeRazao}</div>
+                                    <div className="text-xs text-[#6B7280]">
                                       {r.tipo} {r.documento ? `• ${r.documento}` : ""}
                                     </div>
                                   </button>
                                 ))}
                               </div>
                             ) : (
-                              <div className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">Nenhuma empresa encontrada.</div>
+                              <div className="px-3 py-2 text-sm text-[#6B7280]">Nenhuma empresa encontrada.</div>
                             )}
                           </div>
                         ) : null}
                       </div>
                     </div>
                     <div>
-                      <div className="text-sm text-slate-600 dark:text-slate-300">Documento</div>
+                      <div className="text-sm text-[#6B7280]">Documento</div>
                       <input className="input" value={eEmpresaParceiraDocumento} onChange={(e) => setEEmpresaParceiraDocumento(e.target.value)} placeholder="CNPJ/CPF" />
                     </div>
                   </div>
@@ -712,38 +717,38 @@ export default function ContratosClient() {
                   {eIsPublico ? (
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <div>
-                        <div className="text-sm text-slate-600 dark:text-slate-300">Concedente (inicial)</div>
+                        <div className="text-sm text-[#6B7280]">Concedente (inicial)</div>
                         <input className="input" value={eValorConcedenteInicial} onChange={(e) => setEValorConcedenteInicial(formatMoneyBRFromDigits(e.target.value))} />
                       </div>
                       <div>
-                        <div className="text-sm text-slate-600 dark:text-slate-300">Próprio (inicial)</div>
+                        <div className="text-sm text-[#6B7280]">Próprio (inicial)</div>
                         <input className="input" value={eValorProprioInicial} onChange={(e) => setEValorProprioInicial(formatMoneyBRFromDigits(e.target.value))} />
                       </div>
                       <div className="md:col-span-2">
-                        <div className="text-sm text-slate-600 dark:text-slate-300">Total (inicial)</div>
+                        <div className="text-sm text-[#6B7280]">Total (inicial)</div>
                         <input className="input" value={eValorTotalInicial} disabled />
                       </div>
                       <div>
-                        <div className="text-sm text-slate-600 dark:text-slate-300">Concedente (atual)</div>
+                        <div className="text-sm text-[#6B7280]">Concedente (atual)</div>
                         <input className="input" value={eValorConcedenteAtual} onChange={(e) => setEValorConcedenteAtual(formatMoneyBRFromDigits(e.target.value))} />
                       </div>
                       <div>
-                        <div className="text-sm text-slate-600 dark:text-slate-300">Próprio (atual)</div>
+                        <div className="text-sm text-[#6B7280]">Próprio (atual)</div>
                         <input className="input" value={eValorProprioAtual} onChange={(e) => setEValorProprioAtual(formatMoneyBRFromDigits(e.target.value))} />
                       </div>
                       <div className="md:col-span-2">
-                        <div className="text-sm text-slate-600 dark:text-slate-300">Total (atual)</div>
+                        <div className="text-sm text-[#6B7280]">Total (atual)</div>
                         <input className="input" value={eValorTotalAtual} disabled />
                       </div>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <div>
-                        <div className="text-sm text-slate-600 dark:text-slate-300">Valor total (inicial)</div>
+                        <div className="text-sm text-[#6B7280]">Valor total (inicial)</div>
                         <input className="input" value={eValorTotalInicial} onChange={(e) => setEValorTotalInicial(formatMoneyBRFromDigits(e.target.value))} />
                       </div>
                       <div>
-                        <div className="text-sm text-slate-600 dark:text-slate-300">Valor total (atual)</div>
+                        <div className="text-sm text-[#6B7280]">Valor total (atual)</div>
                         <input className="input" value={eValorTotalAtual} onChange={(e) => setEValorTotalAtual(formatMoneyBRFromDigits(e.target.value))} />
                       </div>
                     </div>
@@ -758,25 +763,25 @@ export default function ContratosClient() {
   }
 
   return (
-    <div className="p-6 space-y-6 text-slate-900 dark:text-slate-100">
+    <div className="space-y-6 text-[#111827]">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold">Contratos</h1>
-          <div className="text-sm text-slate-600 dark:text-slate-300">Cadastre, acompanhe e integre com medições/pagamentos e obras.</div>
+          <div className="text-sm text-[#6B7280]">Cadastre, acompanhe e integre com medições/pagamentos e obras.</div>
         </div>
-        <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white" type="button" onClick={() => router.push("/dashboard/contratos/novo")}>
+        <button className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8]" type="button" onClick={() => router.push("/dashboard/contratos/novo")}>
           Novo contrato
         </button>
       </div>
 
-      <section className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
+      <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <div>
-            <div className="text-sm text-slate-600 dark:text-slate-300">Busca</div>
+            <div className="text-sm text-[#6B7280]">Busca</div>
             <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Número/nome/empresa" />
           </div>
           <div>
-            <div className="text-sm text-slate-600 dark:text-slate-300">Status</div>
+            <div className="text-sm text-[#6B7280]">Status</div>
             <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">Todos</option>
               <option value="A_VENCER">A vencer</option>
@@ -790,7 +795,7 @@ export default function ContratosClient() {
           </div>
           <div className="flex items-end md:col-span-2 justify-end gap-2">
             <button
-              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
+              className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50"
               type="button"
               onClick={carregarLista}
               disabled={loading}
@@ -802,11 +807,11 @@ export default function ContratosClient() {
         {err ? <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
       </section>
 
-      <section className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
+      <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
         <div className="text-sm font-semibold">Lista</div>
         <div className="mt-3 overflow-auto">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+            <thead className="bg-[#F9FAFB] text-left text-[#111827]">
               <tr>
                 <th className="px-3 py-2">Alerta</th>
                 <th className="px-3 py-2">Nº</th>
@@ -818,11 +823,11 @@ export default function ContratosClient() {
                 <th className="px-3 py-2">Status</th>
               </tr>
             </thead>
-            <tbody className="text-slate-900 dark:text-slate-100">
+            <tbody className="text-[#111827]">
               {filtered.map((r) => (
                 <tr
                   key={r.id}
-                  className="border-t hover:bg-slate-50 cursor-pointer dark:border-slate-700 dark:hover:bg-slate-800/60"
+                  className="border-t border-[#E5E7EB] hover:bg-[#F3F4F6] cursor-pointer"
                   onClick={() => router.push(`/dashboard/contratos?id=${r.id}`)}
                 >
                   <td className="px-3 py-2">
@@ -843,7 +848,7 @@ export default function ContratosClient() {
               ))}
               {!filtered.length ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-6 text-center text-slate-500 dark:text-slate-300">
+                  <td colSpan={8} className="px-3 py-6 text-center text-[#6B7280]">
                     Nenhum contrato encontrado.
                   </td>
                 </tr>

@@ -53,20 +53,3 @@ body {
   border-color: #2563eb;
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
 }
-
-@media (prefers-color-scheme: dark) {
-  .input {
-    background: #0b1220;
-    border-color: #334155;
-    color: #e2e8f0;
-  }
-
-  .input::placeholder {
-    color: #94a3b8;
-  }
-
-  .input:disabled {
-    background: #0f172a;
-    color: #94a3b8;
-  }
-}

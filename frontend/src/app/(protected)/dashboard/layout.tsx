@@ -60,7 +60,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   if (permSet.has('relatorios.agendados.view')) topics.push(REALTIME_TOPICS.RELATORIOS);
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-[#f7f8fa]">
       <RealtimeProvider topics={topics}>
         <SidebarNav secoes={menu.secoes} initialBadges={initialBadges} />
         <div className="flex-1 min-w-0">
