@@ -490,7 +490,7 @@ export default async function contratosRoutes(server: FastifyInstance) {
         body: z.object({
           numeroAditivo: z.string().min(1),
           tipo: z.enum(['PRAZO', 'VALOR', 'AMBOS']),
-          dataAssinatura: z.string().optional().nullable(),
+          dataAssinatura: z.string().min(10),
           justificativa: z.string().optional().nullable(),
           descricao: z.string().optional().nullable(),
           prazoAdicionadoDias: z.number().int().optional().nullable(),
@@ -519,7 +519,7 @@ export default async function contratosRoutes(server: FastifyInstance) {
         params: z.object({ id: z.coerce.number().int().positive(), aditivoId: z.coerce.number().int().positive() }),
         body: z.object({
           tipo: z.enum(['PRAZO', 'VALOR', 'AMBOS']).optional(),
-          dataAssinatura: z.string().optional().nullable(),
+          dataAssinatura: z.string().min(10).optional().nullable(),
           justificativa: z.string().optional().nullable(),
           descricao: z.string().optional().nullable(),
           prazoAdicionadoDias: z.number().int().optional().nullable(),

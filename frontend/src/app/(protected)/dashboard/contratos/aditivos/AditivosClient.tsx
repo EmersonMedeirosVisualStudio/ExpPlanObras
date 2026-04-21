@@ -102,6 +102,18 @@ function addDays(dateIso: string, days: number) {
   return result.toISOString().slice(0, 10);
 }
 
+function parseDateInput(s: string) {
+  const v = String(s || "").trim();
+  if (!v) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  const d = new Date(`${v}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function dateOnlyMs(d: Date) {
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0);
+}
+
 function iconByTipoOrigem(t: string) {
   const v = String(t || "").toUpperCase();
   if (v === "ADITIVO") return "📝";
@@ -168,6 +180,7 @@ export default function AditivosClient() {
   const [tipo, setTipo] = useState<"PRAZO" | "VALOR" | "AMBOS">("PRAZO");
   const [dataAssinatura, setDataAssinatura] = useState("");
   const [prazoAdicionadoDias, setPrazoAdicionadoDias] = useState("");
+  const [prazoUnidade, setPrazoUnidade] = useState<"DIAS" | "MESES" | "ANOS">("DIAS");
   const [valorAdicionado, setValorAdicionado] = useState("0,00");
   const [valorConcedenteAdicionado, setValorConcedenteAdicionado] = useState("0,00");
   const [valorProprioAdicionado, setValorProprioAdicionado] = useState("0,00");
@@ -317,6 +330,45 @@ export default function AditivosClient() {
     if (maxNum) setNumeroAditivo(String(maxNum + 1));
   }, [aditivos]);
 
+  const prazoAddDias = useMemo(() => {
+    const q = Math.trunc(Number(prazoAdicionadoDias || 0));
+    if (!q || q <= 0) return 0;
+    if (prazoUnidade === "MESES") return q * 30;
+    if (prazoUnidade === "ANOS") return q * 365;
+    return q;
+  }, [prazoAdicionadoDias, prazoUnidade]);
+
+  const assinaturaAditivo = useMemo(() => parseDateInput(dataAssinatura), [dataAssinatura]);
+  const assinaturaContrato = useMemo(() => {
+    const v = consolidado?.contrato?.dataAssinatura;
+    if (!v) return null;
+    const d = new Date(String(v));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [consolidado?.contrato?.dataAssinatura]);
+  const vigenciaContrato = useMemo(() => {
+    const v = consolidado?.contrato?.vigenciaAtual;
+    if (!v) return null;
+    const d = new Date(String(v));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [consolidado?.contrato?.vigenciaAtual]);
+
+  const assinaturaErr = useMemo(() => {
+    if (!formOpen) return null;
+    if (!assinaturaAditivo) return "Data de assinatura é obrigatória.";
+    const hoje = dateOnlyMs(new Date());
+    const a = dateOnlyMs(assinaturaAditivo);
+    if (a > hoje) return "A data de assinatura não pode ser no futuro.";
+    if (assinaturaContrato) {
+      const c = dateOnlyMs(assinaturaContrato);
+      if (a < c) return "A data do aditivo deve ser maior ou igual à data de assinatura do contrato.";
+    }
+    if (vigenciaContrato) {
+      const v = dateOnlyMs(vigenciaContrato);
+      if (a > v) return "A data do aditivo não pode ultrapassar a vigência atual do contrato.";
+    }
+    return null;
+  }, [formOpen, assinaturaAditivo, assinaturaContrato, vigenciaContrato]);
+
   const impactPreview = useMemo(() => {
     const c = consolidado?.contrato;
     if (!c) return null;
@@ -324,9 +376,8 @@ export default function AditivosClient() {
     const publico = tipoContrato === "PUBLICO";
     const prazoAtual = c.prazoDias == null ? null : Number(c.prazoDias);
     const vigAtual = c.vigenciaAtual ? String(c.vigenciaAtual).slice(0, 10) : null;
-    const prazoAdd = Number(prazoAdicionadoDias || 0);
-    const novoPrazo = prazoAtual != null ? prazoAtual + prazoAdd : prazoAdd || null;
-    const novaVig = vigAtual && prazoAdd ? addDays(vigAtual, prazoAdd) : null;
+    const novoPrazo = prazoAtual != null ? prazoAtual + prazoAddDias : prazoAddDias || null;
+    const novaVig = vigAtual && prazoAddDias ? addDays(vigAtual, prazoAddDias) : null;
 
     const valorTotalAtual = c.valorTotalAtual == null ? 0 : Number(c.valorTotalAtual);
     const vAddPriv = parseMoneyBR(valorAdicionado);
@@ -349,22 +400,26 @@ export default function AditivosClient() {
       valorAtual: valorTotalAtual,
       novoValor: publico ? novoTotalPub : novoValorPriv,
       deltaValor: publico ? vcAdd + vpAdd : vAddPriv,
-      deltaPrazo: prazoAdd,
+      deltaPrazo: prazoAddDias,
     };
-  }, [consolidado, tipo, prazoAdicionadoDias, valorAdicionado, valorConcedenteAdicionado, valorProprioAdicionado]);
+  }, [consolidado, tipo, prazoAddDias, valorAdicionado, valorConcedenteAdicionado, valorProprioAdicionado]);
 
   async function criarAditivo() {
     if (!contratoId) return;
     try {
       setFormErr(null);
+      if (assinaturaErr) {
+        setFormErr(assinaturaErr);
+        return;
+      }
       const payload: any = {
         numeroAditivo: String(numeroAditivo).trim(),
         tipo,
-        dataAssinatura: dataAssinatura ? new Date(`${dataAssinatura}T00:00:00`).toISOString() : null,
+        dataAssinatura: new Date(`${dataAssinatura}T00:00:00`).toISOString(),
         justificativa: justificativa || null,
         descricao: descricao || null,
       };
-      if (tipo === "PRAZO" || tipo === "AMBOS") payload.prazoAdicionadoDias = Number(prazoAdicionadoDias || 0);
+      if (tipo === "PRAZO" || tipo === "AMBOS") payload.prazoAdicionadoDias = prazoAddDias;
       if (tipo === "VALOR" || tipo === "AMBOS") {
         if (String(consolidado?.contrato?.tipoContratante || "").toUpperCase() === "PUBLICO") {
           payload.valorConcedenteAdicionado = parseMoneyBR(valorConcedenteAdicionado);
@@ -447,7 +502,7 @@ export default function AditivosClient() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 bg-[#f7f8fa] text-slate-900">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold">Aditivos de Contrato</h1>
@@ -460,11 +515,11 @@ export default function AditivosClient() {
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
 
-      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+      <section className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm space-y-3">
         <div className="text-sm font-semibold">Selecionar contrato</div>
         <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-          <input className="input md:col-span-2" value={qContrato} onChange={(e) => setQContrato(e.target.value)} placeholder="Buscar por nº, nome ou empresa" />
-          <select className="input" value={contratoId || ""} onChange={(e) => setQuery({ contratoId: e.target.value || null, tab: "dashboard" })}>
+          <input className="input bg-white text-slate-900 md:col-span-2" value={qContrato} onChange={(e) => setQContrato(e.target.value)} placeholder="Buscar por nº, nome ou empresa" />
+          <select className="input bg-white text-slate-900" value={contratoId || ""} onChange={(e) => setQuery({ contratoId: e.target.value || null, tab: "dashboard" })}>
             <option value="">Selecione</option>
             {contratosFiltrados.map((c) => (
               <option key={c.id} value={String(c.id)}>
@@ -477,7 +532,7 @@ export default function AditivosClient() {
       </section>
 
       {contratoSelecionado ? (
-        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
+        <section className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm space-y-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
               <div className="text-sm text-slate-500">Contrato</div>
@@ -508,19 +563,19 @@ export default function AditivosClient() {
 
           {tab === "dashboard" ? (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-              <div className="rounded-xl border bg-slate-50 p-4">
+              <div className="rounded-xl border border-[#e6edf5] bg-white p-4">
                 <div className="text-xs text-slate-500">Valor total atual</div>
                 <div className="text-xl font-semibold">{moeda(consolidado?.kpis?.valorTotalAtual ?? 0)}</div>
               </div>
-              <div className="rounded-xl border bg-slate-50 p-4">
+              <div className="rounded-xl border border-[#e6edf5] bg-white p-4">
                 <div className="text-xs text-slate-500">Executado</div>
                 <div className="text-xl font-semibold">{moeda(consolidado?.kpis?.valorExecutado ?? 0)}</div>
               </div>
-              <div className="rounded-xl border bg-slate-50 p-4">
+              <div className="rounded-xl border border-[#e6edf5] bg-white p-4">
                 <div className="text-xs text-slate-500">Saldo</div>
                 <div className="text-xl font-semibold">{moeda((consolidado?.kpis?.valorTotalAtual ?? 0) - (consolidado?.kpis?.valorExecutado ?? 0))}</div>
               </div>
-              <div className="rounded-xl border bg-slate-50 p-4">
+              <div className="rounded-xl border border-[#e6edf5] bg-white p-4">
                 <div className="text-xs text-slate-500">Aditivos em aberto</div>
                 <div className="text-xl font-semibold">{consolidado?.kpis?.aditivosEmAberto ?? 0}</div>
               </div>
@@ -641,13 +696,13 @@ export default function AditivosClient() {
               <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="text-sm font-semibold">Adicionar observação</div>
-                  <select className="input w-[160px]" value={obsNivel} onChange={(e) => setObsNivel(e.target.value as any)}>
+                  <select className="input bg-white text-slate-900" value={obsNivel} onChange={(e) => setObsNivel(e.target.value as any)}>
                     <option value="NORMAL">Normal</option>
                     <option value="ALERTA">Alerta</option>
                     <option value="CRITICO">Crítico</option>
                   </select>
                 </div>
-                <textarea className="input min-h-[90px]" value={obsTexto} onChange={(e) => setObsTexto(e.target.value)} placeholder="Digite sua observação..." />
+                <textarea className="input min-h-[90px] bg-white text-slate-900" value={obsTexto} onChange={(e) => setObsTexto(e.target.value)} placeholder="Digite sua observação..." />
                 <div className="flex items-center gap-2 flex-wrap">
                   <input
                     type="file"
@@ -733,7 +788,7 @@ export default function AditivosClient() {
       ) : null}
 
       {formOpen ? (
-        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
+        <section className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm space-y-4">
           <div className="flex items-center justify-between gap-2">
             <div className="text-sm font-semibold">Novo aditivo (rascunho)</div>
             <button className="rounded-lg border bg-white px-3 py-1 text-sm hover:bg-slate-50" type="button" onClick={() => setFormOpen(false)}>
@@ -744,11 +799,11 @@ export default function AditivosClient() {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
               <div className="text-sm text-slate-600">Número</div>
-              <input className="input" value={numeroAditivo} onChange={(e) => setNumeroAditivo(e.target.value)} placeholder="Ex: 1" />
+              <input className="input bg-white text-slate-900" value={numeroAditivo} onChange={(e) => setNumeroAditivo(e.target.value)} placeholder="Ex: 1" />
             </div>
             <div>
               <div className="text-sm text-slate-600">Tipo</div>
-              <select className="input" value={tipo} onChange={(e) => setTipo(e.target.value as any)}>
+              <select className="input bg-white text-slate-900" value={tipo} onChange={(e) => setTipo(e.target.value as any)}>
                 <option value="PRAZO">Prazo</option>
                 <option value="VALOR">Valor</option>
                 <option value="AMBOS">Prazo + Valor</option>
@@ -756,16 +811,27 @@ export default function AditivosClient() {
             </div>
             <div>
               <div className="text-sm text-slate-600">Data assinatura</div>
-              <input className="input" type="date" value={dataAssinatura} onChange={(e) => setDataAssinatura(e.target.value)} />
+              <input className="input bg-white text-slate-900" type="date" value={dataAssinatura} onChange={(e) => setDataAssinatura(e.target.value)} />
+              {assinaturaErr ? (
+                <div className="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{assinaturaErr}</div>
+              ) : null}
             </div>
 
             {(tipo === "PRAZO" || tipo === "AMBOS") ? (
-              <div className="md:col-span-3 rounded-lg border bg-slate-50 p-3">
+              <div className="md:col-span-3 rounded-lg border border-[#e6edf5] bg-white p-3">
                 <div className="text-sm font-semibold">Prazo</div>
                 <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
                   <div>
-                    <div className="text-sm text-slate-600">Prazo adicionado (dias)</div>
-                    <input className="input" value={prazoAdicionadoDias} onChange={(e) => setPrazoAdicionadoDias(e.target.value)} placeholder="Ex: 60" />
+                    <div className="text-sm text-slate-600">Prazo adicionado</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input className="input bg-white text-slate-900" value={prazoAdicionadoDias} onChange={(e) => setPrazoAdicionadoDias(e.target.value)} placeholder="Ex: 2" />
+                      <select className="input bg-white text-slate-900" value={prazoUnidade} onChange={(e) => setPrazoUnidade(e.target.value as any)}>
+                        <option value="DIAS">Dias</option>
+                        <option value="MESES">Meses</option>
+                        <option value="ANOS">Anos</option>
+                      </select>
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">{prazoAddDias ? `Equivale a ${prazoAddDias} dias` : "—"}</div>
                   </div>
                   <div>
                     <div className="text-sm text-slate-600">Antes → Depois</div>
@@ -784,17 +850,17 @@ export default function AditivosClient() {
             ) : null}
 
             {(tipo === "VALOR" || tipo === "AMBOS") ? (
-              <div className="md:col-span-3 rounded-lg border bg-slate-50 p-3">
+              <div className="md:col-span-3 rounded-lg border border-[#e6edf5] bg-white p-3">
                 <div className="text-sm font-semibold">Valor</div>
                 {String(consolidado?.contrato?.tipoContratante || "").toUpperCase() === "PUBLICO" ? (
                   <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
                     <div>
                       <div className="text-sm text-slate-600">Concedente adicionado</div>
-                      <input className="input" value={valorConcedenteAdicionado} onChange={(e) => setValorConcedenteAdicionado(formatMoneyBRFromDigits(e.target.value))} />
+                      <input className="input bg-white text-slate-900" value={valorConcedenteAdicionado} onChange={(e) => setValorConcedenteAdicionado(formatMoneyBRFromDigits(e.target.value))} />
                     </div>
                     <div>
                       <div className="text-sm text-slate-600">Próprio adicionado</div>
-                      <input className="input" value={valorProprioAdicionado} onChange={(e) => setValorProprioAdicionado(formatMoneyBRFromDigits(e.target.value))} />
+                      <input className="input bg-white text-slate-900" value={valorProprioAdicionado} onChange={(e) => setValorProprioAdicionado(formatMoneyBRFromDigits(e.target.value))} />
                     </div>
                     <div>
                       <div className="text-sm text-slate-600">Antes → Depois</div>
@@ -807,7 +873,7 @@ export default function AditivosClient() {
                   <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
                     <div>
                       <div className="text-sm text-slate-600">Valor adicionado</div>
-                      <input className="input" value={valorAdicionado} onChange={(e) => setValorAdicionado(formatMoneyBRFromDigits(e.target.value))} />
+                      <input className="input bg-white text-slate-900" value={valorAdicionado} onChange={(e) => setValorAdicionado(formatMoneyBRFromDigits(e.target.value))} />
                     </div>
                     <div className="md:col-span-2">
                       <div className="text-sm text-slate-600">Antes → Depois</div>
@@ -822,11 +888,11 @@ export default function AditivosClient() {
 
             <div className="md:col-span-3">
               <div className="text-sm text-slate-600">Justificativa</div>
-              <input className="input" value={justificativa} onChange={(e) => setJustificativa(e.target.value)} placeholder="Obrigatória para auditoria" />
+              <input className="input bg-white text-slate-900" value={justificativa} onChange={(e) => setJustificativa(e.target.value)} placeholder="Obrigatória para auditoria" />
             </div>
             <div className="md:col-span-3">
               <div className="text-sm text-slate-600">Descrição</div>
-              <textarea className="input min-h-[90px]" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Detalhamento do aditivo" />
+              <textarea className="input min-h-[90px] bg-white text-slate-900" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Detalhamento do aditivo" />
             </div>
           </div>
 

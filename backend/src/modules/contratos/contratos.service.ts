@@ -874,6 +874,19 @@ export async function createContratoAditivo(
     if (!numeroAditivo) throw new Error('numeroAditivo é obrigatório');
     const tipo = String(input.tipo || 'PRAZO').trim().toUpperCase() as any;
 
+    const assinatura = input.dataAssinatura ? parseDateOnly(input.dataAssinatura) : null;
+    if (!assinatura) throw new Error('dataAssinatura é obrigatória');
+    const hoje = dateOnly(new Date());
+    if (dateOnly(assinatura).getTime() > hoje.getTime()) throw new Error('dataAssinatura não pode ser no futuro');
+    if (contrato.dataAssinatura) {
+      const inicio = dateOnly(new Date(contrato.dataAssinatura));
+      if (dateOnly(assinatura).getTime() < inicio.getTime()) throw new Error('dataAssinatura do aditivo deve ser maior ou igual à data de assinatura do contrato');
+    }
+    if (contrato.vigenciaAtual) {
+      const fim = dateOnly(new Date(contrato.vigenciaAtual));
+      if (dateOnly(assinatura).getTime() > fim.getTime()) throw new Error('dataAssinatura do aditivo não pode ultrapassar a vigência atual do contrato');
+    }
+
     const prazoAdicionadoDias = input.prazoAdicionadoDias == null ? null : Math.trunc(Number(input.prazoAdicionadoDias));
     const valorTotalAdicionado = toNumberOrNull(input.valorTotalAdicionado);
     const valorConcedenteAdicionado = toNumberOrNull(input.valorConcedenteAdicionado);
@@ -898,7 +911,7 @@ export async function createContratoAditivo(
         numeroAditivo,
         tipo,
         status: 'RASCUNHO',
-        dataAssinatura: input.dataAssinatura ? parseDateOnly(input.dataAssinatura) : null,
+        dataAssinatura: assinatura,
         justificativa: input.justificativa ?? null,
         descricao: input.descricao ?? null,
         prazoAdicionadoDias,
@@ -946,11 +959,27 @@ export async function updateContratoAditivo(
     if (!current) throw new Error('Aditivo não encontrado');
     if (String(current.status).toUpperCase() !== 'RASCUNHO') throw new Error('Somente aditivos em rascunho podem ser alterados');
 
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
+
+    const assinatura = input.dataAssinatura != null ? parseDateOnly(input.dataAssinatura) : current.dataAssinatura ? new Date(current.dataAssinatura) : null;
+    if (!assinatura) throw new Error('dataAssinatura é obrigatória');
+    const hoje = dateOnly(new Date());
+    if (dateOnly(assinatura).getTime() > hoje.getTime()) throw new Error('dataAssinatura não pode ser no futuro');
+    if (contrato.dataAssinatura) {
+      const inicio = dateOnly(new Date(contrato.dataAssinatura));
+      if (dateOnly(assinatura).getTime() < inicio.getTime()) throw new Error('dataAssinatura do aditivo deve ser maior ou igual à data de assinatura do contrato');
+    }
+    if (contrato.vigenciaAtual) {
+      const fim = dateOnly(new Date(contrato.vigenciaAtual));
+      if (dateOnly(assinatura).getTime() > fim.getTime()) throw new Error('dataAssinatura do aditivo não pode ultrapassar a vigência atual do contrato');
+    }
+
     const updated = await tx.contratoAditivo.update({
       where: { id: aditivoId },
       data: {
         tipo: input.tipo != null ? String(input.tipo).trim().toUpperCase() : undefined,
-        dataAssinatura: input.dataAssinatura != null ? parseDateOnly(input.dataAssinatura) : undefined,
+        dataAssinatura: input.dataAssinatura != null ? assinatura : undefined,
         justificativa: input.justificativa ?? undefined,
         descricao: input.descricao ?? undefined,
         prazoAdicionadoDias: input.prazoAdicionadoDias != null ? Math.trunc(Number(input.prazoAdicionadoDias)) : undefined,
