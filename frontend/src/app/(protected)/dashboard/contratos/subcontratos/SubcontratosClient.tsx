@@ -255,12 +255,12 @@ export default function SubcontratosClient() {
     if (!principalId) return;
     carregar();
     realtimeClient.start(["contratos", `contrato:${principalId}`]);
-    const unsub = realtimeClient.onMessage((msg) => {
-      if (msg.event === "contrato_atualizado") carregar();
-    });
+    const unsubs = [
+      realtimeClient.subscribe("contratos", "contrato_atualizado", () => carregar()),
+      realtimeClient.subscribe(`contrato:${principalId}`, "contrato_atualizado", () => carregar()),
+    ];
     return () => {
-      unsub();
-      realtimeClient.stop();
+      for (const u of unsubs) u();
     };
   }, [principalId]);
 
@@ -912,4 +912,3 @@ export default function SubcontratosClient() {
     </div>
   );
 }
-

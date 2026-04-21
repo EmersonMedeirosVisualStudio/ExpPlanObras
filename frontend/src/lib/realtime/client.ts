@@ -9,9 +9,22 @@ class RealtimeClient {
   private connecting = false;
 
   start(topics: string[]) {
-    this.topics = Array.from(new Set(topics)).filter(Boolean);
-    if (!this.topics.length) return;
-    if (this.connecting) return;
+    const nextTopics = Array.from(new Set([...this.topics, ...(topics || [])])).filter(Boolean);
+    if (!nextTopics.length) return;
+    const same =
+      nextTopics.length === this.topics.length &&
+      nextTopics.every((t) => this.topics.includes(t));
+    if (same && this.es) return;
+
+    this.topics = nextTopics;
+    const es = this.es;
+    if (es) {
+      try {
+        es.close();
+      } catch {}
+    }
+    this.es = null;
+    this.connecting = false;
     this.connect();
   }
 
