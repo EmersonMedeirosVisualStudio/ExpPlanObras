@@ -829,6 +829,191 @@ export async function getContratosDashboard(tenantId: number, input?: { status?:
     const ve = typeof valorExecutado === 'number' ? valorExecutado : valorExecutado ? Number(valorExecutado) : 0;
     const vp = typeof valorPago === 'number' ? valorPago : valorPago ? Number(valorPago) : 0;
 
+    const contratos = await tx.contrato.findMany({
+      where: whereContrato,
+      select: {
+        id: true,
+        numeroContrato: true,
+        nome: true,
+        objeto: true,
+        tipoContratante: true,
+        status: true,
+        dataAssinatura: true,
+        dataOS: true,
+        prazoDias: true,
+        vigenciaAtual: true,
+        valorTotalAtual: true,
+      },
+    });
+
+    const pagoRows: Array<{ contratoId: number; valorPago: any }> = status
+      ? await tx.$queryRaw`
+          SELECT o."contratoId"::int AS "contratoId", COALESCE(SUM(p."amount"), 0) AS "valorPago"
+          FROM "Pagamento" p
+          JOIN "Obra" o ON o."id" = p."obraId"
+          JOIN "Contrato" c ON c."id" = o."contratoId"
+          WHERE o."tenantId" = ${tenantId} AND c."tenantId" = ${tenantId} AND c."status" = ${status} AND o."contratoId" IS NOT NULL
+          GROUP BY o."contratoId"
+        `
+      : await tx.$queryRaw`
+          SELECT o."contratoId"::int AS "contratoId", COALESCE(SUM(p."amount"), 0) AS "valorPago"
+          FROM "Pagamento" p
+          JOIN "Obra" o ON o."id" = p."obraId"
+          WHERE o."tenantId" = ${tenantId} AND o."contratoId" IS NOT NULL
+          GROUP BY o."contratoId"
+        `;
+
+    const valorPagoByContratoId = new Map<number, number>();
+    for (const r of pagoRows || []) {
+      const id = Number((r as any).contratoId);
+      const v = (r as any).valorPago;
+      const n = typeof v === 'number' ? v : v ? Number(v) : 0;
+      if (Number.isFinite(id)) valorPagoByContratoId.set(id, Number.isFinite(n) ? n : 0);
+    }
+
+    const closedStatuses = new Set(['ENCERRADO', 'FINALIZADO', 'CANCELADO', 'RESCINDIDO']);
+    let concluidos = 0;
+    let vencidos = 0;
+    let aVencer = 0;
+    let semRecursos = 0;
+    let ativosElegiveis = 0;
+
+    for (const c of contratos) {
+      const st = String((c as any).status || '').toUpperCase();
+      if (st === 'ENCERRADO' || st === 'FINALIZADO') concluidos += 1;
+      const isClosed = closedStatuses.has(st);
+      if (!isClosed) ativosElegiveis += 1;
+
+      const vig = (c as any).vigenciaAtual as Date | null;
+      if (!isClosed && vig && vig.getTime() < now.getTime()) vencidos += 1;
+      if (!isClosed && vig && vig.getTime() >= now.getTime() && vig.getTime() <= in30.getTime()) aVencer += 1;
+
+      const total = (c as any).valorTotalAtual;
+      const totalN = typeof total === 'number' ? total : total ? Number(total) : 0;
+      const pagoN = valorPagoByContratoId.get(Number(c.id)) ?? 0;
+      if (!isClosed && totalN > 0 && pagoN >= totalN) semRecursos += 1;
+    }
+
+    const emAndamento = Math.max(0, ativosElegiveis - vencidos - aVencer - semRecursos);
+
+    const aditivosAgg = await tx.contratoAditivo.groupBy({
+      by: ['status'],
+      where: status ? { tenantId, contrato: { status } } : { tenantId },
+      _count: { _all: true },
+    });
+    const aditivosPorStatus: Record<string, number> = {};
+    for (const a of aditivosAgg) {
+      aditivosPorStatus[String(a.status || '').toUpperCase()] = Number((a as any)?._count?._all ?? 0);
+    }
+    const aditivosPendentes = aditivosPorStatus['RASCUNHO'] ?? 0;
+
+    const recentes = await tx.contratoEvento.findMany({
+      where: { tenantId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 10,
+      select: {
+        id: true,
+        contratoId: true,
+        tipoOrigem: true,
+        tipoEvento: true,
+        descricao: true,
+        createdAt: true,
+        contrato: { select: { numeroContrato: true } },
+      },
+    });
+
+    const prazoCriticoRows = contratos
+      .filter((c) => {
+        const st = String((c as any).status || '').toUpperCase();
+        if (closedStatuses.has(st)) return false;
+        return !!(c as any).vigenciaAtual;
+      })
+      .map((c) => {
+        const vig = (c as any).vigenciaAtual as Date;
+        const diff = Math.ceil((vig.getTime() - now.getTime()) / (24 * 3600 * 1000));
+        const st = diff < 0 ? 'VENCIDO' : diff <= 30 ? 'A_VENCER' : 'EM_ANDAMENTO';
+        return {
+          contratoId: Number(c.id),
+          numeroContrato: String((c as any).numeroContrato || ''),
+          objeto: (c as any).objeto ?? (c as any).nome ?? null,
+          vigenciaAtual: vig.toISOString(),
+          diasRestantes: diff,
+          situacao: st,
+        };
+      })
+      .sort((a, b) => a.diasRestantes - b.diasRestantes)
+      .slice(0, 12);
+
+    const porTipo: Array<{ tipo: string; quantidade: number }> = [];
+    const tipoCount = new Map<string, number>();
+    for (const c of contratos) {
+      const t = String((c as any).tipoContratante || 'PRIVADO').toUpperCase();
+      tipoCount.set(t, (tipoCount.get(t) ?? 0) + 1);
+    }
+    for (const [tipo, quantidade] of tipoCount.entries()) porTipo.push({ tipo, quantidade });
+    porTipo.sort((a, b) => b.quantidade - a.quantidade);
+
+    const start6m = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1, 0, 0, 0, 0));
+    const endNext = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+
+    const executadoMesRows: Array<{ mes: string; total: any }> = status
+      ? await tx.$queryRaw`
+          SELECT to_char(date_trunc('month', m."date"), 'YYYY-MM') AS "mes", COALESCE(SUM(m."amount"), 0) AS "total"
+          FROM "Medicao" m
+          JOIN "Obra" o ON o."id" = m."obraId"
+          JOIN "Contrato" c ON c."id" = o."contratoId"
+          WHERE o."tenantId" = ${tenantId} AND c."tenantId" = ${tenantId} AND c."status" = ${status}
+            AND m."date" >= ${start6m} AND m."date" < ${endNext}
+          GROUP BY 1
+          ORDER BY 1 ASC
+        `
+      : await tx.$queryRaw`
+          SELECT to_char(date_trunc('month', m."date"), 'YYYY-MM') AS "mes", COALESCE(SUM(m."amount"), 0) AS "total"
+          FROM "Medicao" m
+          JOIN "Obra" o ON o."id" = m."obraId"
+          WHERE o."tenantId" = ${tenantId}
+            AND m."date" >= ${start6m} AND m."date" < ${endNext}
+          GROUP BY 1
+          ORDER BY 1 ASC
+        `;
+
+    const contratadoMesRows: Array<{ mes: string; total: any }> = await tx.$queryRaw`
+      SELECT to_char(date_trunc('month', COALESCE(c."dataOS", c."dataAssinatura", c."createdAt")), 'YYYY-MM') AS "mes",
+             COALESCE(SUM(c."valorTotalAtual"), 0) AS "total"
+      FROM "Contrato" c
+      WHERE c."tenantId" = ${tenantId}
+        AND (${status}::text IS NULL OR c."status" = ${status})
+        AND COALESCE(c."dataOS", c."dataAssinatura", c."createdAt") >= ${start6m}
+        AND COALESCE(c."dataOS", c."dataAssinatura", c."createdAt") < ${endNext}
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `;
+
+    const execByMes = new Map<string, number>();
+    for (const r of executadoMesRows || []) {
+      const mes = String((r as any).mes || '');
+      const v = (r as any).total;
+      execByMes.set(mes, typeof v === 'number' ? v : v ? Number(v) : 0);
+    }
+    const contByMes = new Map<string, number>();
+    for (const r of contratadoMesRows || []) {
+      const mes = String((r as any).mes || '');
+      const v = (r as any).total;
+      contByMes.set(mes, typeof v === 'number' ? v : v ? Number(v) : 0);
+    }
+
+    const meses: string[] = [];
+    for (let i = 5; i >= 0; i -= 1) {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1, 0, 0, 0, 0));
+      const m = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      meses.push(m);
+    }
+    const serie = meses.map((m) => ({
+      mes: m,
+      valorContratado: contByMes.get(m) ?? 0,
+      valorExecutado: execByMes.get(m) ?? 0,
+    }));
+
     return {
       kpis: {
         totalContratos,
@@ -841,6 +1026,37 @@ export async function getContratosDashboard(tenantId: number, input?: { status?:
         vencendoEm30Dias: vencendo,
         atrasados,
       },
+      cards: {
+        total: totalContratos,
+        emAndamento,
+        aVencer,
+        vencidos,
+        concluidos,
+        semRecursos,
+      },
+      alertas: [
+        { codigo: 'CONTRATOS_VENCIDOS', titulo: 'Contratos vencidos', severidade: 'CRITICO', quantidade: vencidos },
+        { codigo: 'CONTRATOS_A_VENCER', titulo: 'Contratos a vencer (30 dias)', severidade: 'ALERTA', quantidade: aVencer },
+        { codigo: 'SEM_RECURSOS', titulo: 'Sem recursos', severidade: 'ALERTA', quantidade: semRecursos },
+        { codigo: 'ADITIVOS_PENDENTES', titulo: 'Aditivos pendentes de aprovação', severidade: 'ALERTA', quantidade: aditivosPendentes },
+      ].filter((a) => (a as any).quantidade > 0),
+      prazoCritico: prazoCriticoRows,
+      aditivosPorSituacao: {
+        aprovados: aditivosPorStatus['APROVADO'] ?? 0,
+        pendentes: aditivosPorStatus['RASCUNHO'] ?? 0,
+        cancelados: aditivosPorStatus['CANCELADO'] ?? 0,
+      },
+      atividadesRecentes: (recentes || []).map((e) => ({
+        id: e.id,
+        contratoId: e.contratoId,
+        numeroContrato: e.contrato?.numeroContrato || null,
+        tipoOrigem: e.tipoOrigem,
+        tipoEvento: e.tipoEvento,
+        descricao: e.descricao,
+        criadoEm: e.createdAt.toISOString(),
+      })),
+      contratosPorTipo: porTipo,
+      serieContratadoExecutado: serie,
     };
   });
 }

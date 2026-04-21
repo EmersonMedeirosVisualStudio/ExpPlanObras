@@ -124,7 +124,8 @@ export default function ContratosClient() {
   const [eStatus, setEStatus] = useState("ATIVO");
   const [eDataAssinatura, setEDataAssinatura] = useState("");
   const [eDataOS, setEDataOS] = useState("");
-  const [ePrazoDias, setEPrazoDias] = useState("");
+  const [ePrazoValor, setEPrazoValor] = useState("");
+  const [ePrazoUnidade, setEPrazoUnidade] = useState<"DIAS" | "MESES" | "ANOS">("DIAS");
   const [eVigenciaCalculada, setEVigenciaCalculada] = useState("");
 
   const [eValorConcedenteInicial, setEValorConcedenteInicial] = useState("0,00");
@@ -139,11 +140,17 @@ export default function ContratosClient() {
 
   const eIsPublico = eTipoContratante === "PUBLICO";
   const eBaseDate = useMemo(() => eDataOS || eDataAssinatura || "", [eDataOS, eDataAssinatura]);
+  const ePrazoDias = useMemo(() => {
+    const q = Math.trunc(Number(ePrazoValor || 0));
+    if (!q || q <= 0) return 0;
+    if (ePrazoUnidade === "MESES") return q * 30;
+    if (ePrazoUnidade === "ANOS") return q * 365;
+    return q;
+  }, [ePrazoValor, ePrazoUnidade]);
 
   useEffect(() => {
     if (!editOpen) return;
-    const prazo = Number(ePrazoDias || 0);
-    if (!eBaseDate || !prazo || prazo <= 0) {
+    if (!eBaseDate || !ePrazoDias || ePrazoDias <= 0) {
       setEVigenciaCalculada("");
       return;
     }
@@ -153,7 +160,7 @@ export default function ContratosClient() {
       return;
     }
     const result = new Date(base);
-    result.setDate(result.getDate() + prazo);
+    result.setDate(result.getDate() + ePrazoDias);
     setEVigenciaCalculada(result.toISOString().slice(0, 10));
   }, [editOpen, eBaseDate, ePrazoDias]);
 
@@ -277,7 +284,8 @@ export default function ContratosClient() {
     setEStatus(String(detail.status || "ATIVO"));
     setEDataAssinatura(toDateInputValue(detail.dataAssinatura));
     setEDataOS(toDateInputValue(detail.dataOS));
-    setEPrazoDias(detail.prazoDias == null ? "" : String(detail.prazoDias));
+    setEPrazoValor(detail.prazoDias == null ? "" : String(detail.prazoDias));
+    setEPrazoUnidade("DIAS");
 
     const vci = Number((detail as any).valorConcedenteInicial || 0);
     const vpi = Number((detail as any).valorProprioInicial || 0);
@@ -301,8 +309,7 @@ export default function ContratosClient() {
     try {
       setEditLoading(true);
       setEditErr(null);
-      const prazo = Number(ePrazoDias || 0);
-      if (!eBaseDate || !prazo || prazo <= 0) {
+      if (!eBaseDate || !ePrazoDias || ePrazoDias <= 0) {
         setEditErr("Informe a data base (OS ou Assinatura) e o prazo (dias).");
         return;
       }
@@ -318,7 +325,7 @@ export default function ContratosClient() {
         status: eStatus || null,
         dataAssinatura: eDataAssinatura ? new Date(`${eDataAssinatura}T00:00:00`).toISOString() : null,
         dataOS: eDataOS ? new Date(`${eDataOS}T00:00:00`).toISOString() : null,
-        prazoDias: prazo,
+        prazoDias: ePrazoDias,
         vigenciaInicial: eVigenciaCalculada ? new Date(`${eVigenciaCalculada}T00:00:00`).toISOString() : null,
         vigenciaAtual: eVigenciaCalculada ? new Date(`${eVigenciaCalculada}T00:00:00`).toISOString() : null,
         valorConcedenteInicial: eIsPublico ? parseMoneyBR(eValorConcedenteInicial) : null,
@@ -362,6 +369,13 @@ export default function ContratosClient() {
               onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}`)}
             >
               Aditivos
+            </button>
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
+              type="button"
+              onClick={() => router.push(`/dashboard/contratos/medicoes?contratoId=${contratoId}`)}
+            >
+              Medições
             </button>
             <button
               className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
@@ -554,8 +568,15 @@ export default function ContratosClient() {
                       <input className="input" type="date" value={eDataOS} onChange={(e) => setEDataOS(e.target.value)} />
                     </div>
                     <div>
-                      <div className="text-sm text-slate-600 dark:text-slate-300">Prazo (dias)</div>
-                      <input className="input" value={ePrazoDias} onChange={(e) => setEPrazoDias(e.target.value)} placeholder="Ex: 180" />
+                      <div className="text-sm text-slate-600 dark:text-slate-300">Prazo</div>
+                      <div className="flex gap-2">
+                        <input className="input" value={ePrazoValor} onChange={(e) => setEPrazoValor(e.target.value)} placeholder="Ex: 180" />
+                        <select className="input w-[140px]" value={ePrazoUnidade} onChange={(e) => setEPrazoUnidade(e.target.value as any)}>
+                          <option value="DIAS">Dias</option>
+                          <option value="MESES">Meses</option>
+                          <option value="ANOS">Anos</option>
+                        </select>
+                      </div>
                     </div>
                     <div className="md:col-span-3">
                       <div className="text-sm text-slate-600 dark:text-slate-300">Vigência (calculada)</div>

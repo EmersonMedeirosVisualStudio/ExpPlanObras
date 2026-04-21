@@ -144,7 +144,7 @@ export const APP_MENU: MenuSectionConfig[] = [
     items: [
       {
         key: 'contratos-dashboard',
-        label: 'Visão Geral (Dashboard)',
+        label: 'Dashboard Contratos',
         href: '/dashboard/contratos/dashboard',
         icon: 'layout-dashboard',
         permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
