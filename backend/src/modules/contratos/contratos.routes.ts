@@ -10,22 +10,33 @@ import {
   createCronogramaDependencia,
   cancelarContratoAditivo,
   addContratoEventoAnexo,
+  createContratoMedicao,
+  createContratoPagamento,
+  createSubcontrato,
+  deleteContratoPagamento,
+  deleteSubcontrato,
   deleteCronogramaDependencia,
   getContratoConsolidado,
   getContratoById,
   getContratoCronograma,
   getContratosDashboard,
+  getSubcontratosResumo,
   createContratoObservacao,
   downloadContratoEventoAnexo,
   listContratoAditivos,
   listContratoEventos,
+  listContratoMedicoes,
+  listContratoPagamentos,
   listContratoServicos,
+  listSubcontratos,
   listContratos,
   aprovarContratoAditivo,
   seedCronogramaFromServicos,
   updateContrato,
   updateContratoAditivo,
+  updateContratoMedicaoStatus,
   updateCronogramaItemDatas,
+  updateSubcontrato,
 } from './contratos.service.js';
 
 export default async function contratosRoutes(server: FastifyInstance) {
@@ -135,6 +146,221 @@ export default async function contratosRoutes(server: FastifyInstance) {
         return reply.send(data);
       } catch (e: any) {
         return reply.code(400).send({ message: e?.message || 'Erro ao carregar consolidado' });
+      }
+    }
+  );
+
+  server.get(
+    '/:id/subcontratos/resumo',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id } = request.params as any;
+      try {
+        const data = await getSubcontratosResumo(tenantId, id);
+        return reply.send(data);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao carregar resumo de subcontratos' });
+      }
+    }
+  );
+
+  server.get(
+    '/:id/subcontratos',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id } = request.params as any;
+      try {
+        const rows = await listSubcontratos(tenantId, id);
+        return reply.send(rows);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao listar subcontratos' });
+      }
+    }
+  );
+
+  server.post(
+    '/:id/subcontratos',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        body: z.object({
+          numeroContrato: z.string().optional().nullable(),
+          subcontratadaNome: z.string().min(2),
+          subcontratadaDocumento: z.string().optional().nullable(),
+          objeto: z.string().min(2),
+          valorTotal: z.number().positive(),
+          dataInicio: z.string().min(10),
+          dataFim: z.string().min(10),
+          status: z.string().optional().nullable(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id } = request.params as any;
+      try {
+        const created = await createSubcontrato(tenantId, id, request.body as any);
+        return reply.send(created);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao criar subcontrato' });
+      }
+    }
+  );
+
+  server.put(
+    '/:id/subcontratos/:subId',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive(), subId: z.coerce.number().int().positive() }),
+        body: z.object({
+          subcontratadaNome: z.string().optional().nullable(),
+          subcontratadaDocumento: z.string().optional().nullable(),
+          objeto: z.string().optional().nullable(),
+          valorTotal: z.number().optional().nullable(),
+          dataInicio: z.string().optional().nullable(),
+          dataFim: z.string().optional().nullable(),
+          status: z.string().optional().nullable(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id, subId } = request.params as any;
+      try {
+        const updated = await updateSubcontrato(tenantId, id, subId, request.body as any);
+        return reply.send(updated);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao atualizar subcontrato' });
+      }
+    }
+  );
+
+  server.delete(
+    '/:id/subcontratos/:subId',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive(), subId: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id, subId } = request.params as any;
+      try {
+        const ok = await deleteSubcontrato(tenantId, id, subId);
+        return reply.send(ok);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao excluir subcontrato' });
+      }
+    }
+  );
+
+  server.get(
+    '/:id/medicoes',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id } = request.params as any;
+      try {
+        const rows = await listContratoMedicoes(tenantId, id);
+        return reply.send(rows);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao listar medições' });
+      }
+    }
+  );
+
+  server.post(
+    '/:id/medicoes',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        body: z.object({
+          date: z.string().min(10),
+          amount: z.number().positive(),
+          status: z.string().optional().nullable(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id } = request.params as any;
+      try {
+        const created = await createContratoMedicao(tenantId, id, request.body as any);
+        return reply.send(created);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao criar medição' });
+      }
+    }
+  );
+
+  server.put(
+    '/:id/medicoes/:medicaoId',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive(), medicaoId: z.coerce.number().int().positive() }),
+        body: z.object({ status: z.string().min(1) }),
+      },
+    },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id, medicaoId } = request.params as any;
+      try {
+        const updated = await updateContratoMedicaoStatus(tenantId, id, medicaoId, request.body as any);
+        return reply.send(updated);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao atualizar medição' });
+      }
+    }
+  );
+
+  server.get(
+    '/:id/pagamentos',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id } = request.params as any;
+      try {
+        const rows = await listContratoPagamentos(tenantId, id);
+        return reply.send(rows);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao listar pagamentos' });
+      }
+    }
+  );
+
+  server.post(
+    '/:id/pagamentos',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        body: z.object({
+          date: z.string().min(10),
+          amount: z.number().positive(),
+          medicaoId: z.number().int().positive().optional().nullable(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id } = request.params as any;
+      try {
+        const created = await createContratoPagamento(tenantId, id, request.body as any);
+        return reply.send(created);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao criar pagamento' });
+      }
+    }
+  );
+
+  server.delete(
+    '/:id/pagamentos/:pagamentoId',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive(), pagamentoId: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id, pagamentoId } = request.params as any;
+      try {
+        const ok = await deleteContratoPagamento(tenantId, id, pagamentoId);
+        return reply.send(ok);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao excluir pagamento' });
       }
     }
   );

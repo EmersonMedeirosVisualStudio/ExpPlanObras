@@ -427,6 +427,13 @@ export default function ContratosClient() {
             <button
               className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
               type="button"
+              onClick={() => router.push(`/dashboard/contratos/subcontratos?contratoId=${contratoId}`)}
+            >
+              Subcontratos
+            </button>
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
+              type="button"
               onClick={() => router.push(`/dashboard/contratos/medicoes?contratoId=${contratoId}`)}
             >
               Medições

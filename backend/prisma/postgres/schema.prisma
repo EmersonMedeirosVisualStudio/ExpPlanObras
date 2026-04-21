@@ -44,6 +44,8 @@ model Tenant {
   contratosAditivos ContratoAditivo[]
   contratosEventos ContratoEvento[]
   contratosEventosAnexos ContratoEventoAnexo[]
+  contratosMedicoes ContratoMedicao[]
+  contratosPagamentos ContratoPagamento[]
   obras     Obra[]
   enderecosObra EnderecoObra[]
   obrasPlanilhasContratadas ObraPlanilhaContratada[]
@@ -292,6 +294,7 @@ model TenantUser {
 model Contrato {
   id             Int      @id @default(autoincrement())
   tenantId       Int
+  contratoPrincipalId Int?
   numeroContrato String
   nome           String?
   objeto         String?
@@ -318,6 +321,8 @@ model Contrato {
   updatedAt      DateTime @updatedAt
 
   tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contratoPrincipal Contrato? @relation("ContratoSubcontrato", fields: [contratoPrincipalId], references: [id])
+  subcontratos    Contrato[] @relation("ContratoSubcontrato")
   obras          Obra[]
   planilhas      ObraPlanilhaContratada[]
   servicos       ContratoServico[]
@@ -326,10 +331,52 @@ model Contrato {
   aditivos       ContratoAditivo[]
   eventos        ContratoEvento[]
   eventosAnexos  ContratoEventoAnexo[]
+  medicoes       ContratoMedicao[]
+  pagamentos     ContratoPagamento[]
 
   @@unique([tenantId, numeroContrato])
   @@index([tenantId])
   @@index([tenantId, tipoContratante])
+  @@index([contratoPrincipalId])
+}
+
+model ContratoMedicao {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int
+  contratoId Int
+  date      DateTime
+  amount    Decimal
+  status    String   @default("PENDENTE") // PENDENTE | APROVADO | REJEITADO
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contrato  Contrato @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+  pagamentos ContratoPagamento[]
+
+  @@index([tenantId])
+  @@index([contratoId])
+  @@index([tenantId, contratoId, date])
+  @@index([tenantId, status])
+}
+
+model ContratoPagamento {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int
+  contratoId Int
+  medicaoId Int?
+  date      DateTime
+  amount    Decimal
+  createdAt DateTime @default(now())
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contrato  Contrato @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+  medicao   ContratoMedicao? @relation(fields: [medicaoId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([contratoId])
+  @@index([medicaoId])
+  @@index([tenantId, contratoId, date])
 }
 
 model ContratoAditivo {

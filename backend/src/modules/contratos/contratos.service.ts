@@ -26,6 +26,13 @@ function toNumberOrNull(v: any) {
   return Number.isFinite(n) ? n : null;
 }
 
+function diffDays(start: Date, end: Date) {
+  const a = dateOnly(start).getTime();
+  const b = dateOnly(end).getTime();
+  const d = Math.round((b - a) / (24 * 3600 * 1000));
+  return Math.max(0, d);
+}
+
 function addDays(date: Date, days: number) {
   const ms = days * 24 * 3600 * 1000;
   return new Date(date.getTime() + ms);
@@ -258,6 +265,515 @@ export async function listContratos(tenantId: number) {
       const extra = computeStatusEAlertas(enriched);
       return { ...r, statusCalculado: extra.statusCalc, alerta: extra.alerta, alertas: extra.issues };
     });
+  });
+}
+
+function normalizeSubStatus(v: any) {
+  const s = String(v ?? '').trim().toUpperCase();
+  if (s === 'PLANEJADO' || s === 'EM_EXECUCAO' || s === 'AGUARDANDO' || s === 'CONCLUIDO' || s === 'BLOQUEADO') return s;
+  return 'EM_EXECUCAO';
+}
+
+function normalizeMedicaoStatus(v: any) {
+  const s = String(v ?? '').trim().toUpperCase();
+  if (s === 'PENDENTE' || s === 'APROVADO' || s === 'REJEITADO') return s;
+  return 'PENDENTE';
+}
+
+export async function getSubcontratosResumo(tenantId: number, contratoPrincipalId: number) {
+  return withRLS(tenantId, async (tx) => {
+    const principal = await tx.contrato.findFirst({ where: { tenantId, id: contratoPrincipalId } }).catch(() => null);
+    if (!principal) throw new Error('Contrato principal não encontrado');
+    const valorPrincipal = toNumberOrNull(principal.valorTotalAtual) ?? 0;
+
+    const sumAgg = await tx.contrato.aggregate({
+      _sum: { valorTotalAtual: true },
+      where: { tenantId, contratoPrincipalId },
+    });
+    const totalSub = toNumberOrNull(sumAgg?._sum?.valorTotalAtual) ?? 0;
+
+    const saldo = Math.max(0, valorPrincipal - totalSub);
+    const pctComprometido = valorPrincipal > 0 ? Math.min(1, totalSub / valorPrincipal) : 0;
+
+    const alertas: string[] = [];
+    if (!valorPrincipal || valorPrincipal <= 0) alertas.push('Contrato principal sem valor total definido.');
+    if (valorPrincipal > 0 && totalSub > valorPrincipal) alertas.push('Soma dos subcontratos ultrapassa o valor do contrato principal.');
+    if (valorPrincipal > 0 && totalSub >= valorPrincipal * 0.9 && totalSub <= valorPrincipal) alertas.push('Soma dos subcontratos próxima do limite do contrato principal (>= 90%).');
+
+    return {
+      contratoPrincipal: {
+        id: principal.id,
+        numeroContrato: principal.numeroContrato,
+        nome: principal.nome ?? null,
+        objeto: principal.objeto ?? null,
+        empresaParceiraNome: principal.empresaParceiraNome ?? null,
+        vigenciaAtual: principal.vigenciaAtual ? principal.vigenciaAtual.toISOString() : null,
+        valorTotalAtual: toNumberOrNull(principal.valorTotalAtual),
+      },
+      financeiro: {
+        valorPrincipal,
+        totalSubcontratado: totalSub,
+        saldoDisponivel: saldo,
+        percentualComprometido: pctComprometido,
+      },
+      alertas,
+    };
+  });
+}
+
+export async function listSubcontratos(tenantId: number, contratoPrincipalId: number) {
+  return withRLS(tenantId, async (tx) => {
+    const principal = await tx.contrato.findFirst({ where: { tenantId, id: contratoPrincipalId } }).catch(() => null);
+    if (!principal) throw new Error('Contrato principal não encontrado');
+
+    const subs = await tx.contrato.findMany({
+      where: { tenantId, contratoPrincipalId },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+    });
+
+    const ids = subs.map((s: any) => Number(s.id)).filter((n: number) => Number.isFinite(n));
+    if (!ids.length) return [];
+
+    const medAprovRows: any[] = await tx.$queryRaw`
+      SELECT "contratoId" AS "contratoId", COALESCE(SUM("amount"), 0) AS "medAprov"
+      FROM "ContratoMedicao"
+      WHERE "tenantId" = ${tenantId} AND "contratoId" IN (${prisma.join(ids)}) AND "status" = 'APROVADO'
+      GROUP BY "contratoId"
+    `;
+
+    const pagRows: any[] = await tx.$queryRaw`
+      SELECT "contratoId" AS "contratoId", COALESCE(SUM("amount"), 0) AS "pago"
+      FROM "ContratoPagamento"
+      WHERE "tenantId" = ${tenantId} AND "contratoId" IN (${prisma.join(ids)})
+      GROUP BY "contratoId"
+    `;
+
+    const medById = new Map<number, number>();
+    for (const r of medAprovRows || []) medById.set(Number(r.contratoId), toNumberOrNull(r.medAprov) ?? 0);
+
+    const pagById = new Map<number, number>();
+    for (const r of pagRows || []) pagById.set(Number(r.contratoId), toNumberOrNull(r.pago) ?? 0);
+
+    const fimPrincipal = principal.vigenciaAtual ? new Date(principal.vigenciaAtual) : null;
+
+    return subs.map((s: any) => {
+      const id = Number(s.id);
+      const valor = toNumberOrNull(s.valorTotalAtual) ?? 0;
+      const medAprov = medById.get(id) ?? 0;
+      const pago = pagById.get(id) ?? 0;
+      const aMedir = Math.max(0, valor - medAprov);
+      const aPagar = Math.max(0, medAprov - pago);
+      const pctExecutado = valor > 0 ? Math.min(1, medAprov / valor) : 0;
+
+      const alertas: string[] = [];
+      const fimSub = s.vigenciaAtual ? new Date(s.vigenciaAtual) : null;
+      if (fimPrincipal && fimSub && fimSub.getTime() > fimPrincipal.getTime()) alertas.push('Subcontrato ultrapassa a vigência do contrato principal.');
+      if (valor > 0 && medAprov > valor) alertas.push('Soma das medições aprovadas ultrapassa o valor do subcontrato.');
+      if (pago > medAprov) alertas.push('Total pago ultrapassa total medido aprovado.');
+
+      return {
+        id,
+        contratoPrincipalId: Number(s.contratoPrincipalId),
+        numeroContrato: s.numeroContrato,
+        empresaParceiraNome: s.empresaParceiraNome ?? null,
+        empresaParceiraDocumento: s.empresaParceiraDocumento ?? null,
+        objeto: s.objeto ?? null,
+        status: normalizeSubStatus(s.status),
+        dataOS: s.dataOS ? s.dataOS.toISOString() : null,
+        vigenciaAtual: s.vigenciaAtual ? s.vigenciaAtual.toISOString() : null,
+        valorTotalAtual: toNumberOrNull(s.valorTotalAtual),
+        indicadores: {
+          valorContrato: valor,
+          totalMedidoAprovado: medAprov,
+          totalPago: pago,
+          aMedir,
+          aPagar,
+          percentualExecutado: pctExecutado,
+        },
+        alertas,
+        createdAt: s.createdAt.toISOString(),
+        updatedAt: s.updatedAt.toISOString(),
+      };
+    });
+  });
+}
+
+export async function createSubcontrato(
+  tenantId: number,
+  contratoPrincipalId: number,
+  input: {
+    numeroContrato?: string | null;
+    subcontratadaNome: string;
+    subcontratadaDocumento?: string | null;
+    objeto: string;
+    valorTotal: number;
+    dataInicio: string;
+    dataFim: string;
+    status?: string | null;
+  }
+) {
+  return withRLS(tenantId, async (tx) => {
+    const principal = await tx.contrato.findFirst({ where: { tenantId, id: contratoPrincipalId } }).catch(() => null);
+    if (!principal) throw new Error('Contrato principal não encontrado');
+
+    const valorPrincipal = toNumberOrNull(principal.valorTotalAtual);
+    if (valorPrincipal == null || valorPrincipal <= 0) throw new Error('Defina o valor total atual do contrato principal antes de criar subcontratos.');
+
+    const valorNovo = Math.max(0, Number(input.valorTotal || 0));
+    if (!Number.isFinite(valorNovo) || valorNovo <= 0) throw new Error('Valor do subcontrato inválido');
+
+    const agg = await tx.contrato.aggregate({
+      _sum: { valorTotalAtual: true },
+      where: { tenantId, contratoPrincipalId },
+    });
+    const totalAtual = toNumberOrNull(agg?._sum?.valorTotalAtual) ?? 0;
+    if (totalAtual + valorNovo > valorPrincipal) throw new Error('A soma dos subcontratos ultrapassa o valor do contrato principal.');
+
+    const dataInicio = parseDateOnly(input.dataInicio);
+    const dataFim = parseDateOnly(input.dataFim);
+    if (!dataInicio || !dataFim) throw new Error('Datas inválidas');
+    if (dataFim.getTime() < dataInicio.getTime()) throw new Error('Data fim deve ser maior ou igual à data início');
+
+    const prazoDias = diffDays(dataInicio, dataFim);
+    const computedVig = computeVigencias({ dataOS: dataInicio, dataAssinatura: dataInicio, prazoDias, vigenciaInicial: dataFim, vigenciaAtual: dataFim });
+
+    const ano = new Date().getUTCFullYear();
+    let numero = String(input.numeroContrato || '').trim();
+    if (!numero) {
+      const count = await tx.contrato.count({ where: { tenantId, contratoPrincipalId } });
+      numero = `SUB-${String(count + 1).padStart(3, '0')}/${ano}`;
+    }
+
+    const created = await tx.contrato.create({
+      data: {
+        tenantId,
+        contratoPrincipalId,
+        numeroContrato: numero,
+        nome: null,
+        objeto: String(input.objeto || '').trim(),
+        descricao: null,
+        tipoContratante: 'PRIVADO',
+        empresaParceiraNome: String(input.subcontratadaNome || '').trim(),
+        empresaParceiraDocumento: input.subcontratadaDocumento ? String(input.subcontratadaDocumento).trim() : null,
+        status: normalizeSubStatus(input.status),
+        dataInicio: dataInicio,
+        dataFim: dataFim,
+        dataAssinatura: dataInicio,
+        dataOS: dataInicio,
+        prazoDias: computedVig.prazoDias,
+        vigenciaInicial: computedVig.vigenciaInicial,
+        vigenciaAtual: computedVig.vigenciaAtual,
+        valorTotalInicial: valorNovo,
+        valorTotalAtual: valorNovo,
+        valorContratado: null,
+        valorConcedenteInicial: null,
+        valorProprioInicial: null,
+        valorConcedenteAtual: null,
+        valorProprioAtual: null,
+      },
+    });
+
+    await tx.contratoEvento.create({
+      data: {
+        tenantId,
+        contratoId: contratoPrincipalId,
+        tipoOrigem: 'CONTRATO',
+        tipoEvento: 'INFO',
+        descricao: `Subcontrato criado: ${created.numeroContrato} (${created.empresaParceiraNome || 'Subcontratada'})`,
+      },
+    });
+
+    publish(`contrato:${contratoPrincipalId}`, 'contrato_atualizado', { contratoId: contratoPrincipalId });
+    publish('contratos', 'contrato_atualizado', { contratoId: contratoPrincipalId });
+
+    return created;
+  });
+}
+
+export async function updateSubcontrato(
+  tenantId: number,
+  contratoPrincipalId: number,
+  subcontratoId: number,
+  input: {
+    subcontratadaNome?: string | null;
+    subcontratadaDocumento?: string | null;
+    objeto?: string | null;
+    valorTotal?: number | null;
+    dataInicio?: string | null;
+    dataFim?: string | null;
+    status?: string | null;
+  }
+) {
+  return withRLS(tenantId, async (tx) => {
+    const principal = await tx.contrato.findFirst({ where: { tenantId, id: contratoPrincipalId } }).catch(() => null);
+    if (!principal) throw new Error('Contrato principal não encontrado');
+
+    const sub = await tx.contrato.findFirst({ where: { tenantId, id: subcontratoId, contratoPrincipalId } }).catch(() => null);
+    if (!sub) throw new Error('Subcontrato não encontrado');
+
+    const valorPrincipal = toNumberOrNull(principal.valorTotalAtual);
+    if (valorPrincipal == null || valorPrincipal <= 0) throw new Error('Defina o valor total atual do contrato principal antes de editar subcontratos.');
+
+    const valorAtualSub = toNumberOrNull(sub.valorTotalAtual) ?? 0;
+    const valorNovo = input.valorTotal == null ? valorAtualSub : Math.max(0, Number(input.valorTotal || 0));
+    if (!Number.isFinite(valorNovo) || valorNovo <= 0) throw new Error('Valor do subcontrato inválido');
+
+    const agg = await tx.contrato.aggregate({
+      _sum: { valorTotalAtual: true },
+      where: { tenantId, contratoPrincipalId, id: { not: subcontratoId } },
+    });
+    const totalOutros = toNumberOrNull(agg?._sum?.valorTotalAtual) ?? 0;
+    if (totalOutros + valorNovo > valorPrincipal) throw new Error('A soma dos subcontratos ultrapassa o valor do contrato principal.');
+
+    const inicio = input.dataInicio != null ? parseDateOnly(input.dataInicio) : (sub.dataOS ? new Date(sub.dataOS) : sub.dataAssinatura ? new Date(sub.dataAssinatura) : null);
+    const fim = input.dataFim != null ? parseDateOnly(input.dataFim) : (sub.vigenciaAtual ? new Date(sub.vigenciaAtual) : null);
+    if ((input.dataInicio != null || input.dataFim != null) && (!inicio || !fim)) throw new Error('Datas inválidas');
+    if (inicio && fim && fim.getTime() < inicio.getTime()) throw new Error('Data fim deve ser maior ou igual à data início');
+
+    const prazoDias = inicio && fim ? diffDays(inicio, fim) : (typeof sub.prazoDias === 'number' ? sub.prazoDias : sub.prazoDias != null ? Number(sub.prazoDias) : null);
+    const computedVig = computeVigencias({
+      dataOS: inicio ?? null,
+      dataAssinatura: inicio ?? null,
+      prazoDias,
+      vigenciaInicial: fim ?? (sub.vigenciaInicial ?? null),
+      vigenciaAtual: fim ?? (sub.vigenciaAtual ?? null),
+    });
+
+    const updated = await tx.contrato.update({
+      where: { id: subcontratoId },
+      data: {
+        empresaParceiraNome: input.subcontratadaNome != null ? String(input.subcontratadaNome).trim() : undefined,
+        empresaParceiraDocumento: input.subcontratadaDocumento != null ? (input.subcontratadaDocumento ? String(input.subcontratadaDocumento).trim() : null) : undefined,
+        objeto: input.objeto != null ? String(input.objeto).trim() : undefined,
+        status: input.status != null ? normalizeSubStatus(input.status) : undefined,
+        dataInicio: inicio ? inicio : undefined,
+        dataFim: fim ? fim : undefined,
+        dataAssinatura: inicio ? inicio : undefined,
+        dataOS: inicio ? inicio : undefined,
+        prazoDias: computedVig.prazoDias ?? undefined,
+        vigenciaInicial: computedVig.vigenciaInicial ?? undefined,
+        vigenciaAtual: computedVig.vigenciaAtual ?? undefined,
+        valorTotalInicial: valorNovo,
+        valorTotalAtual: valorNovo,
+      },
+    });
+
+    await tx.contratoEvento.create({
+      data: {
+        tenantId,
+        contratoId: contratoPrincipalId,
+        tipoOrigem: 'CONTRATO',
+        tipoEvento: 'INFO',
+        descricao: `Subcontrato atualizado: ${updated.numeroContrato} (${updated.empresaParceiraNome || 'Subcontratada'})`,
+      },
+    });
+
+    publish(`contrato:${contratoPrincipalId}`, 'contrato_atualizado', { contratoId: contratoPrincipalId });
+    publish('contratos', 'contrato_atualizado', { contratoId: contratoPrincipalId });
+
+    return updated;
+  });
+}
+
+export async function deleteSubcontrato(tenantId: number, contratoPrincipalId: number, subcontratoId: number) {
+  return withRLS(tenantId, async (tx) => {
+    const sub = await tx.contrato.findFirst({ where: { tenantId, id: subcontratoId, contratoPrincipalId } }).catch(() => null);
+    if (!sub) throw new Error('Subcontrato não encontrado');
+
+    const [mCount, pCount] = await Promise.all([
+      tx.contratoMedicao.count({ where: { tenantId, contratoId: subcontratoId } }),
+      tx.contratoPagamento.count({ where: { tenantId, contratoId: subcontratoId } }),
+    ]);
+    if (mCount > 0 || pCount > 0) throw new Error('Não é possível excluir: existe medição ou pagamento vinculado ao subcontrato.');
+
+    await tx.contrato.delete({ where: { id: subcontratoId } });
+    publish(`contrato:${contratoPrincipalId}`, 'contrato_atualizado', { contratoId: contratoPrincipalId });
+    publish('contratos', 'contrato_atualizado', { contratoId: contratoPrincipalId });
+    return { ok: true };
+  });
+}
+
+export async function listContratoMedicoes(tenantId: number, contratoId: number) {
+  return withRLS(tenantId, async (tx) => {
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId }, select: { id: true } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
+    const rows = await tx.contratoMedicao.findMany({ where: { tenantId, contratoId }, orderBy: [{ date: 'desc' }, { id: 'desc' }] });
+    return rows.map((r: any) => ({
+      id: r.id,
+      contratoId: r.contratoId,
+      date: r.date.toISOString(),
+      amount: toNumberOrNull(r.amount) ?? 0,
+      status: normalizeMedicaoStatus(r.status),
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    }));
+  });
+}
+
+export async function createContratoMedicao(tenantId: number, contratoId: number, input: { date: string; amount: number; status?: string | null }) {
+  return withRLS(tenantId, async (tx) => {
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
+    const valorContrato = toNumberOrNull(contrato.valorTotalAtual) ?? 0;
+    const amount = Number(input.amount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Valor inválido');
+
+    const date = parseDateOnly(input.date);
+    if (!date) throw new Error('Data inválida');
+
+    const agg = await tx.contratoMedicao.aggregate({
+      _sum: { amount: true },
+      where: { tenantId, contratoId, status: { in: ['PENDENTE', 'APROVADO'] } },
+    });
+    const total = toNumberOrNull(agg?._sum?.amount) ?? 0;
+    if (valorContrato > 0 && total + amount > valorContrato) throw new Error('Soma das medições não pode ultrapassar o valor do contrato.');
+
+    const created = await tx.contratoMedicao.create({
+      data: {
+        tenantId,
+        contratoId,
+        date,
+        amount,
+        status: normalizeMedicaoStatus(input.status),
+      },
+    });
+
+    publish(`contrato:${contratoId}`, 'contrato_atualizado', { contratoId });
+    publish('contratos', 'contrato_atualizado', { contratoId });
+    return {
+      id: created.id,
+      contratoId: created.contratoId,
+      date: created.date.toISOString(),
+      amount: toNumberOrNull(created.amount) ?? 0,
+      status: normalizeMedicaoStatus(created.status),
+      createdAt: created.createdAt.toISOString(),
+      updatedAt: created.updatedAt.toISOString(),
+    };
+  });
+}
+
+export async function updateContratoMedicaoStatus(tenantId: number, contratoId: number, medicaoId: number, input: { status: string }) {
+  return withRLS(tenantId, async (tx) => {
+    const med = await tx.contratoMedicao.findFirst({ where: { tenantId, contratoId, id: medicaoId } }).catch(() => null);
+    if (!med) throw new Error('Medição não encontrada');
+    const status = normalizeMedicaoStatus(input.status);
+
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
+    const valorContrato = toNumberOrNull(contrato.valorTotalAtual) ?? 0;
+
+    if (status !== 'REJEITADO') {
+      const agg = await tx.contratoMedicao.aggregate({
+        _sum: { amount: true },
+        where: { tenantId, contratoId, status: { in: ['PENDENTE', 'APROVADO'] }, id: { not: medicaoId } },
+      });
+      const total = toNumberOrNull(agg?._sum?.amount) ?? 0;
+      if (valorContrato > 0 && total + (toNumberOrNull(med.amount) ?? 0) > valorContrato) throw new Error('Soma das medições não pode ultrapassar o valor do contrato.');
+    }
+
+    const updated = await tx.contratoMedicao.update({
+      where: { id: medicaoId },
+      data: { status },
+    });
+
+    publish(`contrato:${contratoId}`, 'contrato_atualizado', { contratoId });
+    publish('contratos', 'contrato_atualizado', { contratoId });
+    return {
+      id: updated.id,
+      contratoId: updated.contratoId,
+      date: updated.date.toISOString(),
+      amount: toNumberOrNull(updated.amount) ?? 0,
+      status: normalizeMedicaoStatus(updated.status),
+      createdAt: updated.createdAt.toISOString(),
+      updatedAt: updated.updatedAt.toISOString(),
+    };
+  });
+}
+
+export async function listContratoPagamentos(tenantId: number, contratoId: number) {
+  return withRLS(tenantId, async (tx) => {
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId }, select: { id: true } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
+    const rows = await tx.contratoPagamento.findMany({ where: { tenantId, contratoId }, orderBy: [{ date: 'desc' }, { id: 'desc' }] });
+    return rows.map((r: any) => ({
+      id: r.id,
+      contratoId: r.contratoId,
+      medicaoId: r.medicaoId ?? null,
+      date: r.date.toISOString(),
+      amount: toNumberOrNull(r.amount) ?? 0,
+      createdAt: r.createdAt.toISOString(),
+    }));
+  });
+}
+
+export async function createContratoPagamento(tenantId: number, contratoId: number, input: { date: string; amount: number; medicaoId?: number | null }) {
+  return withRLS(tenantId, async (tx) => {
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
+
+    const amount = Number(input.amount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Valor inválido');
+    const date = parseDateOnly(input.date);
+    if (!date) throw new Error('Data inválida');
+
+    const medAprovAgg = await tx.contratoMedicao.aggregate({
+      _sum: { amount: true },
+      where: { tenantId, contratoId, status: 'APROVADO' },
+    });
+    const totalMedAprov = toNumberOrNull(medAprovAgg?._sum?.amount) ?? 0;
+
+    const pagAgg = await tx.contratoPagamento.aggregate({
+      _sum: { amount: true },
+      where: { tenantId, contratoId },
+    });
+    const totalPago = toNumberOrNull(pagAgg?._sum?.amount) ?? 0;
+    if (totalPago + amount > totalMedAprov) throw new Error('Não pode pagar mais que o total medido aprovado.');
+
+    const medicaoId = input.medicaoId != null ? Number(input.medicaoId) : null;
+    if (medicaoId != null) {
+      const med = await tx.contratoMedicao.findFirst({ where: { tenantId, contratoId, id: medicaoId } }).catch(() => null);
+      if (!med) throw new Error('Medição não encontrada');
+      if (normalizeMedicaoStatus(med.status) !== 'APROVADO') throw new Error('Pagamento só pode vincular a medição aprovada.');
+      const sumByMed = await tx.contratoPagamento.aggregate({
+        _sum: { amount: true },
+        where: { tenantId, contratoId, medicaoId },
+      });
+      const pagoMed = toNumberOrNull(sumByMed?._sum?.amount) ?? 0;
+      const valorMed = toNumberOrNull(med.amount) ?? 0;
+      if (pagoMed + amount > valorMed) throw new Error('Não pode pagar mais que o valor da medição vinculada.');
+    }
+
+    const created = await tx.contratoPagamento.create({
+      data: {
+        tenantId,
+        contratoId,
+        medicaoId,
+        date,
+        amount,
+      },
+    });
+
+    publish(`contrato:${contratoId}`, 'contrato_atualizado', { contratoId });
+    publish('contratos', 'contrato_atualizado', { contratoId });
+    return {
+      id: created.id,
+      contratoId: created.contratoId,
+      medicaoId: created.medicaoId ?? null,
+      date: created.date.toISOString(),
+      amount: toNumberOrNull(created.amount) ?? 0,
+      createdAt: created.createdAt.toISOString(),
+    };
+  });
+}
+
+export async function deleteContratoPagamento(tenantId: number, contratoId: number, pagamentoId: number) {
+  return withRLS(tenantId, async (tx) => {
+    const row = await tx.contratoPagamento.findFirst({ where: { tenantId, contratoId, id: pagamentoId } }).catch(() => null);
+    if (!row) throw new Error('Pagamento não encontrado');
+    await tx.contratoPagamento.delete({ where: { id: pagamentoId } });
+    publish(`contrato:${contratoId}`, 'contrato_atualizado', { contratoId });
+    publish('contratos', 'contrato_atualizado', { contratoId });
+    return { ok: true };
   });
 }
 

@@ -3203,3 +3203,68 @@ Comportamento:
 Observação (escala):
 
 - o tempo real atual é baseado em SSE (stream) no backend; no estado atual, ele é ótimo para MVP e ambiente padrão, mas em múltiplas instâncias pode exigir pub/sub (ex.: Redis) para garantir entrega consistente.
+
+### 21.7 Subcontratos (contrato principal x subcontrato)
+
+Conceito:
+
+- **Contrato principal**: ex.: Prefeitura contrata a nossa empresa (Tenant).
+- **Subcontrato**: quando a nossa empresa subcontrata uma empresa/PF (Contraparte) para executar parte ou todo o contrato principal.
+
+Modelo de empresas (regra):
+
+- **Tenant (sua empresa)**: não fica na tabela de contrapartes, é a empresa “dona do sistema”.
+- **Contraparte**: tabela externa de empresas e PF (cadastro em `/dashboard/engenharia/contrapartes`).
+
+Papéis (regra):
+
+- Contrato principal:
+  - contratante = contraparte
+  - contratada = tenant
+- Subcontrato:
+  - contratante = tenant
+  - contratada = contraparte
+
+Vínculo obrigatório:
+
+- Todo subcontrato deve referenciar o contrato principal (`contratoPrincipalId`).
+- Fluxo de tela: selecionar contrato principal → listar subcontratos → selecionar subcontrato → operar detalhes/medições/pagamentos.
+
+Controle financeiro (regra obrigatória):
+
+- `SOMA(subcontratos.valor_total) <= contrato_principal.valor_total`
+- Se a soma ultrapassar o contrato principal: o sistema bloqueia o cadastro/edição (para evitar estouro financeiro).
+
+Medições por contrato (subcontrato ou principal):
+
+- Medição pertence a um contrato (principal ou subcontrato).
+- `SOMA(medicoes PENDENTE+APROVADO) <= valor do contrato`
+- Status da medição: PENDENTE, APROVADO, REJEITADO.
+
+Pagamentos por contrato:
+
+- Pagamento pode estar vinculado a uma medição (opcional).
+- `SOMA(pagamentos) <= SOMA(medicoes APROVADAS)`
+- Se estiver vinculado a uma medição: não pode pagar mais que o valor dessa medição.
+
+Controle de vigência (regra crítica):
+
+- `subcontrato.data_fim <= contrato_principal.data_fim`
+- Se violar: não bloqueia automaticamente, mas o sistema gera alerta forte no subcontrato.
+
+Regras de exclusão:
+
+- Se existir medição ou pagamento, não pode excluir o subcontrato.
+
+Status padrão do subcontrato:
+
+- Planejado
+- Em execução
+- Aguardando
+- Concluído
+- Bloqueado
+
+Telas:
+
+- Subcontratos: `/dashboard/contratos/subcontratos?contratoId={ID_CONTRATO_PRINCIPAL}`
+- Dentro do contrato selecionado (`/dashboard/contratos?id={ID}`) há um botão **Subcontratos** que abre a tela já filtrada.
