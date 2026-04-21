@@ -97,6 +97,14 @@ function toDateInputValue(v: unknown) {
   return d.toISOString().slice(0, 10);
 }
 
+function parseDateInput(s: string) {
+  const v = String(s || "").trim();
+  if (!v) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  const d = new Date(`${v}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function pct(v: number) {
   const n = Number.isFinite(v) ? v : 0;
   return `${Math.round(n * 100)}%`;
@@ -320,8 +328,59 @@ export default function SubcontratosClient() {
     };
   }, [eSubNome]);
 
+  const principalFim = useMemo(() => {
+    const v = resumo?.contratoPrincipal?.vigenciaAtual;
+    if (!v) return null;
+    const d = new Date(String(v));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [resumo?.contratoPrincipal?.vigenciaAtual]);
+
+  const novoFimDate = useMemo(() => parseDateInput(nFim), [nFim]);
+  const editFimDate = useMemo(() => parseDateInput(eFim), [eFim]);
+
+  const novoValorNum = useMemo(() => parseMoneyBR(nValor), [nValor]);
+  const editValorNum = useMemo(() => parseMoneyBR(eValor), [eValor]);
+
+  const alertNovoVigencia = useMemo(() => {
+    if (!principalFim || !novoFimDate) return false;
+    return novoFimDate.getTime() > principalFim.getTime();
+  }, [principalFim, novoFimDate]);
+
+  const alertEditVigencia = useMemo(() => {
+    if (!principalFim || !editFimDate) return false;
+    return editFimDate.getTime() > principalFim.getTime();
+  }, [principalFim, editFimDate]);
+
+  const alertNovoFinanceiro = useMemo(() => {
+    const valorPrincipal = resumo?.financeiro?.valorPrincipal || 0;
+    const totalAtual = resumo?.financeiro?.totalSubcontratado || 0;
+    if (!valorPrincipal || valorPrincipal <= 0) return false;
+    return totalAtual + novoValorNum > valorPrincipal;
+  }, [resumo?.financeiro?.valorPrincipal, resumo?.financeiro?.totalSubcontratado, novoValorNum]);
+
+  const alertEditFinanceiro = useMemo(() => {
+    const valorPrincipal = resumo?.financeiro?.valorPrincipal || 0;
+    const totalAtual = resumo?.financeiro?.totalSubcontratado || 0;
+    if (!valorPrincipal || valorPrincipal <= 0) return false;
+    const oldValor = subSelecionado?.indicadores?.valorContrato || 0;
+    const novoTotal = totalAtual - oldValor + editValorNum;
+    return novoTotal > valorPrincipal;
+  }, [resumo?.financeiro?.valorPrincipal, resumo?.financeiro?.totalSubcontratado, subSelecionado?.id, editValorNum]);
+
+  const principalSemValor = useMemo(() => {
+    const valorPrincipal = resumo?.financeiro?.valorPrincipal || 0;
+    return !valorPrincipal || valorPrincipal <= 0;
+  }, [resumo?.financeiro?.valorPrincipal]);
+
   async function criarSubcontrato() {
     if (!principalId) return;
+    if (principalSemValor || alertNovoFinanceiro || alertNovoVigencia) {
+      const msgs: string[] = [];
+      if (principalSemValor) msgs.push("ALERTA: contrato principal sem valor total definido. Não é possível validar o limite financeiro.");
+      if (alertNovoFinanceiro) msgs.push("ALERTA: com esse valor, a soma dos subcontratos ultrapassa o valor total do contrato principal.");
+      if (alertNovoVigencia) msgs.push("ALERTA: a data fim do subcontrato ultrapassa a vigência do contrato principal.");
+      if (msgs.length && !window.confirm(`${msgs.join("\n")}\n\nDeseja criar mesmo assim?`)) return;
+    }
     try {
       setNovoLoading(true);
       setNovoErr(null);
@@ -356,6 +415,13 @@ export default function SubcontratosClient() {
 
   async function salvarSubcontrato() {
     if (!principalId || !subSelecionado) return;
+    if (principalSemValor || alertEditFinanceiro || alertEditVigencia) {
+      const msgs: string[] = [];
+      if (principalSemValor) msgs.push("ALERTA: contrato principal sem valor total definido. Não é possível validar o limite financeiro.");
+      if (alertEditFinanceiro) msgs.push("ALERTA: com esse valor, a soma dos subcontratos ultrapassa o valor total do contrato principal.");
+      if (alertEditVigencia) msgs.push("ALERTA: a data fim do subcontrato ultrapassa a vigência do contrato principal.");
+      if (msgs.length && !window.confirm(`${msgs.join("\n")}\n\nDeseja salvar mesmo assim?`)) return;
+    }
     try {
       setEditLoading(true);
       setEditErr(null);
@@ -679,6 +745,13 @@ export default function SubcontratosClient() {
                     <div>
                       <div className="text-sm text-slate-600 dark:text-slate-300">Valor total</div>
                       <input className="input" value={eValor} onChange={(e) => setEValor(formatMoneyBRFromDigits(e.target.value))} />
+                      {alertEditFinanceiro || principalSemValor ? (
+                        <div className="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                          {principalSemValor
+                            ? "Alerta: contrato principal sem valor total definido (não dá para validar o limite)."
+                            : "Alerta: com esse valor, a soma dos subcontratos ultrapassa o valor total do contrato principal."}
+                        </div>
+                      ) : null}
                     </div>
                     <div>
                       <div className="text-sm text-slate-600 dark:text-slate-300">Status</div>
@@ -697,6 +770,11 @@ export default function SubcontratosClient() {
                     <div>
                       <div className="text-sm text-slate-600 dark:text-slate-300">Data fim</div>
                       <input className="input" type="date" value={eFim} onChange={(e) => setEFim(e.target.value)} />
+                      {alertEditVigencia ? (
+                        <div className="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                          Alerta: a data fim ultrapassa a vigência do contrato principal.
+                        </div>
+                      ) : null}
                     </div>
                     {subSelecionado.alertas?.length ? (
                       <div className="md:col-span-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
@@ -896,6 +974,13 @@ export default function SubcontratosClient() {
               <div>
                 <div className="text-sm text-slate-600 dark:text-slate-300">Valor total</div>
                 <input className="input" value={nValor} onChange={(e) => setNValor(formatMoneyBRFromDigits(e.target.value))} />
+                {alertNovoFinanceiro || principalSemValor ? (
+                  <div className="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                    {principalSemValor
+                      ? "Alerta: contrato principal sem valor total definido (não dá para validar o limite)."
+                      : "Alerta: com esse valor, a soma dos subcontratos ultrapassa o valor total do contrato principal."}
+                  </div>
+                ) : null}
               </div>
               <div>
                 <div className="text-sm text-slate-600 dark:text-slate-300">Data início</div>
@@ -904,6 +989,11 @@ export default function SubcontratosClient() {
               <div>
                 <div className="text-sm text-slate-600 dark:text-slate-300">Data fim</div>
                 <input className="input" type="date" value={nFim} onChange={(e) => setNFim(e.target.value)} />
+                {alertNovoVigencia ? (
+                  <div className="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                    Alerta: a data fim ultrapassa a vigência do contrato principal.
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>

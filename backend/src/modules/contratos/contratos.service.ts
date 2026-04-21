@@ -418,7 +418,6 @@ export async function createSubcontrato(
     if (!principal) throw new Error('Contrato principal não encontrado');
 
     const valorPrincipal = toNumberOrNull(principal.valorTotalAtual);
-    if (valorPrincipal == null || valorPrincipal <= 0) throw new Error('Defina o valor total atual do contrato principal antes de criar subcontratos.');
 
     const valorNovo = Math.max(0, Number(input.valorTotal || 0));
     if (!Number.isFinite(valorNovo) || valorNovo <= 0) throw new Error('Valor do subcontrato inválido');
@@ -428,7 +427,6 @@ export async function createSubcontrato(
       where: { tenantId, contratoPrincipalId },
     });
     const totalAtual = toNumberOrNull(agg?._sum?.valorTotalAtual) ?? 0;
-    if (totalAtual + valorNovo > valorPrincipal) throw new Error('A soma dos subcontratos ultrapassa o valor do contrato principal.');
 
     const dataInicio = parseDateOnly(input.dataInicio);
     const dataFim = parseDateOnly(input.dataFim);
@@ -513,7 +511,6 @@ export async function updateSubcontrato(
     if (!sub) throw new Error('Subcontrato não encontrado');
 
     const valorPrincipal = toNumberOrNull(principal.valorTotalAtual);
-    if (valorPrincipal == null || valorPrincipal <= 0) throw new Error('Defina o valor total atual do contrato principal antes de editar subcontratos.');
 
     const valorAtualSub = toNumberOrNull(sub.valorTotalAtual) ?? 0;
     const valorNovo = input.valorTotal == null ? valorAtualSub : Math.max(0, Number(input.valorTotal || 0));
@@ -524,7 +521,6 @@ export async function updateSubcontrato(
       where: { tenantId, contratoPrincipalId, id: { not: subcontratoId } },
     });
     const totalOutros = toNumberOrNull(agg?._sum?.valorTotalAtual) ?? 0;
-    if (totalOutros + valorNovo > valorPrincipal) throw new Error('A soma dos subcontratos ultrapassa o valor do contrato principal.');
 
     const inicio = input.dataInicio != null ? parseDateOnly(input.dataInicio) : (sub.dataOS ? new Date(sub.dataOS) : sub.dataAssinatura ? new Date(sub.dataAssinatura) : null);
     const fim = input.dataFim != null ? parseDateOnly(input.dataFim) : (sub.vigenciaAtual ? new Date(sub.vigenciaAtual) : null);
