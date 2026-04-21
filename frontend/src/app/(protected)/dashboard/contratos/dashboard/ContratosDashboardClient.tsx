@@ -61,6 +61,17 @@ type ContratosPorTipo = { tipo: string; quantidade: number };
 
 type SerieContratadoExecutado = { mes: string; valorContratado: number; valorExecutado: number };
 
+const DASH_COLORS = {
+  primary: "#2563eb",
+  green: "#16a34a",
+  amber: "#f59e0b",
+  red: "#ef4444",
+  purple: "#7c3aed",
+  slate: "#64748b",
+  bg: "#f4f7fb",
+  border: "#e6edf5",
+};
+
 function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
@@ -73,6 +84,10 @@ function pct(v: number | null | undefined) {
 function severidadeUi(s: DashboardAlerta["severidade"]) {
   if (s === "CRITICO") return { icon: "🔴", className: "text-red-700 dark:text-red-300" };
   return { icon: "🟡", className: "text-amber-700 dark:text-amber-300" };
+}
+
+function iconBoxStyle(color: string) {
+  return { backgroundColor: color };
 }
 
 export default function ContratosDashboardClient() {
@@ -150,11 +165,11 @@ export default function ContratosDashboardClient() {
   const situacaoTotal = Math.max(1, Number(cards?.total ?? 0));
   const donutParts = useMemo(() => {
     const parts = [
-      { label: "Em andamento", value: Number(cards?.emAndamento ?? 0), color: "#22c55e" },
-      { label: "A vencer (30 dias)", value: Number(cards?.aVencer ?? 0), color: "#f59e0b" },
-      { label: "Vencidos", value: Number(cards?.vencidos ?? 0), color: "#ef4444" },
-      { label: "Concluídos", value: Number(cards?.concluidos ?? 0), color: "#3b82f6" },
-      { label: "Sem recursos", value: Number(cards?.semRecursos ?? 0), color: "#8b5cf6" },
+      { label: "Em andamento", value: Number(cards?.emAndamento ?? 0), color: DASH_COLORS.green },
+      { label: "A vencer (≤ 30 dias)", value: Number(cards?.aVencer ?? 0), color: DASH_COLORS.amber },
+      { label: "Vencidos", value: Number(cards?.vencidos ?? 0), color: DASH_COLORS.red },
+      { label: "Concluídos", value: Number(cards?.concluidos ?? 0), color: DASH_COLORS.purple },
+      { label: "Sem recursos", value: Number(cards?.semRecursos ?? 0), color: DASH_COLORS.slate },
     ].filter((p) => p.value > 0);
     const sum = parts.reduce((acc, p) => acc + p.value, 0) || 1;
     let cursor = 0;
@@ -177,7 +192,7 @@ export default function ContratosDashboardClient() {
   }, [serie]);
 
   return (
-    <div className="p-6 space-y-6 text-slate-900 dark:text-slate-100">
+    <div className="p-6 space-y-6 text-slate-900 dark:text-slate-100 bg-[#f4f7fb] dark:bg-slate-950">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold">Dashboard de Contratos</h1>
@@ -211,35 +226,77 @@ export default function ContratosDashboardClient() {
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-6">
-        <div className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
-          <div className="text-xs text-slate-500 dark:text-slate-300">Total de contratos</div>
-          <div className="mt-1 text-2xl font-semibold">{cards?.total ?? kpis?.totalContratos ?? 0}</div>
+        <div className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={iconBoxStyle(DASH_COLORS.primary)}>
+              📄
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs text-slate-500 dark:text-slate-300">Total de contratos</div>
+              <div className="text-2xl font-semibold">{cards?.total ?? kpis?.totalContratos ?? 0}</div>
+            </div>
+          </div>
         </div>
-        <div className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
-          <div className="text-xs text-slate-500 dark:text-slate-300">Em andamento</div>
-          <div className="mt-1 text-2xl font-semibold">{cards?.emAndamento ?? 0}</div>
-          <div className="text-xs text-slate-500 dark:text-slate-300">{(((cards?.emAndamento ?? 0) / situacaoTotal) * 100).toFixed(1)}% do total</div>
+        <div className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={iconBoxStyle(DASH_COLORS.green)}>
+              📈
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs text-slate-500 dark:text-slate-300">Em andamento</div>
+              <div className="text-2xl font-semibold">{cards?.emAndamento ?? 0}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-300">{(((cards?.emAndamento ?? 0) / situacaoTotal) * 100).toFixed(1)}% do total</div>
+            </div>
+          </div>
         </div>
-        <div className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
-          <div className="text-xs text-slate-500 dark:text-slate-300">A vencer (≤ 30 dias)</div>
-          <div className="mt-1 text-2xl font-semibold">{cards?.aVencer ?? kpis?.vencendoEm30Dias ?? 0}</div>
+        <div className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={iconBoxStyle(DASH_COLORS.amber)}>
+              ⏰
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs text-slate-500 dark:text-slate-300">A vencer (≤ 30 dias)</div>
+              <div className="text-2xl font-semibold">{cards?.aVencer ?? kpis?.vencendoEm30Dias ?? 0}</div>
+            </div>
+          </div>
         </div>
-        <div className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
-          <div className="text-xs text-slate-500 dark:text-slate-300">Vencidos</div>
-          <div className="mt-1 text-2xl font-semibold">{cards?.vencidos ?? kpis?.atrasados ?? 0}</div>
+        <div className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={iconBoxStyle(DASH_COLORS.red)}>
+              ⚠
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs text-slate-500 dark:text-slate-300">Vencidos</div>
+              <div className="text-2xl font-semibold">{cards?.vencidos ?? kpis?.atrasados ?? 0}</div>
+            </div>
+          </div>
         </div>
-        <div className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
-          <div className="text-xs text-slate-500 dark:text-slate-300">Concluídos</div>
-          <div className="mt-1 text-2xl font-semibold">{cards?.concluidos ?? 0}</div>
+        <div className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={iconBoxStyle(DASH_COLORS.purple)}>
+              🏁
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs text-slate-500 dark:text-slate-300">Concluídos</div>
+              <div className="text-2xl font-semibold">{cards?.concluidos ?? 0}</div>
+            </div>
+          </div>
         </div>
-        <div className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
-          <div className="text-xs text-slate-500 dark:text-slate-300">Sem recursos</div>
-          <div className="mt-1 text-2xl font-semibold">{cards?.semRecursos ?? 0}</div>
+        <div className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={iconBoxStyle(DASH_COLORS.slate)}>
+              ⛔
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs text-slate-500 dark:text-slate-300">Sem recursos</div>
+              <div className="text-2xl font-semibold">{cards?.semRecursos ?? 0}</div>
+            </div>
+          </div>
         </div>
       </section>
 
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
+        <div className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="text-sm font-semibold">Situação dos contratos</div>
             <div className="text-xs text-slate-500 dark:text-slate-300">Total: {cards?.total ?? 0}</div>
@@ -266,7 +323,7 @@ export default function ContratosDashboardClient() {
           </div>
         </div>
 
-        <div className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700 lg:col-span-1">
+        <div className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700 lg:col-span-1">
           <div className="text-sm font-semibold">Valor contratado x executado</div>
           <div className="mt-1 text-xs text-slate-500 dark:text-slate-300">Últimos 6 meses</div>
 
@@ -277,8 +334,8 @@ export default function ContratosDashboardClient() {
               return (
                 <div key={p.mes} className="flex-1 flex flex-col items-center gap-1">
                   <div className="w-full flex items-end gap-1 h-32">
-                    <div className="flex-1 rounded bg-blue-500/70" style={{ height: `${hc}%` }} />
-                    <div className="flex-1 rounded bg-emerald-500/70" style={{ height: `${he}%` }} />
+                    <div className="flex-1 rounded" style={{ height: `${hc}%`, background: `${DASH_COLORS.primary}B3` }} />
+                    <div className="flex-1 rounded" style={{ height: `${he}%`, background: `${DASH_COLORS.green}B3` }} />
                   </div>
                   <div className="text-[11px] text-slate-500 dark:text-slate-300">{p.mes.slice(5)}</div>
                 </div>
@@ -289,11 +346,11 @@ export default function ContratosDashboardClient() {
 
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
             <div className="flex items-center gap-2">
-              <span className="inline-block h-2.5 w-2.5 rounded bg-blue-500/70" />
+              <span className="inline-block h-2.5 w-2.5 rounded" style={{ background: `${DASH_COLORS.primary}B3` }} />
               <span className="text-slate-600 dark:text-slate-300">Contratado</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="inline-block h-2.5 w-2.5 rounded bg-emerald-500/70" />
+              <span className="inline-block h-2.5 w-2.5 rounded" style={{ background: `${DASH_COLORS.green}B3` }} />
               <span className="text-slate-600 dark:text-slate-300">Executado</span>
             </div>
           </div>
@@ -310,13 +367,13 @@ export default function ContratosDashboardClient() {
           </div>
         </div>
 
-        <div className="rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
+        <div className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm dark:bg-slate-900 dark:border-slate-700">
           <div className="flex items-center justify-between gap-2">
             <div className="text-sm font-semibold">Alertas</div>
           </div>
           <div className="mt-3 space-y-2">
             {alertas.map((a) => (
-              <div key={a.codigo} className="rounded-lg border bg-slate-50 p-3 text-sm dark:bg-slate-800 dark:border-slate-700">
+              <div key={a.codigo} className="rounded-lg border border-[#e6edf5] bg-slate-50 p-3 text-sm dark:bg-slate-800 dark:border-slate-700">
                 <div className="flex items-center justify-between gap-2">
                   <div className={`flex items-center gap-2 font-semibold ${severidadeUi(a.severidade).className}`}>
                     <span>{severidadeUi(a.severidade).icon}</span>
