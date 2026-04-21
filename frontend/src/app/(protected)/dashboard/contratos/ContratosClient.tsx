@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
+import { realtimeClient } from "@/lib/realtime/client";
 
 type ContratoRow = {
   id: number;
@@ -135,6 +136,25 @@ export default function ContratosClient() {
   useEffect(() => {
     carregarLista();
   }, []);
+
+  useEffect(() => {
+    realtimeClient.start(["contratos"]);
+    const unsubs = [
+      realtimeClient.subscribe("contratos", "contrato_atualizado", () => {
+        carregarLista();
+        if (contratoId) carregarDetalhe(contratoId);
+      }),
+      realtimeClient.subscribe("contratos", "evento_criado", () => {
+        if (contratoId) carregarDetalhe(contratoId);
+      }),
+      realtimeClient.subscribe("contratos", "anexo_criado", () => {
+        if (contratoId) carregarDetalhe(contratoId);
+      }),
+    ];
+    return () => {
+      for (const u of unsubs) u();
+    };
+  }, [contratoId]);
 
   useEffect(() => {
     if (contratoId) carregarDetalhe(contratoId);

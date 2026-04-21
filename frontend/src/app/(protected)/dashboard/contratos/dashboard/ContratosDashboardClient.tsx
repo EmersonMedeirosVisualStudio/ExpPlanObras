@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
+import { realtimeClient } from "@/lib/realtime/client";
 
 type DashboardKpis = {
   totalContratos: number;
@@ -45,6 +46,18 @@ export default function ContratosDashboardClient() {
   useEffect(() => {
     carregar();
   }, []);
+
+  useEffect(() => {
+    realtimeClient.start(["contratos"]);
+    const unsubs = [
+      realtimeClient.subscribe("contratos", "contrato_atualizado", () => carregar()),
+      realtimeClient.subscribe("contratos", "evento_criado", () => carregar()),
+      realtimeClient.subscribe("contratos", "anexo_criado", () => carregar()),
+    ];
+    return () => {
+      for (const u of unsubs) u();
+    };
+  }, [query]);
 
   return (
     <div className="p-6 space-y-6">
@@ -117,4 +130,3 @@ export default function ContratosDashboardClient() {
     </div>
   );
 }
-
