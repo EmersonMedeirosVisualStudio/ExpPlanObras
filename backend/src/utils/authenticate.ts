@@ -19,7 +19,8 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
 
     const allowQueryToken = url.includes('/realtime/') || (url.includes('/eventos/') && url.includes('/anexos/'));
     if (!authHeader && typeof queryToken === 'string' && queryToken && allowQueryToken) {
-      await request.jwtVerify({ token: queryToken });
+      (request.headers as any).authorization = `Bearer ${queryToken}`;
+      await request.jwtVerify();
     } else {
       await request.jwtVerify();
     }

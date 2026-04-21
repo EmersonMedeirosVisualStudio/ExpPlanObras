@@ -3115,3 +3115,40 @@ Importante:
 - Contratos/Planejamento/Aditivos formam o “topo” (prazo e valor contratual).
 - Execução/Medição/Pagamento/CC/Suprimentos formam a “base real” (o que aconteceu).
 - O dashboard deve consolidar sempre o **real vs contratado**.
+
+### 21.5 Histórico do contrato (Eventos, Observações e Anexos)
+
+Objetivo:
+
+- manter uma trilha única do que aconteceu no contrato (mudanças, decisões e justificativas), com anexos e consulta rápida.
+
+Onde fica:
+
+- dentro de **Aditivos** (`/dashboard/contratos/aditivos`) após selecionar o contrato, na aba **Eventos**.
+
+Como funciona:
+
+- aprovar/cancelar aditivo gera evento automaticamente no histórico do contrato.
+- o usuário pode registrar **Observações** (evento do tipo “OBSERVACAO”) com texto e nível (informativo/atenção/crítico).
+- cada evento pode ter **Anexos** (PDF/imagem) com download e preview dentro do sistema.
+
+Filtros (aba Eventos):
+
+- é possível filtrar o histórico por origem: **Contrato**, **Aditivos**, **Obras**, **Documentos** e **Observações**.
+
+### 21.6 Tempo real (atualização automática sem recarregar)
+
+Objetivo:
+
+- evitar inconsistência de tela (usuário aprova um aditivo/lança uma observação e o dashboard/lista ainda mostra dados antigos).
+
+Comportamento:
+
+- quando ocorrer um evento relevante (ex.: aditivo aprovado/cancelado, observação criada, anexo criado), o sistema atualiza automaticamente:
+  - a lista/detalhe de contratos (`/dashboard/contratos`)
+  - o dashboard de contratos (`/dashboard/contratos/dashboard`)
+  - a tela de aditivos (dashboard/eventos) quando o contrato estiver selecionado.
+
+Observação (escala):
+
+- o tempo real atual é baseado em SSE (stream) no backend; no estado atual, ele é ótimo para MVP e ambiente padrão, mas em múltiplas instâncias pode exigir pub/sub (ex.: Redis) para garantir entrega consistente.

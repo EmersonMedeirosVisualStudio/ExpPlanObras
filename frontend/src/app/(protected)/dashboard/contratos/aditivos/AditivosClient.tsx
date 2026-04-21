@@ -202,13 +202,18 @@ export default function AditivosClient() {
       setLoading(true);
       setErr(null);
       const res = await api.get("/api/contratos");
+      const normalizeTipoContratante = (v: unknown): ContratoLite["tipoContratante"] => {
+        const t = String(v || "PRIVADO").toUpperCase();
+        if (t === "PUBLICO" || t === "PRIVADO" || t === "PF") return t;
+        return "PRIVADO";
+      };
       setContratos(
         (res.data as any[])?.map((x) => ({
           id: Number(x.id),
           numeroContrato: String(x.numeroContrato),
           nome: x.nome ?? null,
           objeto: x.objeto ?? null,
-          tipoContratante: String(x.tipoContratante || "PRIVADO").toUpperCase(),
+          tipoContratante: normalizeTipoContratante(x.tipoContratante),
           empresaParceiraNome: x.empresaParceiraNome ?? null,
           vigenciaAtual: x.vigenciaAtual ?? null,
           valorTotalAtual: x.valorTotalAtual == null ? null : Number(x.valorTotalAtual),

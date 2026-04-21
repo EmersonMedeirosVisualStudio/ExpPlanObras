@@ -8,6 +8,7 @@ Resumo
 - Backend: Render, build com Prisma usando prisma/postgres/schema.prisma, DATABASE_URL de Postgres, JWT_SECRET.
 - Banco: PostgreSQL (Neon/Supabase).
 - Deploy: on push na branch main e agendamento diário 23:55 UTC.
+- Tempo real: SSE roda no backend (Render) e o frontend conecta direto na URL do backend definida em NEXT_PUBLIC_API_URL.
 
 Passos
 
@@ -93,3 +94,4 @@ Observações
 
 - Ajuste o horário do cron se necessário.
 - Ative RLS e políticas no Postgres usando a chave de sessão app.tenant_id.
+- Tempo real (SSE): se a rede/proxy encerrar conexões longas, o frontend reconecta automaticamente, mas o ideal é o backend aceitar conexões abertas (keep-alive) para evitar “piscadas” nos dashboards.

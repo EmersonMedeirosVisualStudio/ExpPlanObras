@@ -150,3 +150,75 @@ O sistema separa suprimentos em contextos diferentes para evitar mistura de proc
 - Crie uma solicitação e acompanhe o status
 - Verifique se o saldo atualiza após recebimento
 - Em obra, valide se a apropriação aceita apenas serviços válidos da planilha
+
+---
+
+## 8. Contratos (Engenharia) — como consultar e criar
+
+Os contratos concentram as informações oficiais de prazo e valores.
+
+### ETAPA 1 — Onde acessar
+- Menu lateral → **Contratos (Engenharia) → Contratos → Lista**
+
+### ETAPA 2 — O que clicar
+- Clique em um contrato para ver o detalhe
+- Para criar: **Contratos (Engenharia) → Contratos → Novo contrato**
+
+### ETAPA 3 — O que esperar
+- A lista mostra **ALERTA** (OK/Pendente/Crítico) e **STATUS** (Em andamento / A vencer / Vencido / etc.)
+- No detalhe, você verá datas e valores do contrato (e botões de ação, como **Aditivos**)
+
+### ETAPA 4 — Como validar
+- Volte para a lista e confirme se o contrato aparece e se o status/alerta fazem sentido
+
+---
+
+## 9. Aditivos do contrato — como atualizar prazo/valor
+
+O aditivo é o histórico de mudanças. O contrato “vigente” é sempre o consolidado.
+
+### ETAPA 1 — Onde acessar
+- Menu lateral → **Contratos (Engenharia) → Contratos → Aditivos (selecionar contrato)**
+
+### ETAPA 2 — O que clicar
+- Primeiro selecione o contrato
+- Use as abas: **Dashboard**, **Aditivos** (lista/CRUD) e **Novo aditivo**
+
+### ETAPA 3 — O que preencher
+- Em **Novo aditivo**, preencha o que mudou (ex.: dias adicionados, valor adicionado, motivo/observação do aditivo)
+- Salve como **rascunho**
+- Quando estiver certo, clique em **aprovar**
+
+### ETAPA 4 — O que esperar
+- Ao aprovar, o sistema atualiza automaticamente o contrato (vigência atual e valores atuais)
+- Se existir aditivo em rascunho, o contrato pode ficar com pendência “Aditivo em aberto” na coluna **ALERTA**
+
+### ETAPA 5 — Como validar
+- Volte em **Contratos (Engenharia) → Contratos → Lista** e confira se o contrato mudou (datas/valores e alerta/status)
+
+---
+
+## 10. Histórico (Eventos) + Observações + Anexos (PDF/imagem)
+
+Use esta área para registrar justificativas do dia a dia e guardar evidências (PDFs e imagens) dentro do sistema.
+
+### ETAPA 1 — Onde acessar
+- Menu lateral → **Contratos (Engenharia) → Contratos → Aditivos (selecionar contrato)**
+- Selecione o contrato e abra a aba **Eventos**
+
+### ETAPA 2 — O que clicar
+- Use os filtros (Contrato/Aditivos/Obras/Documentos/Observações) para “enxergar só o que interessa”
+- Em **Adicionar observação**, selecione o nível (Normal/Alerta/Crítico)
+
+### ETAPA 3 — O que preencher
+- Digite sua observação
+- Se quiser, selecione um ou mais arquivos (PDF/imagem)
+- Clique em **Salvar**
+
+### ETAPA 4 — O que esperar
+- A observação aparece na **Linha do tempo**
+- Os anexos aparecem como links (📎) e você consegue abrir/baixar
+- Para arquivos selecionados antes de salvar, você pode clicar em **Preview** para ver PDF/imagem dentro do sistema
+
+### ETAPA 5 — Como validar
+- Reabra a aba **Eventos** e confirme se a observação e os anexos continuam listados

@@ -131,6 +131,8 @@ O que ainda é planejado (para completar o modelo por função) é a criação/a
 - Obras: criar/editar dentro da abrangência.
 - Medições e cronograma.
 - Solicitação de materiais.
+- Contratos (Engenharia): dashboard/lista/detalhe, planejamento (Gantt) e aditivos.
+- Histórico do contrato: registrar observações e anexar evidências (PDF/imagem) conforme necessidade.
 
 ### 4.7 Mestre de Obra / Encarregado de Obra / Apontador
 
