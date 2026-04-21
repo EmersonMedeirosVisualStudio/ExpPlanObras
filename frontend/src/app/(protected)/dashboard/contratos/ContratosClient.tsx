@@ -38,6 +38,14 @@ type ContratoDetail = ContratoRow & {
   indicadores?: { valorExecutado: number | null; valorPago: number | null };
 };
 
+type ContraparteLite = {
+  idContraparte: number;
+  tipo: "PJ" | "PF";
+  nomeRazao: string;
+  documento: string | null;
+  status?: "ATIVO" | "INATIVO";
+};
+
 function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
@@ -121,6 +129,9 @@ export default function ContratosClient() {
   const [eTipoContratante, setETipoContratante] = useState<ContratoRow["tipoContratante"]>("PRIVADO");
   const [eEmpresaParceiraNome, setEEmpresaParceiraNome] = useState("");
   const [eEmpresaParceiraDocumento, setEEmpresaParceiraDocumento] = useState("");
+  const [empresaSugestoesOpen, setEmpresaSugestoesOpen] = useState(false);
+  const [empresaSugestoesLoading, setEmpresaSugestoesLoading] = useState(false);
+  const [empresaSugestoes, setEmpresaSugestoes] = useState<ContraparteLite[]>([]);
   const [eStatus, setEStatus] = useState("ATIVO");
   const [eDataAssinatura, setEDataAssinatura] = useState("");
   const [eDataOS, setEDataOS] = useState("");
@@ -147,6 +158,49 @@ export default function ContratosClient() {
     if (ePrazoUnidade === "ANOS") return q * 365;
     return q;
   }, [ePrazoValor, ePrazoUnidade]);
+
+  useEffect(() => {
+    if (!editOpen) return;
+    const q = String(eEmpresaParceiraNome || "").trim();
+    if (!q || q.length < 2) {
+      setEmpresaSugestoes([]);
+      setEmpresaSugestoesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setEmpresaSugestoesLoading(true);
+    const t = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set("q", q);
+        params.set("status", "ATIVO");
+        const res = await fetch(`/api/v1/engenharia/contrapartes?${params.toString()}`, { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.message || "Erro ao buscar empresas");
+        if (cancelled) return;
+        const rows = (Array.isArray(data) ? data : []).map((r: any) => ({
+          idContraparte: Number(r.idContraparte),
+          tipo: r.tipo === "PF" ? "PF" : "PJ",
+          nomeRazao: String(r.nomeRazao || ""),
+          documento: r.documento ? String(r.documento) : null,
+          status: r.status === "INATIVO" ? "INATIVO" : "ATIVO",
+        }));
+        setEmpresaSugestoes(rows.filter((r: ContraparteLite) => Number.isFinite(r.idContraparte) && r.nomeRazao));
+      } catch {
+        if (cancelled) return;
+        setEmpresaSugestoes([]);
+      } finally {
+        if (cancelled) return;
+        setEmpresaSugestoesLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [editOpen, eEmpresaParceiraNome]);
 
   useEffect(() => {
     if (!editOpen) return;
@@ -587,8 +641,59 @@ export default function ContratosClient() {
                   <div className="mt-2 text-sm font-semibold">Empresa parceira</div>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div>
-                      <div className="text-sm text-slate-600 dark:text-slate-300">Nome</div>
-                      <input className="input" value={eEmpresaParceiraNome} onChange={(e) => setEEmpresaParceiraNome(e.target.value)} />
+                      <div className="flex items-end justify-between gap-2">
+                        <div className="text-sm text-slate-600 dark:text-slate-300">Nome / Razão social (autocompletar)</div>
+                        <button
+                          className="text-xs font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                          type="button"
+                          onClick={() => router.push("/dashboard/engenharia/contrapartes")}
+                        >
+                          CRUD empresas
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <input
+                          className="input"
+                          value={eEmpresaParceiraNome}
+                          onChange={(e) => {
+                            setEEmpresaParceiraNome(e.target.value);
+                            setEmpresaSugestoesOpen(true);
+                          }}
+                          onFocus={() => setEmpresaSugestoesOpen(true)}
+                          onBlur={() => window.setTimeout(() => setEmpresaSugestoesOpen(false), 150)}
+                          placeholder="Digite nome ou CNPJ/CPF"
+                        />
+                        {empresaSugestoesOpen ? (
+                          <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border bg-white shadow-lg dark:bg-slate-900 dark:border-slate-700">
+                            {empresaSugestoesLoading ? (
+                              <div className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">Buscando…</div>
+                            ) : empresaSugestoes.length ? (
+                              <div className="max-h-64 overflow-auto">
+                                {empresaSugestoes.slice(0, 30).map((r) => (
+                                  <button
+                                    key={r.idContraparte}
+                                    type="button"
+                                    className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => {
+                                      setEEmpresaParceiraNome(r.nomeRazao);
+                                      setEEmpresaParceiraDocumento(r.documento ? String(r.documento) : "");
+                                      setEmpresaSugestoesOpen(false);
+                                    }}
+                                  >
+                                    <div className="font-semibold text-slate-900 dark:text-slate-100">{r.nomeRazao}</div>
+                                    <div className="text-xs text-slate-600 dark:text-slate-300">
+                                      {r.tipo} {r.documento ? `• ${r.documento}` : ""}
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">Nenhuma empresa encontrada.</div>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                     <div>
                       <div className="text-sm text-slate-600 dark:text-slate-300">Documento</div>

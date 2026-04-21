@@ -3062,6 +3062,57 @@ Dashboard de contratos:
 
 - `/dashboard/contratos/dashboard` (KPIs consolidados)
 
+#### Empresas (Contratante x Contratada) e autocompletar no Editar contrato
+
+Conceito importante (não confundir):
+
+- **Tenant**: é “a nossa empresa dentro do sistema” (a empresa dona dos dados e dos usuários). O Tenant **não é** a empresa contratante nem a empresa contratada do contrato. É quem está usando o sistema.
+- **Contrapartes**: são empresas/pessoas externas ao Tenant (clientes, órgãos públicos, fornecedores e subcontratadas). O cadastro delas fica no módulo **Contrapartes**.
+
+Onde ficam as contrapartes (cadastro de empresas/pessoas externas):
+
+- Tela de CRUD: `/dashboard/engenharia/contrapartes`
+- API: `/api/v1/engenharia/contrapartes`
+- Tabela do cadastro: `engenharia_contrapartes`
+
+Autocompletar no “Editar contrato”:
+
+- No modal de edição do contrato, o campo **Nome / Razão social** da empresa parceira é por **seleção (autocompletar)**.
+- Você digita parte do nome (ou documento) e seleciona na lista.
+- Ao selecionar, o sistema preenche automaticamente:
+  - Nome / Razão social
+  - Documento (CNPJ/CPF)
+- Há um botão **CRUD empresas** no próprio modal para abrir a tela de contrapartes e cadastrar/editar empresas.
+
+O que significa “hoje o contrato guarda só uma empresaParceira”:
+
+- No modelo atual do contrato existem apenas estes campos para empresa externa: `empresaParceiraNome` e `empresaParceiraDocumento`.
+- Ou seja: o contrato guarda **apenas 1 contraparte “principal”** (um lado), e não guarda os dois papéis ao mesmo tempo.
+
+Exemplos práticos:
+
+1) Caso “a empresa que contrata a gente” (Cliente/Contratante)
+   - Tenant (quem usa o sistema): **Engenharia360 Ltda** (nós)
+   - Contratante (cliente): **Prefeitura de Exemplo (CNPJ XX.XXX.XXX/0001-XX)**
+   - Nesse caso, `empresaParceira` normalmente seria a **Prefeitura** (porque é com ela que temos o contrato).
+
+2) Caso “a empresa que contratamos” (Fornecedor/Subcontratada)
+   - Tenant: **Engenharia360 Ltda** (nós)
+   - Contratada por nós (fornecedor): **Construtora Alfa (CNPJ YY.YYY.YYY/0001-YY)**
+   - Nesse caso, `empresaParceira` normalmente seria a **Construtora Alfa** (porque é a empresa que estamos contratando).
+
+Por que isso pode confundir:
+
+- Se você quiser registrar no mesmo contrato **os dois lados ao mesmo tempo** (Contratante e Contratada), o campo único `empresaParceira` não é suficiente.
+
+Como fica a “próxima melhoria” (quando você pedir para implementar):
+
+- Vamos separar em dois campos no contrato, por exemplo:
+  - **Contratante**: `contratanteNome` + `contratanteDocumento` (quem contrata a gente)
+  - **Contratada**: `contratadaNome` + `contratadaDocumento` (quem é contratado no contrato)
+- Isso mantém o **Tenant separado** (não confunde “nossa empresa do sistema” com “empresas do contrato”).
+- O autocompletar continua vindo do cadastro de **Contrapartes**, mas o contrato passa a armazenar os dois papéis com clareza.
+
 ### 21.2 Planejamento (Gantt) por contrato
 
 Conceito:
