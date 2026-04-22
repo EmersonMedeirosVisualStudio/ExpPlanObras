@@ -68,6 +68,43 @@ export async function getObras(tenantId: number, scope?: AbrangenciaContext, fil
   });
 }
 
+function toNumberOrZero(v: any) {
+  if (v == null) return 0;
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export async function getObrasResumoFinanceiro(tenantId: number, scope?: AbrangenciaContext, filter?: { contratoId?: number }) {
+  return withRLS(tenantId, async (tx) => {
+    const contratoId = typeof filter?.contratoId === 'number' && Number.isInteger(filter.contratoId) && filter.contratoId > 0 ? filter.contratoId : null;
+    const obras = await tx.obra.findMany({
+      where: { ...scopeWhere(tenantId, scope), ...(contratoId ? { contratoId } : {}) },
+      select: { id: true, valorPrevisto: true },
+    });
+    const obraIds = obras.map((o: any) => Number(o.id)).filter((id: number) => Number.isFinite(id) && id > 0);
+    if (!obraIds.length) return [];
+
+    const medicaoSums = await tx.medicao.groupBy({
+      by: ['obraId'],
+      where: { obraId: { in: obraIds } },
+      _sum: { amount: true },
+    });
+
+    const medidoByObraId = new Map<number, number>();
+    for (const r of medicaoSums as any[]) {
+      medidoByObraId.set(Number(r.obraId), toNumberOrZero(r?._sum?.amount));
+    }
+
+    return obras.map((o: any) => {
+      const id = Number(o.id);
+      const valorTotal = o.valorPrevisto == null ? 0 : toNumberOrZero(o.valorPrevisto);
+      const valorMedido = medidoByObraId.get(id) ?? 0;
+      return { obraId: id, valorTotal, valorMedido };
+    });
+  });
+}
+
 export async function getObraById(id: number, tenantId: number, scope?: AbrangenciaContext) {
   if (!canAccessObraId(id, scope)) {
     throw new Error("Access denied");

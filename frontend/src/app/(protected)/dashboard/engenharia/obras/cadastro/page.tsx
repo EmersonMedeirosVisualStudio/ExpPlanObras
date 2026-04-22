@@ -10,7 +10,15 @@ const MapaObras = dynamic(() => import("@/components/MapaObras"), {
   loading: () => <div className="h-[420px] w-full rounded-lg border border-[#E5E7EB] bg-[#F3F4F6]" />,
 });
 
-type ContratoRow = { id: number; numeroContrato: string; objeto: string | null };
+type ContratoRow = {
+  id: number;
+  numeroContrato: string;
+  objeto: string | null;
+  valorTotalAtual?: number | null;
+  prazoDias?: number | null;
+  vigenciaInicial?: string | null;
+  vigenciaAtual?: string | null;
+};
 type ObraRow = {
   id: number;
   contratoId: number;
@@ -40,6 +48,34 @@ type EnderecoRow = {
   origemCoordenada: string;
 };
 
+function moeda(v: number) {
+  const n = Number(v || 0);
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number.isFinite(n) ? n : 0);
+}
+
+function parseMoneyBR(input: string) {
+  const s = String(input || "")
+    .replace(/\./g, "")
+    .replace(",", ".")
+    .replace(/[^\d.]/g, "");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatMoneyBRFromDigits(digits: string) {
+  const onlyDigits = (digits || "").replace(/\D/g, "");
+  const cents = onlyDigits ? Number(onlyDigits) : 0;
+  const value = cents / 100;
+  return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtDateShort(v: unknown) {
+  if (!v) return "-";
+  const d = new Date(String(v));
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleDateString("pt-BR");
+}
+
 export default function EngenhariaCadastroObraPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -47,6 +83,7 @@ export default function EngenhariaCadastroObraPage() {
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const [obrasContrato, setObrasContrato] = useState<ObraRow[]>([]);
   const [contratos, setContratos] = useState<ContratoRow[]>([]);
+  const [financeiroByObraId, setFinanceiroByObraId] = useState<Record<number, { valorTotal: number; valorMedido: number }>>({});
 
   const [contratoId, setContratoId] = useState<number>(0);
   const [obraId, setObraId] = useState<number | null>(null);
@@ -67,7 +104,15 @@ export default function EngenhariaCadastroObraPage() {
     try {
       const res = await api.get("/api/contratos");
       const data = Array.isArray(res.data) ? res.data : [];
-      const mapped = data.map((c: any) => ({ id: Number(c.id), numeroContrato: String(c.numeroContrato || ""), objeto: c.objeto ?? null }));
+      const mapped = data.map((c: any) => ({
+        id: Number(c.id),
+        numeroContrato: String(c.numeroContrato || ""),
+        objeto: c.objeto ?? null,
+        valorTotalAtual: c.valorTotalAtual == null ? null : Number(c.valorTotalAtual),
+        prazoDias: c.prazoDias == null ? null : Number(c.prazoDias),
+        vigenciaInicial: c.vigenciaInicial ?? null,
+        vigenciaAtual: c.vigenciaAtual ?? null,
+      }));
       setContratos(mapped);
       if (!contratoId && mapped.length > 0) {
         const nonPending = mapped.find((c) => String(c.numeroContrato).toUpperCase() !== "PENDENTE");
@@ -75,6 +120,26 @@ export default function EngenhariaCadastroObraPage() {
       }
     } catch {
       setContratos([]);
+    }
+  }
+
+  async function carregarResumoFinanceiro(idContrato: number) {
+    if (!idContrato) {
+      setFinanceiroByObraId({});
+      return;
+    }
+    try {
+      const res = await api.get(`/api/obras/resumo-financeiro?contratoId=${idContrato}`);
+      const data = Array.isArray(res.data) ? res.data : [];
+      const map: Record<number, { valorTotal: number; valorMedido: number }> = {};
+      for (const r of data as any[]) {
+        const obraId = Number(r.obraId);
+        if (!Number.isFinite(obraId) || obraId <= 0) continue;
+        map[obraId] = { valorTotal: Number(r.valorTotal || 0), valorMedido: Number(r.valorMedido || 0) };
+      }
+      setFinanceiroByObraId(map);
+    } catch {
+      setFinanceiroByObraId({});
     }
   }
 
@@ -117,7 +182,7 @@ export default function EngenhariaCadastroObraPage() {
         type: (String(o.type || "PARTICULAR").toUpperCase() === "PUBLICA" ? "PUBLICA" : "PARTICULAR") as any,
         status: String(o.status || "NAO_INICIADA"),
         description: String(o.description || ""),
-        valorPrevisto: o.valorPrevisto == null ? "" : String(Number(o.valorPrevisto)),
+        valorPrevisto: o.valorPrevisto == null ? "" : Number(o.valorPrevisto || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
       });
       await carregarEnderecos(Number(o.id));
       setEnderecoId(null);
@@ -148,7 +213,7 @@ export default function EngenhariaCadastroObraPage() {
         type: formObra.type,
         status: formObra.status,
         description: formObra.description.trim() || undefined,
-        valorPrevisto: formObra.valorPrevisto.trim() ? Number(formObra.valorPrevisto) : undefined,
+        valorPrevisto: formObra.valorPrevisto.trim() ? parseMoneyBR(formObra.valorPrevisto) : undefined,
       };
       let id = obraId;
       if (obraId) {
@@ -160,7 +225,13 @@ export default function EngenhariaCadastroObraPage() {
       }
       if (id && id > 0) await api.post(`/api/obras/${id}/planilha/minima`).catch(() => null);
       await carregarObrasContrato(contratoId);
-      if (id && id > 0) await carregarObraParaEdicao(id);
+      if (id && id > 0) {
+        setObraId(id);
+        await carregarEnderecos(id);
+      }
+      setObraFormAberto(false);
+      setEnderecoFormAberto(false);
+      setEnderecoId(null);
       setOkMsg(obraId ? "Obra atualizada." : "Obra cadastrada.");
     } catch (e: any) {
       setErr(e?.response?.data?.message || e?.message || "Erro ao cadastrar obra");
@@ -298,13 +369,18 @@ export default function EngenhariaCadastroObraPage() {
     setEnderecoFormAberto(false);
     setFormObra({ name: "", type: "PARTICULAR", status: "NAO_INICIADA", description: "", valorPrevisto: "" });
     carregarObrasContrato(contratoId);
+    carregarResumoFinanceiro(contratoId);
   }, [contratoId]);
 
   const contratoSelecionado = useMemo(() => contratos.find((c) => c.id === contratoId) || null, [contratos, contratoId]);
   const obraSelecionada = useMemo(() => obrasContrato.find((o) => o.id === obraId) || null, [obrasContrato, obraId]);
 
   const mapaData = useMemo(() => {
+    const contratoNumero = contratoSelecionado?.numeroContrato || null;
     if (obraSelecionada && enderecos.length > 0) {
+      const fin = financeiroByObraId[obraSelecionada.id];
+      const total = fin?.valorTotal ?? (obraSelecionada.valorPrevisto ?? 0);
+      const medido = fin?.valorMedido ?? 0;
       return enderecos.map((e) => ({
         id: e.id,
         name: `${obraSelecionada.name} - ${e.nomeEndereco || "Principal"}`,
@@ -312,6 +388,10 @@ export default function EngenhariaCadastroObraPage() {
         status: obraSelecionada.status as any,
         enderecoObra: { latitude: e.latitude, longitude: e.longitude },
         valorPrevisto: obraSelecionada.valorPrevisto ?? undefined,
+        contratoNumero,
+        valorMedido: medido,
+        valorAMedir: total - medido,
+        hoverTitle: `#${obraSelecionada.id} - ${obraSelecionada.name}`,
       }));
     }
     return obrasContrato.map((o) => ({
@@ -321,8 +401,12 @@ export default function EngenhariaCadastroObraPage() {
       status: o.status as any,
       enderecoObra: o.enderecoObra ?? null,
       valorPrevisto: o.valorPrevisto ?? undefined,
+      contratoNumero,
+      valorMedido: financeiroByObraId[o.id]?.valorMedido ?? 0,
+      valorAMedir: (financeiroByObraId[o.id]?.valorTotal ?? (o.valorPrevisto ?? 0)) - (financeiroByObraId[o.id]?.valorMedido ?? 0),
+      hoverTitle: `#${o.id} - ${o.name}`,
     }));
-  }, [obrasContrato, obraSelecionada, enderecos]);
+  }, [obrasContrato, obraSelecionada, enderecos, contratoSelecionado, financeiroByObraId]);
 
   const mapaSelectedId = useMemo(() => {
     if (obraSelecionada && enderecos.length > 0) return enderecoId;
@@ -375,6 +459,24 @@ export default function EngenhariaCadastroObraPage() {
             <div className="text-sm text-[#6B7280]">Objeto do contrato</div>
             <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3 text-sm min-h-[44px]">
               {contratoSelecionado?.objeto ? contratoSelecionado.objeto : "-"}
+            </div>
+          </div>
+          <div className="md:col-span-2">
+            <div className="text-sm text-[#6B7280]">Valor do contrato</div>
+            <div className="rounded-lg border border-[#E5E7EB] bg-white p-3 text-sm font-semibold">{contratoSelecionado?.valorTotalAtual != null ? moeda(contratoSelecionado.valorTotalAtual) : "-"}</div>
+          </div>
+          <div className="md:col-span-2">
+            <div className="text-sm text-[#6B7280]">Prazo</div>
+            <div className="rounded-lg border border-[#E5E7EB] bg-white p-3 text-sm font-semibold">
+              {contratoSelecionado?.prazoDias != null && Number.isFinite(contratoSelecionado.prazoDias) ? `${contratoSelecionado.prazoDias} dias` : "-"}
+            </div>
+          </div>
+          <div className="md:col-span-2">
+            <div className="text-sm text-[#6B7280]">Vigência</div>
+            <div className="rounded-lg border border-[#E5E7EB] bg-white p-3 text-sm font-semibold">
+              {contratoSelecionado?.vigenciaInicial || contratoSelecionado?.vigenciaAtual
+                ? `${fmtDateShort(contratoSelecionado?.vigenciaInicial)} → ${fmtDateShort(contratoSelecionado?.vigenciaAtual)}`
+                : "-"}
             </div>
           </div>
         </div>
@@ -491,7 +593,7 @@ export default function EngenhariaCadastroObraPage() {
             </div>
             <div className="md:col-span-2">
               <div className="text-sm text-[#6B7280]">Valor Previsto (R$)</div>
-              <input className="input" value={formObra.valorPrevisto} onChange={(e) => setFormObra((p) => ({ ...p, valorPrevisto: e.target.value }))} />
+              <input className="input" value={formObra.valorPrevisto} onChange={(e) => setFormObra((p) => ({ ...p, valorPrevisto: formatMoneyBRFromDigits(e.target.value) }))} />
             </div>
             <div className="md:col-span-6">
               <div className="text-sm text-[#6B7280]">Descrição</div>
@@ -537,7 +639,9 @@ export default function EngenhariaCadastroObraPage() {
       <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <div className="text-sm font-semibold">Endereços já cadastrados nesta obra</div>
+            <div className="text-sm font-semibold">
+              Endereços já cadastrados nesta obra: {obraSelecionada ? `#${obraSelecionada.id} - ${obraSelecionada.name}` : "-"}
+            </div>
             <div className="text-xs text-[#6B7280]">A obra pode ter vários endereços. Selecione um para editar.</div>
           </div>
           <button

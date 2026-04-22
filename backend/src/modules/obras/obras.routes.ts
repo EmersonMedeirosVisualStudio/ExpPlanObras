@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createObraSchema, updateObraSchema, updateOrcamentoSchema, createCustoSchema } from './obras.schema.js';
-import { createObra, getObras, getObraById, updateObra, deleteObra, getOrcamento, updateOrcamento, addCusto, removeCusto, getEnderecoObra, upsertEnderecoObra, listEnderecosObra, createEnderecoObra, updateEnderecoObraById, deleteEnderecoObraById, ensurePlanilhaContratadaMinima, getPlanilhaContratadaResumo, listPlanilhaContratadaItens, addPlanilhaContratadaItem, type AbrangenciaContext, type OrigemEndereco } from './obras.service.js';
+import { createObra, getObras, getObraById, updateObra, deleteObra, getOrcamento, updateOrcamento, addCusto, removeCusto, getEnderecoObra, upsertEnderecoObra, listEnderecosObra, createEnderecoObra, updateEnderecoObraById, deleteEnderecoObraById, ensurePlanilhaContratadaMinima, getPlanilhaContratadaResumo, listPlanilhaContratadaItens, addPlanilhaContratadaItem, getObrasResumoFinanceiro, type AbrangenciaContext, type OrigemEndereco } from './obras.service.js';
 import { authenticate } from '../../utils/authenticate.js';
 import { parseCSV } from '../../utils/csv.js';
 import { ensureContratoPendente } from '../contratos/contratos.service.js';
@@ -688,6 +688,22 @@ export default async function obraRoutes(server: FastifyInstance) {
     const obras = await getObras(tenantId, scope, { contratoId: q.contratoId });
     return reply.send(obras);
   });
+
+  server.get(
+    '/resumo-financeiro',
+    {
+      schema: {
+        querystring: z.object({ contratoId: z.coerce.number().int().positive().optional() }),
+      },
+    },
+    async (request, reply) => {
+      const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
+      const q = request.query as any;
+      const rows = await getObrasResumoFinanceiro(tenantId, scope, { contratoId: q?.contratoId != null ? Number(q.contratoId) : undefined });
+      return reply.send(rows);
+    }
+  );
 
   server.get(
     '/:id',
