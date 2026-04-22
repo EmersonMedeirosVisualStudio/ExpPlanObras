@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { NavigationApi } from "@/lib/navigation/api";
@@ -254,7 +255,9 @@ export function SidebarNav({ secoes, initialBadges = {} }: { secoes: MenuSection
       <div className="p-4">
         <div className="flex items-center justify-between gap-2">
           <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
-            <div className="h-9 w-9 rounded-lg bg-white/10 flex items-center justify-center text-white font-semibold">EO</div>
+            <div className="h-9 w-9 rounded-lg bg-white/10 overflow-hidden flex items-center justify-center">
+              <Image src="/LogoDoSistema3.jpg" alt="Logo" width={36} height={36} className="h-9 w-9 object-contain" />
+            </div>
             {collapsed ? null : <div className="text-base font-semibold text-white truncate">ExpPlanObras</div>}
           </Link>
           <button
