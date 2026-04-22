@@ -1,9 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DocumentosApi } from '@/lib/modules/documentos/api';
 import type { DocumentoRegistroDTO } from '@/lib/modules/documentos/types';
+import api from '@/lib/api';
+
+type ContratoOption = { id: number; numeroContrato: string; objeto: string | null };
 
 export default function ObrasDocumentosPage() {
   const router = useRouter();
@@ -15,6 +18,9 @@ export default function ObrasDocumentosPage() {
   const [idRef, setIdRef] = useState(initialId);
   const [categoriaPrefix, setCategoriaPrefix] = useState(tipo === 'OBRA' ? 'OBRA:' : 'CONTRATO:');
   const [incluirObras, setIncluirObras] = useState(true);
+  const [contratos, setContratos] = useState<ContratoOption[]>([]);
+  const [contratoBusca, setContratoBusca] = useState('');
+  const [contratoOpen, setContratoOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -37,6 +43,50 @@ export default function ObrasDocumentosPage() {
     }
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [rows]);
+
+  useEffect(() => {
+    let active = true;
+    async function carregarContratos() {
+      try {
+        const res = await api.get('/api/contratos');
+        const list = (res.data as any[]) || [];
+        const mapped: ContratoOption[] = list
+          .map((x: any) => ({
+            id: Number(x.id),
+            numeroContrato: String(x.numeroContrato || ''),
+            objeto: x.objeto ?? null,
+          }))
+          .filter((x) => Number.isFinite(x.id) && x.id > 0);
+        if (active) setContratos(mapped);
+      } catch {
+        if (active) setContratos([]);
+      }
+    }
+    if (tipo === 'CONTRATO') carregarContratos();
+    return () => {
+      active = false;
+    };
+  }, [tipo]);
+
+  useEffect(() => {
+    if (tipo !== 'CONTRATO') return;
+    const id = Number(idRef || 0);
+    if (!id) return;
+    const found = contratos.find((c) => c.id === id);
+    if (!found) return;
+    setContratoBusca(`#${found.id} - ${found.numeroContrato || '—'} - ${found.objeto || '—'}`);
+  }, [tipo, idRef, contratos]);
+
+  const contratosFiltrados = useMemo(() => {
+    const q = contratoBusca.trim().toLowerCase();
+    if (!q) return contratos.slice(0, 10);
+    return contratos
+      .filter((c) => {
+        const label = `#${c.id} ${c.numeroContrato || ''} ${c.objeto || ''}`.toLowerCase();
+        return label.includes(q);
+      })
+      .slice(0, 10);
+  }, [contratos, contratoBusca]);
 
   async function carregar() {
     const id = Number(idRef || 0);
@@ -126,7 +176,54 @@ export default function ObrasDocumentosPage() {
           </div>
           <div>
             <div className="text-sm text-[#6B7280]">ID</div>
-            <input className="input" value={idRef} onChange={(e) => setIdRef(e.target.value)} placeholder={tipo === 'OBRA' ? 'idObra' : 'idContrato'} />
+            {tipo === 'OBRA' ? (
+              <input className="input" value={idRef} onChange={(e) => setIdRef(e.target.value)} placeholder="idObra" />
+            ) : (
+              <div className="relative">
+                <input
+                  className="input"
+                  value={contratoBusca}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setContratoBusca(v);
+                    setContratoOpen(true);
+                    const onlyId = v.trim().match(/^#?(\d+)\b/);
+                    if (onlyId?.[1]) setIdRef(onlyId[1]);
+                  }}
+                  onFocus={() => setContratoOpen(true)}
+                  onBlur={() => window.setTimeout(() => setContratoOpen(false), 120)}
+                  placeholder="#id - Nº do contrato - Objeto"
+                />
+                {contratoOpen ? (
+                  <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-[#E5E7EB] bg-white shadow-sm">
+                    <div className="max-h-64 overflow-auto">
+                      {contratosFiltrados.map((c) => {
+                        const label = `#${c.id} - ${c.numeroContrato || '—'} - ${c.objeto || '—'}`;
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            className="w-full px-3 py-2 text-left text-sm text-[#111827] hover:bg-[#F9FAFB]"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setIdRef(String(c.id));
+                              setContratoBusca(label);
+                              setContratoOpen(false);
+                              setRows([]);
+                            }}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                      {!contratosFiltrados.length ? (
+                        <div className="px-3 py-2 text-sm text-[#6B7280]">Nenhum contrato encontrado.</div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
           </div>
           <div className="md:col-span-2">
             <div className="text-sm text-[#6B7280]">Categoria prefixo</div>

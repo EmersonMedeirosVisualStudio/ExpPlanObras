@@ -376,6 +376,13 @@ export default function ContratosClient() {
         return;
       }
 
+      const vti = parseMoneyBR(eValorTotalInicial);
+      const vta = parseMoneyBR(eValorTotalAtual);
+      if (vti <= 0 || vta <= 0) {
+        setEditErr("Valor total do contrato deve ser maior que zero.");
+        return;
+      }
+
       const payload: any = {
         numeroContrato: eNumeroContrato,
         nome: eNome || null,

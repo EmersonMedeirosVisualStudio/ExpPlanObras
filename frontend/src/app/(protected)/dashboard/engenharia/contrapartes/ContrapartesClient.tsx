@@ -227,59 +227,81 @@ export default function ContrapartesClient() {
   }, [idSelecionado]);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6 text-[#111827]">
       <div>
         <h1 className="text-2xl font-semibold">Parceiros Comerciais (Contrapartes)</h1>
-        <p className="text-sm text-slate-600">Cadastro unificado de pessoas jurídicas e pessoas físicas.</p>
+        <p className="text-sm text-[#6B7280]">Cadastro unificado de pessoas jurídicas e pessoas físicas.</p>
       </div>
 
-      <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+      <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-[#2563EB]" />
+            <div>
+              <div className="text-sm font-semibold">Buscar contrapartes</div>
+              <div className="text-xs text-[#6B7280]">Busca por nome/razão social, documento, email ou telefone.</div>
+            </div>
+          </div>
+          <button
+            className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-60"
+            type="button"
+            onClick={carregar}
+            disabled={loading}
+          >
+            {loading ? "Carregando..." : "Atualizar"}
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <div className="md:col-span-2">
-            <div className="text-sm text-slate-600">Busca</div>
-            <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nome/razão social, documento" />
+            <div className="text-sm text-[#6B7280]">Busca</div>
+            <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nome/razão social, documento, email ou telefone" />
           </div>
           <div>
-            <div className="text-sm text-slate-600">Tipo</div>
+            <div className="text-sm text-[#6B7280]">Tipo</div>
             <select className="input" value={tipo} onChange={(e) => setTipo(e.target.value as any)}>
               <option value="">Todos</option>
               <option value="PJ">PJ</option>
               <option value="PF">PF</option>
             </select>
           </div>
-          <div className="flex items-end justify-end">
-            <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white" type="button" onClick={carregar} disabled={loading}>
-              {loading ? "Carregando..." : "Atualizar"}
-            </button>
-          </div>
         </div>
+
         {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
       </div>
 
-      <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-        <div className="text-lg font-semibold">{edicaoId ? `Editar contraparte #${edicaoId}` : "Nova contraparte"}</div>
+      <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-[#16A34A]" />
+            <div>
+              <div className="text-sm font-semibold">{edicaoId ? `Editar contraparte #${edicaoId}` : "Nova contraparte"}</div>
+              <div className="text-xs text-[#6B7280]">Cadastre uma nova pessoa jurídica ou física.</div>
+            </div>
+          </div>
+        </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
           <div>
-            <div className="text-sm text-slate-600">Tipo</div>
+            <div className="text-sm text-[#6B7280]">Tipo</div>
             <select className="input" value={novo.tipo} onChange={(e) => setNovo((p) => ({ ...p, tipo: e.target.value as any }))}>
               <option value="PJ">PJ</option>
               <option value="PF">PF</option>
             </select>
           </div>
           <div className="md:col-span-2">
-            <div className="text-sm text-slate-600">Nome/Razão</div>
+            <div className="text-sm text-[#6B7280]">Nome/Razão Social</div>
             <input className="input" value={novo.nomeRazao} onChange={(e) => setNovo((p) => ({ ...p, nomeRazao: e.target.value }))} />
           </div>
           <div>
-            <div className="text-sm text-slate-600">Documento</div>
+            <div className="text-sm text-[#6B7280]">Documento</div>
             <input className="input" value={novo.documento} onChange={(e) => setNovo((p) => ({ ...p, documento: e.target.value }))} />
           </div>
           <div>
-            <div className="text-sm text-slate-600">Email</div>
+            <div className="text-sm text-[#6B7280]">Email</div>
             <input className="input" value={novo.email} onChange={(e) => setNovo((p) => ({ ...p, email: e.target.value }))} />
           </div>
           <div>
-            <div className="text-sm text-slate-600">Telefone</div>
+            <div className="text-sm text-[#6B7280]">Telefone</div>
             <input className="input" value={novo.telefone} onChange={(e) => setNovo((p) => ({ ...p, telefone: e.target.value }))} />
           </div>
         </div>
@@ -287,7 +309,7 @@ export default function ContrapartesClient() {
           <div className="flex gap-2">
             {edicaoId ? (
               <button
-                className="rounded-lg border px-4 py-2 text-sm"
+                className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
                 type="button"
                 onClick={() => {
                   setEdicaoId(null);
@@ -298,22 +320,32 @@ export default function ContrapartesClient() {
               </button>
             ) : null}
             {edicaoId ? (
-              <button className="rounded-lg bg-amber-600 px-4 py-2 text-sm text-white" type="button" onClick={inativarSelecionada}>
+              <button className="rounded-lg bg-[#EF4444] px-4 py-2 text-sm text-white hover:bg-[#DC2626]" type="button" onClick={inativarSelecionada}>
                 Inativar
               </button>
             ) : null}
-            <button className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white" type="button" onClick={edicaoId ? salvarEdicao : criar}>
+            <button
+              className="rounded-lg bg-[#16A34A] px-4 py-2 text-sm text-white hover:bg-[#15803D] disabled:opacity-60"
+              type="button"
+              onClick={edicaoId ? salvarEdicao : criar}
+              disabled={loading}
+            >
               {edicaoId ? "Salvar" : "Criar"}
             </button>
           </div>
         </div>
       </div>
 
-      <div className="rounded-xl border bg-white p-4 shadow-sm">
-        <div className="text-lg font-semibold">Contrapartes</div>
+      <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="text-sm font-semibold">Contrapartes cadastradas</div>
+            <div className="text-xs text-[#6B7280]">Lista de todas as contrapartes registradas no sistema.</div>
+          </div>
+        </div>
         <div className="mt-3 overflow-auto">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left">
+            <thead className="bg-[#F9FAFB] text-left text-[#111827]">
               <tr>
                 <th className="px-3 py-2">ID</th>
                 <th className="px-3 py-2">Tipo</th>
@@ -328,7 +360,7 @@ export default function ContrapartesClient() {
               {rows.map((r) => (
                 <tr
                   key={r.idContraparte}
-                  className={`border-t cursor-pointer ${idSelecionado === r.idContraparte ? "bg-blue-50" : ""}`}
+                  className={`border-t border-[#E5E7EB] cursor-pointer hover:bg-[#F9FAFB] ${idSelecionado === r.idContraparte ? "bg-[#EFF6FF]" : ""}`}
                   onClick={() => setIdSelecionado(r.idContraparte)}
                 >
                   <td className="px-3 py-2">{r.idContraparte}</td>
@@ -336,11 +368,19 @@ export default function ContrapartesClient() {
                   <td className="px-3 py-2">{r.nomeRazao}</td>
                   <td className="px-3 py-2">{r.documento || "-"}</td>
                   <td className="px-3 py-2">{[r.email, r.telefone].filter(Boolean).join(" · ") || "-"}</td>
-                  <td className="px-3 py-2">{r.status}</td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        r.status === "ATIVO" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                      }`}
+                    >
+                      {r.status === "ATIVO" ? "Ativo" : "Inativo"}
+                    </span>
+                  </td>
                   <td className="px-3 py-2">
                     <button
                       type="button"
-                      className="rounded border px-2 py-1 text-xs"
+                      className="rounded-lg border border-[#D1D5DB] bg-white px-2 py-1 text-xs text-[#111827] hover:bg-[#F9FAFB]"
                       onClick={(e) => {
                         e.stopPropagation();
                         prepararEdicao(r);
@@ -353,7 +393,7 @@ export default function ContrapartesClient() {
               ))}
               {!rows.length ? (
                 <tr>
-                  <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
+                  <td className="px-3 py-6 text-center text-[#6B7280]" colSpan={7}>
                     Sem dados.
                   </td>
                 </tr>
@@ -363,13 +403,19 @@ export default function ContrapartesClient() {
         </div>
       </div>
 
-      <div className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
-        <div className="text-lg font-semibold">Histórico do parceiro</div>
-        {!selecionado ? <div className="text-sm text-slate-500">Selecione uma contraparte na tabela para visualizar o histórico.</div> : null}
+      <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-[#7C3AED]" />
+          <div>
+            <div className="text-sm font-semibold">Histórico do parceiro</div>
+            <div className="text-xs text-[#6B7280]">Selecione uma contraparte na tabela para visualizar o histórico completo.</div>
+          </div>
+        </div>
+        {!selecionado ? <div className="text-sm text-[#6B7280]">Selecione uma contraparte na tabela acima para visualizar o histórico.</div> : null}
 
         {selecionado ? (
           <>
-            <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+            <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3 text-sm">
               {selecionado.nomeRazao} ({selecionado.tipo}) • ID {selecionado.idContraparte}
             </div>
 
@@ -378,7 +424,7 @@ export default function ContrapartesClient() {
                 <div className="font-semibold">Contratos</div>
                 <div className="overflow-auto">
                   <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 text-left">
+                    <thead className="bg-[#F9FAFB] text-left text-[#111827]">
                       <tr>
                         <th className="px-2 py-1">ID</th>
                         <th className="px-2 py-1">Tipo</th>
@@ -388,7 +434,7 @@ export default function ContrapartesClient() {
                     </thead>
                     <tbody>
                       {contratos.map((c) => (
-                        <tr key={c.idContratoLocacao} className="border-t">
+                        <tr key={c.idContratoLocacao} className="border-t border-[#E5E7EB]">
                           <td className="px-2 py-1">{c.idContratoLocacao}</td>
                           <td className="px-2 py-1">{c.tipo}</td>
                           <td className="px-2 py-1">{c.status}</td>
@@ -397,7 +443,7 @@ export default function ContrapartesClient() {
                       ))}
                       {!contratos.length ? (
                         <tr>
-                          <td className="px-2 py-3 text-center text-slate-500" colSpan={4}>
+                          <td className="px-2 py-3 text-center text-[#6B7280]" colSpan={4}>
                             Sem contratos.
                           </td>
                         </tr>
@@ -411,28 +457,28 @@ export default function ContrapartesClient() {
                 <div className="font-semibold">Avaliações</div>
                 <div className="grid grid-cols-1 gap-2">
                   <div>
-                    <div className="text-sm text-slate-600">Nota (0–10)</div>
+                    <div className="text-sm text-[#6B7280]">Nota (0–10)</div>
                     <input className="input" value={novaAvaliacao.nota} onChange={(e) => setNovaAvaliacao((p) => ({ ...p, nota: e.target.value }))} />
                   </div>
                   <div>
-                    <div className="text-sm text-slate-600">Comentário</div>
+                    <div className="text-sm text-[#6B7280]">Comentário</div>
                     <input className="input" value={novaAvaliacao.comentario} onChange={(e) => setNovaAvaliacao((p) => ({ ...p, comentario: e.target.value }))} />
                   </div>
                   <div className="flex justify-end">
-                    <button className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white" type="button" onClick={criarAvaliacao} disabled={loading}>
+                    <button className="rounded-lg bg-[#16A34A] px-4 py-2 text-sm text-white hover:bg-[#15803D] disabled:opacity-60" type="button" onClick={criarAvaliacao} disabled={loading}>
                       Registrar
                     </button>
                   </div>
                 </div>
                 <div className="space-y-2">
                   {avaliacoes.map((a) => (
-                    <div key={a.idAvaliacao} className="rounded-md border p-2 text-sm">
+                    <div key={a.idAvaliacao} className="rounded-md border border-[#E5E7EB] p-2 text-sm">
                       <div className="font-semibold">{a.nota == null ? "Sem nota" : `Nota ${a.nota}`}</div>
-                      <div className="text-slate-600">{a.comentario || "-"}</div>
-                      <div className="text-xs text-slate-500">{String(a.criadoEm || "").slice(0, 19).replace("T", " ")}</div>
+                      <div className="text-[#6B7280]">{a.comentario || "-"}</div>
+                      <div className="text-xs text-[#6B7280]">{String(a.criadoEm || "").slice(0, 19).replace("T", " ")}</div>
                     </div>
                   ))}
-                  {!avaliacoes.length ? <div className="text-sm text-slate-500">Sem avaliações.</div> : null}
+                  {!avaliacoes.length ? <div className="text-sm text-[#6B7280]">Sem avaliações.</div> : null}
                 </div>
               </div>
 
@@ -440,7 +486,7 @@ export default function ContrapartesClient() {
                 <div className="font-semibold">Ocorrências</div>
                 <div className="grid grid-cols-1 gap-2">
                   <div>
-                    <div className="text-sm text-slate-600">Contrato (opcional)</div>
+                    <div className="text-sm text-[#6B7280]">Contrato (opcional)</div>
                     <input
                       className="input"
                       value={novaOcorrencia.idContratoLocacao}
@@ -449,12 +495,12 @@ export default function ContrapartesClient() {
                     />
                   </div>
                   <div>
-                    <div className="text-sm text-slate-600">Tipo</div>
+                    <div className="text-sm text-[#6B7280]">Tipo</div>
                     <input className="input" value={novaOcorrencia.tipo} onChange={(e) => setNovaOcorrencia((p) => ({ ...p, tipo: e.target.value }))} placeholder="Ex.: atraso" />
                   </div>
                   <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                     <div>
-                      <div className="text-sm text-slate-600">Gravidade</div>
+                      <div className="text-sm text-[#6B7280]">Gravidade</div>
                       <select className="input" value={novaOcorrencia.gravidade} onChange={(e) => setNovaOcorrencia((p) => ({ ...p, gravidade: e.target.value as any }))}>
                         <option value="BAIXA">Baixa</option>
                         <option value="MEDIA">Média</option>
@@ -463,34 +509,34 @@ export default function ContrapartesClient() {
                       </select>
                     </div>
                     <div>
-                      <div className="text-sm text-slate-600">Data</div>
+                      <div className="text-sm text-[#6B7280]">Data</div>
                       <input className="input" type="date" value={novaOcorrencia.dataOcorrencia} onChange={(e) => setNovaOcorrencia((p) => ({ ...p, dataOcorrencia: e.target.value }))} />
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-slate-600">Descrição</div>
+                    <div className="text-sm text-[#6B7280]">Descrição</div>
                     <input className="input" value={novaOcorrencia.descricao} onChange={(e) => setNovaOcorrencia((p) => ({ ...p, descricao: e.target.value }))} />
                   </div>
                   <div className="flex justify-end">
-                    <button className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white" type="button" onClick={criarOcorrencia} disabled={loading}>
+                    <button className="rounded-lg bg-[#16A34A] px-4 py-2 text-sm text-white hover:bg-[#15803D] disabled:opacity-60" type="button" onClick={criarOcorrencia} disabled={loading}>
                       Registrar
                     </button>
                   </div>
                 </div>
                 <div className="space-y-2">
                   {ocorrencias.map((o) => (
-                    <div key={o.idOcorrencia} className="rounded-md border p-2 text-sm">
+                    <div key={o.idOcorrencia} className="rounded-md border border-[#E5E7EB] p-2 text-sm">
                       <div className="flex items-center justify-between gap-2">
                         <div className="font-semibold">{o.tipo || "Ocorrência"}</div>
                         <div className="text-xs">{o.gravidade}</div>
                       </div>
-                      <div className="text-slate-600">{o.descricao}</div>
-                      <div className="text-xs text-slate-500">
+                      <div className="text-[#6B7280]">{o.descricao}</div>
+                      <div className="text-xs text-[#6B7280]">
                         {o.dataOcorrencia || String(o.criadoEm || "").slice(0, 10)} • Contrato {o.idContratoLocacao ?? "-"}
                       </div>
                     </div>
                   ))}
-                  {!ocorrencias.length ? <div className="text-sm text-slate-500">Sem ocorrências.</div> : null}
+                  {!ocorrencias.length ? <div className="text-sm text-[#6B7280]">Sem ocorrências.</div> : null}
                 </div>
               </div>
             </div>

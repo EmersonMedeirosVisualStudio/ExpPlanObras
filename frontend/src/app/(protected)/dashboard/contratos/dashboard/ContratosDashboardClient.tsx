@@ -208,6 +208,12 @@ export default function ContratosDashboardClient() {
     return router.push("/dashboard/contratos");
   }
 
+  function situacaoUi(s: PrazoCriticoRow["situacao"]) {
+    if (s === "VENCIDO") return { color: "#EF4444", label: "Vencido" };
+    if (s === "A_VENCER") return { color: "#F59E0B", label: "A vencer" };
+    return { color: "#16A34A", label: "Em andamento" };
+  }
+
   return (
     <div className="space-y-6 text-[#111827]">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -462,19 +468,22 @@ export default function ContratosDashboardClient() {
                 {prazoCritico.map((r) => (
                   <tr key={r.contratoId} className="border-t border-[#E5E7EB]">
                     <td className="px-3 py-2 font-semibold">
-                      <button type="button" className="text-red-500 hover:underline" onClick={() => abrirContrato(r.contratoId)}>
+                      <button type="button" className="text-[#111827] hover:underline" onClick={() => abrirContrato(r.contratoId)}>
                         {r.numeroContrato}
                       </button>
                     </td>
                     <td className="px-3 py-2">
-                      <button type="button" className="text-red-500 hover:underline" onClick={() => abrirContrato(r.contratoId)}>
+                      <button type="button" className="text-[#111827] hover:underline" onClick={() => abrirContrato(r.contratoId)}>
                         {r.objeto || "—"}
                       </button>
                     </td>
                     <td className="px-3 py-2">{new Date(r.vigenciaAtual).toLocaleDateString("pt-BR")}</td>
                     <td className={`px-3 py-2 text-right ${r.diasRestantes < 0 ? "text-red-700" : r.diasRestantes <= 30 ? "text-amber-700" : ""}`}>{r.diasRestantes}</td>
                     <td className="px-3 py-2">
-                      {r.situacao === "VENCIDO" ? "Vencido" : r.situacao === "A_VENCER" ? "A vencer" : "Em andamento"}
+                      <span className="inline-flex items-center gap-2">
+                        <span className="inline-block h-2 w-2 rounded-full" style={{ background: situacaoUi(r.situacao).color }} />
+                        <span>{situacaoUi(r.situacao).label}</span>
+                      </span>
                     </td>
                   </tr>
                 ))}

@@ -87,6 +87,13 @@ export default function NovoContratoClient() {
         return;
       }
 
+      const vti = parseMoneyBR(valorTotalInicial);
+      const vta = parseMoneyBR(valorTotalAtual);
+      if (vti <= 0 || vta <= 0) {
+        setErr("Valor total do contrato deve ser maior que zero.");
+        return;
+      }
+
       const payload = {
         numeroContrato,
         nome: nome || null,

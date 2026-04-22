@@ -136,6 +136,8 @@ function computeStatusEAlertas(row: any) {
     if (vti == null) issues.push('Valor inicial não informado');
   }
 
+  if (valorTotalAtual <= 0) issues.push(valorTotalAtual === 0 ? 'Valor total do contrato é 0' : 'Valor total do contrato é negativo');
+
   const now = new Date();
   const end = vigAtual;
   const statusManual = String(row.status || '').toUpperCase();
@@ -164,7 +166,7 @@ function computeStatusEAlertas(row: any) {
 
   let alerta: 'OK' | 'PENDENTE' | 'CRITICO' = 'OK';
   if (issues.length) {
-    const critical = issues.some((m) => m.includes('Falta prazo') || m.includes('Falta data'));
+    const critical = issues.some((m) => m.includes('Falta prazo') || m.includes('Falta data') || m.includes('Valor total do contrato'));
     alerta = critical ? 'CRITICO' : 'PENDENTE';
   }
 
@@ -1824,6 +1826,11 @@ export async function createContrato(tenantId: number, input: CreateContratoInpu
       valorTotalAtual: input.valorTotalAtual ?? null,
     });
 
+    const totalInicial = toNumberOrNull(computedValores.valorTotalInicial);
+    const totalAtual = toNumberOrNull(computedValores.valorTotalAtual);
+    if (totalInicial != null && totalInicial <= 0) throw new Error('Valor total do contrato deve ser maior que zero');
+    if (totalAtual != null && totalAtual <= 0) throw new Error('Valor total do contrato deve ser maior que zero');
+
     const created = await tx.contrato.create({
       data: {
         tenantId,
@@ -1881,6 +1888,11 @@ export async function updateContrato(tenantId: number, id: number, input: Update
       valorProprioAtual: input.valorProprioAtual != null ? input.valorProprioAtual : current.valorProprioAtual ?? null,
       valorTotalAtual: input.valorTotalAtual != null ? input.valorTotalAtual : current.valorTotalAtual ?? null,
     });
+
+    const totalInicial = toNumberOrNull(computedValores.valorTotalInicial);
+    const totalAtual = toNumberOrNull(computedValores.valorTotalAtual);
+    if (totalInicial != null && totalInicial <= 0) throw new Error('Valor total do contrato deve ser maior que zero');
+    if (totalAtual != null && totalAtual <= 0) throw new Error('Valor total do contrato deve ser maior que zero');
 
     const updated = await tx.contrato.update({
       where: { id },
