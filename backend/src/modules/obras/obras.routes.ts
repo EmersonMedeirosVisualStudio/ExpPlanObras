@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createObraSchema, updateObraSchema, updateOrcamentoSchema, createCustoSchema } from './obras.schema.js';
-import { createObra, getObras, getObraById, updateObra, deleteObra, getOrcamento, updateOrcamento, addCusto, removeCusto, getEnderecoObra, upsertEnderecoObra, ensurePlanilhaContratadaMinima, getPlanilhaContratadaResumo, listPlanilhaContratadaItens, addPlanilhaContratadaItem, type AbrangenciaContext, type OrigemEndereco } from './obras.service.js';
+import { createObra, getObras, getObraById, updateObra, deleteObra, getOrcamento, updateOrcamento, addCusto, removeCusto, getEnderecoObra, upsertEnderecoObra, listEnderecosObra, createEnderecoObra, updateEnderecoObraById, deleteEnderecoObraById, ensurePlanilhaContratadaMinima, getPlanilhaContratadaResumo, listPlanilhaContratadaItens, addPlanilhaContratadaItem, type AbrangenciaContext, type OrigemEndereco } from './obras.service.js';
 import { authenticate } from '../../utils/authenticate.js';
 import { parseCSV } from '../../utils/csv.js';
 import { ensureContratoPendente } from '../contratos/contratos.service.js';
@@ -194,6 +194,222 @@ export default async function obraRoutes(server: FastifyInstance) {
         return reply.send(saved);
       } catch (e: any) {
         return reply.code(400).send({ message: e?.message || 'Erro ao salvar endereço' });
+      }
+    }
+  );
+
+  server.get(
+    '/:id/enderecos',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
+      const { id } = request.params as { id: number };
+      try {
+        const enderecos = await listEnderecosObra(id, tenantId, scope);
+        return reply.send(enderecos);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao carregar endereços' });
+      }
+    }
+  );
+
+  const enderecoBodySchema = z
+    .object({
+      nomeEndereco: z.string().optional().nullable(),
+      principal: z.boolean().optional(),
+      origem: z.enum(['LINK', 'CEP', 'MANUAL']),
+      link: z.string().optional(),
+      cep: z.string().optional(),
+      logradouro: z.string().optional().nullable(),
+      numero: z.string().optional().nullable(),
+      complemento: z.string().optional().nullable(),
+      bairro: z.string().optional().nullable(),
+      cidade: z.string().optional().nullable(),
+      uf: z.string().optional().nullable(),
+      latitude: z.string().optional().nullable(),
+      longitude: z.string().optional().nullable(),
+    })
+    .passthrough();
+
+  server.post(
+    '/:id/enderecos',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive() }), body: enderecoBodySchema } },
+    async (request, reply) => {
+      const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
+      const { id } = request.params as { id: number };
+      const body = request.body as any;
+      const origem = String(body.origem || 'MANUAL').toUpperCase() as OrigemEndereco;
+
+      try {
+        if (origem === 'CEP') {
+          const base = await lookupCep(String(body.cep || ''));
+          if (!base) return reply.code(400).send({ message: 'CEP inválido' });
+          const saved = await createEnderecoObra(
+            id,
+            tenantId,
+            {
+              ...base,
+              numero: body.numero ?? null,
+              nomeEndereco: body.nomeEndereco ?? null,
+              principal: body.principal ?? null,
+              origemEndereco: 'CEP',
+              origemCoordenada: 'CEP',
+            },
+            scope
+          );
+          return reply.send(saved);
+        }
+
+        if (origem === 'LINK') {
+          const resolved = await resolveUrl(String(body.link || ''));
+          const coords = parseLatLngFromText(resolved) || parseLatLngFromText(String(body.link || ''));
+          if (!coords) return reply.code(400).send({ message: 'Não foi possível extrair latitude/longitude do link' });
+          const addr = await reverseGeocode(coords.latitude, coords.longitude);
+          const saved = await createEnderecoObra(
+            id,
+            tenantId,
+            {
+              ...(addr || {}),
+              latitude: coords.latitude,
+              longitude: coords.longitude,
+              nomeEndereco: body.nomeEndereco ?? null,
+              principal: body.principal ?? null,
+              origemEndereco: addr ? 'LINK' : 'MANUAL',
+              origemCoordenada: 'LINK',
+            },
+            scope
+          );
+          return reply.send(saved);
+        }
+
+        const saved = await createEnderecoObra(
+          id,
+          tenantId,
+          {
+            nomeEndereco: body.nomeEndereco ?? null,
+            principal: body.principal ?? null,
+            cep: body.cep ? normalizeCep(String(body.cep)) || null : null,
+            logradouro: body.logradouro ?? null,
+            numero: body.numero ?? null,
+            complemento: body.complemento ?? null,
+            bairro: body.bairro ?? null,
+            cidade: body.cidade ?? null,
+            uf: body.uf ?? null,
+            latitude: body.latitude ?? null,
+            longitude: body.longitude ?? null,
+            origemEndereco: 'MANUAL',
+            origemCoordenada: body.latitude || body.longitude ? 'MANUAL' : 'MANUAL',
+          },
+          scope
+        );
+        return reply.send(saved);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao salvar endereço' });
+      }
+    }
+  );
+
+  server.put(
+    '/:id/enderecos/:enderecoId',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive(), enderecoId: z.coerce.number().int().positive() }),
+        body: enderecoBodySchema,
+      },
+    },
+    async (request, reply) => {
+      const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
+      const { id, enderecoId } = request.params as { id: number; enderecoId: number };
+      const body = request.body as any;
+      const origem = String(body.origem || 'MANUAL').toUpperCase() as OrigemEndereco;
+
+      try {
+        if (origem === 'CEP') {
+          const base = await lookupCep(String(body.cep || ''));
+          if (!base) return reply.code(400).send({ message: 'CEP inválido' });
+          const saved = await updateEnderecoObraById(
+            id,
+            enderecoId,
+            tenantId,
+            {
+              ...base,
+              numero: body.numero ?? null,
+              nomeEndereco: body.nomeEndereco ?? null,
+              principal: body.principal ?? null,
+              origemEndereco: 'CEP',
+              origemCoordenada: 'CEP',
+            },
+            scope
+          );
+          return reply.send(saved);
+        }
+
+        if (origem === 'LINK') {
+          const resolved = await resolveUrl(String(body.link || ''));
+          const coords = parseLatLngFromText(resolved) || parseLatLngFromText(String(body.link || ''));
+          if (!coords) return reply.code(400).send({ message: 'Não foi possível extrair latitude/longitude do link' });
+          const addr = await reverseGeocode(coords.latitude, coords.longitude);
+          const saved = await updateEnderecoObraById(
+            id,
+            enderecoId,
+            tenantId,
+            {
+              ...(addr || {}),
+              latitude: coords.latitude,
+              longitude: coords.longitude,
+              nomeEndereco: body.nomeEndereco ?? null,
+              principal: body.principal ?? null,
+              origemEndereco: addr ? 'LINK' : 'MANUAL',
+              origemCoordenada: 'LINK',
+            },
+            scope
+          );
+          return reply.send(saved);
+        }
+
+        const saved = await updateEnderecoObraById(
+          id,
+          enderecoId,
+          tenantId,
+          {
+            nomeEndereco: body.nomeEndereco ?? null,
+            principal: body.principal ?? null,
+            cep: body.cep ? normalizeCep(String(body.cep)) || null : null,
+            logradouro: body.logradouro ?? null,
+            numero: body.numero ?? null,
+            complemento: body.complemento ?? null,
+            bairro: body.bairro ?? null,
+            cidade: body.cidade ?? null,
+            uf: body.uf ?? null,
+            latitude: body.latitude ?? null,
+            longitude: body.longitude ?? null,
+            origemEndereco: 'MANUAL',
+            origemCoordenada: body.latitude || body.longitude ? 'MANUAL' : 'MANUAL',
+          },
+          scope
+        );
+        return reply.send(saved);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao salvar endereço' });
+      }
+    }
+  );
+
+  server.delete(
+    '/:id/enderecos/:enderecoId',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive(), enderecoId: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const { tenantId } = request.user as any;
+      const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
+      const { id, enderecoId } = request.params as { id: number; enderecoId: number };
+      try {
+        const result = await deleteEnderecoObraById(id, enderecoId, tenantId, scope);
+        return reply.send(result);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao remover endereço' });
       }
     }
   );
@@ -468,7 +684,8 @@ export default async function obraRoutes(server: FastifyInstance) {
   server.get('/', async (request, reply) => {
     const { tenantId } = request.user as any;
     const scope = (request.user as any)?.abrangencia as AbrangenciaContext | undefined;
-    const obras = await getObras(tenantId, scope);
+    const q = z.object({ contratoId: z.coerce.number().int().positive().optional() }).parse(request.query || {});
+    const obras = await getObras(tenantId, scope, { contratoId: q.contratoId });
     return reply.send(obras);
   });
 

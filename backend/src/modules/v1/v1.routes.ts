@@ -1614,6 +1614,318 @@ export default async function v1Routes(server: FastifyInstance) {
     return false;
   }
 
+  const CONTRAPARTE_CLASSIFICACOES = ['EXCELENTE', 'BOA', 'REGULAR', 'EM_AVALIACAO', 'NAO_RECOMENDADO'] as const;
+  const CONTRAPARTE_GRAVIDADES = ['BAIXA', 'MEDIA', 'ALTA', 'CRITICA'] as const;
+
+  function normalizeListParam(value: unknown) {
+    const s = String(value ?? '').trim();
+    if (!s) return [];
+    return s
+      .split(',')
+      .map((v) => String(v || '').trim().toUpperCase())
+      .filter(Boolean);
+  }
+
+  server.get('/engenharia/contrapartes', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const q = z
+      .object({
+        q: z.string().optional(),
+        tipo: z.enum(['PJ', 'PF']).optional(),
+        status: z.enum(['ATIVO', 'INATIVO']).optional(),
+        classificacaoStatus: z.string().optional(),
+        cidade: z.string().optional(),
+        uf: z.string().optional(),
+      })
+      .parse(request.query || {});
+
+    const search = String(q.q || '').trim();
+    const cidade = q.cidade ? String(q.cidade).trim() : '';
+    const uf = q.uf ? String(q.uf).trim().toUpperCase() : '';
+    const classificacoes = normalizeListParam(q.classificacaoStatus).filter((s) => (CONTRAPARTE_CLASSIFICACOES as readonly string[]).includes(s));
+
+    const where: any = {
+      tenantId: ctx.tenantId,
+      ...(q.tipo ? { tipo: q.tipo } : {}),
+      ...(q.status ? { status: q.status } : {}),
+      ...(classificacoes.length ? { classificacaoStatus: { in: classificacoes } } : {}),
+      ...(cidade ? { cidade } : {}),
+      ...(uf ? { uf } : {}),
+      ...(search
+        ? {
+            OR: [
+              { nomeRazao: { contains: search, mode: 'insensitive' } },
+              { documento: { contains: search, mode: 'insensitive' } },
+              { email: { contains: search, mode: 'insensitive' } },
+              { telefone: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const rows = await prisma.engenhariaContraparte.findMany({
+      where,
+      orderBy: { nomeRazao: 'asc' },
+      take: 500,
+    });
+
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idContraparte: r.id,
+        tipo: r.tipo,
+        nomeRazao: r.nomeRazao,
+        documento: r.documento,
+        email: r.email,
+        telefone: r.telefone,
+        status: r.status,
+        classificacaoStatus: r.classificacaoStatus,
+        observacao: r.observacao,
+        cep: r.cep,
+        logradouro: r.logradouro,
+        numero: r.numero,
+        complemento: r.complemento,
+        bairro: r.bairro,
+        cidade: r.cidade,
+        uf: r.uf,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        criadoEm: r.createdAt,
+      }))
+    );
+  });
+
+  server.post('/engenharia/contrapartes', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const body = z
+      .object({
+        tipo: z.enum(['PJ', 'PF']),
+        nomeRazao: z.string().min(1),
+        documento: z.string().optional().nullable(),
+        email: z.string().optional().nullable(),
+        telefone: z.string().optional().nullable(),
+        classificacaoStatus: z.enum(CONTRAPARTE_CLASSIFICACOES).optional(),
+        observacao: z.string().optional().nullable(),
+        cep: z.string().optional().nullable(),
+        logradouro: z.string().optional().nullable(),
+        numero: z.string().optional().nullable(),
+        complemento: z.string().optional().nullable(),
+        bairro: z.string().optional().nullable(),
+        cidade: z.string().optional().nullable(),
+        uf: z.string().optional().nullable(),
+        latitude: z.string().optional().nullable(),
+        longitude: z.string().optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    const created = await prisma.engenhariaContraparte.create({
+      data: {
+        tenantId: ctx.tenantId,
+        tipo: body.tipo,
+        nomeRazao: body.nomeRazao.trim(),
+        documento: body.documento ? String(body.documento).trim() : null,
+        email: body.email ? String(body.email).trim() : null,
+        telefone: body.telefone ? String(body.telefone).trim() : null,
+        status: 'ATIVO',
+        classificacaoStatus: body.classificacaoStatus || 'EM_AVALIACAO',
+        observacao: body.observacao ? String(body.observacao).trim() : null,
+        cep: body.cep ? String(body.cep).trim() : null,
+        logradouro: body.logradouro ? String(body.logradouro).trim() : null,
+        numero: body.numero ? String(body.numero).trim() : null,
+        complemento: body.complemento ? String(body.complemento).trim() : null,
+        bairro: body.bairro ? String(body.bairro).trim() : null,
+        cidade: body.cidade ? String(body.cidade).trim() : null,
+        uf: body.uf ? String(body.uf).trim().toUpperCase() : null,
+        latitude: body.latitude ? String(body.latitude).trim() : null,
+        longitude: body.longitude ? String(body.longitude).trim() : null,
+        usuarioCriadorId: ctx.userId,
+      },
+      select: { id: true },
+    });
+
+    return ok(reply, { idContraparte: created.id });
+  });
+
+  server.put('/engenharia/contrapartes/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const params = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        tipo: z.enum(['PJ', 'PF']).optional(),
+        nomeRazao: z.string().min(1).optional(),
+        documento: z.string().optional().nullable(),
+        email: z.string().optional().nullable(),
+        telefone: z.string().optional().nullable(),
+        status: z.enum(['ATIVO', 'INATIVO']).optional(),
+        classificacaoStatus: z.enum(CONTRAPARTE_CLASSIFICACOES).optional(),
+        observacao: z.string().optional().nullable(),
+        cep: z.string().optional().nullable(),
+        logradouro: z.string().optional().nullable(),
+        numero: z.string().optional().nullable(),
+        complemento: z.string().optional().nullable(),
+        bairro: z.string().optional().nullable(),
+        cidade: z.string().optional().nullable(),
+        uf: z.string().optional().nullable(),
+        latitude: z.string().optional().nullable(),
+        longitude: z.string().optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    const existing = await prisma.engenhariaContraparte.findFirst({ where: { id: params.id, tenantId: ctx.tenantId }, select: { id: true } });
+    if (!existing) return fail(reply, 404, 'Contraparte não encontrada');
+
+    const updated = await prisma.engenhariaContraparte.update({
+      where: { id: params.id },
+      data: {
+        ...(body.tipo ? { tipo: body.tipo } : {}),
+        ...(body.nomeRazao ? { nomeRazao: body.nomeRazao.trim() } : {}),
+        ...(body.documento !== undefined ? { documento: body.documento ? String(body.documento).trim() : null } : {}),
+        ...(body.email !== undefined ? { email: body.email ? String(body.email).trim() : null } : {}),
+        ...(body.telefone !== undefined ? { telefone: body.telefone ? String(body.telefone).trim() : null } : {}),
+        ...(body.status ? { status: body.status } : {}),
+        ...(body.classificacaoStatus ? { classificacaoStatus: body.classificacaoStatus } : {}),
+        ...(body.observacao !== undefined ? { observacao: body.observacao ? String(body.observacao).trim() : null } : {}),
+        ...(body.cep !== undefined ? { cep: body.cep ? String(body.cep).trim() : null } : {}),
+        ...(body.logradouro !== undefined ? { logradouro: body.logradouro ? String(body.logradouro).trim() : null } : {}),
+        ...(body.numero !== undefined ? { numero: body.numero ? String(body.numero).trim() : null } : {}),
+        ...(body.complemento !== undefined ? { complemento: body.complemento ? String(body.complemento).trim() : null } : {}),
+        ...(body.bairro !== undefined ? { bairro: body.bairro ? String(body.bairro).trim() : null } : {}),
+        ...(body.cidade !== undefined ? { cidade: body.cidade ? String(body.cidade).trim() : null } : {}),
+        ...(body.uf !== undefined ? { uf: body.uf ? String(body.uf).trim().toUpperCase() : null } : {}),
+        ...(body.latitude !== undefined ? { latitude: body.latitude ? String(body.latitude).trim() : null } : {}),
+        ...(body.longitude !== undefined ? { longitude: body.longitude ? String(body.longitude).trim() : null } : {}),
+      },
+      select: { id: true },
+    });
+
+    return ok(reply, { idContraparte: updated.id });
+  });
+
+  server.delete('/engenharia/contrapartes/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const params = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const existing = await prisma.engenhariaContraparte.findFirst({ where: { id: params.id, tenantId: ctx.tenantId }, select: { id: true } });
+    if (!existing) return fail(reply, 404, 'Contraparte não encontrada');
+
+    await prisma.engenhariaContraparte.update({ where: { id: params.id }, data: { status: 'INATIVO' } });
+    return ok(reply, { success: true });
+  });
+
+  server.get('/engenharia/contrapartes/:id/avaliacoes', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const params = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const rows = await prisma.engenhariaContraparteAvaliacao.findMany({
+      where: { tenantId: ctx.tenantId, contraparteId: params.id },
+      orderBy: { id: 'desc' },
+      take: 200,
+    });
+
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idAvaliacao: r.id,
+        nota: r.nota == null ? null : Number(r.nota),
+        comentario: r.comentario,
+        criadoEm: r.createdAt,
+      }))
+    );
+  });
+
+  server.post('/engenharia/contrapartes/:id/avaliacoes', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const params = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        nota: z.number().int().min(0).max(10).optional().nullable(),
+        comentario: z.string().optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    const comentario = body.comentario ? String(body.comentario).trim() : null;
+    const nota = body.nota == null ? null : body.nota;
+    if (nota == null && !comentario) return fail(reply, 422, 'Informe nota ou comentário');
+
+    const created = await prisma.engenhariaContraparteAvaliacao.create({
+      data: { tenantId: ctx.tenantId, contraparteId: params.id, nota, comentario, usuarioCriadorId: ctx.userId },
+      select: { id: true },
+    });
+    return ok(reply, { idAvaliacao: created.id });
+  });
+
+  server.get('/engenharia/contrapartes/:id/ocorrencias', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const params = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const rows = await prisma.engenhariaContraparteOcorrencia.findMany({
+      where: { tenantId: ctx.tenantId, contraparteId: params.id },
+      orderBy: { id: 'desc' },
+      take: 200,
+    });
+
+    return ok(
+      reply,
+      rows.map((o) => ({
+        idOcorrencia: o.id,
+        idContratoLocacao: o.contratoLocacaoId,
+        tipo: o.tipo,
+        gravidade: o.gravidade,
+        dataOcorrencia: o.dataOcorrencia ? o.dataOcorrencia.toISOString().slice(0, 10) : null,
+        descricao: o.descricao,
+        criadoEm: o.createdAt,
+      }))
+    );
+  });
+
+  server.post('/engenharia/contrapartes/:id/ocorrencias', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const params = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        idContratoLocacao: z.number().int().positive().optional().nullable(),
+        tipo: z.string().optional().nullable(),
+        gravidade: z.enum(CONTRAPARTE_GRAVIDADES).default('MEDIA'),
+        dataOcorrencia: z.string().optional().nullable(),
+        descricao: z.string().min(1),
+      })
+      .parse(request.body || {});
+
+    const dataOcorrencia = body.dataOcorrencia ? new Date(String(body.dataOcorrencia)) : null;
+    const created = await prisma.engenhariaContraparteOcorrencia.create({
+      data: {
+        tenantId: ctx.tenantId,
+        contraparteId: params.id,
+        contratoLocacaoId: body.idContratoLocacao ?? null,
+        tipo: body.tipo ? String(body.tipo).trim() : null,
+        gravidade: body.gravidade,
+        dataOcorrencia: dataOcorrencia && !Number.isNaN(dataOcorrencia.getTime()) ? dataOcorrencia : null,
+        descricao: String(body.descricao).trim(),
+        usuarioCriadorId: ctx.userId,
+      },
+      select: { id: true },
+    });
+    return ok(reply, { idOcorrencia: created.id });
+  });
+
+  server.get('/engenharia/contratos-locacao', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    z.object({ idContraparte: z.coerce.number().int().positive() }).parse(request.query || {});
+    return ok(reply, []);
+  });
+
   server.get('/engenharia/licitacoes', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;

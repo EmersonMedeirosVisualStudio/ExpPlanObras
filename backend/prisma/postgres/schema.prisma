@@ -143,6 +143,9 @@ model Tenant {
   engenhariaLicitacoesAndamento EngenhariaLicitacaoAndamentoEvento[]
   engenhariaLicitacoesComunicacoes EngenhariaLicitacaoComunicacao[]
   engenhariaLicitacoesRecursos EngenhariaLicitacaoRecurso[]
+  engenhariaContrapartes EngenhariaContraparte[]
+  engenhariaContrapartesAvaliacoes EngenhariaContraparteAvaliacao[]
+  engenhariaContrapartesOcorrencias EngenhariaContraparteOcorrencia[]
 }
 
 model User {
@@ -540,7 +543,7 @@ model Obra {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   planilhasContratadas ObraPlanilhaContratada[]
-  enderecoObra EnderecoObra?
+  enderecosObra EnderecoObra[]
   etapas    Etapa[]
   custos    Custo[]
   documentos Documento[]
@@ -557,7 +560,9 @@ model Obra {
 model EnderecoObra {
   id               Int      @id @default(autoincrement())
   tenantId          Int
-  obraId            Int      @unique
+  obraId            Int
+  nomeEndereco      String   @default("Principal")
+  principal         Boolean  @default(false)
   cep               String?
   logradouro        String?
   numero            String?
@@ -575,8 +580,9 @@ model EnderecoObra {
   tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   obra              Obra     @relation(fields: [obraId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, obraId])
   @@index([tenantId])
+  @@index([tenantId, obraId])
+  @@index([tenantId, obraId, principal])
 }
 
 model ObraPlanilhaContratada {
@@ -2982,3 +2988,76 @@ model EngenhariaLicitacaoRecurso {
   @@index([tenantId])
   @@index([tenantId, licitacaoId])
 }
+
+model EngenhariaContraparte {
+  id                 Int      @id @default(autoincrement())
+  tenantId            Int
+  tipo                String
+  nomeRazao           String
+  documento           String?
+  email               String?
+  telefone            String?
+  status              String   @default("ATIVO")
+  classificacaoStatus String   @default("EM_AVALIACAO")
+  observacao          String?
+  cep                 String?
+  logradouro          String?
+  numero              String?
+  complemento         String?
+  bairro              String?
+  cidade              String?
+  uf                  String?
+  latitude            String?
+  longitude           String?
+  usuarioCriadorId    Int?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  avaliacoes          EngenhariaContraparteAvaliacao[]
+  ocorrencias         EngenhariaContraparteOcorrencia[]
+
+  @@index([tenantId])
+  @@index([tenantId, tipo])
+  @@index([tenantId, status])
+  @@index([tenantId, classificacaoStatus])
+  @@index([tenantId, documento])
+  @@index([tenantId, cidade])
+  @@index([tenantId, uf])
+}
+
+model EngenhariaContraparteAvaliacao {
+  id             Int      @id @default(autoincrement())
+  tenantId        Int
+  contraparteId   Int
+  nota            Int?
+  comentario      String?
+  usuarioCriadorId Int?
+  createdAt      DateTime @default(now())
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contraparte    EngenhariaContraparte @relation(fields: [contraparteId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, contraparteId])
+}
+
+model EngenhariaContraparteOcorrencia {
+  id              Int      @id @default(autoincrement())
+  tenantId         Int
+  contraparteId    Int
+  contratoLocacaoId Int?
+  tipo             String?
+  gravidade        String   @default("MEDIA")
+  dataOcorrencia   DateTime?
+  descricao        String
+  usuarioCriadorId Int?
+  createdAt        DateTime @default(now())
+
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contraparte      EngenhariaContraparte @relation(fields: [contraparteId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, contraparteId])
+  @@index([tenantId, gravidade])
+ }

@@ -29,6 +29,7 @@ interface Obra {
 
 interface MapaObrasProps {
   obras: Obra[];
+  selectedObraId?: number | null;
 }
 
 const STATUS_COLOR_MAP: Record<string, string> = {
@@ -51,17 +52,17 @@ const STATUS_LABEL_MAP: Record<string, string> = {
     FINALIZADA: "Finalizada"
 };
 
-const createCustomIcon = (color: string) => {
+const createCustomIcon = (color: string, selected: boolean) => {
   return new L.DivIcon({
     className: 'custom-icon',
-    html: `<div style="background-color: ${color}; width: 24px; height: 24px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-    popupAnchor: [0, -12]
+    html: `<div style="background-color: ${color}; width: ${selected ? 30 : 24}px; height: ${selected ? 30 : 24}px; border-radius: 50%; border: ${selected ? 4 : 2}px solid ${selected ? '#111827' : 'white'}; box-shadow: 0 2px 6px rgba(0,0,0,0.35);"></div>`,
+    iconSize: [selected ? 30 : 24, selected ? 30 : 24],
+    iconAnchor: [selected ? 15 : 12, selected ? 15 : 12],
+    popupAnchor: [0, selected ? -15 : -12]
   });
 };
 
-export default function MapaObras({ obras }: MapaObrasProps) {
+export default function MapaObras({ obras, selectedObraId }: MapaObrasProps) {
   // Dynamic import in the page already avoids SSR issues for Leaflet.
 
   // Filter obras with valid coordinates
@@ -89,12 +90,13 @@ export default function MapaObras({ obras }: MapaObrasProps) {
             const lat = parseFloat(obra.enderecoObra!.latitude!);
             const lng = parseFloat(obra.enderecoObra!.longitude!);
             const color = STATUS_COLOR_MAP[obra.status] || "#3B82F6";
+            const selected = typeof selectedObraId === 'number' && selectedObraId === obra.id;
 
             return (
                 <Marker 
                     key={obra.id} 
                     position={[lat, lng]}
-                    icon={createCustomIcon(color)}
+                    icon={createCustomIcon(color, selected)}
                 >
                     <Popup>
                         <div className="p-2 min-w-[200px]">

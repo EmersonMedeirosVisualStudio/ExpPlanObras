@@ -18,7 +18,17 @@ async function ensureTables() {
       email VARCHAR(120) NULL,
       telefone VARCHAR(40) NULL,
       status ENUM('ATIVO','INATIVO') NOT NULL DEFAULT 'ATIVO',
+      classificacao_status VARCHAR(32) NOT NULL DEFAULT 'EM_AVALIACAO',
       observacao TEXT NULL,
+      cep VARCHAR(16) NULL,
+      logradouro VARCHAR(255) NULL,
+      numero VARCHAR(64) NULL,
+      complemento VARCHAR(255) NULL,
+      bairro VARCHAR(120) NULL,
+      cidade VARCHAR(120) NULL,
+      uf VARCHAR(8) NULL,
+      latitude VARCHAR(32) NULL,
+      longitude VARCHAR(32) NULL,
       criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (id_contraparte),
@@ -28,6 +38,17 @@ async function ensureTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `
   );
+
+  await db.query(`ALTER TABLE engenharia_contrapartes ADD COLUMN IF NOT EXISTS classificacao_status VARCHAR(32) NOT NULL DEFAULT 'EM_AVALIACAO'`);
+  await db.query(`ALTER TABLE engenharia_contrapartes ADD COLUMN IF NOT EXISTS cep VARCHAR(16) NULL`);
+  await db.query(`ALTER TABLE engenharia_contrapartes ADD COLUMN IF NOT EXISTS logradouro VARCHAR(255) NULL`);
+  await db.query(`ALTER TABLE engenharia_contrapartes ADD COLUMN IF NOT EXISTS numero VARCHAR(64) NULL`);
+  await db.query(`ALTER TABLE engenharia_contrapartes ADD COLUMN IF NOT EXISTS complemento VARCHAR(255) NULL`);
+  await db.query(`ALTER TABLE engenharia_contrapartes ADD COLUMN IF NOT EXISTS bairro VARCHAR(120) NULL`);
+  await db.query(`ALTER TABLE engenharia_contrapartes ADD COLUMN IF NOT EXISTS cidade VARCHAR(120) NULL`);
+  await db.query(`ALTER TABLE engenharia_contrapartes ADD COLUMN IF NOT EXISTS uf VARCHAR(8) NULL`);
+  await db.query(`ALTER TABLE engenharia_contrapartes ADD COLUMN IF NOT EXISTS latitude VARCHAR(32) NULL`);
+  await db.query(`ALTER TABLE engenharia_contrapartes ADD COLUMN IF NOT EXISTS longitude VARCHAR(32) NULL`);
 
   await db.query(
     `
@@ -56,12 +77,31 @@ function normalizeStatus(v: unknown) {
   return s === 'ATIVO' || s === 'INATIVO' ? s : null;
 }
 
+const CLASSIFICACOES = ['EXCELENTE', 'BOA', 'REGULAR', 'EM_AVALIACAO', 'NAO_RECOMENDADO'] as const;
+
+function normalizeClassificacao(v: unknown) {
+  const s = String(v ?? '').trim().toUpperCase();
+  return (CLASSIFICACOES as readonly string[]).includes(s) ? s : null;
+}
+
+function normalizeClassificacoesList(v: unknown) {
+  const raw = String(v ?? '').trim();
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((x) => normalizeClassificacao(x))
+    .filter((x): x is (typeof CLASSIFICACOES)[number] => Boolean(x));
+}
+
 export async function GET(req: NextRequest) {
   try {
     const current = await requireApiPermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
     const q = String(req.nextUrl.searchParams.get('q') || '').trim();
     const tipo = normalizeTipo(req.nextUrl.searchParams.get('tipo'));
     const status = normalizeStatus(req.nextUrl.searchParams.get('status'));
+    const classificacoes = normalizeClassificacoesList(req.nextUrl.searchParams.get('classificacaoStatus'));
+    const cidade = String(req.nextUrl.searchParams.get('cidade') || '').trim();
+    const uf = String(req.nextUrl.searchParams.get('uf') || '').trim().toUpperCase();
 
     await ensureTables();
 
@@ -75,10 +115,22 @@ export async function GET(req: NextRequest) {
       where.push('status = ?');
       params.push(status);
     }
+    if (classificacoes.length) {
+      where.push(`classificacao_status IN (${classificacoes.map(() => '?').join(',')})`);
+      params.push(...classificacoes);
+    }
+    if (cidade) {
+      where.push('cidade = ?');
+      params.push(cidade);
+    }
+    if (uf) {
+      where.push('uf = ?');
+      params.push(uf);
+    }
     if (q) {
-      where.push('(nome_razao LIKE ? OR documento LIKE ?)');
+      where.push('(nome_razao LIKE ? OR documento LIKE ? OR email LIKE ? OR telefone LIKE ?)');
       const s = `%${q}%`;
-      params.push(s, s);
+      params.push(s, s, s, s);
     }
 
     const [rows]: any = await db.query(
@@ -91,7 +143,17 @@ export async function GET(req: NextRequest) {
         email,
         telefone,
         status,
+        classificacao_status AS classificacaoStatus,
         observacao,
+        cep,
+        logradouro,
+        numero,
+        complemento,
+        bairro,
+        cidade,
+        uf,
+        latitude,
+        longitude,
         criado_em AS criadoEm
       FROM engenharia_contrapartes
       WHERE ${where.join(' AND ')}
@@ -118,9 +180,20 @@ export async function POST(req: NextRequest) {
     const email = body?.email ? String(body.email).trim() : null;
     const telefone = body?.telefone ? String(body.telefone).trim() : null;
     const observacao = body?.observacao ? String(body.observacao).trim() : null;
+    const classificacaoStatus = body?.classificacaoStatus ? normalizeClassificacao(body.classificacaoStatus) : null;
+    const cep = body?.cep ? String(body.cep).trim() : null;
+    const logradouro = body?.logradouro ? String(body.logradouro).trim() : null;
+    const numero = body?.numero ? String(body.numero).trim() : null;
+    const complemento = body?.complemento ? String(body.complemento).trim() : null;
+    const bairro = body?.bairro ? String(body.bairro).trim() : null;
+    const cidade = body?.cidade ? String(body.cidade).trim() : null;
+    const uf = body?.uf ? String(body.uf).trim().toUpperCase() : null;
+    const latitude = body?.latitude ? String(body.latitude).trim() : null;
+    const longitude = body?.longitude ? String(body.longitude).trim() : null;
 
     if (!tipo) return fail(422, 'tipo é obrigatório (PJ|PF)');
     if (!nomeRazao) return fail(422, 'nomeRazao é obrigatório');
+    if (body?.classificacaoStatus && !classificacaoStatus) return fail(422, 'classificacaoStatus inválido');
 
     await ensureTables();
 
@@ -128,11 +201,29 @@ export async function POST(req: NextRequest) {
     const [ins]: any = await conn.query(
       `
       INSERT INTO engenharia_contrapartes
-        (tenant_id, tipo, nome_razao, documento, email, telefone, status, observacao)
+        (tenant_id, tipo, nome_razao, documento, email, telefone, status, classificacao_status, observacao, cep, logradouro, numero, complemento, bairro, cidade, uf, latitude, longitude)
       VALUES
-        (?,?,?,?,?,?, 'ATIVO', ?)
+        (?,?,?,?,?,?, 'ATIVO', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      [current.tenantId, tipo, nomeRazao.slice(0, 255), documento ? documento.slice(0, 32) : null, email ? email.slice(0, 120) : null, telefone ? telefone.slice(0, 40) : null, observacao]
+      [
+        current.tenantId,
+        tipo,
+        nomeRazao.slice(0, 255),
+        documento ? documento.slice(0, 32) : null,
+        email ? email.slice(0, 120) : null,
+        telefone ? telefone.slice(0, 40) : null,
+        classificacaoStatus || 'EM_AVALIACAO',
+        observacao,
+        cep,
+        logradouro,
+        numero,
+        complemento,
+        bairro,
+        cidade,
+        uf,
+        latitude,
+        longitude,
+      ]
     );
     await conn.commit();
     return ok({ idContraparte: Number(ins.insertId) });
@@ -143,4 +234,3 @@ export async function POST(req: NextRequest) {
     conn.release();
   }
 }
-

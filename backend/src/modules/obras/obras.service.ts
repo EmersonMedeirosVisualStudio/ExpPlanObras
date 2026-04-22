@@ -52,12 +52,18 @@ function canAccessObraId(obraId: number, scope?: AbrangenciaContext) {
   return Array.isArray(scope.obras) && scope.obras.includes(obraId);
 }
 
-export async function getObras(tenantId: number, scope?: AbrangenciaContext) {
+export async function getObras(tenantId: number, scope?: AbrangenciaContext, filter?: { contratoId?: number }) {
   return withRLS(tenantId, async (tx) => {
-    return tx.obra.findMany({
+    const contratoId = typeof filter?.contratoId === 'number' && Number.isInteger(filter.contratoId) && filter.contratoId > 0 ? filter.contratoId : null;
+    const obras = await tx.obra.findMany({
       orderBy: { createdAt: 'desc' },
-      where: scopeWhere(tenantId, scope),
-      include: { enderecoObra: true, contrato: { select: { id: true, numeroContrato: true, status: true } } },
+      where: { ...scopeWhere(tenantId, scope), ...(contratoId ? { contratoId } : {}) },
+      include: { enderecosObra: true, contrato: { select: { id: true, numeroContrato: true, status: true, objeto: true } } },
+    });
+    return obras.map((o: any) => {
+      const enderecos = Array.isArray(o.enderecosObra) ? o.enderecosObra : [];
+      const principal = enderecos.find((e: any) => e.principal) || enderecos[0] || null;
+      return { ...o, enderecosObra: enderecos, enderecoObra: principal };
     });
   });
 }
@@ -69,7 +75,7 @@ export async function getObraById(id: number, tenantId: number, scope?: Abrangen
   return withRLS(tenantId, async (tx) => {
     const obra = await tx.obra.findUnique({
       where: { id },
-      include: { enderecoObra: true, contrato: { select: { id: true, numeroContrato: true, status: true } } },
+      include: { enderecosObra: true, contrato: { select: { id: true, numeroContrato: true, status: true, objeto: true } } },
     });
     
     // RLS policy in DB will prevent reading other tenant's data
@@ -78,7 +84,10 @@ export async function getObraById(id: number, tenantId: number, scope?: Abrangen
         throw new Error("Access denied");
     }
     
-    return obra;
+    if (!obra) return obra;
+    const enderecos = Array.isArray((obra as any).enderecosObra) ? (obra as any).enderecosObra : [];
+    const principal = enderecos.find((e: any) => e.principal) || enderecos[0] || null;
+    return { ...(obra as any), enderecosObra: enderecos, enderecoObra: principal };
   });
 }
 
@@ -139,7 +148,7 @@ export async function getEnderecoObra(obraId: number, tenantId: number, scope?: 
   return withRLS(tenantId, async (tx) => {
     const obra = await tx.obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } });
     if (!obra) throw new Error('Obra not found or access denied');
-    return tx.enderecoObra.findFirst({ where: { tenantId, obraId } });
+    return tx.enderecoObra.findFirst({ where: { tenantId, obraId }, orderBy: [{ principal: 'desc' }, { id: 'asc' }] });
   });
 }
 
@@ -152,7 +161,9 @@ export async function upsertEnderecoObra(obraId: number, tenantId: number, input
     const obra = await tx.obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } });
     if (!obra) throw new Error('Obra not found or access denied');
 
-    const current = await tx.enderecoObra.findFirst({ where: { tenantId, obraId } }).catch(() => null);
+    const current = await tx.enderecoObra
+      .findFirst({ where: { tenantId, obraId }, orderBy: [{ principal: 'desc' }, { id: 'asc' }] })
+      .catch(() => null);
 
     const addrPatch: any = {};
     const coordPatch: any = {};
@@ -196,15 +207,181 @@ export async function upsertEnderecoObra(obraId: number, tenantId: number, input
       ...coordPatch,
       origemEndereco: origemEnderecoFinal,
       origemCoordenada: origemCoordenadaFinal,
+      principal: true,
     };
 
-    const saved = await tx.enderecoObra.upsert({
-      where: { obraId },
-      create: dataToWrite,
-      update: dataToWrite,
+    let saved: any;
+    if (current?.id) {
+      saved = await tx.enderecoObra.update({ where: { id: current.id }, data: dataToWrite });
+    } else {
+      saved = await tx.enderecoObra.create({ data: { ...dataToWrite, principal: true } });
+    }
+
+    await tx.enderecoObra.updateMany({
+      where: { tenantId, obraId, id: { not: saved.id } },
+      data: { principal: false },
     });
 
     return saved;
+  });
+}
+
+export async function listEnderecosObra(obraId: number, tenantId: number, scope?: AbrangenciaContext) {
+  if (!canAccessObraId(obraId, scope)) throw new Error('Access denied');
+  return withRLS(tenantId, async (tx) => {
+    const obra = await tx.obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } });
+    if (!obra) throw new Error('Obra not found or access denied');
+    return tx.enderecoObra.findMany({ where: { tenantId, obraId }, orderBy: [{ principal: 'desc' }, { id: 'asc' }] });
+  });
+}
+
+export async function createEnderecoObra(
+  obraId: number,
+  tenantId: number,
+  input: EnderecoObraInput & { nomeEndereco?: string | null; principal?: boolean | null },
+  scope?: AbrangenciaContext
+) {
+  if (!canAccessObraId(obraId, scope)) throw new Error('Access denied');
+  const origemEndereco: OrigemEndereco = (String(input.origemEndereco || 'MANUAL').toUpperCase() as OrigemEndereco) || 'MANUAL';
+  const origemCoordenada: OrigemEndereco = (String(input.origemCoordenada || 'MANUAL').toUpperCase() as OrigemEndereco) || 'MANUAL';
+
+  return withRLS(tenantId, async (tx) => {
+    const obra = await tx.obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } });
+    if (!obra) throw new Error('Obra not found or access denied');
+
+    const existingPrincipal = await tx.enderecoObra.findFirst({ where: { tenantId, obraId, principal: true }, select: { id: true } }).catch(() => null);
+    const shouldBePrincipal = Boolean(input.principal) || !existingPrincipal;
+
+    const created = await tx.enderecoObra.create({
+      data: {
+        tenantId,
+        obraId,
+        nomeEndereco: input.nomeEndereco ? String(input.nomeEndereco).trim() || 'Principal' : 'Principal',
+        principal: shouldBePrincipal,
+        cep: input.cep ?? null,
+        logradouro: input.logradouro ?? null,
+        numero: input.numero ?? null,
+        complemento: input.complemento ?? null,
+        bairro: input.bairro ?? null,
+        cidade: input.cidade ?? null,
+        uf: input.uf ?? null,
+        latitude: input.latitude ?? null,
+        longitude: input.longitude ?? null,
+        origemEndereco,
+        origemCoordenada,
+      } as any,
+    });
+
+    if (shouldBePrincipal) {
+      await tx.enderecoObra.updateMany({ where: { tenantId, obraId, id: { not: created.id } }, data: { principal: false } });
+    }
+
+    return created;
+  });
+}
+
+export async function updateEnderecoObraById(
+  obraId: number,
+  enderecoId: number,
+  tenantId: number,
+  input: EnderecoObraInput & { nomeEndereco?: string | null; principal?: boolean | null },
+  scope?: AbrangenciaContext
+) {
+  if (!canAccessObraId(obraId, scope)) throw new Error('Access denied');
+  const origemEndereco: OrigemEndereco = (String(input.origemEndereco || 'MANUAL').toUpperCase() as OrigemEndereco) || 'MANUAL';
+  const origemCoordenada: OrigemEndereco = (String(input.origemCoordenada || 'MANUAL').toUpperCase() as OrigemEndereco) || 'MANUAL';
+
+  return withRLS(tenantId, async (tx) => {
+    const obra = await tx.obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } });
+    if (!obra) throw new Error('Obra not found or access denied');
+
+    const current = await tx.enderecoObra.findFirst({ where: { id: enderecoId, tenantId, obraId } }).catch(() => null);
+    if (!current) throw new Error('Endereço não encontrado');
+
+    const addrPatch: any = {};
+    const coordPatch: any = {};
+    const patch: any = {};
+
+    const setAddrField = (key: string, value: any) => {
+      if (value === undefined) return;
+      if (String(current.origemEndereco || '').toUpperCase() === 'MANUAL' && origemEndereco !== 'MANUAL' && !isEmptyValue((current as any)[key])) {
+        return;
+      }
+      addrPatch[key] = value === '' ? null : value;
+    };
+
+    const setCoordField = (key: string, value: any) => {
+      if (value === undefined) return;
+      if (String(current.origemCoordenada || '').toUpperCase() === 'MANUAL' && origemCoordenada !== 'MANUAL' && !isEmptyValue((current as any)[key])) {
+        return;
+      }
+      coordPatch[key] = value === '' ? null : value;
+    };
+
+    if (input.nomeEndereco !== undefined) {
+      const n = input.nomeEndereco ? String(input.nomeEndereco).trim() : '';
+      patch.nomeEndereco = n || 'Principal';
+    }
+
+    if (input.principal !== undefined) {
+      patch.principal = Boolean(input.principal);
+    }
+
+    setAddrField('cep', input.cep);
+    setAddrField('logradouro', input.logradouro);
+    setAddrField('numero', input.numero);
+    setAddrField('complemento', input.complemento);
+    setAddrField('bairro', input.bairro);
+    setAddrField('cidade', input.cidade);
+    setAddrField('uf', input.uf);
+
+    setCoordField('latitude', input.latitude);
+    setCoordField('longitude', input.longitude);
+
+    const origemEnderecoFinal =
+      origemEndereco === 'MANUAL' ? 'MANUAL' : String(current.origemEndereco || '').toUpperCase() === 'MANUAL' ? 'MANUAL' : origemEndereco;
+    const origemCoordenadaFinal =
+      origemCoordenada === 'MANUAL' ? 'MANUAL' : String(current.origemCoordenada || '').toUpperCase() === 'MANUAL' ? 'MANUAL' : origemCoordenada;
+
+    const saved = await tx.enderecoObra.update({
+      where: { id: current.id },
+      data: { ...patch, ...addrPatch, ...coordPatch, origemEndereco: origemEnderecoFinal, origemCoordenada: origemCoordenadaFinal },
+    });
+
+    if (saved.principal) {
+      await tx.enderecoObra.updateMany({ where: { tenantId, obraId, id: { not: saved.id } }, data: { principal: false } });
+    } else {
+      const hasPrincipal = await tx.enderecoObra.findFirst({ where: { tenantId, obraId, principal: true }, select: { id: true } }).catch(() => null);
+      if (!hasPrincipal) {
+        await tx.enderecoObra.update({ where: { id: saved.id }, data: { principal: true } });
+        await tx.enderecoObra.updateMany({ where: { tenantId, obraId, id: { not: saved.id } }, data: { principal: false } });
+      }
+    }
+
+    return saved;
+  });
+}
+
+export async function deleteEnderecoObraById(obraId: number, enderecoId: number, tenantId: number, scope?: AbrangenciaContext) {
+  if (!canAccessObraId(obraId, scope)) throw new Error('Access denied');
+  return withRLS(tenantId, async (tx) => {
+    const obra = await tx.obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } });
+    if (!obra) throw new Error('Obra not found or access denied');
+
+    const current = await tx.enderecoObra.findFirst({ where: { id: enderecoId, tenantId, obraId }, select: { id: true, principal: true } }).catch(() => null);
+    if (!current) throw new Error('Endereço não encontrado');
+
+    await tx.enderecoObra.delete({ where: { id: enderecoId } });
+
+    if (current.principal) {
+      const next = await tx.enderecoObra.findFirst({ where: { tenantId, obraId }, orderBy: { id: 'asc' }, select: { id: true } }).catch(() => null);
+      if (next?.id) {
+        await tx.enderecoObra.update({ where: { id: next.id }, data: { principal: true } });
+        await tx.enderecoObra.updateMany({ where: { tenantId, obraId, id: { not: next.id } }, data: { principal: false } });
+      }
+    }
+
+    return { success: true };
   });
 }
 
