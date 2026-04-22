@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { realtimeClient } from "@/lib/realtime/client";
 
@@ -91,6 +92,7 @@ function iconBoxStyle(color: string) {
 }
 
 export default function ContratosDashboardClient() {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [status, setStatus] = useState("");
@@ -191,6 +193,21 @@ export default function ContratosDashboardClient() {
     return max || 1;
   }, [serie]);
 
+  function abrirContrato(contratoId: number) {
+    const id = Number(contratoId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    router.push(`/dashboard/contratos?id=${id}`);
+  }
+
+  function abrirPorAlerta(a: DashboardAlerta) {
+    const codigo = String(a.codigo || "").toUpperCase();
+    if (codigo === "CONTRATOS_VENCIDOS") return router.push("/dashboard/contratos?status=VENCIDO");
+    if (codigo === "CONTRATOS_A_VENCER") return router.push("/dashboard/contratos?status=A_VENCER");
+    if (codigo === "SEM_RECURSOS") return router.push("/dashboard/contratos?status=SEM_RECURSOS");
+    if (codigo === "ADITIVOS_PENDENTES") return router.push("/dashboard/contratos/aditivos");
+    return router.push("/dashboard/contratos");
+  }
+
   return (
     <div className="space-y-6 text-[#111827]">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -233,9 +250,7 @@ export default function ContratosDashboardClient() {
       <section className="grid grid-cols-1 gap-4 md:grid-cols-6">
         <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={iconBoxStyle(DASH_COLORS.primary)}>
-              📄
-            </div>
+            <div className="h-10 w-10 rounded-xl" style={iconBoxStyle(DASH_COLORS.primary)} />
             <div className="min-w-0">
               <div className="text-xs text-[#6B7280]">Total de contratos</div>
               <div className="text-2xl font-semibold">{cards?.total ?? kpis?.totalContratos ?? 0}</div>
@@ -244,9 +259,7 @@ export default function ContratosDashboardClient() {
         </div>
         <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={iconBoxStyle(DASH_COLORS.green)}>
-              📈
-            </div>
+            <div className="h-10 w-10 rounded-xl" style={iconBoxStyle(DASH_COLORS.green)} />
             <div className="min-w-0">
               <div className="text-xs text-[#6B7280]">Em andamento</div>
               <div className="text-2xl font-semibold">{cards?.emAndamento ?? 0}</div>
@@ -256,9 +269,7 @@ export default function ContratosDashboardClient() {
         </div>
         <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={iconBoxStyle(DASH_COLORS.amber)}>
-              ⏰
-            </div>
+            <div className="h-10 w-10 rounded-xl" style={iconBoxStyle(DASH_COLORS.amber)} />
             <div className="min-w-0">
               <div className="text-xs text-[#6B7280]">A vencer (≤ 30 dias)</div>
               <div className="text-2xl font-semibold">{cards?.aVencer ?? kpis?.vencendoEm30Dias ?? 0}</div>
@@ -267,9 +278,7 @@ export default function ContratosDashboardClient() {
         </div>
         <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={iconBoxStyle(DASH_COLORS.red)}>
-              ⚠
-            </div>
+            <div className="h-10 w-10 rounded-xl" style={iconBoxStyle(DASH_COLORS.red)} />
             <div className="min-w-0">
               <div className="text-xs text-[#6B7280]">Vencidos</div>
               <div className="text-2xl font-semibold">{cards?.vencidos ?? kpis?.atrasados ?? 0}</div>
@@ -278,9 +287,7 @@ export default function ContratosDashboardClient() {
         </div>
         <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={iconBoxStyle(DASH_COLORS.purple)}>
-              🏁
-            </div>
+            <div className="h-10 w-10 rounded-xl" style={iconBoxStyle(DASH_COLORS.purple)} />
             <div className="min-w-0">
               <div className="text-xs text-[#6B7280]">Concluídos</div>
               <div className="text-2xl font-semibold">{cards?.concluidos ?? 0}</div>
@@ -289,9 +296,7 @@ export default function ContratosDashboardClient() {
         </div>
         <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={iconBoxStyle(DASH_COLORS.slate)}>
-              ⛔
-            </div>
+            <div className="h-10 w-10 rounded-xl" style={iconBoxStyle(DASH_COLORS.slate)} />
             <div className="min-w-0">
               <div className="text-xs text-[#6B7280]">Sem recursos</div>
               <div className="text-2xl font-semibold">{cards?.semRecursos ?? 0}</div>
@@ -382,7 +387,9 @@ export default function ContratosDashboardClient() {
                 <div className="flex items-center justify-between gap-2">
                   <div className={`flex items-center gap-2 font-semibold ${severidadeUi(a.severidade).className}`}>
                     <span>{severidadeUi(a.severidade).icon}</span>
-                    <span className="text-[#111827]">{a.titulo}</span>
+                    <button type="button" className="text-red-500 hover:underline" onClick={() => abrirPorAlerta(a)}>
+                      {a.titulo}
+                    </button>
                   </div>
                   <div className="font-semibold">{a.quantidade}</div>
                 </div>
@@ -454,8 +461,16 @@ export default function ContratosDashboardClient() {
               <tbody className="text-[#111827]">
                 {prazoCritico.map((r) => (
                   <tr key={r.contratoId} className="border-t border-[#E5E7EB]">
-                    <td className="px-3 py-2 font-semibold">{r.numeroContrato}</td>
-                    <td className="px-3 py-2">{r.objeto || "—"}</td>
+                    <td className="px-3 py-2 font-semibold">
+                      <button type="button" className="text-red-500 hover:underline" onClick={() => abrirContrato(r.contratoId)}>
+                        {r.numeroContrato}
+                      </button>
+                    </td>
+                    <td className="px-3 py-2">
+                      <button type="button" className="text-red-500 hover:underline" onClick={() => abrirContrato(r.contratoId)}>
+                        {r.objeto || "—"}
+                      </button>
+                    </td>
                     <td className="px-3 py-2">{new Date(r.vigenciaAtual).toLocaleDateString("pt-BR")}</td>
                     <td className={`px-3 py-2 text-right ${r.diasRestantes < 0 ? "text-red-700" : r.diasRestantes <= 30 ? "text-amber-700" : ""}`}>{r.diasRestantes}</td>
                     <td className="px-3 py-2">

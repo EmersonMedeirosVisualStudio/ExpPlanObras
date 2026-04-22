@@ -176,6 +176,7 @@ export default function ObrasDocumentosPage() {
                       <td className="px-3 py-2">
                         <div className="font-medium text-[#111827]">{r.tituloDocumento}</div>
                         <div className="text-xs text-[#6B7280]">#{r.id}</div>
+                        {r.descricaoDocumento ? <div className="mt-1 text-xs text-[#6B7280]">{r.descricaoDocumento}</div> : null}
                       </td>
                       <td className="px-3 py-2 text-[#6B7280]">{r.entidadeTipo && r.entidadeId ? `${r.entidadeTipo}:${r.entidadeId}` : '-'}</td>
                       <td className="px-3 py-2">{r.statusDocumento}</td>

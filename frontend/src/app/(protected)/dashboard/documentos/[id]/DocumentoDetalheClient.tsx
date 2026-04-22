@@ -185,6 +185,7 @@ export default function DocumentoDetalheClient() {
             {doc?.documento?.categoriaDocumento || "-"} • Status: {doc?.documento?.statusDocumento || "-"} • Atualizado:{" "}
             {fmtDateTime(doc?.documento?.atualizadoEm)}
           </div>
+          {doc?.documento?.descricaoDocumento ? <div className="mt-2 text-sm text-[#6B7280]">{doc.documento.descricaoDocumento}</div> : null}
         </div>
         <div className="flex gap-2 flex-wrap">
           <button

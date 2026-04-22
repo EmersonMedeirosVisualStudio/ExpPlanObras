@@ -24,6 +24,11 @@ function money(v: number) {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function moneyClass(v: number) {
+  const n = Number.isFinite(v) ? v : 0;
+  return n < 0 ? "text-red-600" : "text-[#111827]";
+}
+
 function monthLabel(ym: string) {
   const [y, m] = String(ym || "").split("-");
   const mm = Number(m);
@@ -384,13 +389,13 @@ export default function FaturamentoClient() {
               >
                 <div className="font-semibold">{hover.mes}</div>
                 <div className="mt-1 text-[#6B7280]">
-                  Receita: <span className="text-[#111827]">{money(hover.receita)}</span>
+                  Receita: <span className={moneyClass(hover.receita)}>{money(hover.receita)}</span>
                 </div>
                 <div className="text-[#6B7280]">
-                  Despesa: <span className="text-[#111827]">{money(hover.despesa)}</span>
+                  Despesa: <span className={moneyClass(hover.despesa)}>{money(hover.despesa)}</span>
                 </div>
                 <div className="text-[#6B7280]">
-                  {hover.liquida >= 0 ? "Lucro" : "Prejuízo"}: <span className="text-[#111827]">{money(hover.liquida)}</span>
+                  {hover.liquida >= 0 ? "Lucro" : "Prejuízo"}: <span className={moneyClass(hover.liquida)}>{money(hover.liquida)}</span>
                 </div>
               </div>
             ) : null}
@@ -400,15 +405,15 @@ export default function FaturamentoClient() {
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className="rounded-xl border border-[#E5E7EB] bg-white p-4">
             <div className="text-xs text-[#6B7280]">Receita Total</div>
-            <div className="text-lg font-semibold">{money(resumo?.receitaTotal ?? 0)}</div>
+            <div className={`text-lg font-semibold ${moneyClass(resumo?.receitaTotal ?? 0)}`}>{money(resumo?.receitaTotal ?? 0)}</div>
           </div>
           <div className="rounded-xl border border-[#E5E7EB] bg-white p-4">
             <div className="text-xs text-[#6B7280]">Despesa Total</div>
-            <div className="text-lg font-semibold">{money(resumo?.despesaTotal ?? 0)}</div>
+            <div className={`text-lg font-semibold ${moneyClass(resumo?.despesaTotal ?? 0)}`}>{money(resumo?.despesaTotal ?? 0)}</div>
           </div>
           <div className="rounded-xl border border-[#E5E7EB] bg-white p-4">
             <div className="text-xs text-[#6B7280]">{(resumo?.lucroTotal ?? 0) >= 0 ? "Lucro Total" : "Prejuízo Total"}</div>
-            <div className="text-lg font-semibold">{money(resumo?.lucroTotal ?? 0)}</div>
+            <div className={`text-lg font-semibold ${moneyClass(resumo?.lucroTotal ?? 0)}`}>{money(resumo?.lucroTotal ?? 0)}</div>
           </div>
           <div className="rounded-xl border border-[#E5E7EB] bg-white p-4">
             <div className="text-xs text-[#6B7280]">Margem (%)</div>
@@ -419,4 +424,3 @@ export default function FaturamentoClient() {
     </div>
   );
 }
-

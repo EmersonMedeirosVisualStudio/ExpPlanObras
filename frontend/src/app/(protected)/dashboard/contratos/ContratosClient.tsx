@@ -109,6 +109,8 @@ export default function ContratosClient() {
   const router = useRouter();
   const sp = useSearchParams();
   const contratoId = sp.get("id");
+  const urlStatus = sp.get("status") || "";
+  const urlQ = sp.get("q") || "";
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -146,8 +148,14 @@ export default function ContratosClient() {
   const [eValorTotalInicial, setEValorTotalInicial] = useState("0,00");
   const [eValorTotalAtual, setEValorTotalAtual] = useState("0,00");
 
-  const [status, setStatus] = useState("");
-  const [q, setQ] = useState("");
+  const [status, setStatus] = useState(urlStatus);
+  const [q, setQ] = useState(urlQ);
+
+  useEffect(() => {
+    if (contratoId) return;
+    setStatus(urlStatus);
+    setQ(urlQ);
+  }, [contratoId, urlStatus, urlQ]);
 
   const eIsPublico = eTipoContratante === "PUBLICO";
   const eBaseDate = useMemo(() => eDataOS || eDataAssinatura || "", [eDataOS, eDataAssinatura]);
