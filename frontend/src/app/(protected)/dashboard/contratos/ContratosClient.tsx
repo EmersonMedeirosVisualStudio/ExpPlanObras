@@ -46,6 +46,8 @@ type ContraparteLite = {
   status?: "ATIVO" | "INATIVO";
 };
 
+type StatusCalc = NonNullable<ContratoRow["statusCalculado"]>;
+
 function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
@@ -105,11 +107,60 @@ function statusUi(status?: ContratoRow["statusCalculado"] | null) {
   }
 }
 
+const STATUS_FILTER_OPTIONS: Array<{ key: StatusCalc; label: string }> = [
+  { key: "EM_ANDAMENTO", label: "Em andamento" },
+  { key: "A_VENCER", label: "A vencer" },
+  { key: "VENCIDO", label: "Vencido" },
+  { key: "CONCLUIDO", label: "Concluído" },
+  { key: "SEM_RECURSOS", label: "Sem recursos" },
+  { key: "NAO_INICIADO", label: "Não iniciado" },
+  { key: "CANCELADO", label: "Cancelado" },
+];
+
+function buildAllStatusSelected() {
+  const next: Record<StatusCalc, boolean> = {} as any;
+  for (const o of STATUS_FILTER_OPTIONS) next[o.key] = true;
+  return next;
+}
+
+function parseStatusFilterParam(input: string | null): Record<StatusCalc, boolean> {
+  const raw = String(input || "").trim();
+  if (!raw) return buildAllStatusSelected();
+  const parts = raw
+    .split(/[,\s|]+/g)
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+  if (!parts.length) return buildAllStatusSelected();
+  const next: Record<StatusCalc, boolean> = {} as any;
+  for (const o of STATUS_FILTER_OPTIONS) next[o.key] = parts.includes(o.key);
+  return next;
+}
+
+const OBRA_STATUS_COLOR_MAP: Record<string, string> = {
+  AGUARDANDO_RECURSOS: "#EAB308",
+  AGUARDANDO_CONTRATO: "#EAB308",
+  AGUARDANDO_OS: "#F97316",
+  NAO_INICIADA: "#9CA3AF",
+  EM_ANDAMENTO: "#22C55E",
+  PARADA: "#EF4444",
+  FINALIZADA: "#3B82F6",
+};
+
+const OBRA_STATUS_LABEL_MAP: Record<string, string> = {
+  AGUARDANDO_RECURSOS: "Aguardando recursos",
+  AGUARDANDO_CONTRATO: "Aguardando assinatura",
+  AGUARDANDO_OS: "Aguardando OS",
+  NAO_INICIADA: "Não iniciada",
+  EM_ANDAMENTO: "Em andamento",
+  PARADA: "Parada",
+  FINALIZADA: "Finalizada",
+};
+
 export default function ContratosClient() {
   const router = useRouter();
   const sp = useSearchParams();
   const contratoId = sp.get("id");
-  const urlStatus = sp.get("status") || "";
+  const urlStatus = sp.get("status");
   const urlQ = sp.get("q") || "";
 
   const [loading, setLoading] = useState(false);
@@ -148,12 +199,12 @@ export default function ContratosClient() {
   const [eValorTotalInicial, setEValorTotalInicial] = useState("0,00");
   const [eValorTotalAtual, setEValorTotalAtual] = useState("0,00");
 
-  const [status, setStatus] = useState(urlStatus);
+  const [statusSel, setStatusSel] = useState<Record<StatusCalc, boolean>>(() => parseStatusFilterParam(urlStatus));
   const [q, setQ] = useState(urlQ);
 
   useEffect(() => {
     if (contratoId) return;
-    setStatus(urlStatus);
+    setStatusSel(parseStatusFilterParam(urlStatus));
     setQ(urlQ);
   }, [contratoId, urlStatus, urlQ]);
 
@@ -240,13 +291,18 @@ export default function ContratosClient() {
 
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
+    const totalSelected = Object.values(statusSel).filter(Boolean).length;
+    const hasStatusFilter = totalSelected > 0 && totalSelected < STATUS_FILTER_OPTIONS.length;
     return rows.filter((r) => {
-      if (status && String(r.statusCalculado || r.status).toUpperCase() !== status) return false;
+      if (hasStatusFilter) {
+        const s = (String(r.statusCalculado || "").toUpperCase() || "EM_ANDAMENTO") as StatusCalc;
+        if (!statusSel[s]) return false;
+      }
       if (!qq) return true;
       const hay = `${r.numeroContrato || ""} ${r.nome || ""} ${r.objeto || ""} ${r.empresaParceiraNome || ""}`.toLowerCase();
       return hay.includes(qq);
     });
-  }, [rows, q, status]);
+  }, [rows, q, statusSel]);
 
   async function carregarLista() {
     try {
@@ -550,9 +606,18 @@ export default function ContratosClient() {
                   </thead>
                   <tbody>
                     {detail.obras.map((o) => (
-                      <tr key={o.id} className="border-t border-[#E5E7EB]">
+                      <tr
+                        key={o.id}
+                        className="border-t border-[#E5E7EB] cursor-pointer hover:bg-[#F9FAFB]"
+                        onClick={() => router.push(`/dashboard/engenharia/obras/cadastro?obraId=${o.id}`)}
+                      >
                         <td className="px-3 py-2">{o.name}</td>
-                        <td className="px-3 py-2">{o.status}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: OBRA_STATUS_COLOR_MAP[o.status] || "#9CA3AF" }} />
+                            <span>{OBRA_STATUS_LABEL_MAP[o.status] || o.status}</span>
+                          </div>
+                        </td>
                         <td className="px-3 py-2 text-right">{moeda(o.valorPrevisto)}</td>
                       </tr>
                     ))}
@@ -795,20 +860,40 @@ export default function ContratosClient() {
             <div className="text-sm text-[#6B7280]">Busca</div>
             <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Número/nome/empresa" />
           </div>
-          <div>
+          <div className="md:col-span-2">
             <div className="text-sm text-[#6B7280]">Status</div>
-            <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="">Todos</option>
-              <option value="A_VENCER">A vencer</option>
-              <option value="VENCIDO">Vencido</option>
-              <option value="EM_ANDAMENTO">Em andamento</option>
-              <option value="CONCLUIDO">Concluído</option>
-              <option value="SEM_RECURSOS">Sem recursos</option>
-              <option value="NAO_INICIADO">Não iniciado</option>
-              <option value="CANCELADO">Cancelado</option>
-            </select>
+            <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                {STATUS_FILTER_OPTIONS.map((o) => (
+                  <label key={o.key} className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={Boolean(statusSel[o.key])} onChange={(e) => setStatusSel((p) => ({ ...p, [o.key]: e.target.checked }))} />
+                    {o.label}
+                  </label>
+                ))}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-1.5 text-xs text-[#111827] hover:bg-[#F9FAFB]"
+                  type="button"
+                  onClick={() => setStatusSel(buildAllStatusSelected())}
+                >
+                  Marcar todos
+                </button>
+                <button
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-1.5 text-xs text-[#111827] hover:bg-[#F9FAFB]"
+                  type="button"
+                  onClick={() => {
+                    const next: Record<StatusCalc, boolean> = {} as any;
+                    for (const o of STATUS_FILTER_OPTIONS) next[o.key] = false;
+                    setStatusSel(next);
+                  }}
+                >
+                  Limpar
+                </button>
+              </div>
+            </div>
           </div>
-          <div className="flex items-end md:col-span-2 justify-end gap-2">
+          <div className="flex items-end justify-end gap-2">
             <button
               className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50"
               type="button"

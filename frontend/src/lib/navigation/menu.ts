@@ -150,6 +150,13 @@ export const APP_MENU: MenuSectionConfig[] = [
         permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
       },
       {
+        key: 'contratos-novo',
+        label: '+ Novo contrato',
+        href: '/dashboard/contratos/novo',
+        icon: 'plus',
+        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+      },
+      {
         key: 'contratos-faturamento',
         label: 'Faturamento',
         href: '/dashboard/contratos/faturamento',
@@ -178,13 +185,6 @@ export const APP_MENU: MenuSectionConfig[] = [
             permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
           },
           {
-            key: 'contratos-novo',
-            label: 'Novo contrato',
-            href: '/dashboard/contratos/novo',
-            icon: 'plus',
-            permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-          },
-          {
             key: 'contratos-documentos',
             label: 'Documentos',
             href: '/dashboard/obras/documentos?tipo=CONTRATO',
@@ -193,7 +193,7 @@ export const APP_MENU: MenuSectionConfig[] = [
           },
           {
             key: 'contratos-aditivos',
-            label: 'Aditivos (selecionar contrato)',
+            label: 'Aditivos',
             href: '/dashboard/contratos/aditivos',
             icon: 'file-pen',
             permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,

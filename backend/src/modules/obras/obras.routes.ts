@@ -73,6 +73,25 @@ export default async function obraRoutes(server: FastifyInstance) {
     };
   }
 
+  async function searchGeocode(query: string) {
+    const provider = String(process.env.GEOCODING_PROVIDER || 'NOMINATIM').toUpperCase();
+    if (provider !== 'NOMINATIM') return null;
+    const q = String(query || '').trim();
+    if (!q) return null;
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&addressdetails=1&limit=1`;
+    const r = await fetch(url, { headers: { 'User-Agent': 'ExpPlanObras/1.0' } } as any).catch(() => null);
+    if (!r || !r.ok) return null;
+    const json: any = await r.json().catch(() => null);
+    const row = Array.isArray(json) ? json[0] : null;
+    if (!row) return null;
+    const a = row?.address;
+    const cep = a?.postcode ? normalizeCep(String(a.postcode)) : null;
+    const lat = row?.lat != null ? String(row.lat) : null;
+    const lon = row?.lon != null ? String(row.lon) : null;
+    if (!lat || !lon) return null;
+    return { latitude: lat, longitude: lon, cep };
+  }
+
   async function lookupCep(cepDigits: string) {
     const cep = normalizeCep(cepDigits);
     if (!cep) return null;
@@ -89,6 +108,97 @@ export default async function obraRoutes(server: FastifyInstance) {
       uf: json.uf || null,
     };
   }
+
+  server.post(
+    '/enderecos/preview/link',
+    {
+      schema: {
+        body: z.object({
+          link: z.string().min(8),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const body = request.body as any;
+      try {
+        const resolved = await resolveUrl(String(body.link || ''));
+        const coords = parseLatLngFromText(resolved) || parseLatLngFromText(String(body.link || ''));
+        if (!coords) return reply.code(400).send({ message: 'Não foi possível extrair latitude/longitude do link' });
+        const addr = await reverseGeocode(coords.latitude, coords.longitude);
+        return reply.send({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          logradouro: addr?.logradouro ?? null,
+          numero: null,
+          complemento: null,
+          bairro: addr?.bairro ?? null,
+          cidade: addr?.cidade ?? null,
+          uf: addr?.uf ?? null,
+          cep: addr?.cep ?? null,
+          origemEndereco: addr ? 'LINK' : 'MANUAL',
+          origemCoordenada: 'LINK',
+        });
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao buscar localização' });
+      }
+    }
+  );
+
+  server.post(
+    '/enderecos/preview/cep',
+    {
+      schema: {
+        body: z.object({
+          cep: z.string().min(8),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const body = request.body as any;
+      try {
+        const base = await lookupCep(String(body.cep || ''));
+        if (!base) return reply.code(400).send({ message: 'CEP inválido' });
+        const q = [base.logradouro, base.bairro, base.cidade, base.uf, base.cep].filter(Boolean).join(', ');
+        const coords = await searchGeocode(q);
+        return reply.send({
+          ...base,
+          latitude: coords?.latitude ?? null,
+          longitude: coords?.longitude ?? null,
+          origemEndereco: 'CEP',
+          origemCoordenada: coords?.latitude && coords?.longitude ? 'CEP' : 'MANUAL',
+        });
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao buscar endereço por CEP' });
+      }
+    }
+  );
+
+  server.post(
+    '/enderecos/preview/buscar-cep',
+    {
+      schema: {
+        body: z.object({
+          logradouro: z.string().optional().nullable(),
+          numero: z.string().optional().nullable(),
+          bairro: z.string().optional().nullable(),
+          cidade: z.string().optional().nullable(),
+          uf: z.string().optional().nullable(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const body = request.body as any;
+      try {
+        const q = [body.logradouro, body.numero, body.bairro, body.cidade, body.uf].filter(Boolean).join(', ');
+        if (!q) return reply.code(400).send({ message: 'Informe rua, cidade e UF para buscar o CEP' });
+        const res = await searchGeocode(q);
+        if (!res?.cep) return reply.code(400).send({ message: 'Não foi possível localizar o CEP para este endereço' });
+        return reply.send({ cep: res.cep });
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao buscar CEP' });
+      }
+    }
+  );
 
   server.get(
     '/:id/endereco',
@@ -219,6 +329,8 @@ export default async function obraRoutes(server: FastifyInstance) {
       nomeEndereco: z.string().optional().nullable(),
       principal: z.boolean().optional(),
       origem: z.enum(['LINK', 'CEP', 'MANUAL']),
+      origemEndereco: z.enum(['LINK', 'CEP', 'MANUAL']).optional(),
+      origemCoordenada: z.enum(['LINK', 'CEP', 'MANUAL']).optional(),
       link: z.string().optional(),
       cep: z.string().optional(),
       logradouro: z.string().optional().nullable(),
@@ -299,8 +411,12 @@ export default async function obraRoutes(server: FastifyInstance) {
             uf: body.uf ?? null,
             latitude: body.latitude ?? null,
             longitude: body.longitude ?? null,
-            origemEndereco: 'MANUAL',
-            origemCoordenada: body.latitude || body.longitude ? 'MANUAL' : 'MANUAL',
+            origemEndereco: String(body.origemEndereco || 'MANUAL').toUpperCase() === 'LINK' ? 'LINK' : String(body.origemEndereco || 'MANUAL').toUpperCase() === 'CEP' ? 'CEP' : 'MANUAL',
+            origemCoordenada: String(body.origemCoordenada || 'MANUAL').toUpperCase() === 'LINK'
+              ? 'LINK'
+              : String(body.origemCoordenada || 'MANUAL').toUpperCase() === 'CEP'
+                ? 'CEP'
+                : 'MANUAL',
           },
           scope
         );
@@ -386,8 +502,12 @@ export default async function obraRoutes(server: FastifyInstance) {
             uf: body.uf ?? null,
             latitude: body.latitude ?? null,
             longitude: body.longitude ?? null,
-            origemEndereco: 'MANUAL',
-            origemCoordenada: body.latitude || body.longitude ? 'MANUAL' : 'MANUAL',
+            origemEndereco: String(body.origemEndereco || 'MANUAL').toUpperCase() === 'LINK' ? 'LINK' : String(body.origemEndereco || 'MANUAL').toUpperCase() === 'CEP' ? 'CEP' : 'MANUAL',
+            origemCoordenada: String(body.origemCoordenada || 'MANUAL').toUpperCase() === 'LINK'
+              ? 'LINK'
+              : String(body.origemCoordenada || 'MANUAL').toUpperCase() === 'CEP'
+                ? 'CEP'
+                : 'MANUAL',
           },
           scope
         );

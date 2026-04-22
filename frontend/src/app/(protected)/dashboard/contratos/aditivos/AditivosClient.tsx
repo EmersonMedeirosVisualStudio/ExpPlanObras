@@ -14,14 +14,18 @@ type ContratoLite = {
   empresaParceiraNome: string | null;
   vigenciaAtual: string | null;
   valorTotalAtual: number | null;
+  planilhaVersao?: number | null;
 };
 
 type AditivoRow = {
   id: number;
   numeroAditivo: string;
-  tipo: "PRAZO" | "VALOR" | "AMBOS";
+  tipo: "PRAZO" | "VALOR" | "REPROGRAMACAO" | "AMBOS";
+  alterouPlanilha?: boolean;
   status: "RASCUNHO" | "APROVADO" | "CANCELADO";
   dataAssinatura: string | null;
+  dataInicioVigencia?: string | null;
+  dataFimVigencia?: string | null;
   justificativa: string | null;
   descricao: string | null;
   prazoAdicionadoDias: number | null;
@@ -33,6 +37,8 @@ type AditivoRow = {
   snapshotValorTotalAtual: number | null;
   snapshotValorConcedenteAtual: number | null;
   snapshotValorProprioAtual: number | null;
+  snapshotPlanilhaVersao?: number | null;
+  planilhaVersaoNova?: number | null;
   aplicadoEm: string | null;
   createdAt: string;
   updatedAt: string;
@@ -80,12 +86,15 @@ function moeda(v: number) {
 }
 
 function parseMoneyBR(input: string) {
-  const s = String(input || "")
+  const raw = String(input || "").trim();
+  const neg = raw.startsWith("-");
+  const s = raw
     .replace(/\./g, "")
     .replace(",", ".")
     .replace(/[^\d.]/g, "");
   const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
+  const v = Number.isFinite(n) ? n : 0;
+  return neg ? -Math.abs(v) : v;
 }
 
 function formatMoneyBRFromDigits(digits: string) {
@@ -93,6 +102,18 @@ function formatMoneyBRFromDigits(digits: string) {
   const cents = onlyDigits ? Number(onlyDigits) : 0;
   const value = cents / 100;
   return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatMoneyBRFromInput(input: string) {
+  const raw = String(input || "").trim();
+  const neg = raw.startsWith("-");
+  const digits = raw.replace(/\D/g, "");
+  const cents = digits ? Number(digits) : 0;
+  const value = cents / 100;
+  const formatted = value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (!neg) return formatted;
+  if (cents === 0) return formatted;
+  return `-${formatted}`;
 }
 
 function addDays(dateIso: string, days: number) {
@@ -112,6 +133,21 @@ function parseDateInput(s: string) {
 
 function dateOnlyMs(d: Date) {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0);
+}
+
+function tipoLabel(tipo: AditivoRow["tipo"]) {
+  const t = String(tipo || "").toUpperCase();
+  if (t === "PRAZO") return "Prazo";
+  if (t === "VALOR") return "Valor";
+  if (t === "REPROGRAMACAO") return "Reprogramação";
+  if (t === "AMBOS") return "Prazo + Valor";
+  return t || "—";
+}
+
+function statusLabel(status: AditivoRow["status"]) {
+  if (status === "APROVADO") return "Vigente";
+  if (status === "CANCELADO") return "Encerrado";
+  return "Rascunho";
 }
 
 function iconByTipoOrigem(t: string) {
@@ -177,8 +213,11 @@ export default function AditivosClient() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [numeroAditivo, setNumeroAditivo] = useState("1");
-  const [tipo, setTipo] = useState<"PRAZO" | "VALOR" | "AMBOS">("PRAZO");
+  const [tipo, setTipo] = useState<"PRAZO" | "VALOR" | "REPROGRAMACAO">("PRAZO");
+  const [alterouPlanilha, setAlterouPlanilha] = useState(false);
   const [dataAssinatura, setDataAssinatura] = useState("");
+  const [dataInicioVigencia, setDataInicioVigencia] = useState("");
+  const [dataFimVigencia, setDataFimVigencia] = useState("");
   const [prazoAdicionadoDias, setPrazoAdicionadoDias] = useState("");
   const [prazoUnidade, setPrazoUnidade] = useState<"DIAS" | "MESES" | "ANOS">("DIAS");
   const [valorAdicionado, setValorAdicionado] = useState("0,00");
@@ -186,6 +225,7 @@ export default function AditivosClient() {
   const [valorProprioAdicionado, setValorProprioAdicionado] = useState("0,00");
   const [justificativa, setJustificativa] = useState("");
   const [descricao, setDescricao] = useState("");
+  const [docPdf, setDocPdf] = useState<File | null>(null);
   const [formErr, setFormErr] = useState<string | null>(null);
 
   const contratoSelecionado = useMemo(() => {
@@ -230,6 +270,7 @@ export default function AditivosClient() {
           empresaParceiraNome: x.empresaParceiraNome ?? null,
           vigenciaAtual: x.vigenciaAtual ?? null,
           valorTotalAtual: x.valorTotalAtual == null ? null : Number(x.valorTotalAtual),
+          planilhaVersao: x.planilhaVersao == null ? null : Number(x.planilhaVersao),
         })) ?? []
       );
     } catch (e: any) {
@@ -369,6 +410,41 @@ export default function AditivosClient() {
     return null;
   }, [formOpen, assinaturaAditivo, assinaturaContrato, vigenciaContrato]);
 
+  useEffect(() => {
+    if (!formOpen) return;
+    if (tipo === "VALOR") setAlterouPlanilha(true);
+    if (tipo === "PRAZO") setAlterouPlanilha(false);
+    if (tipo === "REPROGRAMACAO") setAlterouPlanilha(true);
+
+    if (tipo !== "PRAZO") {
+      setPrazoAdicionadoDias("");
+      setPrazoUnidade("DIAS");
+      setDataInicioVigencia("");
+      setDataFimVigencia("");
+    }
+    if (tipo !== "VALOR") {
+      setValorAdicionado("0,00");
+      setValorConcedenteAdicionado("0,00");
+      setValorProprioAdicionado("0,00");
+    }
+  }, [formOpen, tipo]);
+
+  useEffect(() => {
+    if (!formOpen) return;
+    if (tipo !== "PRAZO") return;
+    if (!dataFimVigencia) return;
+    const base = consolidado?.contrato?.vigenciaAtual ? String(consolidado.contrato.vigenciaAtual).slice(0, 10) : null;
+    if (!base) return;
+    const b = parseDateInput(base);
+    const f = parseDateInput(dataFimVigencia);
+    if (!b || !f) return;
+    const diff = Math.round((dateOnlyMs(f) - dateOnlyMs(b)) / (24 * 3600 * 1000));
+    if (diff > 0) {
+      setPrazoAdicionadoDias(String(diff));
+      setPrazoUnidade("DIAS");
+    }
+  }, [formOpen, tipo, dataFimVigencia, consolidado?.contrato?.vigenciaAtual]);
+
   const impactPreview = useMemo(() => {
     const c = consolidado?.contrato;
     if (!c) return null;
@@ -376,8 +452,8 @@ export default function AditivosClient() {
     const publico = tipoContrato === "PUBLICO";
     const prazoAtual = c.prazoDias == null ? null : Number(c.prazoDias);
     const vigAtual = c.vigenciaAtual ? String(c.vigenciaAtual).slice(0, 10) : null;
-    const novoPrazo = prazoAtual != null ? prazoAtual + prazoAddDias : prazoAddDias || null;
-    const novaVig = vigAtual && prazoAddDias ? addDays(vigAtual, prazoAddDias) : null;
+    const novoPrazo = tipo === "PRAZO" ? (prazoAtual != null ? prazoAtual + prazoAddDias : prazoAddDias || null) : prazoAtual;
+    const novaVig = tipo === "PRAZO" && vigAtual && prazoAddDias ? addDays(vigAtual, prazoAddDias) : null;
 
     const valorTotalAtual = c.valorTotalAtual == null ? 0 : Number(c.valorTotalAtual);
     const vAddPriv = parseMoneyBR(valorAdicionado);
@@ -391,16 +467,21 @@ export default function AditivosClient() {
     const novoVp = vpAtual + vpAdd;
     const novoTotalPub = novoVc + novoVp;
 
+    const deltaValor = tipo === "VALOR" ? (publico ? vcAdd + vpAdd : vAddPriv) : 0;
+    const novoValor = tipo === "VALOR" ? (publico ? novoTotalPub : novoValorPriv) : valorTotalAtual;
+    const variacaoPercent = valorTotalAtual > 0 && deltaValor !== 0 ? Number(((deltaValor / valorTotalAtual) * 100).toFixed(2)) : null;
+
     return {
       publico,
       prazoAtual,
       vigAtual,
-      novoPrazo: tipo === "VALOR" ? prazoAtual : novoPrazo,
-      novaVigencia: tipo === "VALOR" ? vigAtual : novaVig || vigAtual,
+      novoPrazo,
+      novaVigencia: tipo === "PRAZO" ? novaVig || vigAtual : vigAtual,
       valorAtual: valorTotalAtual,
-      novoValor: publico ? novoTotalPub : novoValorPriv,
-      deltaValor: publico ? vcAdd + vpAdd : vAddPriv,
-      deltaPrazo: prazoAddDias,
+      novoValor,
+      deltaValor,
+      deltaPrazo: tipo === "PRAZO" ? prazoAddDias : 0,
+      variacaoPercent,
     };
   }, [consolidado, tipo, prazoAddDias, valorAdicionado, valorConcedenteAdicionado, valorProprioAdicionado]);
 
@@ -415,12 +496,15 @@ export default function AditivosClient() {
       const payload: any = {
         numeroAditivo: String(numeroAditivo).trim(),
         tipo,
+        alterouPlanilha: tipo === "VALOR" ? true : Boolean(alterouPlanilha),
         dataAssinatura: new Date(`${dataAssinatura}T00:00:00`).toISOString(),
+        dataInicioVigencia: dataInicioVigencia ? new Date(`${dataInicioVigencia}T00:00:00`).toISOString() : null,
+        dataFimVigencia: dataFimVigencia ? new Date(`${dataFimVigencia}T00:00:00`).toISOString() : null,
         justificativa: justificativa || null,
         descricao: descricao || null,
       };
-      if (tipo === "PRAZO" || tipo === "AMBOS") payload.prazoAdicionadoDias = prazoAddDias;
-      if (tipo === "VALOR" || tipo === "AMBOS") {
+      if (tipo === "PRAZO") payload.prazoAdicionadoDias = prazoAddDias;
+      if (tipo === "VALOR") {
         if (String(consolidado?.contrato?.tipoContratante || "").toUpperCase() === "PUBLICO") {
           payload.valorConcedenteAdicionado = parseMoneyBR(valorConcedenteAdicionado);
           payload.valorProprioAdicionado = parseMoneyBR(valorProprioAdicionado);
@@ -428,8 +512,27 @@ export default function AditivosClient() {
           payload.valorTotalAdicionado = parseMoneyBR(valorAdicionado);
         }
       }
-      await api.post(`/api/contratos/${contratoId}/aditivos`, payload);
+      const res = await api.post(`/api/contratos/${contratoId}/aditivos`, payload);
+      const aditivoId = Number((res.data as any)?.id || 0);
+      if (docPdf && aditivoId) {
+        const evRes = await api.post(`/api/contratos/${contratoId}/observacoes`, {
+          texto: `Documento do aditivo ${String(numeroAditivo).trim()}`,
+          nivel: "NORMAL",
+          tipoOrigem: "ADITIVO",
+          origemId: aditivoId,
+        });
+        const eventoId = Number((evRes.data as any)?.id || 0);
+        if (eventoId) {
+          const base64 = await fileToBase64(docPdf);
+          await api.post(`/api/contratos/${contratoId}/eventos/${eventoId}/anexos`, {
+            nomeArquivo: docPdf.name,
+            mimeType: docPdf.type || "application/pdf",
+            conteudoBase64: base64,
+          });
+        }
+      }
       setFormOpen(false);
+      setDocPdf(null);
       await carregarContratoSelecionado();
       setQuery({ tab: "lista" });
     } catch (e: any) {
@@ -542,7 +645,7 @@ export default function AditivosClient() {
               <div className="text-sm text-slate-600">
                 {contratoSelecionado.empresaParceiraNome || "Sem empresa"} • Vigência:{" "}
                 {contratoSelecionado.vigenciaAtual ? new Date(contratoSelecionado.vigenciaAtual).toLocaleDateString("pt-BR") : "—"} • Valor atual:{" "}
-                {moeda(Number(contratoSelecionado.valorTotalAtual || 0))}
+                {moeda(Number(contratoSelecionado.valorTotalAtual || 0))} • Planilha v{Math.trunc(Number(contratoSelecionado.planilhaVersao ?? (consolidado as any)?.contrato?.planilhaVersao ?? 1))}
               </div>
             </div>
             <div className="flex gap-2">
@@ -550,13 +653,10 @@ export default function AditivosClient() {
                 Dashboard
               </button>
               <button className={`rounded-lg px-3 py-2 text-sm ${tab === "lista" ? "bg-slate-900 text-white" : "border bg-white hover:bg-slate-50"}`} type="button" onClick={() => setQuery({ tab: "lista" })}>
-                Aditivos (CRUD)
+                Aditivos
               </button>
               <button className={`rounded-lg px-3 py-2 text-sm ${tab === "eventos" ? "bg-slate-900 text-white" : "border bg-white hover:bg-slate-50"}`} type="button" onClick={() => setQuery({ tab: "eventos" })}>
                 Eventos
-              </button>
-              <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white" type="button" onClick={() => setFormOpen(true)}>
-                Novo aditivo
               </button>
             </div>
           </div>
@@ -584,15 +684,22 @@ export default function AditivosClient() {
 
           {tab === "lista" ? (
             <div className="space-y-3">
-              <div className="text-sm font-semibold">Aditivos</div>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="text-sm font-semibold">Aditivos</div>
+                <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white" type="button" onClick={() => setFormOpen(true)}>
+                  Novo aditivo
+                </button>
+              </div>
               <div className="overflow-auto">
                 <table className="min-w-full text-sm">
                   <thead className="bg-slate-50 text-left text-slate-700">
                     <tr>
                       <th className="px-3 py-2">Nº</th>
                       <th className="px-3 py-2">Tipo</th>
+                      <th className="px-3 py-2">Valor</th>
+                      <th className="px-3 py-2">Δ Prazo</th>
+                      <th className="px-3 py-2">Δ Planilha</th>
                       <th className="px-3 py-2">Status</th>
-                      <th className="px-3 py-2">Impacto</th>
                       <th className="px-3 py-2">Ações</th>
                     </tr>
                   </thead>
@@ -600,15 +707,32 @@ export default function AditivosClient() {
                     {aditivos.map((a) => (
                       <tr key={a.id} className="border-t">
                         <td className="px-3 py-2 font-semibold">{a.numeroAditivo}</td>
-                        <td className="px-3 py-2">{a.tipo}</td>
-                        <td className="px-3 py-2">{a.status}</td>
+                        <td className="px-3 py-2">{tipoLabel(a.tipo)}</td>
                         <td className="px-3 py-2">
-                          {(a.prazoAdicionadoDias || 0) > 0 ? `Prazo +${a.prazoAdicionadoDias}d` : ""}
-                          {(a.valorTotalAdicionado || 0) > 0 ? ` ${moeda(Number(a.valorTotalAdicionado || 0))}` : ""}
-                          {(a.valorConcedenteAdicionado || 0) > 0 || (a.valorProprioAdicionado || 0) > 0
-                            ? ` Concedente +${moeda(Number(a.valorConcedenteAdicionado || 0))} / Próprio +${moeda(Number(a.valorProprioAdicionado || 0))}`
-                            : ""}
+                          {(() => {
+                            const delta = a.valorTotalAdicionado != null ? Number(a.valorTotalAdicionado) : Number(a.valorConcedenteAdicionado || 0) + Number(a.valorProprioAdicionado || 0);
+                            if (!delta) return "—";
+                            if (delta > 0) return `+${moeda(delta)}`;
+                            return `-${moeda(Math.abs(delta))}`;
+                          })()}
                         </td>
+                        <td className="px-3 py-2">
+                          {(() => {
+                            const d = a.prazoAdicionadoDias == null ? 0 : Number(a.prazoAdicionadoDias);
+                            if (!d) return "—";
+                            if (d > 0) return `+${d} dias`;
+                            return `${d} dias`;
+                          })()}
+                        </td>
+                        <td className="px-3 py-2">
+                          {(() => {
+                            const alterou = Boolean(a.alterouPlanilha) || a.tipo === "VALOR" || a.tipo === "AMBOS";
+                            if (!alterou) return "❌";
+                            if (a.planilhaVersaoNova) return `✅ v${a.planilhaVersaoNova}`;
+                            return "✅";
+                          })()}
+                        </td>
+                        <td className="px-3 py-2">{statusLabel(a.status)}</td>
                         <td className="px-3 py-2">
                           <div className="flex gap-2">
                             {a.status === "RASCUNHO" ? (
@@ -629,7 +753,7 @@ export default function AditivosClient() {
                     ))}
                     {!aditivos.length ? (
                       <tr>
-                        <td colSpan={5} className="px-3 py-6 text-center text-slate-500">
+                        <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
                           Nenhum aditivo cadastrado.
                         </td>
                       </tr>
@@ -791,7 +915,14 @@ export default function AditivosClient() {
         <section className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm space-y-4">
           <div className="flex items-center justify-between gap-2">
             <div className="text-sm font-semibold">Novo aditivo (rascunho)</div>
-            <button className="rounded-lg border bg-white px-3 py-1 text-sm hover:bg-slate-50" type="button" onClick={() => setFormOpen(false)}>
+            <button
+              className="rounded-lg border bg-white px-3 py-1 text-sm hover:bg-slate-50"
+              type="button"
+              onClick={() => {
+                setFormOpen(false);
+                setDocPdf(null);
+              }}
+            >
               Fechar
             </button>
           </div>
@@ -806,7 +937,7 @@ export default function AditivosClient() {
               <select className="input bg-white text-slate-900" value={tipo} onChange={(e) => setTipo(e.target.value as any)}>
                 <option value="PRAZO">Prazo</option>
                 <option value="VALOR">Valor</option>
-                <option value="AMBOS">Prazo + Valor</option>
+                <option value="REPROGRAMACAO">Reprogramação de Planilha</option>
               </select>
             </div>
             <div>
@@ -817,12 +948,36 @@ export default function AditivosClient() {
               ) : null}
             </div>
 
-            {(tipo === "PRAZO" || tipo === "AMBOS") ? (
+            <div className="md:col-span-3">
+              <div className="text-sm text-slate-600">Alterou planilha?</div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <select
+                  className="input bg-white text-slate-900"
+                  value={alterouPlanilha ? "SIM" : "NAO"}
+                  onChange={(e) => setAlterouPlanilha(e.target.value === "SIM")}
+                  disabled={tipo === "VALOR"}
+                >
+                  <option value="SIM">Sim</option>
+                  <option value="NAO">Não</option>
+                </select>
+                {tipo === "VALOR" ? <div className="text-xs text-slate-600">Tipo = Valor → Alterou planilha é obrigatório (travado em Sim).</div> : null}
+              </div>
+            </div>
+
+            {tipo === "PRAZO" ? (
               <div className="md:col-span-3 rounded-lg border border-[#e6edf5] bg-white p-3">
                 <div className="text-sm font-semibold">Prazo</div>
-                <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <div>
-                    <div className="text-sm text-slate-600">Prazo adicionado</div>
+                <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-6">
+                  <div className="md:col-span-2">
+                    <div className="text-sm text-slate-600">Início vigência do aditivo</div>
+                    <input className="input bg-white text-slate-900" type="date" value={dataInicioVigencia} onChange={(e) => setDataInicioVigencia(e.target.value)} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <div className="text-sm text-slate-600">Fim vigência do aditivo</div>
+                    <input className="input bg-white text-slate-900" type="date" value={dataFimVigencia} onChange={(e) => setDataFimVigencia(e.target.value)} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <div className="text-sm text-slate-600">Δ Prazo</div>
                     <div className="grid grid-cols-2 gap-2">
                       <input className="input bg-white text-slate-900" value={prazoAdicionadoDias} onChange={(e) => setPrazoAdicionadoDias(e.target.value)} placeholder="Ex: 2" />
                       <select className="input bg-white text-slate-900" value={prazoUnidade} onChange={(e) => setPrazoUnidade(e.target.value as any)}>
@@ -833,13 +988,13 @@ export default function AditivosClient() {
                     </div>
                     <div className="mt-1 text-xs text-slate-600">{prazoAddDias ? `Equivale a ${prazoAddDias} dias` : "—"}</div>
                   </div>
-                  <div>
+                  <div className="md:col-span-3">
                     <div className="text-sm text-slate-600">Antes → Depois</div>
                     <div className="text-sm">
-                      {(impactPreview?.prazoAtual ?? "—")} → {(impactPreview?.novoPrazo ?? "—")} ({impactPreview?.deltaPrazo ? `+${impactPreview.deltaPrazo}` : "+0"}d)
+                      {(impactPreview?.prazoAtual ?? "—")} → {(impactPreview?.novoPrazo ?? "—")} ({impactPreview?.deltaPrazo ? `+${impactPreview.deltaPrazo}` : "+0"} dias)
                     </div>
                   </div>
-                  <div>
+                  <div className="md:col-span-3">
                     <div className="text-sm text-slate-600">Vigência atual</div>
                     <div className="text-sm">
                       {(impactPreview?.vigAtual ?? "—")} → {(impactPreview?.novaVigencia ?? "—")}
@@ -849,37 +1004,41 @@ export default function AditivosClient() {
               </div>
             ) : null}
 
-            {(tipo === "VALOR" || tipo === "AMBOS") ? (
+            {tipo === "VALOR" ? (
               <div className="md:col-span-3 rounded-lg border border-[#e6edf5] bg-white p-3">
                 <div className="text-sm font-semibold">Valor</div>
                 {String(consolidado?.contrato?.tipoContratante || "").toUpperCase() === "PUBLICO" ? (
                   <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
                     <div>
-                      <div className="text-sm text-slate-600">Concedente adicionado</div>
-                      <input className="input bg-white text-slate-900" value={valorConcedenteAdicionado} onChange={(e) => setValorConcedenteAdicionado(formatMoneyBRFromDigits(e.target.value))} />
+                      <div className="text-sm text-slate-600">Concedente (Δ)</div>
+                      <input className="input bg-white text-slate-900" value={valorConcedenteAdicionado} onChange={(e) => setValorConcedenteAdicionado(formatMoneyBRFromInput(e.target.value))} />
                     </div>
                     <div>
-                      <div className="text-sm text-slate-600">Próprio adicionado</div>
-                      <input className="input bg-white text-slate-900" value={valorProprioAdicionado} onChange={(e) => setValorProprioAdicionado(formatMoneyBRFromDigits(e.target.value))} />
+                      <div className="text-sm text-slate-600">Próprio (Δ)</div>
+                      <input className="input bg-white text-slate-900" value={valorProprioAdicionado} onChange={(e) => setValorProprioAdicionado(formatMoneyBRFromInput(e.target.value))} />
                     </div>
                     <div>
                       <div className="text-sm text-slate-600">Antes → Depois</div>
                       <div className="text-sm">
-                        {moeda(impactPreview?.valorAtual ?? 0)} → {moeda(impactPreview?.novoValor ?? 0)} ({moeda(impactPreview?.deltaValor ?? 0)})
+                        {moeda(impactPreview?.valorAtual ?? 0)} → {moeda(impactPreview?.novoValor ?? 0)} ({(impactPreview?.deltaValor ?? 0) >= 0 ? "+" : "-"}
+                        {moeda(Math.abs(impactPreview?.deltaValor ?? 0))})
                       </div>
+                      <div className="mt-1 text-xs text-slate-600">Variação: {impactPreview?.variacaoPercent == null ? "—" : `${impactPreview.variacaoPercent}%`}</div>
                     </div>
                   </div>
                 ) : (
                   <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
                     <div>
-                      <div className="text-sm text-slate-600">Valor adicionado</div>
-                      <input className="input bg-white text-slate-900" value={valorAdicionado} onChange={(e) => setValorAdicionado(formatMoneyBRFromDigits(e.target.value))} />
+                      <div className="text-sm text-slate-600">Valor (Δ)</div>
+                      <input className="input bg-white text-slate-900" value={valorAdicionado} onChange={(e) => setValorAdicionado(formatMoneyBRFromInput(e.target.value))} />
                     </div>
                     <div className="md:col-span-2">
                       <div className="text-sm text-slate-600">Antes → Depois</div>
                       <div className="text-sm">
-                        {moeda(impactPreview?.valorAtual ?? 0)} → {moeda(impactPreview?.novoValor ?? 0)} ({moeda(impactPreview?.deltaValor ?? 0)})
+                        {moeda(impactPreview?.valorAtual ?? 0)} → {moeda(impactPreview?.novoValor ?? 0)} ({(impactPreview?.deltaValor ?? 0) >= 0 ? "+" : "-"}
+                        {moeda(Math.abs(impactPreview?.deltaValor ?? 0))})
                       </div>
+                      <div className="mt-1 text-xs text-slate-600">Variação: {impactPreview?.variacaoPercent == null ? "—" : `${impactPreview.variacaoPercent}%`}</div>
                     </div>
                   </div>
                 )}
@@ -894,12 +1053,38 @@ export default function AditivosClient() {
               <div className="text-sm text-slate-600">Descrição</div>
               <textarea className="input min-h-[90px] bg-white text-slate-900" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Detalhamento do aditivo" />
             </div>
+            <div className="md:col-span-3">
+              <div className="text-sm text-slate-600">Documento (PDF)</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(e) => {
+                    const file = (e.target.files || [])[0] || null;
+                    setDocPdf(file);
+                  }}
+                />
+                {docPdf ? (
+                  <button className="rounded-lg border bg-white px-3 py-1 text-sm hover:bg-slate-50" type="button" onClick={() => setDocPdf(null)}>
+                    Remover
+                  </button>
+                ) : null}
+              </div>
+              {docPdf ? <div className="mt-1 text-xs text-slate-600">📎 {docPdf.name}</div> : null}
+            </div>
           </div>
 
           {formErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formErr}</div> : null}
 
           <div className="flex justify-end gap-2">
-            <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setFormOpen(false)}>
+            <button
+              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
+              type="button"
+              onClick={() => {
+                setFormOpen(false);
+                setDocPdf(null);
+              }}
+            >
               Cancelar
             </button>
             <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50" type="button" onClick={criarAditivo} disabled={!contratoId}>

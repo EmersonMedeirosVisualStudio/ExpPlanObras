@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 
 const MapaObras = dynamic(() => import("@/components/MapaObras"), {
@@ -86,6 +86,59 @@ function daysDiffFromToday(dateIso: unknown) {
   return Math.floor((end - start) / 86400000);
 }
 
+function onlyDigits(value: string) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function normalizeCep(value: string) {
+  const d = onlyDigits(value);
+  return d.length === 8 ? d : "";
+}
+
+function removeDiacritics(s: string) {
+  return String(s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function toIbgeSlug(s: string) {
+  const raw = removeDiacritics(String(s || "").trim()).toLowerCase();
+  return raw
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-+|-+$)/g, "");
+}
+
+const UF_LIST = [
+  "AC",
+  "AL",
+  "AM",
+  "AP",
+  "BA",
+  "CE",
+  "DF",
+  "ES",
+  "GO",
+  "MA",
+  "MG",
+  "MS",
+  "MT",
+  "PA",
+  "PB",
+  "PE",
+  "PI",
+  "PR",
+  "RJ",
+  "RN",
+  "RO",
+  "RR",
+  "RS",
+  "SC",
+  "SE",
+  "SP",
+  "TO",
+];
+
 const OBRA_STATUS_COLOR_MAP: Record<string, string> = {
   AGUARDANDO_RECURSOS: "#EAB308",
   AGUARDANDO_CONTRATO: "#EAB308",
@@ -108,6 +161,7 @@ const OBRA_STATUS_LABEL_MAP: Record<string, string> = {
 
 export default function EngenhariaCadastroObraPage() {
   const router = useRouter();
+  const sp = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
@@ -121,6 +175,22 @@ export default function EngenhariaCadastroObraPage() {
   const [enderecos, setEnderecos] = useState<EnderecoRow[]>([]);
   const [obraFormAberto, setObraFormAberto] = useState(false);
   const [enderecoFormAberto, setEnderecoFormAberto] = useState(false);
+  const [pendingSelectObraId, setPendingSelectObraId] = useState<number | null>(null);
+  const [coordMsg, setCoordMsg] = useState<string>("");
+  const [alertaCoordsPossivelmenteDesatualizadas, setAlertaCoordsPossivelmenteDesatualizadas] = useState(false);
+  const [cidadesUf, setCidadesUf] = useState<string[]>([]);
+  const [ufsEncontradosPorCidade, setUfsEncontradosPorCidade] = useState<string[]>([]);
+  const [cidadeUfInvalidaMsg, setCidadeUfInvalidaMsg] = useState<string>("");
+  const [ibgeUfIdBySigla, setIbgeUfIdBySigla] = useState<Record<string, number>>({});
+  const [localizacaoInformadaOpen, setLocalizacaoInformadaOpen] = useState(false);
+  const [lastLinkSnapshot, setLastLinkSnapshot] = useState<{
+    logradouro: string;
+    numero: string;
+    bairro: string;
+    cidade: string;
+    uf: string;
+    cep: string;
+  } | null>(null);
 
   const [formObra, setFormObra] = useState({
     name: "",
@@ -273,8 +343,9 @@ export default function EngenhariaCadastroObraPage() {
   const [formEndereco, setFormEndereco] = useState({
     nomeEndereco: "Principal",
     principal: true,
-    origem: "MANUAL" as "MANUAL" | "CEP" | "LINK",
-    link: "",
+    origemEndereco: "MANUAL" as "MANUAL" | "CEP" | "LINK",
+    origemCoordenada: "MANUAL" as "MANUAL" | "CEP" | "LINK",
+    linkGoogleMaps: "",
     cep: "",
     logradouro: "",
     numero: "",
@@ -286,14 +357,25 @@ export default function EngenhariaCadastroObraPage() {
     longitude: "",
   });
 
+  function setFieldEndereco<K extends keyof typeof formEndereco>(key: K, value: (typeof formEndereco)[K]) {
+    setFormEndereco((p) => ({ ...p, [key]: value }));
+  }
+
   function limparEnderecoForm() {
     setEnderecoFormAberto(true);
     setEnderecoId(null);
+    setCoordMsg("");
+    setAlertaCoordsPossivelmenteDesatualizadas(false);
+    setLastLinkSnapshot(null);
+    setCidadesUf([]);
+    setUfsEncontradosPorCidade([]);
+    setCidadeUfInvalidaMsg("");
     setFormEndereco({
       nomeEndereco: "Principal",
       principal: enderecos.length === 0,
-      origem: "MANUAL",
-      link: "",
+      origemEndereco: "MANUAL",
+      origemCoordenada: "MANUAL",
+      linkGoogleMaps: "",
       cep: "",
       logradouro: "",
       numero: "",
@@ -306,6 +388,137 @@ export default function EngenhariaCadastroObraPage() {
     });
   }
 
+  function coordMsgFromOrigem(origem: string) {
+    const o = String(origem || "MANUAL").toUpperCase();
+    if (o === "LINK") return "Coordenadas obtidas a partir do link do Google Maps.";
+    if (o === "CEP") return "Coordenadas obtidas a partir do CEP (geocodificação).";
+    return "Coordenadas informadas manualmente.";
+  }
+
+  function isValidLatLng(lat: string, lng: string) {
+    const la = Number(String(lat || "").trim());
+    const lo = Number(String(lng || "").trim());
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) return false;
+    if (la < -90 || la > 90) return false;
+    if (lo < -180 || lo > 180) return false;
+    return true;
+  }
+
+  async function buscarLocalizacaoPorLink() {
+    const link = String(formEndereco.linkGoogleMaps || "").trim();
+    if (!link) {
+      setErr("Informe um link do Google Maps.");
+      return;
+    }
+    try {
+      setLoading(true);
+      setErr(null);
+      const res = await api.post("/api/obras/enderecos/preview/link", { link });
+      const d: any = res.data || {};
+      setFormEndereco((p) => {
+        const next = {
+          ...p,
+          origemEndereco: "LINK" as const,
+          origemCoordenada: "LINK" as const,
+          cep: d.cep ? String(d.cep) : p.cep,
+          logradouro: d.logradouro ? String(d.logradouro) : p.logradouro,
+          bairro: d.bairro ? String(d.bairro) : p.bairro,
+          cidade: d.cidade ? String(d.cidade) : p.cidade,
+          uf: d.uf ? String(d.uf).toUpperCase() : p.uf,
+          latitude: d.latitude ? String(d.latitude) : p.latitude,
+          longitude: d.longitude ? String(d.longitude) : p.longitude,
+        };
+        setLastLinkSnapshot({
+          logradouro: String(next.logradouro || ""),
+          numero: String(next.numero || ""),
+          bairro: String(next.bairro || ""),
+          cidade: String(next.cidade || ""),
+          uf: String(next.uf || ""),
+          cep: String(next.cep || ""),
+        });
+        return next;
+      });
+      setCoordMsg("Coordenadas obtidas a partir do link do Google Maps.");
+      setAlertaCoordsPossivelmenteDesatualizadas(false);
+      setCidadeUfInvalidaMsg("");
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Erro ao buscar localização pelo link.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function buscaEnderecoPorCep() {
+    const cepDigits = normalizeCep(formEndereco.cep);
+    if (!cepDigits) {
+      setErr("CEP inválido. Informe 8 dígitos (com ou sem máscara).");
+      return;
+    }
+    try {
+      setLoading(true);
+      setErr(null);
+      const res = await api.post("/api/obras/enderecos/preview/cep", { cep: cepDigits });
+      const d: any = res.data || {};
+      setFormEndereco((p) => {
+        const next: typeof formEndereco = {
+          ...p,
+          origemEndereco: "CEP",
+          cep: d.cep ? String(d.cep) : cepDigits,
+          logradouro: d.logradouro ? String(d.logradouro) : p.logradouro,
+          complemento: d.complemento ? String(d.complemento) : p.complemento,
+          bairro: d.bairro ? String(d.bairro) : p.bairro,
+          cidade: d.cidade ? String(d.cidade) : p.cidade,
+          uf: d.uf ? String(d.uf).toUpperCase() : p.uf,
+        };
+
+        const coordsFromLink = String(p.origemCoordenada || "").toUpperCase() === "LINK";
+        const hasCoords = Boolean(String(p.latitude || "").trim()) && Boolean(String(p.longitude || "").trim());
+        const canSetCoords = !coordsFromLink && !hasCoords;
+        if (canSetCoords && d.latitude && d.longitude) {
+          next.latitude = String(d.latitude);
+          next.longitude = String(d.longitude);
+          next.origemCoordenada = "CEP";
+          setCoordMsg(coordMsgFromOrigem("CEP"));
+        } else if (coordsFromLink) {
+          setCoordMsg(coordMsgFromOrigem("LINK"));
+        }
+        return next;
+      });
+      setCidadeUfInvalidaMsg("");
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Erro ao buscar endereço por CEP.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function buscarCepPeloEndereco() {
+    const uf = String(formEndereco.uf || "").trim().toUpperCase();
+    const cidade = String(formEndereco.cidade || "").trim();
+    const logradouro = String(formEndereco.logradouro || "").trim();
+    if (!logradouro || !cidade || !uf) {
+      setErr("Para buscar o CEP, informe Rua, Cidade e UF.");
+      return;
+    }
+    try {
+      setLoading(true);
+      setErr(null);
+      const res = await api.post("/api/obras/enderecos/preview/buscar-cep", {
+        logradouro,
+        numero: String(formEndereco.numero || "").trim() || null,
+        bairro: String(formEndereco.bairro || "").trim() || null,
+        cidade,
+        uf,
+      });
+      const d: any = res.data || {};
+      if (d.cep) setFieldEndereco("cep", String(d.cep));
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Erro ao buscar CEP.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function salvarEndereco() {
     if (!obraId) return;
     try {
@@ -315,25 +528,19 @@ export default function EngenhariaCadastroObraPage() {
       const payload: any = {
         nomeEndereco: formEndereco.nomeEndereco.trim() || "Principal",
         principal: Boolean(formEndereco.principal),
-        origem: formEndereco.origem,
+        origem: "MANUAL",
+        origemEndereco: formEndereco.origemEndereco,
+        origemCoordenada: formEndereco.origemCoordenada,
+        cep: formEndereco.cep || null,
+        logradouro: formEndereco.logradouro || null,
+        numero: formEndereco.numero || null,
+        complemento: formEndereco.complemento || null,
+        bairro: formEndereco.bairro || null,
+        cidade: formEndereco.cidade || null,
+        uf: formEndereco.uf || null,
+        latitude: formEndereco.latitude || null,
+        longitude: formEndereco.longitude || null,
       };
-
-      if (formEndereco.origem === "CEP") {
-        payload.cep = formEndereco.cep;
-        payload.numero = formEndereco.numero || null;
-      } else if (formEndereco.origem === "LINK") {
-        payload.link = formEndereco.link;
-      } else {
-        payload.cep = formEndereco.cep || null;
-        payload.logradouro = formEndereco.logradouro || null;
-        payload.numero = formEndereco.numero || null;
-        payload.complemento = formEndereco.complemento || null;
-        payload.bairro = formEndereco.bairro || null;
-        payload.cidade = formEndereco.cidade || null;
-        payload.uf = formEndereco.uf || null;
-        payload.latitude = formEndereco.latitude || null;
-        payload.longitude = formEndereco.longitude || null;
-      }
 
       if (enderecoId) {
         await api.put(`/api/obras/${obraId}/enderecos/${enderecoId}`, payload);
@@ -373,11 +580,25 @@ export default function EngenhariaCadastroObraPage() {
   function selecionarEndereco(e: EnderecoRow) {
     setEnderecoFormAberto(true);
     setEnderecoId(e.id);
+    setAlertaCoordsPossivelmenteDesatualizadas(false);
+    setLastLinkSnapshot(null);
+    setCidadesUf([]);
+    setUfsEncontradosPorCidade([]);
+    setCidadeUfInvalidaMsg("");
     setFormEndereco({
       nomeEndereco: e.nomeEndereco || "Principal",
       principal: Boolean(e.principal),
-      origem: "MANUAL",
-      link: "",
+      origemEndereco: (String(e.origemEndereco || "MANUAL").toUpperCase() === "LINK"
+        ? "LINK"
+        : String(e.origemEndereco || "MANUAL").toUpperCase() === "CEP"
+          ? "CEP"
+          : "MANUAL") as any,
+      origemCoordenada: (String(e.origemCoordenada || "MANUAL").toUpperCase() === "LINK"
+        ? "LINK"
+        : String(e.origemCoordenada || "MANUAL").toUpperCase() === "CEP"
+          ? "CEP"
+          : "MANUAL") as any,
+      linkGoogleMaps: "",
       cep: e.cep || "",
       logradouro: e.logradouro || "",
       numero: e.numero || "",
@@ -388,11 +609,61 @@ export default function EngenhariaCadastroObraPage() {
       latitude: e.latitude || "",
       longitude: e.longitude || "",
     });
+    setCoordMsg(coordMsgFromOrigem(e.origemCoordenada || "MANUAL"));
   }
 
   useEffect(() => {
     carregarContratos();
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const r = await fetch("https://servicodados.ibge.gov.br/api/v1/localidades/estados?orderBy=nome", { cache: "force-cache" });
+        const json: any = await r.json().catch(() => null);
+        if (!active) return;
+        const map: Record<string, number> = {};
+        if (Array.isArray(json)) {
+          for (const row of json) {
+            const sigla = String(row?.sigla || "").toUpperCase();
+            const id = Number(row?.id || 0);
+            if (sigla && Number.isFinite(id) && id > 0) map[sigla] = id;
+          }
+        }
+        setIbgeUfIdBySigla(map);
+      } catch {
+        setIbgeUfIdBySigla({});
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const raw = sp?.get("obraId");
+    if (!raw) return;
+    const id = Number(raw);
+    if (!Number.isFinite(id) || id <= 0) return;
+    let active = true;
+    (async () => {
+      try {
+        const res = await api.get(`/api/obras/${id}`);
+        const o: any = res.data;
+        const cId = Number(o?.contratoId || 0);
+        if (!Number.isFinite(cId) || cId <= 0) return;
+        if (!active) return;
+        setPendingSelectObraId(id);
+        setContratoId(cId);
+      } catch {
+        return;
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [sp]);
 
   useEffect(() => {
     if (!contratoId) return;
@@ -406,9 +677,143 @@ export default function EngenhariaCadastroObraPage() {
     carregarResumoFinanceiro(contratoId);
   }, [contratoId]);
 
+  useEffect(() => {
+    if (!enderecoFormAberto) return;
+    const origem = String(formEndereco.origemCoordenada || "MANUAL").toUpperCase();
+    setCoordMsg(coordMsgFromOrigem(origem));
+  }, [enderecoFormAberto, formEndereco.origemCoordenada]);
+
+  useEffect(() => {
+    if (!enderecoFormAberto) return;
+    const uf = String(formEndereco.uf || "")
+      .toUpperCase()
+      .replace(/[^A-Z]/g, "")
+      .slice(0, 2);
+    if (uf !== formEndereco.uf) setFieldEndereco("uf", uf as any);
+    if (!uf || uf.length !== 2 || !UF_LIST.includes(uf)) {
+      setCidadesUf([]);
+      setCidadeUfInvalidaMsg("");
+      return;
+    }
+    const ufId = ibgeUfIdBySigla[uf];
+    if (!ufId) return;
+    let cancelled = false;
+    setCidadeUfInvalidaMsg("");
+    (async () => {
+      try {
+        const r = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${ufId}/municipios?orderBy=nome&view=nivelado`, { cache: "force-cache" });
+        const json: any = await r.json().catch(() => null);
+        if (cancelled) return;
+        const cidades = (Array.isArray(json) ? json : [])
+          .map((x: any) => String(x?.nome || "").trim())
+          .filter(Boolean);
+        setCidadesUf(cidades);
+        const cidadeAtual = String(formEndereco.cidade || "").trim();
+        if (cidadeAtual) {
+          const ok = cidades.some((c) => c.toLowerCase() === cidadeAtual.toLowerCase());
+          if (!ok) {
+            setFieldEndereco("cidade", "" as any);
+            setCidadeUfInvalidaMsg("A cidade informada não pertence ao UF selecionado. Selecione uma cidade da lista.");
+          }
+        }
+      } catch {
+        if (cancelled) return;
+        setCidadesUf([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [enderecoFormAberto, formEndereco.uf, ibgeUfIdBySigla]);
+
+  useEffect(() => {
+    if (!enderecoFormAberto) return;
+    const cidade = String(formEndereco.cidade || "").trim();
+    if (cidade.length < 3) {
+      setUfsEncontradosPorCidade([]);
+      return;
+    }
+    const uf = String(formEndereco.uf || "").trim().toUpperCase();
+    if (uf && uf.length === 2 && UF_LIST.includes(uf)) {
+      setUfsEncontradosPorCidade([]);
+      return;
+    }
+    const slug = toIbgeSlug(cidade);
+    if (!slug) return;
+    let cancelled = false;
+    const t = window.setTimeout(async () => {
+      try {
+        const r = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/municipios/${encodeURIComponent(slug)}?view=nivelado`, { cache: "no-store" });
+        const json: any = await r.json().catch(() => null);
+        if (cancelled) return;
+        const rows = Array.isArray(json) ? json : json ? [json] : [];
+        const ufs = Array.from(
+          new Set(
+            rows
+              .map((row: any) => String(row?.microrregiao?.mesorregiao?.UF?.sigla || row?.["regiao-imediata"]?.["regiao-intermediaria"]?.UF?.sigla || "").toUpperCase())
+              .filter((x: string) => x && UF_LIST.includes(x))
+          )
+        );
+        if (ufs.length === 1) {
+          setFieldEndereco("uf", ufs[0] as any);
+          setUfsEncontradosPorCidade([]);
+        } else {
+          setUfsEncontradosPorCidade(ufs);
+        }
+      } catch {
+        if (cancelled) return;
+        setUfsEncontradosPorCidade([]);
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [enderecoFormAberto, formEndereco.cidade, formEndereco.uf]);
+
+  useEffect(() => {
+    if (!enderecoFormAberto) return;
+    if (!lastLinkSnapshot) return;
+    if (String(formEndereco.origemCoordenada || "").toUpperCase() !== "LINK") return;
+    const changed =
+      String(formEndereco.logradouro || "") !== lastLinkSnapshot.logradouro ||
+      String(formEndereco.numero || "") !== lastLinkSnapshot.numero ||
+      String(formEndereco.bairro || "") !== lastLinkSnapshot.bairro ||
+      String(formEndereco.cidade || "") !== lastLinkSnapshot.cidade ||
+      String(formEndereco.uf || "") !== lastLinkSnapshot.uf ||
+      String(formEndereco.cep || "") !== lastLinkSnapshot.cep;
+    setAlertaCoordsPossivelmenteDesatualizadas(changed);
+  }, [
+    enderecoFormAberto,
+    formEndereco.origemCoordenada,
+    formEndereco.logradouro,
+    formEndereco.numero,
+    formEndereco.bairro,
+    formEndereco.cidade,
+    formEndereco.uf,
+    formEndereco.cep,
+    lastLinkSnapshot,
+  ]);
+
+  useEffect(() => {
+    if (!pendingSelectObraId) return;
+    if (!obrasContrato.some((o) => o.id === pendingSelectObraId)) return;
+    selecionarObraSomente(pendingSelectObraId);
+    setPendingSelectObraId(null);
+  }, [pendingSelectObraId, obrasContrato]);
+
   const contratoSelecionado = useMemo(() => contratos.find((c) => c.id === contratoId) || null, [contratos, contratoId]);
   const obraSelecionada = useMemo(() => obrasContrato.find((o) => o.id === obraId) || null, [obrasContrato, obraId]);
   const diasRestantesContrato = useMemo(() => daysDiffFromToday(contratoSelecionado?.vigenciaAtual), [contratoSelecionado?.vigenciaAtual]);
+  const totalObrasContrato = useMemo(() => {
+    let sum = 0;
+    for (const o of obrasContrato) sum += Number(o.valorPrevisto || 0);
+    return sum;
+  }, [obrasContrato]);
+  const saldoContrato = useMemo(() => {
+    const valorContrato = Number(contratoSelecionado?.valorTotalAtual || 0);
+    return valorContrato - totalObrasContrato;
+  }, [contratoSelecionado?.valorTotalAtual, totalObrasContrato]);
 
   const mapaData = useMemo(() => {
     const contratoNumero = contratoSelecionado?.numeroContrato || null;
@@ -451,8 +856,9 @@ export default function EngenhariaCadastroObraPage() {
   const enderecoCodigo = useMemo(() => {
     if (!obraId) return "";
     const nome = formEndereco.nomeEndereco.trim() || "Principal";
-    return `#${obraId}/${enderecoId ? enderecoId : "novo"} - ${nome}`;
-  }, [obraId, enderecoId, formEndereco.nomeEndereco]);
+    const numeroContrato = contratoSelecionado?.numeroContrato ? String(contratoSelecionado.numeroContrato) : "-";
+    return `${numeroContrato}/${obraId} - ${nome}`;
+  }, [obraId, formEndereco.nomeEndereco, contratoSelecionado?.numeroContrato]);
 
   async function selecionarObraSomente(id: number) {
     const obraIdNum = Number(id || 0);
@@ -520,25 +926,27 @@ export default function EngenhariaCadastroObraPage() {
               {contratoSelecionado?.objeto ? contratoSelecionado.objeto : "-"}
             </div>
           </div>
-          <div className="md:col-span-2">
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+          <div className="md:col-span-3">
             <div className="text-sm text-[#6B7280]">Valor do contrato</div>
-            <div className="rounded-lg border border-[#E5E7EB] bg-white p-3 text-sm font-semibold">{contratoSelecionado?.valorTotalAtual != null ? moeda(contratoSelecionado.valorTotalAtual) : "-"}</div>
+            <div className="rounded-lg border border-[#E5E7EB] bg-white p-2 text-xs font-semibold">{contratoSelecionado?.valorTotalAtual != null ? moeda(contratoSelecionado.valorTotalAtual) : "-"}</div>
           </div>
-          <div className="md:col-span-2">
+          <div className="md:col-span-3">
             <div className="text-sm text-[#6B7280]">Prazo</div>
-            <div className="rounded-lg border border-[#E5E7EB] bg-white p-3 text-sm font-semibold">
+            <div className="rounded-lg border border-[#E5E7EB] bg-white p-2 text-xs font-semibold">
               {contratoSelecionado?.prazoDias != null && Number.isFinite(contratoSelecionado.prazoDias) ? `${contratoSelecionado.prazoDias} dias` : "-"}
             </div>
           </div>
-          <div className="md:col-span-2">
+          <div className="md:col-span-3">
             <div className="text-sm text-[#6B7280]">Dias restantes</div>
-            <div className={`rounded-lg border border-[#E5E7EB] bg-white p-3 text-sm font-semibold ${diasRestantesContrato != null && diasRestantesContrato < 0 ? "text-red-700" : ""}`}>
+            <div className={`rounded-lg border border-[#E5E7EB] bg-white p-2 text-xs font-semibold ${diasRestantesContrato != null && diasRestantesContrato < 0 ? "text-red-700" : ""}`}>
               {diasRestantesContrato == null ? "-" : diasRestantesContrato < 0 ? `Vencido há ${Math.abs(diasRestantesContrato)} dias` : `${diasRestantesContrato} dias`}
             </div>
           </div>
-          <div className="md:col-span-2">
+          <div className="md:col-span-3">
             <div className="text-sm text-[#6B7280]">Vigência</div>
-            <div className="rounded-lg border border-[#E5E7EB] bg-white p-3 text-sm font-semibold">
+            <div className="rounded-lg border border-[#E5E7EB] bg-white p-2 text-xs font-semibold">
               {contratoSelecionado?.vigenciaInicial || contratoSelecionado?.vigenciaAtual
                 ? `${fmtDateShort(contratoSelecionado?.vigenciaInicial)} → ${fmtDateShort(contratoSelecionado?.vigenciaAtual)}`
                 : "-"}
@@ -567,8 +975,9 @@ export default function EngenhariaCadastroObraPage() {
               setFormEndereco({
                 nomeEndereco: "Principal",
                 principal: true,
-                origem: "MANUAL",
-                link: "",
+                origemEndereco: "MANUAL",
+                origemCoordenada: "MANUAL",
+                linkGoogleMaps: "",
                 cep: "",
                 logradouro: "",
                 numero: "",
@@ -584,6 +993,19 @@ export default function EngenhariaCadastroObraPage() {
             Nova Obra
           </button>
         </div>
+        {contratoSelecionado?.valorTotalAtual != null ? (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
+            <div className="md:col-span-3 rounded-lg border border-[#E5E7EB] bg-white p-3">
+              <div className="text-xs text-[#6B7280]">Valor total das obras (somatório)</div>
+              <div className="text-lg font-semibold">{moeda(totalObrasContrato)}</div>
+            </div>
+            <div className={`md:col-span-3 rounded-lg border border-[#E5E7EB] bg-white p-3 ${saldoContrato < 0 ? "border-red-200 bg-red-50" : ""}`}>
+              <div className="text-xs text-[#6B7280]">Falta no contrato</div>
+              <div className={`text-lg font-semibold ${saldoContrato < 0 ? "text-red-700" : ""}`}>{moeda(saldoContrato)}</div>
+              {saldoContrato < 0 ? <div className="mt-1 text-xs text-red-700">Alerta: o somatório das obras ultrapassou o valor do contrato.</div> : null}
+            </div>
+          </div>
+        ) : null}
         <div className="overflow-auto">
           <table className="min-w-full text-sm">
             <thead className="bg-[#F9FAFB] text-left text-[#111827]">
@@ -753,7 +1175,9 @@ export default function EngenhariaCadastroObraPage() {
                   className={`border-t border-[#E5E7EB] cursor-pointer hover:bg-[#F9FAFB] ${enderecoId === e.id ? "bg-[#EFF6FF]" : ""}`}
                   onClick={() => selecionarEnderecoSomente(e)}
                 >
-                  <td className="px-3 py-2">#{e.obraId}/{e.id}</td>
+                  <td className="px-3 py-2">
+                    {contratoSelecionado?.numeroContrato ? `${contratoSelecionado.numeroContrato}/${e.obraId} - ${e.nomeEndereco || "Principal"}` : `#${e.obraId} - ${e.nomeEndereco || "Principal"}`}
+                  </td>
                   <td className="px-3 py-2">{e.nomeEndereco || "Principal"}</td>
                   <td className="px-3 py-2">{e.principal ? "Sim" : "Não"}</td>
                   <td className="px-3 py-2">
@@ -810,71 +1234,186 @@ export default function EngenhariaCadastroObraPage() {
             </div>
             <div className="md:col-span-2">
               <div className="text-sm text-[#6B7280]">Nome do endereço</div>
-              <input className="input" value={formEndereco.nomeEndereco} onChange={(e) => setFormEndereco((p) => ({ ...p, nomeEndereco: e.target.value }))} />
+              <input className="input" value={formEndereco.nomeEndereco} onChange={(e) => setFieldEndereco("nomeEndereco", e.target.value as any)} />
             </div>
             <div className="md:col-span-1 flex items-end">
               <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={formEndereco.principal} onChange={(e) => setFormEndereco((p) => ({ ...p, principal: e.target.checked }))} />
+                <input type="checkbox" checked={formEndereco.principal} onChange={(e) => setFieldEndereco("principal", e.target.checked as any)} />
                 Definir como principal
               </label>
             </div>
-            <div className="md:col-span-2">
-              <div className="text-sm text-[#6B7280]">Origem</div>
-              <select className="input" value={formEndereco.origem} onChange={(e) => setFormEndereco((p) => ({ ...p, origem: e.target.value as any }))}>
-                <option value="MANUAL">Manual</option>
-                <option value="CEP">CEP</option>
-                <option value="LINK">Link (Maps)</option>
-              </select>
-            </div>
-            {formEndereco.origem === "LINK" ? (
-              <div className="md:col-span-4">
-                <div className="text-sm text-[#6B7280]">Link</div>
-                <input className="input" value={formEndereco.link} onChange={(e) => setFormEndereco((p) => ({ ...p, link: e.target.value }))} placeholder="Cole o link do Google Maps" />
+            <div className="md:col-span-4">
+              <div className="text-sm text-[#6B7280]">Link Google Maps</div>
+              <div className="flex items-center gap-2">
+                <input className="input" value={formEndereco.linkGoogleMaps} onChange={(e) => setFieldEndereco("linkGoogleMaps", e.target.value as any)} placeholder="Cole o link do Google Maps" />
+                <button
+                  type="button"
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-60 whitespace-nowrap"
+                  onClick={buscarLocalizacaoPorLink}
+                  disabled={loading}
+                >
+                  Buscar localização
+                </button>
               </div>
-            ) : (
-              <>
-                <div className="md:col-span-2">
-                  <div className="text-sm text-[#6B7280]">CEP</div>
-                  <input className="input" value={formEndereco.cep} onChange={(e) => setFormEndereco((p) => ({ ...p, cep: e.target.value }))} />
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="text-sm text-[#6B7280]">CEP</div>
+              <div className="flex items-center gap-2">
+                <input className="input" value={formEndereco.cep} onChange={(e) => setFieldEndereco("cep", e.target.value as any)} placeholder="00000-000" />
+                <button
+                  type="button"
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-60 whitespace-nowrap"
+                  onClick={buscaEnderecoPorCep}
+                  disabled={loading}
+                >
+                  Busca Endereço por CEP
+                </button>
+              </div>
+              <div className="mt-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-60"
+                  onClick={buscarCepPeloEndereco}
+                  disabled={loading}
+                >
+                  Buscar CEP
+                </button>
+              </div>
+            </div>
+
+            <div className="md:col-span-4">
+              <div className="text-sm text-[#6B7280]">Rua</div>
+              <input
+                className="input"
+                value={formEndereco.logradouro}
+                onChange={(e) => {
+                  setFieldEndereco("logradouro", e.target.value as any);
+                  setFieldEndereco("origemEndereco", "MANUAL" as any);
+                }}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-sm text-[#6B7280]">Número</div>
+              <input
+                className="input"
+                value={formEndereco.numero}
+                onChange={(e) => {
+                  setFieldEndereco("numero", e.target.value as any);
+                  setFieldEndereco("origemEndereco", "MANUAL" as any);
+                }}
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="text-sm text-[#6B7280]">Bairro</div>
+              <input
+                className="input"
+                value={formEndereco.bairro}
+                onChange={(e) => {
+                  setFieldEndereco("bairro", e.target.value as any);
+                  setFieldEndereco("origemEndereco", "MANUAL" as any);
+                }}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-sm text-[#6B7280]">Cidade</div>
+              <input
+                className="input"
+                value={formEndereco.cidade}
+                onChange={(e) => {
+                  setFieldEndereco("cidade", e.target.value as any);
+                  setFieldEndereco("origemEndereco", "MANUAL" as any);
+                }}
+                list={cidadesUf.length ? "cidadesUfList" : undefined}
+              />
+              {cidadesUf.length ? (
+                <datalist id="cidadesUfList">
+                  {cidadesUf.slice(0, 2000).map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+              ) : null}
+              {cidadeUfInvalidaMsg ? <div className="mt-1 text-xs text-amber-700">{cidadeUfInvalidaMsg}</div> : null}
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-sm text-[#6B7280]">Estado (sigla)</div>
+              <input
+                className="input"
+                value={formEndereco.uf}
+                onChange={(e) => {
+                  setFieldEndereco("uf", e.target.value as any);
+                  setFieldEndereco("origemEndereco", "MANUAL" as any);
+                }}
+                placeholder="SP"
+              />
+              {ufsEncontradosPorCidade.length ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {ufsEncontradosPorCidade.map((uf) => (
+                    <button
+                      key={uf}
+                      type="button"
+                      className="rounded-lg border border-[#D1D5DB] bg-white px-2 py-1 text-xs text-[#111827] hover:bg-[#F9FAFB]"
+                      onClick={() => setFieldEndereco("uf", uf as any)}
+                    >
+                      {uf}
+                    </button>
+                  ))}
                 </div>
-                <div className="md:col-span-2">
-                  <div className="text-sm text-[#6B7280]">Número</div>
-                  <input className="input" value={formEndereco.numero} onChange={(e) => setFormEndereco((p) => ({ ...p, numero: e.target.value }))} />
+              ) : null}
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="text-sm text-[#6B7280]">Complemento</div>
+              <input className="input" value={formEndereco.complemento} onChange={(e) => setFieldEndereco("complemento", e.target.value as any)} />
+            </div>
+
+            <div className="md:col-span-3">
+              <div className="text-sm text-[#6B7280]">Latitude</div>
+              <input
+                className="input"
+                value={formEndereco.latitude}
+                onChange={(e) => {
+                  setFieldEndereco("latitude", e.target.value as any);
+                  setFieldEndereco("origemCoordenada", "MANUAL" as any);
+                }}
+              />
+            </div>
+            <div className="md:col-span-3">
+              <div className="text-sm text-[#6B7280]">Longitude</div>
+              <input
+                className="input"
+                value={formEndereco.longitude}
+                onChange={(e) => {
+                  setFieldEndereco("longitude", e.target.value as any);
+                  setFieldEndereco("origemCoordenada", "MANUAL" as any);
+                }}
+              />
+            </div>
+            <div className="md:col-span-6">
+              <div className="text-xs text-[#6B7280]">{coordMsg}</div>
+              {alertaCoordsPossivelmenteDesatualizadas ? (
+                <div className="mt-1 text-xs text-amber-700">
+                  Você alterou o endereço após obter as coordenadas pelo link. As coordenadas podem não corresponder exatamente. Se quiser atualizar, clique em “Buscar localização”.
                 </div>
-                {formEndereco.origem === "MANUAL" ? (
-                  <>
-                    <div className="md:col-span-2">
-                      <div className="text-sm text-[#6B7280]">UF</div>
-                      <input className="input" value={formEndereco.uf} onChange={(e) => setFormEndereco((p) => ({ ...p, uf: e.target.value }))} />
-                    </div>
-                    <div className="md:col-span-2">
-                      <div className="text-sm text-[#6B7280]">Cidade</div>
-                      <input className="input" value={formEndereco.cidade} onChange={(e) => setFormEndereco((p) => ({ ...p, cidade: e.target.value }))} />
-                    </div>
-                    <div className="md:col-span-2">
-                      <div className="text-sm text-[#6B7280]">Bairro</div>
-                      <input className="input" value={formEndereco.bairro} onChange={(e) => setFormEndereco((p) => ({ ...p, bairro: e.target.value }))} />
-                    </div>
-                    <div className="md:col-span-4">
-                      <div className="text-sm text-[#6B7280]">Logradouro</div>
-                      <input className="input" value={formEndereco.logradouro} onChange={(e) => setFormEndereco((p) => ({ ...p, logradouro: e.target.value }))} />
-                    </div>
-                    <div className="md:col-span-2">
-                      <div className="text-sm text-[#6B7280]">Complemento</div>
-                      <input className="input" value={formEndereco.complemento} onChange={(e) => setFormEndereco((p) => ({ ...p, complemento: e.target.value }))} />
-                    </div>
-                    <div className="md:col-span-3">
-                      <div className="text-sm text-[#6B7280]">Latitude</div>
-                      <input className="input" value={formEndereco.latitude} onChange={(e) => setFormEndereco((p) => ({ ...p, latitude: e.target.value }))} />
-                    </div>
-                    <div className="md:col-span-3">
-                      <div className="text-sm text-[#6B7280]">Longitude</div>
-                      <input className="input" value={formEndereco.longitude} onChange={(e) => setFormEndereco((p) => ({ ...p, longitude: e.target.value }))} />
-                    </div>
-                  </>
-                ) : null}
-              </>
-            )}
+              ) : null}
+              <div className="mt-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-60"
+                  onClick={() => {
+                    if (!isValidLatLng(formEndereco.latitude, formEndereco.longitude)) {
+                      setErr("Latitude/Longitude inválidas. Informe valores válidos para abrir o mapa.");
+                      return;
+                    }
+                    setLocalizacaoInformadaOpen(true);
+                  }}
+                  disabled={loading}
+                >
+                  Localização informada
+                </button>
+              </div>
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <button
@@ -896,6 +1435,42 @@ export default function EngenhariaCadastroObraPage() {
             >
               {loading ? "Salvando..." : enderecoId ? "Salvar Endereço" : "Cadastrar Endereço"}
             </button>
+          </div>
+        </div>
+      ) : null}
+
+      {localizacaoInformadaOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setLocalizacaoInformadaOpen(false)}>
+          <div className="w-full max-w-5xl rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <div className="text-sm font-semibold">Localização informada</div>
+                <div className="text-xs text-[#6B7280]">Mapa baseado na latitude e longitude registradas.</div>
+              </div>
+              <button
+                type="button"
+                className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
+                onClick={() => setLocalizacaoInformadaOpen(false)}
+              >
+                Fechar
+              </button>
+            </div>
+            <div className="mt-3">
+              <MapaObras
+                obras={[
+                  {
+                    id: -1,
+                    name: obraSelecionada ? obraSelecionada.name : "Localização informada",
+                    type: (obraSelecionada?.type || "PARTICULAR") as any,
+                    status: (obraSelecionada?.status || "EM_ANDAMENTO") as any,
+                    enderecoObra: { latitude: formEndereco.latitude, longitude: formEndereco.longitude },
+                    contratoNumero: contratoSelecionado?.numeroContrato || null,
+                    hoverTitle: obraSelecionada ? `#${obraSelecionada.id} - ${obraSelecionada.name}` : "Localização informada",
+                  } as any,
+                ]}
+                selectedObraId={-1}
+              />
+            </div>
           </div>
         </div>
       ) : null}

@@ -320,6 +320,7 @@ model Contrato {
   valorConcedenteAtual Decimal?
   valorProprioAtual Decimal?
   valorTotalAtual Decimal?
+  planilhaVersao Int @default(1)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -387,9 +388,12 @@ model ContratoAditivo {
   tenantId       Int
   contratoId     Int
   numeroAditivo  String
-  tipo           String   @default("PRAZO") // PRAZO | VALOR | AMBOS
+  tipo           String   @default("PRAZO") // PRAZO | VALOR | REPROGRAMACAO (legado: AMBOS)
+  alterouPlanilha Boolean @default(false)
   status         String   @default("RASCUNHO") // RASCUNHO | APROVADO | CANCELADO
   dataAssinatura DateTime?
+  dataInicioVigencia DateTime?
+  dataFimVigencia DateTime?
   justificativa  String?
   descricao      String?
 
@@ -403,6 +407,8 @@ model ContratoAditivo {
   snapshotValorTotalAtual Decimal?
   snapshotValorConcedenteAtual Decimal?
   snapshotValorProprioAtual Decimal?
+  snapshotPlanilhaVersao Int?
+  planilhaVersaoNova Int?
 
   aplicadoEm DateTime?
   createdAt  DateTime @default(now())

@@ -858,8 +858,11 @@ export async function createContratoAditivo(
   contratoId: number,
   input: {
     numeroAditivo: string;
-    tipo: 'PRAZO' | 'VALOR' | 'AMBOS';
+    tipo: 'PRAZO' | 'VALOR' | 'REPROGRAMACAO' | 'AMBOS';
     dataAssinatura?: string | null;
+    dataInicioVigencia?: string | null;
+    dataFimVigencia?: string | null;
+    alterouPlanilha: boolean;
     justificativa?: string | null;
     descricao?: string | null;
     prazoAdicionadoDias?: number | null;
@@ -875,6 +878,7 @@ export async function createContratoAditivo(
     const numeroAditivo = String(input.numeroAditivo || '').trim();
     if (!numeroAditivo) throw new Error('numeroAditivo é obrigatório');
     const tipo = String(input.tipo || 'PRAZO').trim().toUpperCase() as any;
+    if (tipo === 'AMBOS') throw new Error('Tipo AMBOS é legado. Use: Prazo, Valor ou Reprogramação.');
 
     const assinatura = input.dataAssinatura ? parseDateOnly(input.dataAssinatura) : null;
     if (!assinatura) throw new Error('dataAssinatura é obrigatória');
@@ -889,20 +893,33 @@ export async function createContratoAditivo(
       if (dateOnly(assinatura).getTime() > fim.getTime()) throw new Error('dataAssinatura do aditivo não pode ultrapassar a vigência atual do contrato');
     }
 
-    const prazoAdicionadoDias = input.prazoAdicionadoDias == null ? null : Math.trunc(Number(input.prazoAdicionadoDias));
+    const dataInicioVigencia = input.dataInicioVigencia ? parseDateOnly(input.dataInicioVigencia) : null;
+    const dataFimVigencia = input.dataFimVigencia ? parseDateOnly(input.dataFimVigencia) : null;
+
+    const baseForPrazo =
+      contrato.vigenciaAtual ? new Date(contrato.vigenciaAtual) : contrato.dataOS ? new Date(contrato.dataOS) : contrato.dataAssinatura ? new Date(contrato.dataAssinatura) : null;
+
+    let prazoAdicionadoDias = input.prazoAdicionadoDias == null ? null : Math.trunc(Number(input.prazoAdicionadoDias));
+    if ((tipo === 'PRAZO') && (!prazoAdicionadoDias || prazoAdicionadoDias <= 0) && dataFimVigencia && baseForPrazo) {
+      const diff = Math.round((dateOnly(dataFimVigencia).getTime() - dateOnly(baseForPrazo).getTime()) / (24 * 3600 * 1000));
+      prazoAdicionadoDias = diff > 0 ? diff : null;
+    }
+
     const valorTotalAdicionado = toNumberOrNull(input.valorTotalAdicionado);
     const valorConcedenteAdicionado = toNumberOrNull(input.valorConcedenteAdicionado);
     const valorProprioAdicionado = toNumberOrNull(input.valorProprioAdicionado);
 
-    if ((tipo === 'PRAZO' || tipo === 'AMBOS') && (!prazoAdicionadoDias || prazoAdicionadoDias <= 0)) throw new Error('prazoAdicionadoDias deve ser > 0');
-    if (tipo === 'VALOR' || tipo === 'AMBOS') {
+    const alterouPlanilhaFinal = tipo === 'VALOR' ? true : Boolean(input.alterouPlanilha);
+
+    if (tipo === 'PRAZO' && (!prazoAdicionadoDias || prazoAdicionadoDias <= 0)) throw new Error('Prazo: informe a data fim da vigência ou o prazo adicionado (dias) > 0');
+    if (tipo === 'VALOR') {
       const isPublico = String(contrato.tipoContratante || '').toUpperCase() === 'PUBLICO';
       if (isPublico) {
         const c = valorConcedenteAdicionado ?? 0;
         const p = valorProprioAdicionado ?? 0;
-        if (c <= 0 && p <= 0) throw new Error('Informe valor concedente e/ou próprio adicionados');
+        if (c === 0 && p === 0) throw new Error('Informe valor concedente e/ou próprio (aumentos ou reduções)');
       } else {
-        if (!valorTotalAdicionado || valorTotalAdicionado <= 0) throw new Error('valorTotalAdicionado deve ser > 0');
+        if (!valorTotalAdicionado || valorTotalAdicionado === 0) throw new Error('Informe a variação de valor (aumento ou redução)');
       }
     }
 
@@ -912,14 +929,17 @@ export async function createContratoAditivo(
         contratoId,
         numeroAditivo,
         tipo,
+        alterouPlanilha: alterouPlanilhaFinal,
         status: 'RASCUNHO',
         dataAssinatura: assinatura,
+        dataInicioVigencia,
+        dataFimVigencia,
         justificativa: input.justificativa ?? null,
         descricao: input.descricao ?? null,
-        prazoAdicionadoDias,
-        valorTotalAdicionado: valorTotalAdicionado == null ? null : valorTotalAdicionado,
-        valorConcedenteAdicionado: valorConcedenteAdicionado == null ? null : valorConcedenteAdicionado,
-        valorProprioAdicionado: valorProprioAdicionado == null ? null : valorProprioAdicionado,
+        prazoAdicionadoDias: tipo === 'PRAZO' ? prazoAdicionadoDias : null,
+        valorTotalAdicionado: tipo === 'VALOR' ? (valorTotalAdicionado == null ? null : valorTotalAdicionado) : null,
+        valorConcedenteAdicionado: tipo === 'VALOR' ? (valorConcedenteAdicionado == null ? null : valorConcedenteAdicionado) : null,
+        valorProprioAdicionado: tipo === 'VALOR' ? (valorProprioAdicionado == null ? null : valorProprioAdicionado) : null,
       },
     });
 
@@ -946,8 +966,11 @@ export async function updateContratoAditivo(
   contratoId: number,
   aditivoId: number,
   input: Partial<{
-    tipo: 'PRAZO' | 'VALOR' | 'AMBOS';
+    tipo: 'PRAZO' | 'VALOR' | 'REPROGRAMACAO' | 'AMBOS';
     dataAssinatura: string | null;
+    dataInicioVigencia: string | null;
+    dataFimVigencia: string | null;
+    alterouPlanilha: boolean;
     justificativa: string | null;
     descricao: string | null;
     prazoAdicionadoDias: number | null;
@@ -977,17 +1000,78 @@ export async function updateContratoAditivo(
       if (dateOnly(assinatura).getTime() > fim.getTime()) throw new Error('dataAssinatura do aditivo não pode ultrapassar a vigência atual do contrato');
     }
 
+    const tipo = String((input.tipo != null ? input.tipo : current.tipo) || 'PRAZO')
+      .trim()
+      .toUpperCase();
+    const allowed = new Set(['PRAZO', 'VALOR', 'REPROGRAMACAO', 'AMBOS']);
+    if (!allowed.has(tipo)) throw new Error('Tipo de aditivo inválido');
+
+    const dataInicioVigencia = input.dataInicioVigencia != null ? parseDateOnly(input.dataInicioVigencia) : current.dataInicioVigencia ? new Date(current.dataInicioVigencia as any) : null;
+    const dataFimVigencia = input.dataFimVigencia != null ? parseDateOnly(input.dataFimVigencia) : current.dataFimVigencia ? new Date(current.dataFimVigencia as any) : null;
+
+    const baseForPrazo =
+      contrato.vigenciaAtual ? new Date(contrato.vigenciaAtual) : contrato.dataOS ? new Date(contrato.dataOS) : contrato.dataAssinatura ? new Date(contrato.dataAssinatura) : null;
+
+    let prazoAdicionadoDias =
+      input.prazoAdicionadoDias != null ? Math.trunc(Number(input.prazoAdicionadoDias)) : current.prazoAdicionadoDias != null ? Math.trunc(Number(current.prazoAdicionadoDias)) : null;
+    if ((tipo === 'PRAZO' || tipo === 'AMBOS') && (!prazoAdicionadoDias || prazoAdicionadoDias <= 0) && dataFimVigencia && baseForPrazo) {
+      const diff = Math.round((dateOnly(dataFimVigencia).getTime() - dateOnly(baseForPrazo).getTime()) / (24 * 3600 * 1000));
+      prazoAdicionadoDias = diff > 0 ? diff : null;
+    }
+
+    const valorTotalAdicionado = input.valorTotalAdicionado != null ? toNumberOrNull(input.valorTotalAdicionado) : toNumberOrNull(current.valorTotalAdicionado);
+    const valorConcedenteAdicionado =
+      input.valorConcedenteAdicionado != null ? toNumberOrNull(input.valorConcedenteAdicionado) : toNumberOrNull(current.valorConcedenteAdicionado);
+    const valorProprioAdicionado = input.valorProprioAdicionado != null ? toNumberOrNull(input.valorProprioAdicionado) : toNumberOrNull(current.valorProprioAdicionado);
+
+    const isPublico = String(contrato.tipoContratante || '').toUpperCase() === 'PUBLICO';
+    const alterouPlanilhaFinal = tipo === 'VALOR' || tipo === 'AMBOS' ? true : input.alterouPlanilha != null ? Boolean(input.alterouPlanilha) : Boolean((current as any).alterouPlanilha);
+
+    if (tipo === 'PRAZO' && (!prazoAdicionadoDias || prazoAdicionadoDias <= 0)) throw new Error('Prazo: informe a data fim da vigência ou o prazo adicionado (dias) > 0');
+    if (tipo === 'VALOR' || tipo === 'AMBOS') {
+      if (isPublico) {
+        const c = valorConcedenteAdicionado ?? 0;
+        const p = valorProprioAdicionado ?? 0;
+        if (c === 0 && p === 0) throw new Error('Informe valor concedente e/ou próprio (aumentos ou reduções)');
+      } else {
+        if (!valorTotalAdicionado || valorTotalAdicionado === 0) throw new Error('Informe a variação de valor (aumento ou redução)');
+      }
+    }
+
     const updated = await tx.contratoAditivo.update({
       where: { id: aditivoId },
       data: {
-        tipo: input.tipo != null ? String(input.tipo).trim().toUpperCase() : undefined,
+        tipo: input.tipo != null ? tipo : undefined,
         dataAssinatura: input.dataAssinatura != null ? assinatura : undefined,
+        dataInicioVigencia: input.dataInicioVigencia != null ? dataInicioVigencia : undefined,
+        dataFimVigencia: input.dataFimVigencia != null ? dataFimVigencia : undefined,
+        alterouPlanilha: input.alterouPlanilha != null ? alterouPlanilhaFinal : undefined,
         justificativa: input.justificativa ?? undefined,
         descricao: input.descricao ?? undefined,
-        prazoAdicionadoDias: input.prazoAdicionadoDias != null ? Math.trunc(Number(input.prazoAdicionadoDias)) : undefined,
-        valorTotalAdicionado: input.valorTotalAdicionado != null ? toNumberOrNull(input.valorTotalAdicionado) : undefined,
-        valorConcedenteAdicionado: input.valorConcedenteAdicionado != null ? toNumberOrNull(input.valorConcedenteAdicionado) : undefined,
-        valorProprioAdicionado: input.valorProprioAdicionado != null ? toNumberOrNull(input.valorProprioAdicionado) : undefined,
+        prazoAdicionadoDias:
+          input.prazoAdicionadoDias != null || input.dataFimVigencia != null
+            ? tipo === 'PRAZO' || tipo === 'AMBOS'
+              ? prazoAdicionadoDias
+              : null
+            : undefined,
+        valorTotalAdicionado:
+          input.valorTotalAdicionado != null || input.tipo != null
+            ? tipo === 'VALOR' || tipo === 'AMBOS'
+              ? valorTotalAdicionado
+              : null
+            : undefined,
+        valorConcedenteAdicionado:
+          input.valorConcedenteAdicionado != null || input.tipo != null
+            ? tipo === 'VALOR' || tipo === 'AMBOS'
+              ? valorConcedenteAdicionado
+              : null
+            : undefined,
+        valorProprioAdicionado:
+          input.valorProprioAdicionado != null || input.tipo != null
+            ? tipo === 'VALOR' || tipo === 'AMBOS'
+              ? valorProprioAdicionado
+              : null
+            : undefined,
       },
     });
     return updated;
@@ -1030,6 +1114,9 @@ export async function aprovarContratoAditivo(tenantId: number, contratoId: numbe
 
     const tipo = String(ad.tipo || 'PRAZO').toUpperCase();
     const isPublico = String(contrato.tipoContratante || '').toUpperCase() === 'PUBLICO';
+    const planilhaVersaoAtual = (contrato as any).planilhaVersao != null ? Math.trunc(Number((contrato as any).planilhaVersao)) : 1;
+    const alterouPlanilhaFinal = Boolean((ad as any).alterouPlanilha) || tipo === 'VALOR' || tipo === 'AMBOS';
+    const planilhaVersaoNova = alterouPlanilhaFinal ? planilhaVersaoAtual + 1 : planilhaVersaoAtual;
 
     const prazoAtual = contrato.prazoDias == null ? null : Number(contrato.prazoDias);
     const vigAtual = contrato.vigenciaAtual ? new Date(contrato.vigenciaAtual) : null;
@@ -1039,7 +1126,10 @@ export async function aprovarContratoAditivo(tenantId: number, contratoId: numbe
     const novoPrazo = prazoAtual != null ? prazoAtual + prazoAdd : prazoAdd > 0 ? prazoAdd : null;
 
     let novaVigenciaAtual: Date | null = vigAtual;
-    if (tipo === 'PRAZO' || tipo === 'AMBOS') {
+    const aplicaPrazo = tipo === 'PRAZO' || tipo === 'AMBOS';
+    const aplicaValor = tipo === 'VALOR' || tipo === 'AMBOS';
+
+    if (aplicaPrazo) {
       if (!prazoAdd || prazoAdd <= 0) throw new Error('prazoAdicionadoDias deve ser > 0');
       if (vigAtual) novaVigenciaAtual = addDays(dateOnly(vigAtual), prazoAdd);
       else if (baseForPrazo && novoPrazo != null) {
@@ -1049,16 +1139,18 @@ export async function aprovarContratoAditivo(tenantId: number, contratoId: numbe
     }
 
     let nextValores: any = {};
-    if (tipo === 'VALOR' || tipo === 'AMBOS') {
+    if (aplicaValor) {
       if (isPublico) {
         const ca = (toNumberOrNull(contrato.valorConcedenteAtual) ?? 0) + (toNumberOrNull(ad.valorConcedenteAdicionado) ?? 0);
         const pa = (toNumberOrNull(contrato.valorProprioAtual) ?? 0) + (toNumberOrNull(ad.valorProprioAdicionado) ?? 0);
         const ta = ca + pa;
+        if (ta <= 0) throw new Error('Valor total resultante do contrato deve ser > 0');
         nextValores = { valorConcedenteAtual: ca, valorProprioAtual: pa, valorTotalAtual: ta };
       } else {
         const add = toNumberOrNull(ad.valorTotalAdicionado) ?? 0;
-        if (add <= 0) throw new Error('valorTotalAdicionado deve ser > 0');
         const ta = (toNumberOrNull(contrato.valorTotalAtual) ?? 0) + add;
+        if (add === 0) throw new Error('valorTotalAdicionado não pode ser 0');
+        if (ta <= 0) throw new Error('Valor total resultante do contrato deve ser > 0');
         nextValores = { valorTotalAtual: ta };
       }
     }
@@ -1066,8 +1158,9 @@ export async function aprovarContratoAditivo(tenantId: number, contratoId: numbe
     const updatedContrato = await tx.contrato.update({
       where: { id: contratoId },
       data: {
-        prazoDias: novoPrazo != null ? Math.trunc(novoPrazo) : undefined,
-        vigenciaAtual: novaVigenciaAtual ?? undefined,
+        prazoDias: aplicaPrazo ? (novoPrazo != null ? Math.trunc(novoPrazo) : undefined) : undefined,
+        vigenciaAtual: aplicaPrazo ? (novaVigenciaAtual ?? undefined) : undefined,
+        planilhaVersao: alterouPlanilhaFinal ? planilhaVersaoNova : undefined,
         ...nextValores,
       },
     });
@@ -1082,6 +1175,8 @@ export async function aprovarContratoAditivo(tenantId: number, contratoId: numbe
         snapshotValorTotalAtual: contrato.valorTotalAtual ?? null,
         snapshotValorConcedenteAtual: contrato.valorConcedenteAtual ?? null,
         snapshotValorProprioAtual: contrato.valorProprioAtual ?? null,
+        snapshotPlanilhaVersao: planilhaVersaoAtual,
+        planilhaVersaoNova: alterouPlanilhaFinal ? planilhaVersaoNova : null,
       },
     });
 
