@@ -76,6 +76,36 @@ function fmtDateShort(v: unknown) {
   return d.toLocaleDateString("pt-BR");
 }
 
+function daysDiffFromToday(dateIso: unknown) {
+  if (!dateIso) return null;
+  const d = new Date(String(dateIso));
+  if (Number.isNaN(d.getTime())) return null;
+  const end = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const nowD = new Date();
+  const start = new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate()).getTime();
+  return Math.floor((end - start) / 86400000);
+}
+
+const OBRA_STATUS_COLOR_MAP: Record<string, string> = {
+  AGUARDANDO_RECURSOS: "#EAB308",
+  AGUARDANDO_CONTRATO: "#EAB308",
+  AGUARDANDO_OS: "#F97316",
+  NAO_INICIADA: "#9CA3AF",
+  EM_ANDAMENTO: "#22C55E",
+  PARADA: "#EF4444",
+  FINALIZADA: "#3B82F6",
+};
+
+const OBRA_STATUS_LABEL_MAP: Record<string, string> = {
+  AGUARDANDO_RECURSOS: "Aguardando recursos",
+  AGUARDANDO_CONTRATO: "Aguardando assinatura",
+  AGUARDANDO_OS: "Aguardando OS",
+  NAO_INICIADA: "Não iniciada",
+  EM_ANDAMENTO: "Em andamento",
+  PARADA: "Parada",
+  FINALIZADA: "Finalizada",
+};
+
 export default function EngenhariaCadastroObraPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -312,7 +342,8 @@ export default function EngenhariaCadastroObraPage() {
       }
       await carregarEnderecos(obraId);
       setOkMsg(enderecoId ? "Endereço atualizado." : "Endereço cadastrado.");
-      limparEnderecoForm();
+      setEnderecoFormAberto(false);
+      setEnderecoId(null);
     } catch (e: any) {
       setErr(e?.response?.data?.message || e?.message || "Erro ao salvar endereço");
     } finally {
@@ -327,7 +358,10 @@ export default function EngenhariaCadastroObraPage() {
       setLoading(true);
       setErr(null);
       await api.delete(`/api/obras/${obraId}/enderecos/${id}`);
-      if (enderecoId === id) limparEnderecoForm();
+      if (enderecoId === id) {
+        setEnderecoId(null);
+        setEnderecoFormAberto(false);
+      }
       await carregarEnderecos(obraId);
     } catch (e: any) {
       setErr(e?.response?.data?.message || e?.message || "Erro ao remover endereço");
@@ -374,6 +408,7 @@ export default function EngenhariaCadastroObraPage() {
 
   const contratoSelecionado = useMemo(() => contratos.find((c) => c.id === contratoId) || null, [contratos, contratoId]);
   const obraSelecionada = useMemo(() => obrasContrato.find((o) => o.id === obraId) || null, [obrasContrato, obraId]);
+  const diasRestantesContrato = useMemo(() => daysDiffFromToday(contratoSelecionado?.vigenciaAtual), [contratoSelecionado?.vigenciaAtual]);
 
   const mapaData = useMemo(() => {
     const contratoNumero = contratoSelecionado?.numeroContrato || null;
@@ -419,6 +454,20 @@ export default function EngenhariaCadastroObraPage() {
     return `#${obraId}/${enderecoId ? enderecoId : "novo"} - ${nome}`;
   }, [obraId, enderecoId, formEndereco.nomeEndereco]);
 
+  async function selecionarObraSomente(id: number) {
+    const obraIdNum = Number(id || 0);
+    if (!Number.isFinite(obraIdNum) || obraIdNum <= 0) return;
+    setObraId(obraIdNum);
+    setEnderecoId(null);
+    setEnderecoFormAberto(false);
+    await carregarEnderecos(obraIdNum);
+  }
+
+  function selecionarEnderecoSomente(e: EnderecoRow) {
+    setEnderecoId(e.id);
+    setEnderecoFormAberto(false);
+  }
+
   return (
     <div className="space-y-6 text-[#111827]">
       <div>
@@ -435,13 +484,23 @@ export default function EngenhariaCadastroObraPage() {
             <div className="text-sm font-semibold">Selecionar contrato</div>
             <div className="text-xs text-[#6B7280]">Selecione um contrato para visualizar e cadastrar obras vinculadas.</div>
           </div>
-          <button
-            type="button"
-            className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8]"
-            onClick={() => router.push("/dashboard/contratos/novo")}
-          >
-            Novo Contrato
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-60"
+              disabled={!contratoId}
+              onClick={() => router.push(`/dashboard/contratos?id=${contratoId}`)}
+            >
+              Visualizar contrato
+            </button>
+            <button
+              type="button"
+              className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8]"
+              onClick={() => router.push("/dashboard/contratos/novo")}
+            >
+              Novo Contrato
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
           <div className="md:col-span-2">
@@ -469,6 +528,12 @@ export default function EngenhariaCadastroObraPage() {
             <div className="text-sm text-[#6B7280]">Prazo</div>
             <div className="rounded-lg border border-[#E5E7EB] bg-white p-3 text-sm font-semibold">
               {contratoSelecionado?.prazoDias != null && Number.isFinite(contratoSelecionado.prazoDias) ? `${contratoSelecionado.prazoDias} dias` : "-"}
+            </div>
+          </div>
+          <div className="md:col-span-2">
+            <div className="text-sm text-[#6B7280]">Dias restantes</div>
+            <div className={`rounded-lg border border-[#E5E7EB] bg-white p-3 text-sm font-semibold ${diasRestantesContrato != null && diasRestantesContrato < 0 ? "text-red-700" : ""}`}>
+              {diasRestantesContrato == null ? "-" : diasRestantesContrato < 0 ? `Vencido há ${Math.abs(diasRestantesContrato)} dias` : `${diasRestantesContrato} dias`}
             </div>
           </div>
           <div className="md:col-span-2">
@@ -528,6 +593,7 @@ export default function EngenhariaCadastroObraPage() {
                 <th className="px-3 py-2">Tipo</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Valor previsto</th>
+                <th className="px-3 py-2">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -536,22 +602,38 @@ export default function EngenhariaCadastroObraPage() {
                   key={o.id}
                   className={`border-t border-[#E5E7EB] cursor-pointer hover:bg-[#F9FAFB] ${obraId === o.id ? "bg-[#EFF6FF]" : ""}`}
                   onClick={() => {
-                    setObraId(o.id);
-                    carregarObraParaEdicao(o.id);
+                    selecionarObraSomente(o.id);
                   }}
                 >
                   <td className="px-3 py-2">{o.id}</td>
                   <td className="px-3 py-2">{o.name}</td>
                   <td className="px-3 py-2">{o.type}</td>
-                  <td className="px-3 py-2">{o.status}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: OBRA_STATUS_COLOR_MAP[o.status] || "#9CA3AF" }} />
+                      <span>{OBRA_STATUS_LABEL_MAP[o.status] || o.status}</span>
+                    </div>
+                  </td>
                   <td className="px-3 py-2">
                     {o.valorPrevisto == null ? "-" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(o.valorPrevisto)}
+                  </td>
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-[#D1D5DB] bg-white px-2 py-1 text-xs text-[#111827] hover:bg-[#F9FAFB]"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        carregarObraParaEdicao(o.id);
+                      }}
+                    >
+                      Editar obra
+                    </button>
                   </td>
                 </tr>
               ))}
               {!obrasContrato.length ? (
                 <tr>
-                  <td className="px-3 py-6 text-center text-[#6B7280]" colSpan={5}>
+                  <td className="px-3 py-6 text-center text-[#6B7280]" colSpan={6}>
                     Selecione um contrato.
                   </td>
                 </tr>
@@ -669,7 +751,7 @@ export default function EngenhariaCadastroObraPage() {
                 <tr
                   key={e.id}
                   className={`border-t border-[#E5E7EB] cursor-pointer hover:bg-[#F9FAFB] ${enderecoId === e.id ? "bg-[#EFF6FF]" : ""}`}
-                  onClick={() => selecionarEndereco(e)}
+                  onClick={() => selecionarEnderecoSomente(e)}
                 >
                   <td className="px-3 py-2">#{e.obraId}/{e.id}</td>
                   <td className="px-3 py-2">{e.nomeEndereco || "Principal"}</td>
@@ -678,16 +760,28 @@ export default function EngenhariaCadastroObraPage() {
                     {[e.logradouro, e.numero, e.bairro, [e.cidade, e.uf].filter(Boolean).join(" / "), e.cep].filter(Boolean).join(", ") || "-"}
                   </td>
                   <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      className="rounded-lg border border-[#D1D5DB] bg-white px-2 py-1 text-xs text-[#111827] hover:bg-[#F9FAFB]"
-                      onClick={(ev) => {
-                        ev.stopPropagation();
-                        removerEndereco(e.id);
-                      }}
-                    >
-                      Excluir
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-[#D1D5DB] bg-white px-2 py-1 text-xs text-[#111827] hover:bg-[#F9FAFB]"
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          selecionarEndereco(e);
+                        }}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-[#D1D5DB] bg-white px-2 py-1 text-xs text-[#111827] hover:bg-[#F9FAFB]"
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          removerEndereco(e.id);
+                        }}
+                      >
+                        Excluir
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
