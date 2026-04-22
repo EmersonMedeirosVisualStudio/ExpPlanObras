@@ -86,19 +86,19 @@ export default function ObrasDocumentosPage() {
   }
 
   return (
-    <div className="max-w-7xl space-y-6">
+    <div className="max-w-7xl space-y-6 text-[#111827]">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-800">Documentos</h1>
-          <div className="mt-1 text-sm text-slate-600">
+          <h1 className="text-2xl font-semibold">Documentos</h1>
+          <div className="mt-1 text-sm text-[#6B7280]">
             Organização por tipo/subtipo (categoria) e vínculo com obra/contrato. Contratos podem visualizar também os documentos das obras vinculadas.
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={carregar} disabled={loading}>
+          <button className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]" type="button" onClick={carregar} disabled={loading}>
             Atualizar
           </button>
-          <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white" type="button" onClick={criarDocumento} disabled={loading}>
+          <button className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8]" type="button" onClick={criarDocumento} disabled={loading}>
             Novo documento
           </button>
         </div>
@@ -106,10 +106,10 @@ export default function ObrasDocumentosPage() {
 
       {erro ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{erro}</div> : null}
 
-      <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+      <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-3">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
           <div>
-            <div className="text-sm text-slate-600">Contexto</div>
+            <div className="text-sm text-[#6B7280]">Contexto</div>
             <select
               className="input"
               value={tipo}
@@ -125,28 +125,28 @@ export default function ObrasDocumentosPage() {
             </select>
           </div>
           <div>
-            <div className="text-sm text-slate-600">ID</div>
+            <div className="text-sm text-[#6B7280]">ID</div>
             <input className="input" value={idRef} onChange={(e) => setIdRef(e.target.value)} placeholder={tipo === 'OBRA' ? 'idObra' : 'idContrato'} />
           </div>
           <div className="md:col-span-2">
-            <div className="text-sm text-slate-600">Categoria prefixo</div>
+            <div className="text-sm text-[#6B7280]">Categoria prefixo</div>
             <input className="input" value={categoriaPrefix} onChange={(e) => setCategoriaPrefix(e.target.value.toUpperCase())} placeholder="Ex.: OBRA:" />
           </div>
           <div className="md:col-span-2 flex items-end gap-3">
             {tipo === 'CONTRATO' ? (
-              <label className="flex items-center gap-2 text-sm text-slate-700">
+              <label className="flex items-center gap-2 text-sm text-[#111827]">
                 <input type="checkbox" checked={incluirObras} onChange={(e) => setIncluirObras(e.target.checked)} />
                 Incluir documentos das obras do contrato
               </label>
             ) : (
-              <div className="text-sm text-slate-500">Dica: use categorias como OBRA:ART, OBRA:PROJETO, OBRA:LAUDO.</div>
+              <div className="text-sm text-[#6B7280]">Dica: use categorias como OBRA:ART, OBRA:PROJETO, OBRA:LAUDO.</div>
             )}
           </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
           {categoriasSugeridas.map((c) => (
-            <button key={c} type="button" className="rounded-full border px-3 py-1 text-xs" onClick={() => setCategoriaPrefix(`${c.split(':')[0]}:${c.split(':')[1]}:`.replace('::', ':'))}>
+            <button key={c} type="button" className="rounded-full border border-[#D1D5DB] bg-white px-3 py-1 text-xs text-[#111827] hover:bg-[#F9FAFB]" onClick={() => setCategoriaPrefix(`${c.split(':')[0]}:${c.split(':')[1]}:`.replace('::', ':'))}>
               {c}
             </button>
           ))}
@@ -155,14 +155,14 @@ export default function ObrasDocumentosPage() {
 
       <div className="space-y-4">
         {grouped.map(([cat, items]) => (
-          <div key={cat} className="rounded-xl border bg-white p-4 shadow-sm">
+          <div key={cat} className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between gap-2">
               <div className="text-lg font-semibold">{cat}</div>
-              <div className="text-sm text-slate-500">{items.length} documento(s)</div>
+              <div className="text-sm text-[#6B7280]">{items.length} documento(s)</div>
             </div>
             <div className="overflow-auto">
               <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-left">
+                <thead className="bg-[#F9FAFB] text-left text-[#111827]">
                   <tr>
                     <th className="px-3 py-2">Título</th>
                     <th className="px-3 py-2">Vínculo</th>
@@ -172,15 +172,15 @@ export default function ObrasDocumentosPage() {
                 </thead>
                 <tbody>
                   {items.map((r) => (
-                    <tr key={r.id} className="border-t">
+                    <tr key={r.id} className="border-t border-[#E5E7EB]">
                       <td className="px-3 py-2">
-                        <div className="font-medium text-slate-800">{r.tituloDocumento}</div>
-                        <div className="text-xs text-slate-500">#{r.id}</div>
+                        <div className="font-medium text-[#111827]">{r.tituloDocumento}</div>
+                        <div className="text-xs text-[#6B7280]">#{r.id}</div>
                       </td>
-                      <td className="px-3 py-2 text-slate-600">{r.entidadeTipo && r.entidadeId ? `${r.entidadeTipo}:${r.entidadeId}` : '-'}</td>
+                      <td className="px-3 py-2 text-[#6B7280]">{r.entidadeTipo && r.entidadeId ? `${r.entidadeTipo}:${r.entidadeId}` : '-'}</td>
                       <td className="px-3 py-2">{r.statusDocumento}</td>
                       <td className="px-3 py-2 text-right">
-                        <button type="button" className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => router.push(`/dashboard/documentos/${r.id}`)}>
+                        <button type="button" className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-1.5 text-sm text-[#111827] hover:bg-[#F9FAFB]" onClick={() => router.push(`/dashboard/documentos/${r.id}`)}>
                           Abrir
                         </button>
                       </td>
@@ -188,7 +188,7 @@ export default function ObrasDocumentosPage() {
                   ))}
                   {!items.length ? (
                     <tr>
-                      <td className="px-3 py-6 text-center text-slate-500" colSpan={4}>
+                      <td className="px-3 py-6 text-center text-[#6B7280]" colSpan={4}>
                         Sem documentos.
                       </td>
                     </tr>
@@ -200,7 +200,7 @@ export default function ObrasDocumentosPage() {
         ))}
 
         {!grouped.length ? (
-          <div className="rounded-xl border bg-white p-6 text-sm text-slate-500">
+          <div className="rounded-xl border border-[#E5E7EB] bg-white p-6 text-sm text-[#6B7280]">
             Informe o contexto e o ID e clique em “Atualizar” para listar os documentos.
           </div>
         ) : null}

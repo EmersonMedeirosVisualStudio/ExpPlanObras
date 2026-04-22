@@ -176,18 +176,23 @@ export default function DocumentoDetalheClient() {
   const verificacaoUrl = versao?.verificacaoToken ? `/verificacao-documento/${versao.verificacaoToken}` : null;
 
   return (
-    <div className="max-w-7xl space-y-6">
+    <div className="max-w-7xl space-y-6 text-[#111827]">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0">
-          <div className="text-xs text-slate-500">Documento #{Number.isFinite(documentoId) ? documentoId : "-"}</div>
-          <h1 className="text-2xl font-semibold text-slate-800 truncate">{doc?.documento?.tituloDocumento || "Documento"}</h1>
-          <div className="mt-1 text-sm text-slate-600">
+          <div className="text-xs text-[#6B7280]">Documento #{Number.isFinite(documentoId) ? documentoId : "-"}</div>
+          <h1 className="text-2xl font-semibold truncate">{doc?.documento?.tituloDocumento || "Documento"}</h1>
+          <div className="mt-1 text-sm text-[#6B7280]">
             {doc?.documento?.categoriaDocumento || "-"} • Status: {doc?.documento?.statusDocumento || "-"} • Atualizado:{" "}
             {fmtDateTime(doc?.documento?.atualizadoEm)}
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button type="button" className="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50" onClick={carregarDocumento} disabled={loading}>
+          <button
+            type="button"
+            className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
+            onClick={carregarDocumento}
+            disabled={loading}
+          >
             Atualizar
           </button>
         </div>
@@ -196,33 +201,35 @@ export default function DocumentoDetalheClient() {
       {erro ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{erro}</div> : null}
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-1 space-y-4">
+        <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-1 space-y-4">
           <div>
-            <div className="text-sm font-semibold text-slate-700">Versões</div>
+            <div className="text-sm font-semibold">Versões</div>
             <div className="mt-2 space-y-2">
               {versoes.length ? (
                 versoes.map((v) => (
                   <button
                     key={v.id}
                     type="button"
-                    className={`w-full rounded-lg border px-3 py-2 text-left text-sm hover:bg-slate-50 ${versaoId === v.id ? "border-blue-400" : ""}`}
+                    className={`w-full rounded-lg border px-3 py-2 text-left text-sm text-[#111827] hover:bg-[#F9FAFB] ${
+                      versaoId === v.id ? "border-[#2563EB]" : "border-[#D1D5DB]"
+                    }`}
                     onClick={() => setVersaoId(v.id)}
                     disabled={loading}
                   >
                     <div className="font-medium">
                       v{v.numeroVersao} • {v.statusVersao}
                     </div>
-                    <div className="mt-1 text-xs text-slate-500 truncate">{v.nomeArquivoOriginal}</div>
+                    <div className="mt-1 text-xs text-[#6B7280] truncate">{v.nomeArquivoOriginal}</div>
                   </button>
                 ))
               ) : (
-                <div className="text-sm text-slate-500">Nenhuma versão enviada.</div>
+                <div className="text-sm text-[#6B7280]">Nenhuma versão enviada.</div>
               )}
             </div>
           </div>
 
-          <div className="rounded-lg border p-3">
-            <div className="text-sm font-semibold text-slate-700">Nova versão (PDF)</div>
+          <div className="rounded-lg border border-[#E5E7EB] p-3">
+            <div className="text-sm font-semibold">Nova versão (PDF)</div>
             <input
               type="file"
               accept="application/pdf"
@@ -232,34 +239,34 @@ export default function DocumentoDetalheClient() {
             />
             <button
               type="button"
-              className="mt-3 w-full rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+              className="mt-3 w-full rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50"
               onClick={uploadNovaVersao}
               disabled={loading || !uploadFile}
             >
               Enviar versão
             </button>
-            <div className="mt-2 text-xs text-slate-500">Nesta fase, somente PDF.</div>
+            <div className="mt-2 text-xs text-[#6B7280]">Nesta fase, somente PDF.</div>
           </div>
         </div>
 
-        <div className="rounded-xl border bg-white p-4 shadow-sm lg:col-span-2 space-y-6">
+        <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-2 space-y-6">
           {!versao ? (
-            <div className="text-sm text-slate-500">{loading ? "Carregando..." : "Selecione uma versão."}</div>
+            <div className="text-sm text-[#6B7280]">{loading ? "Carregando..." : "Selecione uma versão."}</div>
           ) : (
             <>
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold text-slate-800">
+                  <div className="text-sm font-semibold">
                     Versão v{versao.versao.numeroVersao} • {versao.versao.statusVersao}
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">Hash original: {versao.versao.hashSha256Original}</div>
-                  <div className="mt-1 text-xs text-slate-500">
+                  <div className="mt-1 text-xs text-[#6B7280]">Hash original: {versao.versao.hashSha256Original}</div>
+                  <div className="mt-1 text-xs text-[#6B7280]">
                     Hash PDF carimbado: {versao.versao.hashSha256PdfCarimbado ? versao.versao.hashSha256PdfCarimbado : "-"}
                   </div>
-                  <div className="mt-2 text-xs text-slate-500">
+                  <div className="mt-2 text-xs text-[#6B7280]">
                     Verificação:{" "}
                     {verificacaoUrl ? (
-                      <a className="text-blue-700 hover:underline" href={verificacaoUrl} target="_blank" rel="noreferrer">
+                      <a className="text-[#2563EB] hover:underline" href={verificacaoUrl} target="_blank" rel="noreferrer">
                         {verificacaoUrl}
                       </a>
                     ) : (
@@ -269,13 +276,13 @@ export default function DocumentoDetalheClient() {
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   <a
-                    className="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50"
+                    className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
                     href={`/api/v1/documentos/versoes/${versao.versao.id}/download?tipo=ORIGINAL`}
                   >
                     Baixar original
                   </a>
                   <a
-                    className="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50"
+                    className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
                     href={`/api/v1/documentos/versoes/${versao.versao.id}/download?tipo=PDF_FINAL`}
                   >
                     Baixar PDF final
@@ -285,11 +292,11 @@ export default function DocumentoDetalheClient() {
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-lg border p-3 space-y-2">
-                  <div className="text-sm font-semibold text-slate-700">Ações</div>
+                  <div className="text-sm font-semibold">Ações</div>
                   <div className="flex gap-2 flex-wrap">
                     <button
                       type="button"
-                      className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+                      className="rounded-lg bg-[#2563EB] px-3 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50"
                       onClick={enviarParaAssinatura}
                       disabled={loading}
                     >
@@ -297,7 +304,7 @@ export default function DocumentoDetalheClient() {
                     </button>
                     <button
                       type="button"
-                      className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
+                      className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50"
                       onClick={gerarPdfFinal}
                       disabled={loading}
                     >
@@ -305,27 +312,27 @@ export default function DocumentoDetalheClient() {
                     </button>
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    <button type="button" className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50" onClick={() => decidir("ASSINAR")} disabled={loading}>
+                    <button type="button" className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]" onClick={() => decidir("ASSINAR")} disabled={loading}>
                       Assinar
                     </button>
-                    <button type="button" className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50" onClick={() => decidir("APROVAR")} disabled={loading}>
+                    <button type="button" className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]" onClick={() => decidir("APROVAR")} disabled={loading}>
                       Aprovar
                     </button>
-                    <button type="button" className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50" onClick={() => decidir("CIENTE")} disabled={loading}>
+                    <button type="button" className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]" onClick={() => decidir("CIENTE")} disabled={loading}>
                       Ciente
                     </button>
-                    <button type="button" className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50" onClick={() => decidir("REJEITAR")} disabled={loading}>
+                    <button type="button" className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]" onClick={() => decidir("REJEITAR")} disabled={loading}>
                       Rejeitar
                     </button>
                   </div>
                 </div>
 
                 <div className="rounded-lg border p-3 space-y-2">
-                  <div className="text-sm font-semibold text-slate-700">Fluxo</div>
+                  <div className="text-sm font-semibold">Fluxo</div>
                   <div className="flex gap-2 flex-wrap">
                     <button
                       type="button"
-                      className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
+                      className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50"
                       onClick={() => {
                         if (!userId) return alert("Usuário atual não identificado.");
                         setFluxoQuick({
@@ -348,7 +355,7 @@ export default function DocumentoDetalheClient() {
                     </button>
                     <button
                       type="button"
-                      className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
+                      className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50"
                       onClick={() => {
                         const permissao = (prompt("Código de permissão (ex: documentos.assinar):") || "").trim();
                         if (!permissao) return;
@@ -372,12 +379,12 @@ export default function DocumentoDetalheClient() {
                       Por permissão
                     </button>
                   </div>
-                  <div className="mt-2 text-xs text-slate-500">Etapas: {(versao.fluxo || []).length}</div>
+                  <div className="mt-2 text-xs text-[#6B7280]">Etapas: {(versao.fluxo || []).length}</div>
                 </div>
               </div>
 
               <div className="rounded-lg border">
-                <div className="border-b bg-slate-50 px-3 py-2 text-sm font-semibold">Fluxo atual</div>
+                <div className="border-b border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-sm font-semibold">Fluxo atual</div>
                 <div className="p-3 space-y-2">
                   {(versao.fluxo || []).length ? (
                     versao.fluxo.map((f) => (
@@ -386,24 +393,24 @@ export default function DocumentoDetalheClient() {
                           <div className="font-medium">
                             {f.ordemAssinatura}. {f.papelSignatario}
                           </div>
-                          <div className="text-xs text-slate-500">{f.statusFluxo}</div>
+                          <div className="text-xs text-[#6B7280]">{f.statusFluxo}</div>
                         </div>
-                        <div className="mt-1 text-xs text-slate-500">
+                        <div className="mt-1 text-xs text-[#6B7280]">
                           {f.tipoSignatario === "USUARIO" ? `Usuário #${f.idUsuarioSignatario}` : `Permissão ${f.permissaoSignatario}`}
                         </div>
-                        <div className="mt-1 text-xs text-slate-500">
+                        <div className="mt-1 text-xs text-[#6B7280]">
                           Parecer: {f.parecerObrigatorio ? "obrigatório" : "opcional"} • Vencimento: {fmtDateTime(f.vencimentoEm)}
                         </div>
                       </div>
                     ))
                   ) : (
-                    <div className="text-sm text-slate-500">Sem fluxo configurado.</div>
+                    <div className="text-sm text-[#6B7280]">Sem fluxo configurado.</div>
                   )}
                 </div>
               </div>
 
               <div className="rounded-lg border">
-                <div className="border-b bg-slate-50 px-3 py-2 text-sm font-semibold">Assinaturas</div>
+                <div className="border-b border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-sm font-semibold">Assinaturas</div>
                 <div className="p-3 space-y-2">
                   {(versao.assinaturas || []).length ? (
                     versao.assinaturas.map((a) => (
@@ -412,33 +419,33 @@ export default function DocumentoDetalheClient() {
                           <div className="font-medium">
                             {a.nomeExibicaoSignatario} • {a.papelSignatario} • {a.tipoDecisao}
                           </div>
-                          <div className="text-xs text-slate-500">{fmtDateTime(a.criadoEm)}</div>
+                          <div className="text-xs text-[#6B7280]">{fmtDateTime(a.criadoEm)}</div>
                         </div>
-                        <div className="mt-1 text-xs text-slate-500">Código: {a.codigoVerificacao}</div>
-                        {a.parecer ? <div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{a.parecer}</div> : null}
+                        <div className="mt-1 text-xs text-[#6B7280]">Código: {a.codigoVerificacao}</div>
+                        {a.parecer ? <div className="mt-2 whitespace-pre-wrap text-sm text-[#111827]">{a.parecer}</div> : null}
                       </div>
                     ))
                   ) : (
-                    <div className="text-sm text-slate-500">Nenhuma assinatura ainda.</div>
+                    <div className="text-sm text-[#6B7280]">Nenhuma assinatura ainda.</div>
                   )}
                 </div>
               </div>
 
               <div className="rounded-lg border">
-                <div className="border-b bg-slate-50 px-3 py-2 text-sm font-semibold">Histórico</div>
+                <div className="border-b border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-sm font-semibold">Histórico</div>
                 <div className="p-3 space-y-2">
                   {(versao.historico || []).length ? (
                     versao.historico.map((h) => (
                       <div key={h.id} className="rounded-md border px-3 py-2 text-sm">
                         <div className="flex items-center justify-between gap-2">
                           <div className="font-medium">{h.tipoEvento}</div>
-                          <div className="text-xs text-slate-500">{fmtDateTime(h.criadoEm)}</div>
+                          <div className="text-xs text-[#6B7280]">{fmtDateTime(h.criadoEm)}</div>
                         </div>
-                        <div className="mt-1 text-sm text-slate-700">{h.descricaoEvento}</div>
+                        <div className="mt-1 text-sm text-[#111827]">{h.descricaoEvento}</div>
                       </div>
                     ))
                   ) : (
-                    <div className="text-sm text-slate-500">Sem histórico.</div>
+                    <div className="text-sm text-[#6B7280]">Sem histórico.</div>
                   )}
                 </div>
               </div>

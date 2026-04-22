@@ -10,11 +10,47 @@ import { useRealtimeEvent } from "@/lib/realtime/hooks";
 import * as LucideIcons from "lucide-react";
 import type { ComponentType } from "react";
 
-function isActive(pathname: string, item: MenuItemDTO): boolean {
-  if (item.href === "/dashboard") return pathname === "/dashboard";
-  if (item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`))) return true;
-  if (item.matchStartsWith?.some((p) => pathname.startsWith(p))) return true;
-  return (item.children ?? []).some((child) => isActive(pathname, child));
+function collectHrefs(items: MenuItemDTO[], out: string[]) {
+  for (const it of items) {
+    if (it.href) out.push(it.href);
+    if (it.children?.length) collectHrefs(it.children, out);
+  }
+}
+
+function getBestMatchHref(pathname: string, hrefs: string[]): string | null {
+  let best: string | null = null;
+  let bestScore = -1;
+
+  for (const href of hrefs) {
+    if (href === "/dashboard") {
+      if (pathname === "/dashboard") return "/dashboard";
+      continue;
+    }
+
+    if (pathname === href) {
+      const score = href.length + 10000;
+      if (score > bestScore) {
+        bestScore = score;
+        best = href;
+      }
+      continue;
+    }
+
+    if (pathname.startsWith(`${href}/`)) {
+      const score = href.length;
+      if (score > bestScore) {
+        bestScore = score;
+        best = href;
+      }
+    }
+  }
+
+  return best;
+}
+
+function isActive(activeHref: string | null, item: MenuItemDTO): boolean {
+  if (activeHref && item.href === activeHref) return true;
+  return (item.children ?? []).some((child) => isActive(activeHref, child));
 }
 
 type SidebarIconProps = { className?: string };
@@ -62,18 +98,18 @@ function BadgePill({ badge, compact }: { badge: NonNullable<MenuBadgesMapDTO[str
 
 function MenuNode({
   item,
-  pathname,
+  activeHref,
   badges,
   depth,
   collapsed,
 }: {
   item: MenuItemDTO;
-  pathname: string;
+  activeHref: string | null;
   badges: MenuBadgesMapDTO;
   depth: number;
   collapsed: boolean;
 }) {
-  const active = isActive(pathname, item);
+  const active = isActive(activeHref, item);
   const [open, setOpen] = useState(active);
   const badge = badges[item.key];
   const Icon = resolveIconComponent(item.icon);
@@ -121,7 +157,7 @@ function MenuNode({
       {item.children?.length && !collapsed ? (
         <div className={`${open ? "" : "hidden"} ml-2 rounded-lg bg-[#1F2937] p-2 space-y-1`}>
           {item.children.map((child) => (
-            <MenuNode key={child.key} item={child} pathname={pathname} badges={badges} depth={depth + 1} collapsed={collapsed} />
+            <MenuNode key={child.key} item={child} activeHref={activeHref} badges={badges} depth={depth + 1} collapsed={collapsed} />
           ))}
         </div>
       ) : null}
@@ -141,6 +177,14 @@ export function SidebarNav({ secoes, initialBadges = {} }: { secoes: MenuSection
   const [badges, setBadges] = useState<MenuBadgesMapDTO>(initialBadges);
   const [favoritos, setFavoritos] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState(false);
+
+  const hrefs = useMemo(() => {
+    const out: string[] = [];
+    for (const s of secoes) collectHrefs(s.items, out);
+    return Array.from(new Set(out));
+  }, [secoes]);
+
+  const activeHref = useMemo(() => getBestMatchHref(pathname, hrefs), [pathname, hrefs]);
 
   const itemsMap = useMemo(() => {
     const m = new Map<string, MenuItemDTO>();
@@ -233,7 +277,7 @@ export function SidebarNav({ secoes, initialBadges = {} }: { secoes: MenuSection
                 .map((k) => itemsMap.get(k))
                 .filter((it): it is MenuItemDTO => !!it && !!it.href)
                 .map((it) => {
-                  const active = it.href === "/dashboard" ? pathname === "/dashboard" : pathname === it.href || pathname.startsWith(`${it.href}/`);
+                  const active = !!activeHref && it.href === activeHref;
                   const badge = badges[it.key];
                   const Icon = resolveIconComponent(it.icon);
                   return (
@@ -262,7 +306,7 @@ export function SidebarNav({ secoes, initialBadges = {} }: { secoes: MenuSection
 
             <div className="space-y-1">
               {secao.items.map((item) => (
-                <MenuNode key={item.key} item={item} pathname={pathname} badges={badges} depth={0} collapsed={collapsed} />
+                <MenuNode key={item.key} item={item} activeHref={activeHref} badges={badges} depth={0} collapsed={collapsed} />
               ))}
             </div>
           </div>
