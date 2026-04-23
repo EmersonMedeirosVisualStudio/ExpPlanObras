@@ -193,7 +193,7 @@ export default function SubcontratosClient() {
     try {
       setContratosLoading(true);
       setContratosErr(null);
-      const res = await api.get("/api/contratos");
+      const res = await api.get("/api/contratos", { params: { apenasPrincipais: "true" } });
       const rows = (res.data as any[]) || [];
       const norm: ContratoLite[] = rows
         .map((x) => ({

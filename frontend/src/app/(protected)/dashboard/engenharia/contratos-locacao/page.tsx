@@ -1,8 +1,8 @@
 import { requirePermission } from '@/lib/auth/access';
 import { PERMISSIONS } from '@/lib/auth/permissions';
-import ContratosLocacaoClient from './ContratosLocacaoClient';
+import { redirect } from 'next/navigation';
 
 export default async function Page() {
   await requirePermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
-  return <ContratosLocacaoClient />;
+  redirect('/dashboard/contratos');
 }

@@ -209,9 +209,11 @@ export async function ensureContratoPendente(tenantId: number) {
   });
 }
 
-export async function listContratos(tenantId: number) {
+export async function listContratos(tenantId: number, opts?: { apenasPrincipais?: boolean }) {
   return withRLS(tenantId, async (tx) => {
-    const rows = await tx.contrato.findMany({ where: { tenantId }, orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }] });
+    const whereContrato: any = { tenantId };
+    if (opts?.apenasPrincipais) whereContrato.contratoPrincipalId = null;
+    const rows = await tx.contrato.findMany({ where: whereContrato, orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }] });
 
     const [pagos, execs] = await Promise.all([
       tx.$queryRaw`

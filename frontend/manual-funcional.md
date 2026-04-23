@@ -3050,8 +3050,19 @@ Regras-base (modelo correto de contrato de obra):
 
 Telas:
 
-- Lista/Detalhe: `/dashboard/contratos`
+- Lista/Detalhe (contratos principais): `/dashboard/contratos`
 - Novo contrato: `/dashboard/contratos/novo`
+
+Menu (padrão):
+
+- Contratos → Dashboard Contratos
+- Contratos → Novo Contrato (criação)
+- Contratos → Lista (gestão)
+- Contratos → Planejamento (Gantt)
+- Contratos → Documentos
+- Contratos → Aditivos
+- Contratos → Subcontratos (contratos vinculados a um contrato principal)
+- Contratos → Contrapartes (Empresas/Pessoas externas)
 
 Colunas e inteligência (lista):
 
@@ -3141,7 +3152,33 @@ Princípio:
 Fluxo de tela (novo padrão):
 
 1) selecionar contrato
-2) acessar abas: Dashboard / Aditivos (CRUD) / Novo aditivo
+2) acessar abas: Dashboard / Aditivos / Novo aditivo
+
+Tipos de aditivo (modelo do sistema):
+
+1) Aditivo de **Prazo**
+- altera: vigência atual do contrato (prazo)
+- não altera: valor
+- planilha: por padrão **Não** (pode ser Sim se você quiser registrar uma reprogramação junto, mas o sistema deixa opcional)
+
+2) Aditivo de **Valor**
+- altera: valor total do contrato (e, se for público, concedente/próprio)
+- regra obrigatória: **sempre altera planilha**
+- motivo: aumento/redução precisa estar distribuído nos itens
+
+3) Aditivo de **Reprogramação de Planilha**
+- altera: itens/quantidades/distribuição
+- não altera necessariamente: valor total
+- planilha: por padrão **Sim**
+
+Regra de ouro:
+- se alterar valor → obrigatoriamente alterar planilha
+- se não alterar valor → planilha pode ou não ser alterada
+
+Controle de versão da planilha (contrato):
+- contrato original: Planilha v1
+- ao aprovar um aditivo com “Alterou planilha = Sim”: incrementa automaticamente (v2, v3, ...)
+- a versão aparece no cabeçalho do contrato e na tela de aditivos
 
 Tela:
 

@@ -202,7 +202,7 @@ export default function EngenhariaCadastroObraPage() {
 
   async function carregarContratos() {
     try {
-      const res = await api.get("/api/contratos");
+      const res = await api.get("/api/contratos", { params: { apenasPrincipais: "true" } });
       const data = Array.isArray(res.data) ? res.data : [];
       const mapped = data.map((c: any) => ({
         id: Number(c.id),

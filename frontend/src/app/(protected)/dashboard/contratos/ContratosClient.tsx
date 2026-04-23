@@ -10,6 +10,7 @@ type ContratoRow = {
   numeroContrato: string;
   nome: string | null;
   objeto: string | null;
+  contratoPrincipalId?: number | null;
   tipoContratante: "PUBLICO" | "PRIVADO" | "PF";
   empresaParceiraNome: string | null;
   empresaParceiraDocumento?: string | null;
@@ -234,9 +235,8 @@ export default function ContratosClient() {
         const params = new URLSearchParams();
         params.set("q", q);
         params.set("status", "ATIVO");
-        const res = await fetch(`/api/v1/engenharia/contrapartes?${params.toString()}`, { cache: "no-store" });
-        const data = await res.json().catch(() => null);
-        if (!res.ok) throw new Error(data?.message || "Erro ao buscar empresas");
+        const res = await api.get(`/api/v1/engenharia/contrapartes?${params.toString()}`);
+        const data = res.data;
         if (cancelled) return;
         const rows: ContraparteLite[] = (Array.isArray(data) ? data : []).map((r: any) => ({
           idContraparte: Number(r.idContraparte),
@@ -308,19 +308,21 @@ export default function ContratosClient() {
     try {
       setLoading(true);
       setErr(null);
-      const res = await api.get("/api/contratos");
+      const res = await api.get("/api/contratos", { params: { apenasPrincipais: "true" } });
       setRows(
-        (res.data as any[])?.map((x) => ({
-          ...x,
-          tipoContratante: normalizeTipoContratante(x.tipoContratante),
-          prazoDias: x.prazoDias == null ? null : Number(x.prazoDias),
-          valorConcedenteInicial: x.valorConcedenteInicial == null ? null : Number(x.valorConcedenteInicial),
-          valorProprioInicial: x.valorProprioInicial == null ? null : Number(x.valorProprioInicial),
-          valorTotalInicial: x.valorTotalInicial == null ? null : Number(x.valorTotalInicial),
-          valorConcedenteAtual: x.valorConcedenteAtual == null ? null : Number(x.valorConcedenteAtual),
-          valorProprioAtual: x.valorProprioAtual == null ? null : Number(x.valorProprioAtual),
-          valorTotalAtual: x.valorTotalAtual == null ? null : Number(x.valorTotalAtual),
-        })) ?? []
+        ((res.data as any[]) ?? [])
+          .map((x) => ({
+            ...x,
+            tipoContratante: normalizeTipoContratante(x.tipoContratante),
+            prazoDias: x.prazoDias == null ? null : Number(x.prazoDias),
+            valorConcedenteInicial: x.valorConcedenteInicial == null ? null : Number(x.valorConcedenteInicial),
+            valorProprioInicial: x.valorProprioInicial == null ? null : Number(x.valorProprioInicial),
+            valorTotalInicial: x.valorTotalInicial == null ? null : Number(x.valorTotalInicial),
+            valorConcedenteAtual: x.valorConcedenteAtual == null ? null : Number(x.valorConcedenteAtual),
+            valorProprioAtual: x.valorProprioAtual == null ? null : Number(x.valorProprioAtual),
+            valorTotalAtual: x.valorTotalAtual == null ? null : Number(x.valorTotalAtual),
+          }))
+          .filter((x) => !x?.contratoPrincipalId) ?? []
       );
     } catch (e: any) {
       setErr(e?.response?.data?.message || e?.message || "Erro ao carregar contratos");
@@ -531,11 +533,23 @@ export default function ContratosClient() {
         {detailLoading ? <div className="text-sm text-[#6B7280]">Carregando...</div> : null}
 
         {detail ? (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-2">
-              <div className="text-sm text-[#6B7280]">Número</div>
-              <div className="text-xl font-semibold">{detail.numeroContrato}</div>
-              <div className="mt-2 text-sm text-[#6B7280]">{detail.nome || detail.objeto || "—"}</div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+            <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm text-[#6B7280]">Número</div>
+                  <div className="text-xl font-semibold">{detail.numeroContrato}</div>
+                  <div className="mt-2 text-sm text-[#6B7280]">{detail.nome || detail.objeto || "—"}</div>
+                </div>
+                <button
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-60"
+                  type="button"
+                  onClick={abrirEdicao}
+                  disabled={!detail}
+                >
+                  Editar contrato
+                </button>
+              </div>
 
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
@@ -555,7 +569,33 @@ export default function ContratosClient() {
               </div>
             </section>
 
-            <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+            <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="text-sm font-semibold">{detail.contratoPrincipalId ? "Empresa contratada" : "Empresa contratante"}</div>
+                <button
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-1.5 text-xs text-[#111827] hover:bg-[#F9FAFB]"
+                  type="button"
+                  onClick={() => router.push("/dashboard/engenharia/contrapartes")}
+                >
+                  Empresa
+                </button>
+              </div>
+              <div className="mt-3 space-y-2 text-sm">
+                <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
+                  <div className="text-xs text-[#6B7280]">Nome</div>
+                  <div className="font-semibold">{detail.empresaParceiraNome || "—"}</div>
+                </div>
+                <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
+                  <div className="text-xs text-[#6B7280]">Documento</div>
+                  <div className="font-semibold">{detail.empresaParceiraDocumento || "—"}</div>
+                </div>
+                <div className="text-xs text-[#6B7280]">
+                  {detail.empresaParceiraNome ? "Dados exibidos do contrato (empresaParceira)." : "Cadastre/selecione a empresa no Editar contrato para preencher estes dados."}
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-3">
               <div className="text-sm font-semibold">Financeiro</div>
               <div className="mt-3 space-y-2 text-sm">
                 <div className="flex items-center justify-between gap-2">
@@ -574,7 +614,7 @@ export default function ContratosClient() {
             </section>
 
             {detail.alerta && detail.alerta !== "OK" ? (
-              <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm lg:col-span-3">
+              <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm lg:col-span-12">
                 <div className="text-sm font-semibold">Alertas</div>
                 <div className="mt-2 text-sm text-amber-800">
                   {(detail.alertas || []).length ? (
@@ -590,7 +630,7 @@ export default function ContratosClient() {
               </section>
             ) : null}
 
-            <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-3">
+            <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-12">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="text-sm font-semibold">Obras vinculadas</div>
                 <div className="text-xs text-[#6B7280]">Regra: toda obra tem contrato; um contrato pode ter várias obras.</div>
@@ -850,20 +890,20 @@ export default function ContratosClient() {
           <div className="text-sm text-[#6B7280]">Cadastre, acompanhe e integre com medições/pagamentos e obras.</div>
         </div>
         <button className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8]" type="button" onClick={() => router.push("/dashboard/contratos/novo")}>
-          Novo contrato
+          Novo Contrato
         </button>
       </div>
 
       <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-          <div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+          <div className="md:col-span-3">
             <div className="text-sm text-[#6B7280]">Busca</div>
             <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Número/nome/empresa" />
           </div>
-          <div className="md:col-span-2">
+          <div className="md:col-span-8">
             <div className="text-sm text-[#6B7280]">Status</div>
             <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-3 lg:grid-cols-4">
                 {STATUS_FILTER_OPTIONS.map((o) => (
                   <label key={o.key} className="flex items-center gap-2 text-sm">
                     <input type="checkbox" checked={Boolean(statusSel[o.key])} onChange={(e) => setStatusSel((p) => ({ ...p, [o.key]: e.target.checked }))} />
@@ -893,7 +933,7 @@ export default function ContratosClient() {
               </div>
             </div>
           </div>
-          <div className="flex items-end justify-end gap-2">
+          <div className="flex items-end justify-end gap-2 md:col-span-1">
             <button
               className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50"
               type="button"

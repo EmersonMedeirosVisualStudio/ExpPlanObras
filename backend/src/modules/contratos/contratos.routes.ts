@@ -101,11 +101,22 @@ export default async function contratosRoutes(server: FastifyInstance) {
     }
   );
 
-  server.get('/', async (request, reply) => {
-    const tenantId = (request.user as any).tenantId as number;
-    const rows = await listContratos(tenantId);
-    return reply.send(rows);
-  });
+  server.get(
+    '/',
+    {
+      schema: {
+        querystring: z.object({
+          apenasPrincipais: z.coerce.boolean().optional(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const q = (request.query as any) || {};
+      const rows = await listContratos(tenantId, { apenasPrincipais: Boolean(q.apenasPrincipais) });
+      return reply.send(rows);
+    }
+  );
 
   server.get(
     '/dashboard',

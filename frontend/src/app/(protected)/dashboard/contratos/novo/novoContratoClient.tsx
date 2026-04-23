@@ -129,7 +129,7 @@ export default function NovoContratoClient() {
     <div className="p-6 space-y-6 max-w-3xl">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold">Novo contrato</h1>
+          <h1 className="text-2xl font-semibold">Novo Contrato</h1>
           <div className="text-sm text-slate-600">Um contrato pode existir sem obra; obras podem ser vinculadas depois.</div>
         </div>
         <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push("/dashboard/contratos")}>
