@@ -658,7 +658,7 @@ export default function AditivosClient() {
               <button className={`rounded-lg px-3 py-2 text-sm ${tab === "eventos" ? "bg-slate-900 text-white" : "border bg-white hover:bg-slate-50"}`} type="button" onClick={() => setQuery({ tab: "eventos" })}>
                 Eventos
               </button>
-              <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push(`/dashboard/contratos?id=${contratoSelecionado.id}`)}>
+              <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push(`/dashboard/contratos/novo?id=${contratoSelecionado.id}`)}>
                 Editar contrato
               </button>
             </div>

@@ -391,37 +391,8 @@ export default function ContratosClient() {
   }, [contratoId]);
 
   function abrirEdicao() {
-    if (!detail) return;
-    setEditErr(null);
-    setEditLoading(false);
-    setENumeroContrato(detail.numeroContrato || "");
-    setENome(detail.nome || "");
-    setEObjeto(detail.objeto || "");
-    setEDescricao((detail.descricao as any) || "");
-    setETipoContratante(normalizeTipoContratante(detail.tipoContratante));
-    setEEmpresaParceiraNome(detail.empresaParceiraNome || "");
-    setEEmpresaParceiraDocumento((detail.empresaParceiraDocumento as any) || "");
-    setEStatus(String(detail.status || "ATIVO"));
-    setEDataAssinatura(toDateInputValue(detail.dataAssinatura));
-    setEDataOS(toDateInputValue(detail.dataOS));
-    setEPrazoValor(detail.prazoDias == null ? "" : String(detail.prazoDias));
-    setEPrazoUnidade("DIAS");
-
-    const vci = Number((detail as any).valorConcedenteInicial || 0);
-    const vpi = Number((detail as any).valorProprioInicial || 0);
-    const vca = Number((detail as any).valorConcedenteAtual || 0);
-    const vpa = Number((detail as any).valorProprioAtual || 0);
-    const vti = Number((detail as any).valorTotalInicial || 0);
-    const vta = Number((detail as any).valorTotalAtual || 0);
-
-    setEValorConcedenteInicial(formatMoneyBRFromDigits(String(Math.round(vci * 100))));
-    setEValorProprioInicial(formatMoneyBRFromDigits(String(Math.round(vpi * 100))));
-    setEValorConcedenteAtual(formatMoneyBRFromDigits(String(Math.round(vca * 100))));
-    setEValorProprioAtual(formatMoneyBRFromDigits(String(Math.round(vpa * 100))));
-    setEValorTotalInicial(formatMoneyBRFromDigits(String(Math.round(vti * 100))));
-    setEValorTotalAtual(formatMoneyBRFromDigits(String(Math.round(vta * 100))));
-
-    setEditOpen(true);
+    if (!contratoId) return;
+    router.push(`/dashboard/contratos/novo?id=${contratoId}`);
   }
 
   async function salvarEdicao() {
