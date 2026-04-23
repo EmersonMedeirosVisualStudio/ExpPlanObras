@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import api from "@/lib/api";
+import { Plus, Trash2 } from "lucide-react";
 
 const MapaObras = dynamic(() => import("@/components/MapaObras"), { ssr: false });
 
@@ -14,6 +15,33 @@ function unwrapApiData<T>(json: any): T {
 
 function onlyDigits(value: string) {
   return String(value || "").replace(/\D/g, "");
+}
+
+function formatCpfCnpj(value: string) {
+  const d = onlyDigits(value).slice(0, 14);
+  if (!d) return "";
+  if (d.length <= 11) {
+    const p1 = d.slice(0, 3);
+    const p2 = d.slice(3, 6);
+    const p3 = d.slice(6, 9);
+    const p4 = d.slice(9, 11);
+    let out = p1;
+    if (p2) out += `.${p2}`;
+    if (p3) out += `.${p3}`;
+    if (p4) out += `-${p4}`;
+    return out;
+  }
+  const p1 = d.slice(0, 2);
+  const p2 = d.slice(2, 5);
+  const p3 = d.slice(5, 8);
+  const p4 = d.slice(8, 12);
+  const p5 = d.slice(12, 14);
+  let out = p1;
+  if (p2) out += `.${p2}`;
+  if (p3) out += `.${p3}`;
+  if (p4) out += `/${p4}`;
+  if (p5) out += `-${p5}`;
+  return out;
 }
 
 function normalizeCep(value: string) {
@@ -178,6 +206,7 @@ export default function ContrapartesClient() {
     longitude: "",
   });
   const [edicaoId, setEdicaoId] = useState<number | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
 
   const [idSelecionado, setIdSelecionado] = useState<number | null>(null);
   const [contratos, setContratos] = useState<ContratoDTO[]>([]);
@@ -429,7 +458,7 @@ export default function ContrapartesClient() {
       const payload = {
         tipo: novo.tipo,
         nomeRazao: novo.nomeRazao,
-        documento: novo.documento || null,
+        documento: novo.documento ? onlyDigits(novo.documento) : null,
         email: novo.email || null,
         telefone: novo.telefone || null,
         classificacaoStatus: novo.classificacaoStatus,
@@ -445,6 +474,7 @@ export default function ContrapartesClient() {
       };
       await api.post("/api/v1/engenharia/contrapartes", payload);
       limparFormularioCompleto();
+      setFormOpen(false);
       await carregar();
     } catch (e: any) {
       setErr(e?.response?.data?.message || e?.message || "Erro ao criar contraparte");
@@ -458,7 +488,7 @@ export default function ContrapartesClient() {
       const payload = {
         tipo: novo.tipo,
         nomeRazao: novo.nomeRazao,
-        documento: novo.documento || null,
+        documento: novo.documento ? onlyDigits(novo.documento) : null,
         email: novo.email || null,
         telefone: novo.telefone || null,
         classificacaoStatus: novo.classificacaoStatus,
@@ -475,24 +505,27 @@ export default function ContrapartesClient() {
       await api.put(`/api/v1/engenharia/contrapartes/${edicaoId}`, payload);
       setEdicaoId(null);
       limparFormularioCompleto();
+      setFormOpen(false);
       await carregar();
     } catch (e: any) {
       setErr(e?.response?.data?.message || e?.message || "Erro ao atualizar contraparte");
     }
   }
 
-  async function inativarSelecionada() {
-    if (!edicaoId) return;
-    if (!window.confirm("Inativar esta contraparte?")) return;
+  async function excluirContraparte(idContraparte: number) {
+    if (!window.confirm("Excluir esta contraparte?")) return;
     try {
       setErr(null);
-      await api.delete(`/api/v1/engenharia/contrapartes/${edicaoId}`);
-      if (idSelecionado === edicaoId) setIdSelecionado(null);
-      setEdicaoId(null);
-      limparFormularioCompleto();
+      await api.delete(`/api/v1/engenharia/contrapartes/${idContraparte}`);
+      if (idSelecionado === idContraparte) setIdSelecionado(null);
+      if (edicaoId === idContraparte) {
+        setEdicaoId(null);
+        limparFormularioCompleto();
+        setFormOpen(false);
+      }
       await carregar();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || "Erro ao inativar contraparte");
+      setErr(e?.response?.data?.message || e?.message || "Erro ao excluir contraparte");
     }
   }
 
@@ -501,7 +534,7 @@ export default function ContrapartesClient() {
     setNovo({
       tipo: contraparte.tipo,
       nomeRazao: contraparte.nomeRazao || "",
-      documento: contraparte.documento || "",
+      documento: contraparte.documento ? formatCpfCnpj(contraparte.documento) : "",
       email: contraparte.email || "",
       telefone: contraparte.telefone || "",
       classificacaoStatus: (contraparte.classificacaoStatus || "EM_AVALIACAO") as ClassificacaoStatus,
@@ -521,6 +554,7 @@ export default function ContrapartesClient() {
     setAlertaCoordsPossivelmenteDesatualizadas(false);
     setLastLinkSnapshot(null);
     setCidadeUfInvalidaMsg("");
+    setFormOpen(true);
   }
 
   useEffect(() => {
@@ -663,9 +697,24 @@ export default function ContrapartesClient() {
 
   return (
     <div className="space-y-6 text-[#111827]">
-      <div>
-        <h1 className="text-2xl font-semibold">Parceiros Comerciais (Contrapartes)</h1>
-        <p className="text-sm text-[#6B7280]">Cadastro unificado de pessoas jurídicas e pessoas físicas.</p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-semibold">Parceiros Comerciais (Contrapartes)</h1>
+          <p className="text-sm text-[#6B7280]">Cadastro unificado de pessoas jurídicas e pessoas físicas.</p>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 rounded-lg bg-[#16A34A] px-4 py-2 text-sm text-white hover:bg-[#15803D] disabled:opacity-60"
+          onClick={() => {
+            setEdicaoId(null);
+            limparFormularioCompleto();
+            setFormOpen(true);
+          }}
+          disabled={loading}
+        >
+          <Plus className="h-4 w-4" />
+          Nova contraparte
+        </button>
       </div>
 
       <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-3">
@@ -776,12 +825,13 @@ export default function ContrapartesClient() {
         {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
       </div>
 
-      <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-3">
+      {formOpen ? (
+        <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-[#16A34A]" />
             <div>
-              <div className="text-sm font-semibold">{edicaoId ? `Editar contraparte #${edicaoId}` : "Nova contraparte"}</div>
+              <div className="text-sm font-semibold">{edicaoId ? "Editar contraparte" : "Nova contraparte"}</div>
               <div className="text-xs text-[#6B7280]">Cadastre uma nova pessoa jurídica ou física.</div>
             </div>
           </div>
@@ -800,7 +850,7 @@ export default function ContrapartesClient() {
           </div>
           <div>
             <div className="text-sm text-[#6B7280]">Documento</div>
-            <input className="input" value={novo.documento} onChange={(e) => setNovoField("documento", e.target.value as any)} />
+            <input className="input" value={novo.documento} onChange={(e) => setNovoField("documento", formatCpfCnpj(e.target.value) as any)} />
           </div>
           <div>
             <div className="text-sm text-[#6B7280]">Status</div>
@@ -957,18 +1007,17 @@ export default function ContrapartesClient() {
         </div>
         <div className="flex justify-end">
           <div className="flex gap-2">
-            {edicaoId ? (
-              <button
-                className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
-                type="button"
-                onClick={() => {
-                  setEdicaoId(null);
-                  limparFormularioCompleto();
-                }}
-              >
-                Cancelar
-              </button>
-            ) : null}
+            <button
+              className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
+              type="button"
+              onClick={() => {
+                setEdicaoId(null);
+                limparFormularioCompleto();
+                setFormOpen(false);
+              }}
+            >
+              Fechar
+            </button>
             <button
               className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
               type="button"
@@ -976,11 +1025,6 @@ export default function ContrapartesClient() {
             >
               Limpar
             </button>
-            {edicaoId ? (
-              <button className="rounded-lg bg-[#EF4444] px-4 py-2 text-sm text-white hover:bg-[#DC2626]" type="button" onClick={inativarSelecionada}>
-                Inativar
-              </button>
-            ) : null}
             <button
               className="rounded-lg bg-[#16A34A] px-4 py-2 text-sm text-white hover:bg-[#15803D] disabled:opacity-60"
               type="button"
@@ -992,6 +1036,7 @@ export default function ContrapartesClient() {
           </div>
         </div>
       </div>
+      ) : null}
 
       {localizacaoInformadaOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setLocalizacaoInformadaOpen(false)}>
@@ -1056,12 +1101,15 @@ export default function ContrapartesClient() {
                 <tr
                   key={r.idContraparte}
                   className={`border-t border-[#E5E7EB] cursor-pointer hover:bg-[#F9FAFB] ${idSelecionado === r.idContraparte ? "bg-[#EFF6FF]" : ""}`}
-                  onClick={() => setIdSelecionado(r.idContraparte)}
+                  onClick={() => {
+                    setIdSelecionado(r.idContraparte);
+                    prepararEdicao(r);
+                  }}
                 >
                   <td className="px-3 py-2">{r.idContraparte}</td>
                   <td className="px-3 py-2">{r.tipo}</td>
                   <td className="px-3 py-2">{r.nomeRazao}</td>
-                  <td className="px-3 py-2">{r.documento || "-"}</td>
+                  <td className="px-3 py-2">{r.documento ? formatCpfCnpj(r.documento) : "-"}</td>
                   <td className="px-3 py-2">{[r.cidade, r.uf].filter(Boolean).join(" / ") || "-"}</td>
                   <td className="px-3 py-2">{[r.email, r.telefone].filter(Boolean).join(" · ") || "-"}</td>
                   <td className="px-3 py-2">
@@ -1081,13 +1129,14 @@ export default function ContrapartesClient() {
                   <td className="px-3 py-2">
                     <button
                       type="button"
-                      className="rounded-lg border border-[#D1D5DB] bg-white px-2 py-1 text-xs text-[#111827] hover:bg-[#F9FAFB]"
+                      className="rounded-lg border border-red-200 bg-white p-2 text-red-700 hover:bg-red-50"
                       onClick={(e) => {
                         e.stopPropagation();
-                        prepararEdicao(r);
+                        excluirContraparte(r.idContraparte);
                       }}
+                      title="Excluir"
                     >
-                      Editar
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </td>
                 </tr>

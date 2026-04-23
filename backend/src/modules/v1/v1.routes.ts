@@ -1722,12 +1722,28 @@ export default async function v1Routes(server: FastifyInstance) {
       })
       .parse(request.body || {});
 
+    const documentoDigits = body.documento ? onlyDigits(String(body.documento)) : '';
+    if (documentoDigits && documentoDigits.length !== 11 && documentoDigits.length !== 14) {
+      return fail(reply, 422, 'Documento inválido. Informe CPF (11 dígitos) ou CNPJ (14 dígitos).');
+    }
+
+    if (documentoDigits) {
+      const exists = await prisma.$queryRaw<Array<{ ok: number }>>`
+        SELECT 1 as ok
+        FROM "EngenhariaContraparte" c
+        WHERE c."tenantId" = ${ctx.tenantId}
+          AND regexp_replace(COALESCE(c."documento", ''), '\\D', '', 'g') = ${documentoDigits}
+        LIMIT 1
+      `;
+      if (Array.isArray(exists) && exists.length > 0) return fail(reply, 409, 'Já existe uma contraparte com este CPF/CNPJ.');
+    }
+
     const created = await prisma.engenhariaContraparte.create({
       data: {
         tenantId: ctx.tenantId,
         tipo: body.tipo,
         nomeRazao: body.nomeRazao.trim(),
-        documento: body.documento ? String(body.documento).trim() : null,
+        documento: documentoDigits ? documentoDigits : null,
         email: body.email ? String(body.email).trim() : null,
         telefone: body.telefone ? String(body.telefone).trim() : null,
         status: 'ATIVO',
@@ -1780,12 +1796,29 @@ export default async function v1Routes(server: FastifyInstance) {
     const existing = await prisma.engenhariaContraparte.findFirst({ where: { id: params.id, tenantId: ctx.tenantId }, select: { id: true } });
     if (!existing) return fail(reply, 404, 'Contraparte não encontrada');
 
+    const documentoDigits = body.documento !== undefined ? (body.documento ? onlyDigits(String(body.documento)) : '') : null;
+    if (documentoDigits != null && documentoDigits && documentoDigits.length !== 11 && documentoDigits.length !== 14) {
+      return fail(reply, 422, 'Documento inválido. Informe CPF (11 dígitos) ou CNPJ (14 dígitos).');
+    }
+
+    if (documentoDigits != null && documentoDigits) {
+      const exists = await prisma.$queryRaw<Array<{ ok: number }>>`
+        SELECT 1 as ok
+        FROM "EngenhariaContraparte" c
+        WHERE c."tenantId" = ${ctx.tenantId}
+          AND c."id" <> ${params.id}
+          AND regexp_replace(COALESCE(c."documento", ''), '\\D', '', 'g') = ${documentoDigits}
+        LIMIT 1
+      `;
+      if (Array.isArray(exists) && exists.length > 0) return fail(reply, 409, 'Já existe uma contraparte com este CPF/CNPJ.');
+    }
+
     const updated = await prisma.engenhariaContraparte.update({
       where: { id: params.id },
       data: {
         ...(body.tipo ? { tipo: body.tipo } : {}),
         ...(body.nomeRazao ? { nomeRazao: body.nomeRazao.trim() } : {}),
-        ...(body.documento !== undefined ? { documento: body.documento ? String(body.documento).trim() : null } : {}),
+        ...(body.documento !== undefined ? { documento: documentoDigits ? documentoDigits : null } : {}),
         ...(body.email !== undefined ? { email: body.email ? String(body.email).trim() : null } : {}),
         ...(body.telefone !== undefined ? { telefone: body.telefone ? String(body.telefone).trim() : null } : {}),
         ...(body.status ? { status: body.status } : {}),
@@ -1812,8 +1845,20 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!ctx || (ctx as any).success === false) return;
     const params = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
 
-    const existing = await prisma.engenhariaContraparte.findFirst({ where: { id: params.id, tenantId: ctx.tenantId }, select: { id: true } });
+    const existing = await prisma.engenhariaContraparte.findFirst({ where: { id: params.id, tenantId: ctx.tenantId }, select: { id: true, documento: true } });
     if (!existing) return fail(reply, 404, 'Contraparte não encontrada');
+
+    const documentoDigits = existing.documento ? onlyDigits(String(existing.documento)) : '';
+    if (documentoDigits) {
+      const linked = await prisma.$queryRaw<Array<{ ok: number }>>`
+        SELECT 1 as ok
+        FROM "Contrato" c
+        WHERE c."tenantId" = ${ctx.tenantId}
+          AND regexp_replace(COALESCE(c."empresaParceiraDocumento", ''), '\\D', '', 'g') = ${documentoDigits}
+        LIMIT 1
+      `;
+      if (Array.isArray(linked) && linked.length > 0) return fail(reply, 409, 'Não é possível excluir: existe contrato vinculado a esta contraparte.');
+    }
 
     await prisma.engenhariaContraparte.update({ where: { id: params.id }, data: { status: 'INATIVO' } });
     return ok(reply, { success: true });

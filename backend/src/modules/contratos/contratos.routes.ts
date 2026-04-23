@@ -765,8 +765,15 @@ export default async function contratosRoutes(server: FastifyInstance) {
     { schema: { body: createContratoSchema } },
     async (request, reply) => {
       const tenantId = (request.user as any).tenantId as number;
-      const created = await createContrato(tenantId, request.body as any);
-      return reply.send(created);
+      try {
+        const created = await createContrato(tenantId, request.body as any);
+        return reply.send(created);
+      } catch (e: any) {
+        if (e?.code === 'P2002') {
+          return reply.code(409).send({ message: 'Número do contrato já existe.' });
+        }
+        return reply.code(400).send({ message: e?.message || 'Erro ao criar contrato' });
+      }
     }
   );
 
@@ -780,6 +787,9 @@ export default async function contratosRoutes(server: FastifyInstance) {
         const updated = await updateContrato(tenantId, id, request.body as any);
         return reply.send(updated);
       } catch (e: any) {
+        if (e?.code === 'P2002') {
+          return reply.code(409).send({ message: 'Número do contrato já existe.' });
+        }
         return reply.code(400).send({ message: e?.message || 'Erro ao atualizar contrato' });
       }
     }

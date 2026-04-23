@@ -321,7 +321,7 @@ export default function NovoContratoClient() {
       const papelFinal = vincId ? "CONTRATANTE" : tipoPapel;
       const payload = {
         contratoPrincipalId: vincId && Number.isFinite(vincId) ? vincId : null,
-        numeroContrato,
+        numeroContrato: numeroContrato.trim(),
         nome: nome || null,
         objeto: objeto || null,
         descricao: descricao || null,
@@ -469,16 +469,16 @@ export default function NovoContratoClient() {
 
         <div className="rounded-xl border bg-slate-50 p-4">
           <div className="text-sm font-semibold">Datas</div>
-          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-12">
+            <div className="md:col-span-3">
               <div className="text-sm text-slate-600">Data assinatura</div>
               <input className="input" type="date" value={dataAssinatura} onChange={(e) => setDataAssinatura(e.target.value)} />
             </div>
-            <div>
+            <div className="md:col-span-3">
               <div className="text-sm text-slate-600">Data OS (preferencial)</div>
               <input className="input" type="date" value={dataOS} onChange={(e) => setDataOS(e.target.value)} />
             </div>
-            <div>
+            <div className="md:col-span-6">
               <div className="text-sm text-slate-600">Prazo</div>
               <div className="flex gap-2">
                 <input className="input flex-1" value={prazoValor} onChange={(e) => setPrazoValor(e.target.value)} placeholder="Ex: 180" />
@@ -490,7 +490,7 @@ export default function NovoContratoClient() {
                 </select>
               </div>
             </div>
-            <div className="md:col-span-3">
+            <div className="md:col-span-12">
               <div className="text-sm text-slate-600">Vigência (calculada)</div>
               <input className="input" value={vigenciaCalculada || "—"} disabled />
             </div>
@@ -559,6 +559,7 @@ export default function NovoContratoClient() {
                 <thead className="bg-white text-left text-slate-700">
                   <tr className="border-b">
                     <th className="px-3 py-2">#</th>
+                    <th className="px-3 py-2">Tipo</th>
                     <th className="px-3 py-2">Descrição</th>
                     <th className="px-3 py-2 text-right">Ação</th>
                   </tr>
@@ -567,11 +568,9 @@ export default function NovoContratoClient() {
                   {docsDraft.map((d, idx) => (
                     <tr key={d.id} className="border-b">
                       <td className="px-3 py-2">{idx + 1}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{docTipoLabel(d.tipo)}</td>
                       <td className="px-3 py-2">
-                        <div className="font-semibold">
-                          {docTipoLabel(d.tipo)}
-                          {d.descricao ? ` — ${d.descricao}` : ""}
-                        </div>
+                        <div className="font-semibold">{d.descricao || "—"}</div>
                         <div className="text-xs text-slate-500">{d.file.name}</div>
                       </td>
                       <td className="px-3 py-2">
@@ -608,7 +607,16 @@ export default function NovoContratoClient() {
 
           {docPreviewUrl && docSelecionadoId ? (
             <div className="mt-4 rounded-lg border bg-white p-3">
-              <div className="text-sm font-semibold">Visualização</div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold">Visualização</div>
+                <button
+                  className="rounded-lg border bg-white px-3 py-1 text-sm hover:bg-slate-50"
+                  type="button"
+                  onClick={() => setDocSelecionadoId("")}
+                >
+                  Fechar visualização
+                </button>
+              </div>
               <div className="mt-2">
                 {(() => {
                   const d = docsDraft.find((x) => x.id === docSelecionadoId) || null;
