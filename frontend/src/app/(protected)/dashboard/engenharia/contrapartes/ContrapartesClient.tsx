@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import api from "@/lib/api";
-import { Plus, Trash2 } from "lucide-react";
+import { FileText, Pencil, Plus, Trash2 } from "lucide-react";
 
 const MapaObras = dynamic(() => import("@/components/MapaObras"), { ssr: false });
 
@@ -159,7 +160,31 @@ type OcorrenciaDTO = {
   criadoEm: string;
 };
 
+function contraparteAlertUi(r: ContraparteDTO) {
+  const issues: string[] = [];
+  const nome = String(r.nomeRazao || "").trim();
+  const docDigits = r.documento ? onlyDigits(r.documento) : "";
+  if (!nome) issues.push("Nome/Razão social ausente");
+
+  const invalidDoc = (r.tipo === "PF" && docDigits && docDigits.length !== 11) || (r.tipo === "PJ" && docDigits && docDigits.length !== 14);
+  if (!docDigits) issues.push("Documento (CPF/CNPJ) ausente");
+  if (invalidDoc) issues.push(r.tipo === "PF" ? "CPF inválido (precisa ter 11 dígitos)" : "CNPJ inválido (precisa ter 14 dígitos)");
+
+  const contato = [r.email, r.telefone].map((x) => String(x || "").trim()).filter(Boolean);
+  if (!contato.length) issues.push("Contato ausente (email/telefone)");
+
+  const local = [r.cidade, r.uf].map((x) => String(x || "").trim()).filter(Boolean);
+  if (!local.length) issues.push("Cidade/UF ausentes");
+
+  const critical = !nome || invalidDoc;
+  const icon = issues.length ? (critical ? "✖" : "⚠") : "✔";
+  const className = issues.length ? (critical ? "text-red-600" : "text-amber-600") : "text-emerald-600";
+  const title = issues.join(" • ");
+  return { icon, className, title };
+}
+
 export default function ContrapartesClient() {
+  const router = useRouter();
   const [filtrosAberto, setFiltrosAberto] = useState(false);
   const [q, setQ] = useState("");
   const [tipo, setTipo] = useState<"" | "PJ" | "PF">("");
@@ -1085,6 +1110,7 @@ export default function ContrapartesClient() {
           <table className="min-w-full text-sm">
             <thead className="bg-[#F9FAFB] text-left text-[#111827]">
               <tr>
+                <th className="px-3 py-2">Alerta</th>
                 <th className="px-3 py-2">ID</th>
                 <th className="px-3 py-2">Tipo</th>
                 <th className="px-3 py-2">Nome/Razão</th>
@@ -1106,6 +1132,11 @@ export default function ContrapartesClient() {
                     prepararEdicao(r);
                   }}
                 >
+                  <td className="px-3 py-2">
+                    <span className={`font-semibold ${contraparteAlertUi(r).className}`} title={contraparteAlertUi(r).title}>
+                      {contraparteAlertUi(r).icon}
+                    </span>
+                  </td>
                   <td className="px-3 py-2">{r.idContraparte}</td>
                   <td className="px-3 py-2">{r.tipo}</td>
                   <td className="px-3 py-2">{r.nomeRazao}</td>
@@ -1127,23 +1158,48 @@ export default function ContrapartesClient() {
                     </span>
                   </td>
                   <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      className="rounded-lg border border-red-200 bg-white p-2 text-red-700 hover:bg-red-50"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        excluirContraparte(r.idContraparte);
-                      }}
-                      title="Excluir"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-[#D1D5DB] bg-white p-2 text-[#111827] hover:bg-[#F9FAFB]"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIdSelecionado(r.idContraparte);
+                          prepararEdicao(r);
+                        }}
+                        title="Editar contraparte"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-[#D1D5DB] bg-white p-2 text-[#111827] hover:bg-[#F9FAFB]"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/dashboard/contratos?contraparteId=${r.idContraparte}`);
+                        }}
+                        title="Visualizar contratos com a contraparte"
+                      >
+                        <FileText className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-red-200 bg-white p-2 text-red-700 hover:bg-red-50"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          excluirContraparte(r.idContraparte);
+                        }}
+                        title="Excluir"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
               {!rows.length ? (
                 <tr>
-                  <td className="px-3 py-6 text-center text-[#6B7280]" colSpan={9}>
+                  <td className="px-3 py-6 text-center text-[#6B7280]" colSpan={10}>
                     Sem dados.
                   </td>
                 </tr>

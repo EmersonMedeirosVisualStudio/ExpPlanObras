@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { Eye, Trash2 } from "lucide-react";
@@ -19,6 +19,68 @@ function formatMoneyBRFromDigits(digits: string) {
   const cents = onlyDigits ? Number(onlyDigits) : 0;
   const value = cents / 100;
   return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function parseDateOnlyInput(value: string) {
+  const s = String(value || "").trim();
+  if (!s) return null;
+  const d = new Date(`${s}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
+function dateOnlyToString(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+
+function diffDaysDateOnly(a: Date, b: Date) {
+  const ta = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+  const tb = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.trunc((tb - ta) / (24 * 60 * 60 * 1000));
+}
+
+function addMonthsClamped(base: Date, months: number) {
+  const y = base.getFullYear();
+  const m = base.getMonth();
+  const d = base.getDate();
+  const lastDay = new Date(y, m + months + 1, 0).getDate();
+  return new Date(y, m + months, Math.min(d, lastDay));
+}
+
+function addByUnidade(base: Date, q: number, unidade: "DIAS" | "SEMANAS" | "MESES" | "ANOS") {
+  const r = new Date(base);
+  if (unidade === "DIAS") {
+    r.setDate(r.getDate() + q);
+    return r;
+  }
+  if (unidade === "SEMANAS") {
+    r.setDate(r.getDate() + q * 7);
+    return r;
+  }
+  if (unidade === "MESES") return addMonthsClamped(base, q);
+  return addMonthsClamped(base, q * 12);
+}
+
+function sameDateOnly(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function diffMonthsDateOnly(base: Date, end: Date) {
+  const diff = (end.getFullYear() - base.getFullYear()) * 12 + (end.getMonth() - base.getMonth());
+  const candidates = [diff, diff - 1, diff + 1].filter((n) => Number.isFinite(n));
+  for (const m of candidates) {
+    if (m < 0) continue;
+    const cand = addMonthsClamped(base, m);
+    if (sameDateOnly(cand, end)) return m;
+  }
+  const days = diffDaysDateOnly(base, end);
+  return Math.max(0, Math.round(days / 30));
+}
+
+function diffYearsDateOnly(base: Date, end: Date) {
+  const months = diffMonthsDateOnly(base, end);
+  if (months % 12 === 0) return months / 12;
+  return Math.max(0, Math.round(months / 12));
 }
 
 export default function NovoContratoClient() {
@@ -45,7 +107,9 @@ export default function NovoContratoClient() {
   const [prazoValor, setPrazoValor] = useState("");
   const [prazoUnidade, setPrazoUnidade] = useState<"DIAS" | "SEMANAS" | "MESES" | "ANOS">("DIAS");
 
-  const [vigenciaCalculada, setVigenciaCalculada] = useState<string>("");
+  const [vigenciaFim, setVigenciaFim] = useState<string>("");
+  const [datasLastEdited, setDatasLastEdited] = useState<"PRAZO" | "VIGENCIA">("PRAZO");
+  const syncingPrazoRef = useRef(false);
   const [aditivosInfo, setAditivosInfo] = useState<{ total: number; rascunho: number } | null>(null);
   type DocTipo =
     | "CONTRATO"
@@ -77,28 +141,60 @@ export default function NovoContratoClient() {
 
   const baseDate = useMemo(() => dataOS || dataAssinatura || "", [dataOS, dataAssinatura]);
   const prazoDias = useMemo(() => {
+    const base = parseDateOnlyInput(baseDate);
+    if (!base) return 0;
+
+    if (datasLastEdited === "VIGENCIA") {
+      const end = parseDateOnlyInput(vigenciaFim);
+      if (!end) return 0;
+      const diff = diffDaysDateOnly(base, end);
+      return diff > 0 ? diff : 0;
+    }
+
     const q = Math.trunc(Number(prazoValor || 0));
     if (!q || q <= 0) return 0;
-    if (prazoUnidade === "SEMANAS") return q * 7;
-    if (prazoUnidade === "MESES") return q * 30;
-    if (prazoUnidade === "ANOS") return q * 365;
-    return q;
-  }, [prazoValor, prazoUnidade]);
+    const end = addByUnidade(base, q, prazoUnidade);
+    const diff = diffDaysDateOnly(base, end);
+    return diff > 0 ? diff : 0;
+  }, [baseDate, datasLastEdited, prazoUnidade, prazoValor, vigenciaFim]);
 
   useEffect(() => {
-    if (!baseDate || !prazoDias || prazoDias <= 0) {
-      setVigenciaCalculada("");
+    const base = parseDateOnlyInput(baseDate);
+    if (!base) {
+      setVigenciaFim("");
       return;
     }
-    const base = new Date(`${baseDate}T00:00:00`);
-    if (Number.isNaN(base.getTime())) {
-      setVigenciaCalculada("");
+
+    if (datasLastEdited === "VIGENCIA") {
+      const end = parseDateOnlyInput(vigenciaFim);
+      if (!end) return;
+      const diff = diffDaysDateOnly(base, end);
+      if (!diff || diff <= 0) return;
+
+      const nextPrazo =
+        prazoUnidade === "DIAS"
+          ? String(diff)
+          : prazoUnidade === "SEMANAS"
+            ? String(Math.max(1, Math.round(diff / 7)))
+            : prazoUnidade === "MESES"
+              ? String(Math.max(1, diffMonthsDateOnly(base, end)))
+              : String(Math.max(1, diffYearsDateOnly(base, end)));
+      syncingPrazoRef.current = true;
+      setPrazoValor(nextPrazo);
+      queueMicrotask(() => {
+        syncingPrazoRef.current = false;
+      });
       return;
     }
-    const result = new Date(base);
-    result.setDate(result.getDate() + prazoDias);
-    setVigenciaCalculada(result.toISOString().slice(0, 10));
-  }, [baseDate, prazoDias]);
+
+    const q = Math.trunc(Number(prazoValor || 0));
+    if (!q || q <= 0) {
+      setVigenciaFim("");
+      return;
+    }
+    const end = addByUnidade(base, q, prazoUnidade);
+    setVigenciaFim(dateOnlyToString(end));
+  }, [baseDate, datasLastEdited, prazoUnidade, prazoValor, vigenciaFim]);
 
   useEffect(() => {
     if (!contratoId) {
@@ -129,6 +225,7 @@ export default function NovoContratoClient() {
         setDataOS(c.dataOS ? new Date(String(c.dataOS)).toISOString().slice(0, 10) : "");
 
         const pd = c.prazoDias == null ? 0 : Number(c.prazoDias || 0);
+        const vigFim = c.vigenciaAtual ? new Date(String(c.vigenciaAtual)).toISOString().slice(0, 10) : "";
         if (pd > 0 && pd % 365 === 0) {
           setPrazoUnidade("ANOS");
           setPrazoValor(String(Math.trunc(pd / 365)));
@@ -142,6 +239,8 @@ export default function NovoContratoClient() {
           setPrazoUnidade("DIAS");
           setPrazoValor(pd > 0 ? String(Math.trunc(pd)) : "");
         }
+        setDatasLastEdited("PRAZO");
+        setVigenciaFim(vigFim);
 
         setValorConcedenteInicial(c.valorConcedenteInicial == null ? "0,00" : formatMoneyBRFromDigits(String(Math.round(Number(c.valorConcedenteInicial || 0) * 100))));
         setValorProprioInicial(c.valorProprioInicial == null ? "0,00" : formatMoneyBRFromDigits(String(Math.round(Number(c.valorProprioInicial || 0) * 100))));
@@ -306,7 +405,7 @@ export default function NovoContratoClient() {
       setLoading(true);
       setErr(null);
       if (!baseDate || !prazoDias || prazoDias <= 0) {
-        setErr("Informe a data base (OS ou Assinatura) e o prazo.");
+        setErr("Informe a data base (OS ou Assinatura) e o prazo ou a vigência.");
         return;
       }
 
@@ -333,8 +432,8 @@ export default function NovoContratoClient() {
         dataAssinatura: dataAssinatura ? new Date(`${dataAssinatura}T00:00:00`).toISOString() : null,
         dataOS: dataOS ? new Date(`${dataOS}T00:00:00`).toISOString() : null,
         prazoDias,
-        vigenciaInicial: vigenciaCalculada ? new Date(`${vigenciaCalculada}T00:00:00`).toISOString() : null,
-        vigenciaAtual: vigenciaCalculada ? new Date(`${vigenciaCalculada}T00:00:00`).toISOString() : null,
+        vigenciaInicial: vigenciaFim ? new Date(`${vigenciaFim}T00:00:00`).toISOString() : null,
+        vigenciaAtual: vigenciaFim ? new Date(`${vigenciaFim}T00:00:00`).toISOString() : null,
         valorConcedenteInicial: isPublico ? parseMoneyBR(valorConcedenteInicial) : null,
         valorProprioInicial: isPublico ? parseMoneyBR(valorProprioInicial) : null,
         valorTotalInicial: isPublico ? parseMoneyBR(valorTotalInicial) : parseMoneyBR(valorTotalInicial),
@@ -481,8 +580,23 @@ export default function NovoContratoClient() {
             <div className="md:col-span-6">
               <div className="text-sm text-slate-600">Prazo</div>
               <div className="flex gap-2">
-                <input className="input flex-1" value={prazoValor} onChange={(e) => setPrazoValor(e.target.value)} placeholder="Ex: 180" />
-                <select className="input w-[140px]" value={prazoUnidade} onChange={(e) => setPrazoUnidade(e.target.value as any)}>
+                <input
+                  className="input flex-1"
+                  value={prazoValor}
+                  onChange={(e) => {
+                    setDatasLastEdited("PRAZO");
+                    if (!syncingPrazoRef.current) setPrazoValor(e.target.value);
+                  }}
+                  placeholder="Ex: 180"
+                />
+                <select
+                  className="input w-[110px]"
+                  value={prazoUnidade}
+                  onChange={(e) => {
+                    setDatasLastEdited("PRAZO");
+                    setPrazoUnidade(e.target.value as any);
+                  }}
+                >
                   <option value="DIAS">Dias</option>
                   <option value="SEMANAS">Semanas</option>
                   <option value="MESES">Meses</option>
@@ -491,8 +605,35 @@ export default function NovoContratoClient() {
               </div>
             </div>
             <div className="md:col-span-12">
-              <div className="text-sm text-slate-600">Vigência (calculada)</div>
-              <input className="input" value={vigenciaCalculada || "—"} disabled />
+              <div className="text-sm text-slate-600">Vigência (fim)</div>
+              <input
+                className="input"
+                type="date"
+                value={vigenciaFim}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setDatasLastEdited("VIGENCIA");
+                  setVigenciaFim(next);
+                  const base = parseDateOnlyInput(baseDate);
+                  const end = parseDateOnlyInput(next);
+                  if (!base || !end) return;
+                  const diff = diffDaysDateOnly(base, end);
+                  if (!diff || diff <= 0) return;
+                  const nextPrazo =
+                    prazoUnidade === "DIAS"
+                      ? String(diff)
+                      : prazoUnidade === "SEMANAS"
+                        ? String(Math.max(1, Math.round(diff / 7)))
+                        : prazoUnidade === "MESES"
+                          ? String(Math.max(1, diffMonthsDateOnly(base, end)))
+                          : String(Math.max(1, diffYearsDateOnly(base, end)));
+                  syncingPrazoRef.current = true;
+                  setPrazoValor(nextPrazo);
+                  queueMicrotask(() => {
+                    syncingPrazoRef.current = false;
+                  });
+                }}
+              />
             </div>
           </div>
         </div>

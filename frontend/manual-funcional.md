@@ -2258,7 +2258,11 @@ Uso da tela (UX padrão):
 - Botão **Nova contraparte** fica no topo (lado direito, alinhado ao título).
 - O card **Nova/Editar contraparte** inicia oculto e abre ao clicar em **Nova contraparte** ou ao selecionar uma linha da lista.
 - Clique na linha da lista abre a contraparte selecionada para **edição**.
-- A coluna **Ações** possui botão (ícone) para **Excluir** (respeitando o bloqueio por vínculo com contratos).
+- Na lista, a primeira coluna é **Alerta** (pendências/erros de cadastro) e a segunda coluna é o **ID** da contraparte.
+- A coluna **Ações** possui botões (ícones):
+  - **Editar contraparte**
+  - **Visualizar contratos com a contraparte** (abre a tela de Contratos já filtrada pela contraparte)
+  - **Excluir** (respeitando o bloqueio por vínculo com contratos).
 
 #### 11.12.1 Histórico por parceiro (como usar)
 
@@ -3092,6 +3096,12 @@ Colunas e inteligência (lista):
 
 - **ALERTA**: ✔ OK (verde) / ⚠ Pendente (amarelo) / ✖ Crítico (vermelho) com tooltip das pendências.
 - **STATUS** (calculado): 🟢 Em andamento / 🟡 A vencer / 🔴 Vencido / 🔵 Concluído / 🟣 Sem recursos / ⚪ Não iniciado / ⚫ Cancelado.
+
+Filtros (lista de contratos):
+
+- Busca: número/nome/empresa.
+- Status: seleção por checkbox.
+- **Contraparte**: select abaixo da Busca (lista `#id - nome - documento`) para filtrar contratos vinculados à contraparte.
 
 Dashboard de contratos:
 

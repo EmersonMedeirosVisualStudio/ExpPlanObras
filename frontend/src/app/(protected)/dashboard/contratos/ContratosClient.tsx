@@ -54,6 +54,43 @@ function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+type ApiEnvelope<T> = { success: boolean; message?: string; data: T };
+function unwrapApiData<T>(json: any): T {
+  if (json && typeof json === "object" && "data" in json) return (json as ApiEnvelope<T>).data;
+  return json as T;
+}
+
+function onlyDigits(value: string) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function formatCpfCnpj(value: string) {
+  const d = onlyDigits(value).slice(0, 14);
+  if (!d) return "";
+  if (d.length <= 11) {
+    const p1 = d.slice(0, 3);
+    const p2 = d.slice(3, 6);
+    const p3 = d.slice(6, 9);
+    const p4 = d.slice(9, 11);
+    let out = p1;
+    if (p2) out += `.${p2}`;
+    if (p3) out += `.${p3}`;
+    if (p4) out += `-${p4}`;
+    return out;
+  }
+  const p1 = d.slice(0, 2);
+  const p2 = d.slice(2, 5);
+  const p3 = d.slice(5, 8);
+  const p4 = d.slice(8, 12);
+  const p5 = d.slice(12, 14);
+  let out = p1;
+  if (p2) out += `.${p2}`;
+  if (p3) out += `.${p3}`;
+  if (p4) out += `/${p4}`;
+  if (p5) out += `-${p5}`;
+  return out;
+}
+
 function parseMoneyBR(input: string) {
   const s = String(input || "")
     .replace(/\./g, "")
@@ -164,10 +201,16 @@ export default function ContratosClient() {
   const contratoId = sp.get("id");
   const urlStatus = sp.get("status");
   const urlQ = sp.get("q") || "";
+  const urlContraparteId = sp.get("contraparteId");
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [rows, setRows] = useState<ContratoRow[]>([]);
+  const [contrapartes, setContrapartes] = useState<ContraparteLite[]>([]);
+  const [contraparteFiltroId, setContraparteFiltroId] = useState<number | null>(() => {
+    const n = urlContraparteId ? Number(urlContraparteId) : null;
+    return n && Number.isFinite(n) ? n : null;
+  });
 
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailErr, setDetailErr] = useState<string | null>(null);
@@ -208,7 +251,34 @@ export default function ContratosClient() {
     if (contratoId) return;
     setStatusSel(parseStatusFilterParam(urlStatus));
     setQ(urlQ);
-  }, [contratoId, urlStatus, urlQ]);
+    const n = urlContraparteId ? Number(urlContraparteId) : null;
+    setContraparteFiltroId(n && Number.isFinite(n) ? n : null);
+  }, [contratoId, urlStatus, urlQ, urlContraparteId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get("/api/v1/engenharia/contrapartes?status=ATIVO");
+        const data = unwrapApiData<any>(res.data);
+        if (cancelled) return;
+        const rows: ContraparteLite[] = (Array.isArray(data) ? data : []).map((r: any) => ({
+          idContraparte: Number(r.idContraparte),
+          tipo: (r.tipo === "PF" ? "PF" : "PJ") as ContraparteLite["tipo"],
+          nomeRazao: String(r.nomeRazao || ""),
+          documento: r.documento ? String(r.documento) : null,
+          status: (r.status === "INATIVO" ? "INATIVO" : "ATIVO") as NonNullable<ContraparteLite["status"]>,
+        }));
+        setContrapartes(rows.filter((r) => Number.isFinite(r.idContraparte) && r.idContraparte > 0 && r.nomeRazao));
+      } catch {
+        if (cancelled) return;
+        setContrapartes([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const eIsPublico = eTipoContratante === "PUBLICO";
   const eBaseDate = useMemo(() => eDataOS || eDataAssinatura || "", [eDataOS, eDataAssinatura]);
@@ -294,16 +364,28 @@ export default function ContratosClient() {
     const qq = q.trim().toLowerCase();
     const totalSelected = Object.values(statusSel).filter(Boolean).length;
     const hasStatusFilter = totalSelected > 0 && totalSelected < STATUS_FILTER_OPTIONS.length;
+    const contraparte = contraparteFiltroId ? contrapartes.find((c) => c.idContraparte === contraparteFiltroId) || null : null;
+    const contraparteDocDigits = contraparte?.documento ? onlyDigits(contraparte.documento) : "";
+    const contraparteNome = contraparte?.nomeRazao ? String(contraparte.nomeRazao).trim().toLowerCase() : "";
     return rows.filter((r) => {
       if (hasStatusFilter) {
         const s = (String(r.statusCalculado || "").toUpperCase() || "EM_ANDAMENTO") as StatusCalc;
         if (!statusSel[s]) return false;
       }
+      if (contraparteFiltroId) {
+        if (contraparteDocDigits) {
+          const doc = onlyDigits(String(r.empresaParceiraDocumento || ""));
+          if (!doc || doc !== contraparteDocDigits) return false;
+        } else if (contraparteNome) {
+          const nome = String(r.empresaParceiraNome || "").trim().toLowerCase();
+          if (!nome || nome !== contraparteNome) return false;
+        }
+      }
       if (!qq) return true;
       const hay = `${r.numeroContrato || ""} ${r.nome || ""} ${r.objeto || ""} ${r.empresaParceiraNome || ""}`.toLowerCase();
       return hay.includes(qq);
     });
-  }, [rows, q, statusSel]);
+  }, [rows, q, statusSel, contraparteFiltroId, contrapartes]);
 
   async function carregarLista() {
     try {
@@ -869,8 +951,27 @@ export default function ContratosClient() {
       <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
           <div className="lg:col-span-2">
-            <div className="text-xs text-[#6B7280]">Busca</div>
-            <input className="input h-9 text-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Número/nome/empresa" />
+            <div className="space-y-2">
+              <div>
+                <div className="text-xs text-[#6B7280]">Busca</div>
+                <input className="input h-9 text-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Número/nome/empresa" />
+              </div>
+              <div>
+                <div className="text-xs text-[#6B7280]">Contraparte</div>
+                <select
+                  className="input h-9 text-sm"
+                  value={contraparteFiltroId ? String(contraparteFiltroId) : ""}
+                  onChange={(e) => setContraparteFiltroId(e.target.value ? Number(e.target.value) : null)}
+                >
+                  <option value="">Todas</option>
+                  {contrapartes.map((c) => (
+                    <option key={c.idContraparte} value={String(c.idContraparte)}>
+                      #{c.idContraparte} - {c.nomeRazao} - {c.documento ? formatCpfCnpj(c.documento) : "-"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
           <div className="lg:col-span-9">
             <div className="text-xs text-[#6B7280]">Status</div>
