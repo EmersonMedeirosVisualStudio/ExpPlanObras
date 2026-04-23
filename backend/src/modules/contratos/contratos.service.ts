@@ -2049,7 +2049,6 @@ export async function updateContrato(tenantId: number, id: number, input: Update
     const prazoDias = input.prazoDias != null ? Math.max(1, Math.trunc(Number(input.prazoDias))) : (typeof current.prazoDias === 'number' ? current.prazoDias : current.prazoDias != null ? Number(current.prazoDias) : null);
     const computedVig = computeVigencias({
       dataOS,
-      dataOS,
       dataAssinatura,
       prazoDias,
       vigenciaInicial: current.vigenciaInicial ?? null,
