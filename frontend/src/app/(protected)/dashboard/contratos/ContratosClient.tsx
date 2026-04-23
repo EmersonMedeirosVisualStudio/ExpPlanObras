@@ -895,17 +895,17 @@ export default function ContratosClient() {
       </div>
 
       <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-          <div className="md:col-span-3">
-            <div className="text-sm text-[#6B7280]">Busca</div>
-            <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Número/nome/empresa" />
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+          <div className="lg:col-span-2">
+            <div className="text-xs text-[#6B7280]">Busca</div>
+            <input className="input h-9 text-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Número/nome/empresa" />
           </div>
-          <div className="md:col-span-8">
-            <div className="text-sm text-[#6B7280]">Status</div>
+          <div className="lg:col-span-9">
+            <div className="text-xs text-[#6B7280]">Status</div>
             <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-3 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
                 {STATUS_FILTER_OPTIONS.map((o) => (
-                  <label key={o.key} className="flex items-center gap-2 text-sm">
+                  <label key={o.key} className="flex items-center gap-1.5 whitespace-nowrap text-xs">
                     <input type="checkbox" checked={Boolean(statusSel[o.key])} onChange={(e) => setStatusSel((p) => ({ ...p, [o.key]: e.target.checked }))} />
                     {o.label}
                   </label>
@@ -933,7 +933,7 @@ export default function ContratosClient() {
               </div>
             </div>
           </div>
-          <div className="flex items-end justify-end gap-2 md:col-span-1">
+          <div className="flex items-end justify-end gap-2 lg:col-span-1">
             <button
               className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50"
               type="button"
