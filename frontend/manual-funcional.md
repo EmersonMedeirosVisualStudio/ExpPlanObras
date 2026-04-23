@@ -2237,11 +2237,28 @@ O sistema deve possuir um cadastro unificado de contrapartes contratuais, contem
 - pessoas jurídicas (empresas contratadas e contratantes);
 - pessoas físicas (prestadores de serviço e contratantes).
 
+Regras críticas do cadastro:
+
+- **Documento (CPF/CNPJ) não pode repetir** dentro do Tenant (comparação por dígitos).
+- O sistema **aceita com máscara**, mas armazena e valida por dígitos:
+  - CPF: 11 dígitos
+  - CNPJ: 14 dígitos
+- Exclusão operacional:
+  - ao “excluir”, a contraparte é **inativada** (status INATIVO);
+  - só é permitido inativar/excluir se **não existir contrato vinculado** à contraparte (senão, o sistema bloqueia).
+
 Funcionalidades associadas:
 
 - registro de contratos simples de locação de equipamentos (ativos e passivos);
 - registro de contratos simplificados para prestação de serviços por pessoa física ou jurídica, vinculados a serviços específicos por código (ex.: SER-0001);
 - histórico por parceiro com contratos, comentários/avaliações e ocorrências relevantes (atrasos, qualidade, conformidades).
+
+Uso da tela (UX padrão):
+
+- Botão **Nova contraparte** fica no topo (lado direito, alinhado ao título).
+- O card **Nova/Editar contraparte** inicia oculto e abre ao clicar em **Nova contraparte** ou ao selecionar uma linha da lista.
+- Clique na linha da lista abre a contraparte selecionada para **edição**.
+- A coluna **Ações** possui botão (ícone) para **Excluir** (respeitando o bloqueio por vínculo com contratos).
 
 #### 11.12.1 Histórico por parceiro (como usar)
 
@@ -3043,10 +3060,17 @@ Esta seção documenta o que já está implementado no sistema, com foco em **Co
 
 Regras-base (modelo correto de contrato de obra):
 
+- **Número do contrato é único** dentro do Tenant (evita duplicidade e confusão em relatórios/medições).
 - datas de controle: **assinatura**, **OS**, **prazo (dias)**, **vigência inicial** (não muda) e **vigência atual** (muda via aditivo).
 - valores: suporta contrato **Público** (Concedente + Próprio) e **Privado/PF** (Valor total).
 - o contrato pode existir sem obra; obras podem ser vinculadas depois.
 - toda obra possui contrato (quando obra ainda não tem, usa-se contrato “PENDENTE” interno).
+
+Natureza do contrato (papel) e impacto financeiro:
+
+- **Somos CONTRATADOS** → natureza **Receita** (aparece no **Faturamento**).
+- **Somos CONTRATANTES** → natureza **Despesa** (não aparece no **Faturamento**).
+- Se o contrato estiver **vinculado** a um contrato principal (subcontrato), o papel obrigatório é **CONTRATANTES**.
 
 Telas:
 
@@ -3057,7 +3081,7 @@ Menu (padrão):
 
 - Contratos → Dashboard Contratos
 - Contratos → Novo Contrato (criação)
-- Contratos → Lista (gestão)
+- Contratos → Contratos (gestão)
 - Contratos → Planejamento (Gantt)
 - Contratos → Documentos
 - Contratos → Aditivos
@@ -3073,7 +3097,7 @@ Dashboard de contratos:
 
 - `/dashboard/contratos/dashboard` (KPIs consolidados)
 
-#### Empresas (Contratante x Contratada) e autocompletar no Editar contrato
+#### Contrapartes (empresas/pessoas externas) no contrato
 
 Conceito importante (não confundir):
 
@@ -3086,14 +3110,11 @@ Onde ficam as contrapartes (cadastro de empresas/pessoas externas):
 - API: `/api/v1/engenharia/contrapartes`
 - Tabela do cadastro: `engenharia_contrapartes`
 
-Autocompletar no “Editar contrato”:
+Como o contrato guarda a contraparte hoje:
 
-- No modal de edição do contrato, o campo **Nome / Razão social** da empresa parceira é por **seleção (autocompletar)**.
-- Você digita parte do nome (ou documento) e seleciona na lista.
-- Ao selecionar, o sistema preenche automaticamente:
-  - Nome / Razão social
-  - Documento (CNPJ/CPF)
-- Há um botão **CRUD empresas** no próprio modal para abrir a tela de contrapartes e cadastrar/editar empresas.
+- No contrato existem estes campos para a contraparte principal: `empresaParceiraNome` e `empresaParceiraDocumento`.
+- O cadastro “oficial” da contraparte fica em **Contrapartes**, mas o contrato armazena **nome e documento** para registro e consulta.
+- No formulário do contrato existe o botão **Gerenciar contrapartes** para abrir a tela de contrapartes e manter o cadastro.
 
 O que significa “hoje o contrato guarda só uma empresaParceira”:
 
@@ -3123,6 +3144,17 @@ Como fica a “próxima melhoria” (quando você pedir para implementar):
   - **Contratada**: `contratadaNome` + `contratadaDocumento` (quem é contratado no contrato)
 - Isso mantém o **Tenant separado** (não confunde “nossa empresa do sistema” com “empresas do contrato”).
 - O autocompletar continua vindo do cadastro de **Contrapartes**, mas o contrato passa a armazenar os dois papéis com clareza.
+
+#### Documentos no contrato (Novo/Editar)
+
+Regras:
+
+- Um contrato pode ter **vários documentos** anexados (ex.: contrato assinado, OS, aditivos, medições, comunicações).
+- Cada documento possui:
+  - **Tipo** (Contrato, OS, Aditivo, Medição, Comunicação, Termos e Outros)
+  - **Descrição**
+  - Ações: **Exibir** (preview) e **Excluir**
+- A visualização possui botão **Fechar visualização** para voltar à lista.
 
 ### 21.2 Planejamento (Gantt) por contrato
 
