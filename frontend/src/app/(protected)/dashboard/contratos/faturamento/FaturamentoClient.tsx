@@ -79,7 +79,7 @@ export default function FaturamentoClient() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await api.get("/api/contratos", { params: { apenasPrincipais: "true" } });
+        const res = await api.get("/api/contratos", { params: { apenasPrincipais: "true", papel: "CONTRATADO" } });
         const rows = Array.isArray(res.data) ? (res.data as any[]) : [];
         const mapped: ContratoLite[] = rows.map((r) => ({
           id: Number(r.id),

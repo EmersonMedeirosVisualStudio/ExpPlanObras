@@ -302,6 +302,7 @@ model Contrato {
   nome           String?
   objeto         String?
   descricao      String?
+  tipoPapel      String   @default("CONTRATADO") // CONTRATADO (receita) | CONTRATANTE (despesa)
   tipoContratante String  @default("PRIVADO") // PUBLICO | PRIVADO | PF
   empresaParceiraNome String?
   empresaParceiraDocumento String?
@@ -340,6 +341,7 @@ model Contrato {
 
   @@unique([tenantId, numeroContrato])
   @@index([tenantId])
+  @@index([tenantId, tipoPapel])
   @@index([tenantId, tipoContratante])
   @@index([contratoPrincipalId])
 }

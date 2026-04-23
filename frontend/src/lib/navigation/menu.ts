@@ -150,6 +150,13 @@ export const APP_MENU: MenuSectionConfig[] = [
         permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
       },
       {
+        key: 'contratos-faturamento',
+        label: 'Faturamento',
+        href: '/dashboard/contratos/faturamento',
+        icon: 'receipt',
+        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+      },
+      {
         key: 'contratos-novo',
         label: 'Novo Contrato',
         href: '/dashboard/contratos/novo',
@@ -157,10 +164,10 @@ export const APP_MENU: MenuSectionConfig[] = [
         permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
       },
       {
-        key: 'contratos-faturamento',
-        label: 'Faturamento',
-        href: '/dashboard/contratos/faturamento',
-        icon: 'receipt',
+        key: 'contrapartes',
+        label: 'Contrapartes',
+        href: '/dashboard/engenharia/contrapartes',
+        icon: 'id-card',
         permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
       },
       {
@@ -196,13 +203,6 @@ export const APP_MENU: MenuSectionConfig[] = [
         label: 'Subcontratos',
         href: '/dashboard/contratos/subcontratos',
         icon: 'handshake',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
-        key: 'contrapartes',
-        label: 'Contrapartes',
-        href: '/dashboard/engenharia/contrapartes',
-        icon: 'id-card',
         permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
       },
       {

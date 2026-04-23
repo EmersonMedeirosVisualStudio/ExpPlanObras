@@ -107,13 +107,14 @@ export default async function contratosRoutes(server: FastifyInstance) {
       schema: {
         querystring: z.object({
           apenasPrincipais: z.coerce.boolean().optional(),
+          papel: z.string().optional(),
         }),
       },
     },
     async (request, reply) => {
       const tenantId = (request.user as any).tenantId as number;
       const q = (request.query as any) || {};
-      const rows = await listContratos(tenantId, { apenasPrincipais: Boolean(q.apenasPrincipais) });
+      const rows = await listContratos(tenantId, { apenasPrincipais: Boolean(q.apenasPrincipais), papel: q.papel });
       return reply.send(rows);
     }
   );
@@ -124,13 +125,14 @@ export default async function contratosRoutes(server: FastifyInstance) {
       schema: {
         querystring: z.object({
           status: z.string().optional(),
+          papel: z.string().optional(),
         }),
       },
     },
     async (request, reply) => {
       const tenantId = (request.user as any).tenantId as number;
       const q = request.query as any;
-      const data = await getContratosDashboard(tenantId, { status: q?.status });
+      const data = await getContratosDashboard(tenantId, { status: q?.status, papel: q?.papel });
       return reply.send(data);
     }
   );

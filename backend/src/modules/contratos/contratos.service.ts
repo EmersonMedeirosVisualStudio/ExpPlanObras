@@ -209,10 +209,13 @@ export async function ensureContratoPendente(tenantId: number) {
   });
 }
 
-export async function listContratos(tenantId: number, opts?: { apenasPrincipais?: boolean }) {
+export async function listContratos(tenantId: number, opts?: { apenasPrincipais?: boolean; papel?: string | null }) {
   return withRLS(tenantId, async (tx) => {
     const whereContrato: any = { tenantId };
     if (opts?.apenasPrincipais) whereContrato.contratoPrincipalId = null;
+    const papelRaw = opts?.papel ? String(opts.papel).trim().toUpperCase() : null;
+    const tipoPapel = papelRaw === 'CONTRATANTE' ? 'CONTRATANTE' : papelRaw === 'CONTRATADO' ? 'CONTRATADO' : null;
+    if (tipoPapel) whereContrato.tipoPapel = tipoPapel;
     const rows = await tx.contrato.findMany({ where: whereContrato, orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }] });
 
     const [pagos, execs] = await Promise.all([
@@ -455,6 +458,7 @@ export async function createSubcontrato(
         nome: null,
         objeto: String(input.objeto || '').trim(),
         descricao: null,
+        tipoPapel: 'CONTRATANTE',
         tipoContratante: 'PRIVADO',
         empresaParceiraNome: String(input.subcontratadaNome || '').trim(),
         empresaParceiraDocumento: input.subcontratadaDocumento ? String(input.subcontratadaDocumento).trim() : null,
@@ -1414,11 +1418,14 @@ export async function downloadContratoEventoAnexo(tenantId: number, contratoId: 
   });
 }
 
-export async function getContratosDashboard(tenantId: number, input?: { status?: string | null }) {
+export async function getContratosDashboard(tenantId: number, input?: { status?: string | null; papel?: string | null }) {
   return withRLS(tenantId, async (tx) => {
     const status = input?.status ? String(input.status).trim().toUpperCase() : null;
-    const whereContrato: any = { tenantId };
+    const papelRaw = input?.papel ? String(input.papel).trim().toUpperCase() : null;
+    const tipoPapel = papelRaw === 'CONTRATANTE' ? 'CONTRATANTE' : papelRaw === 'CONTRATADO' ? 'CONTRATADO' : null;
+    const whereContrato: any = { tenantId, contratoPrincipalId: null };
     if (status) whereContrato.status = status;
+    if (tipoPapel) whereContrato.tipoPapel = tipoPapel;
 
     const now = new Date();
     const in30 = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
@@ -1447,7 +1454,14 @@ export async function getContratosDashboard(tenantId: number, input?: { status?:
         where: {
           obra: {
             tenantId,
-            contrato: status ? { status } : undefined,
+            contrato:
+              status || tipoPapel
+                ? {
+                    contratoPrincipalId: null,
+                    status: status ? status : undefined,
+                    tipoPapel: tipoPapel ? tipoPapel : undefined,
+                  }
+                : { contratoPrincipalId: null },
           },
         },
       }),
@@ -1456,7 +1470,14 @@ export async function getContratosDashboard(tenantId: number, input?: { status?:
         where: {
           obra: {
             tenantId,
-            contrato: status ? { status } : undefined,
+            contrato:
+              status || tipoPapel
+                ? {
+                    contratoPrincipalId: null,
+                    status: status ? status : undefined,
+                    tipoPapel: tipoPapel ? tipoPapel : undefined,
+                  }
+                : { contratoPrincipalId: null },
           },
         },
       }),
@@ -1769,6 +1790,7 @@ export async function getContratosFaturamento(
         where: {
           tenantId,
           contratoPrincipalId: null,
+          tipoPapel: 'CONTRATADO',
           empresaParceiraNome: { contains: empresaQ, mode: 'insensitive' } as any,
         },
         select: { id: true },
@@ -1784,8 +1806,12 @@ export async function getContratosFaturamento(
             SELECT to_char(date_trunc('month', p."date"), 'YYYY-MM') AS "mes", COALESCE(SUM(p."amount"), 0) AS "total"
             FROM "Pagamento" p
             JOIN "Obra" o ON o."id" = p."obraId"
+            JOIN "Contrato" c ON c."id" = o."contratoId"
             WHERE o."tenantId" = ${tenantId}
               AND o."contratoId" IS NOT NULL
+              AND c."tenantId" = ${tenantId}
+              AND c."contratoPrincipalId" IS NULL
+              AND c."tipoPapel" = 'CONTRATADO'
               AND p."date" >= ${start} AND p."date" < ${endNext}
             GROUP BY 1
             ORDER BY 1 ASC
@@ -1795,8 +1821,12 @@ export async function getContratosFaturamento(
               SELECT to_char(date_trunc('month', p."date"), 'YYYY-MM') AS "mes", COALESCE(SUM(p."amount"), 0) AS "total"
               FROM "Pagamento" p
               JOIN "Obra" o ON o."id" = p."obraId"
+              JOIN "Contrato" c ON c."id" = o."contratoId"
               WHERE o."tenantId" = ${tenantId}
                 AND o."contratoId" IN (${Prisma.join(contratoIds)})
+                AND c."tenantId" = ${tenantId}
+                AND c."contratoPrincipalId" IS NULL
+                AND c."tipoPapel" = 'CONTRATADO'
                 AND p."date" >= ${start} AND p."date" < ${endNext}
               GROUP BY 1
               ORDER BY 1 ASC
@@ -1809,8 +1839,12 @@ export async function getContratosFaturamento(
             SELECT to_char(date_trunc('month', c."date"), 'YYYY-MM') AS "mes", COALESCE(SUM(c."amount"), 0) AS "total"
             FROM "Custo" c
             JOIN "Obra" o ON o."id" = c."obraId"
+            JOIN "Contrato" ct ON ct."id" = o."contratoId"
             WHERE o."tenantId" = ${tenantId}
               AND o."contratoId" IS NOT NULL
+              AND ct."tenantId" = ${tenantId}
+              AND ct."contratoPrincipalId" IS NULL
+              AND ct."tipoPapel" = 'CONTRATADO'
               AND c."date" >= ${start} AND c."date" < ${endNext}
             GROUP BY 1
             ORDER BY 1 ASC
@@ -1820,8 +1854,12 @@ export async function getContratosFaturamento(
               SELECT to_char(date_trunc('month', c."date"), 'YYYY-MM') AS "mes", COALESCE(SUM(c."amount"), 0) AS "total"
               FROM "Custo" c
               JOIN "Obra" o ON o."id" = c."obraId"
+              JOIN "Contrato" ct ON ct."id" = o."contratoId"
               WHERE o."tenantId" = ${tenantId}
                 AND o."contratoId" IN (${Prisma.join(contratoIds)})
+                AND ct."tenantId" = ${tenantId}
+                AND ct."contratoPrincipalId" IS NULL
+                AND ct."tipoPapel" = 'CONTRATADO'
                 AND c."date" >= ${start} AND c."date" < ${endNext}
               GROUP BY 1
               ORDER BY 1 ASC
@@ -1843,8 +1881,12 @@ export async function getContratosFaturamento(
           SELECT to_char(date_trunc('month', p."date"), 'YYYY-MM') AS "mes", COALESCE(SUM(p."amount"), 0) AS "total"
           FROM "ContratoPagamento" p
           JOIN "Contrato" c ON c."id" = p."contratoId"
+          JOIN "Contrato" cp ON cp."id" = c."contratoPrincipalId"
           WHERE c."tenantId" = ${tenantId}
             AND c."contratoPrincipalId" IS NOT NULL
+            AND cp."tenantId" = ${tenantId}
+            AND cp."contratoPrincipalId" IS NULL
+            AND cp."tipoPapel" = 'CONTRATADO'
             AND p."date" >= ${start} AND p."date" < ${endNext}
           GROUP BY 1
           ORDER BY 1 ASC
@@ -1901,6 +1943,17 @@ export async function createContrato(tenantId: number, input: CreateContratoInpu
   return withRLS(tenantId, async (tx) => {
     const numeroContrato = String(input.numeroContrato).trim();
     const tipoContratante = input.tipoContratante ? String(input.tipoContratante).trim().toUpperCase() : 'PRIVADO';
+    const rawPapel = input.tipoPapel ? String(input.tipoPapel).trim().toUpperCase() : null;
+    const contratoPrincipalId = input.contratoPrincipalId != null ? Number(input.contratoPrincipalId) : null;
+    const tipoPapel = rawPapel === 'CONTRATANTE' ? 'CONTRATANTE' : rawPapel === 'CONTRATADO' ? 'CONTRATADO' : contratoPrincipalId ? 'CONTRATANTE' : 'CONTRATADO';
+
+    if (contratoPrincipalId != null) {
+      if (!Number.isFinite(contratoPrincipalId) || contratoPrincipalId <= 0) throw new Error('Contrato vinculado inválido');
+      if (tipoPapel !== 'CONTRATANTE') throw new Error('Contrato vinculado (subcontrato) deve ter papel "Somos contratantes".');
+      const principal = await tx.contrato.findFirst({ where: { tenantId, id: contratoPrincipalId }, select: { id: true, contratoPrincipalId: true } }).catch(() => null);
+      if (!principal) throw new Error('Contrato vinculado não encontrado');
+      if (principal.contratoPrincipalId != null) throw new Error('Contrato vinculado deve ser um contrato principal');
+    }
 
     const dataAssinatura = input.dataAssinatura ? parseDateOnly(input.dataAssinatura) : input.dataInicio ? parseDateOnly(input.dataInicio) : null;
     const dataOS = input.dataOS ? parseDateOnly(input.dataOS) : null;
@@ -1931,10 +1984,12 @@ export async function createContrato(tenantId: number, input: CreateContratoInpu
     const created = await tx.contrato.create({
       data: {
         tenantId,
+        contratoPrincipalId,
         numeroContrato,
         nome: input.nome ?? null,
         objeto: input.objeto ?? null,
         descricao: input.descricao ?? null,
+        tipoPapel,
         tipoContratante,
         empresaParceiraNome: input.empresaParceiraNome ?? null,
         empresaParceiraDocumento: input.empresaParceiraDocumento ?? null,
@@ -1965,10 +2020,35 @@ export async function updateContrato(tenantId: number, id: number, input: Update
     if (!current) throw new Error('Contrato não encontrado');
 
     const tipoContratante = input.tipoContratante != null ? String(input.tipoContratante).trim().toUpperCase() : String(current.tipoContratante || 'PRIVADO').toUpperCase();
+    const rawPapel = input.tipoPapel != null ? String(input.tipoPapel).trim().toUpperCase() : null;
+    const tipoPapelNext = rawPapel === 'CONTRATANTE' ? 'CONTRATANTE' : rawPapel === 'CONTRATADO' ? 'CONTRATADO' : String((current as any).tipoPapel || 'CONTRATADO').trim().toUpperCase() === 'CONTRATANTE' ? 'CONTRATANTE' : 'CONTRATADO';
+
+    const contratoPrincipalIdNext =
+      input.contratoPrincipalId !== undefined
+        ? input.contratoPrincipalId == null
+          ? null
+          : Number(input.contratoPrincipalId)
+        : current.contratoPrincipalId == null
+          ? null
+          : Number(current.contratoPrincipalId);
+
+    if (contratoPrincipalIdNext != null) {
+      if (!Number.isFinite(contratoPrincipalIdNext) || contratoPrincipalIdNext <= 0) throw new Error('Contrato vinculado inválido');
+      if (contratoPrincipalIdNext === id) throw new Error('Contrato vinculado inválido');
+      if (tipoPapelNext !== 'CONTRATANTE') throw new Error('Contrato vinculado (subcontrato) deve ter papel "Somos contratantes".');
+      const [principal, subCount] = await Promise.all([
+        tx.contrato.findFirst({ where: { tenantId, id: contratoPrincipalIdNext }, select: { id: true, contratoPrincipalId: true } }).catch(() => null),
+        tx.contrato.count({ where: { tenantId, contratoPrincipalId: id } }).catch(() => 0),
+      ]);
+      if (!principal) throw new Error('Contrato vinculado não encontrado');
+      if (principal.contratoPrincipalId != null) throw new Error('Contrato vinculado deve ser um contrato principal');
+      if (subCount > 0) throw new Error('Não é possível vincular este contrato: ele já possui subcontratos.');
+    }
     const dataAssinatura = input.dataAssinatura != null ? parseDateOnly(input.dataAssinatura) : current.dataAssinatura ?? null;
     const dataOS = input.dataOS != null ? parseDateOnly(input.dataOS) : current.dataOS ?? null;
     const prazoDias = input.prazoDias != null ? Math.max(1, Math.trunc(Number(input.prazoDias))) : (typeof current.prazoDias === 'number' ? current.prazoDias : current.prazoDias != null ? Number(current.prazoDias) : null);
     const computedVig = computeVigencias({
+      dataOS,
       dataOS,
       dataAssinatura,
       prazoDias,
@@ -1994,10 +2074,12 @@ export async function updateContrato(tenantId: number, id: number, input: Update
     const updated = await tx.contrato.update({
       where: { id },
       data: {
+        contratoPrincipalId: input.contratoPrincipalId !== undefined ? contratoPrincipalIdNext : undefined,
         numeroContrato: input.numeroContrato != null ? String(input.numeroContrato).trim() : undefined,
         nome: input.nome ?? undefined,
         objeto: input.objeto ?? undefined,
         descricao: input.descricao ?? undefined,
+        tipoPapel: input.tipoPapel != null ? tipoPapelNext : undefined,
         tipoContratante: input.tipoContratante != null ? tipoContratante : undefined,
         empresaParceiraNome: input.empresaParceiraNome ?? undefined,
         empresaParceiraDocumento: input.empresaParceiraDocumento ?? undefined,

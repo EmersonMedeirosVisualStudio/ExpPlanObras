@@ -32,7 +32,10 @@ export default function NovoContratoClient() {
   const [nome, setNome] = useState("");
   const [objeto, setObjeto] = useState("");
   const [descricao, setDescricao] = useState("");
+  const [tipoPapel, setTipoPapel] = useState<"CONTRATADO" | "CONTRATANTE">("CONTRATADO");
   const [tipoContratante, setTipoContratante] = useState<"PUBLICO" | "PRIVADO" | "PF">("PUBLICO");
+  const [contratoVinculadoId, setContratoVinculadoId] = useState<string>("");
+  const [contratosVinculo, setContratosVinculo] = useState<Array<{ id: number; numeroContrato: string; nome: string | null; empresa: string | null }>>([]);
   const [empresaParceiraNome, setEmpresaParceiraNome] = useState("");
   const [empresaParceiraDocumento, setEmpresaParceiraDocumento] = useState("");
   const [status, setStatus] = useState("ATIVO");
@@ -43,6 +46,11 @@ export default function NovoContratoClient() {
 
   const [vigenciaCalculada, setVigenciaCalculada] = useState<string>("");
   const [aditivosInfo, setAditivosInfo] = useState<{ total: number; rascunho: number } | null>(null);
+  const [docTipo, setDocTipo] = useState<
+    "CONTRATO" | "OS" | "ADITIVO" | "MEDICAO" | "COMUNICACAO" | "TERMO_RESCISAO" | "TERMO_SUSPENSAO" | "TERMO_REINICIO" | "OUTROS"
+  >("CONTRATO");
+  const [docDescricao, setDocDescricao] = useState("");
+  const [docArquivo, setDocArquivo] = useState<File | null>(null);
 
   const [valorConcedenteInicial, setValorConcedenteInicial] = useState("0,00");
   const [valorProprioInicial, setValorProprioInicial] = useState("0,00");
@@ -97,7 +105,9 @@ export default function NovoContratoClient() {
         setNome(c.nome ? String(c.nome) : "");
         setObjeto(c.objeto ? String(c.objeto) : "");
         setDescricao(c.descricao ? String(c.descricao) : "");
+        setTipoPapel(String(c.tipoPapel || "CONTRATADO").toUpperCase() === "CONTRATANTE" ? "CONTRATANTE" : "CONTRATADO");
         setTipoContratante((String(c.tipoContratante || "PRIVADO").toUpperCase() === "PUBLICO" ? "PUBLICO" : String(c.tipoContratante || "PRIVADO").toUpperCase() === "PF" ? "PF" : "PRIVADO") as any);
+        setContratoVinculadoId(c.contratoPrincipalId != null ? String(Number(c.contratoPrincipalId)) : "");
         setEmpresaParceiraNome(c.empresaParceiraNome ? String(c.empresaParceiraNome) : "");
         setEmpresaParceiraDocumento(c.empresaParceiraDocumento ? String(c.empresaParceiraDocumento) : "");
         setStatus(String(c.status || "ATIVO"));
@@ -143,6 +153,83 @@ export default function NovoContratoClient() {
   }, [contratoId]);
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get("/api/contratos", { params: { apenasPrincipais: "true" } });
+        const rows = Array.isArray(res.data) ? (res.data as any[]) : [];
+        const mapped = rows
+          .map((r: any) => ({
+            id: Number(r.id),
+            numeroContrato: String(r.numeroContrato || ""),
+            nome: r.nome ? String(r.nome) : null,
+            empresa: r.empresaParceiraNome ? String(r.empresaParceiraNome) : null,
+          }))
+          .filter((r) => Number.isFinite(r.id) && (!contratoId || String(r.id) !== String(contratoId)));
+        if (cancelled) return;
+        setContratosVinculo(mapped);
+      } catch {
+        if (cancelled) return;
+        setContratosVinculo([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [contratoId]);
+
+  useEffect(() => {
+    if (tipoPapel === "CONTRATADO" && contratoVinculadoId) setContratoVinculadoId("");
+  }, [tipoPapel, contratoVinculadoId]);
+
+  function badgeClass(kind: "ok" | "info" | "warn") {
+    if (kind === "ok") return "bg-emerald-50 text-emerald-800 border-emerald-200";
+    if (kind === "warn") return "bg-amber-50 text-amber-900 border-amber-200";
+    return "bg-slate-50 text-slate-700 border-slate-200";
+  }
+
+  function papelLabel(v: typeof tipoPapel) {
+    return v === "CONTRATANTE" ? "Somos contratantes" : "Somos contratados";
+  }
+
+  function tipoContraparteLabel(v: typeof tipoContratante) {
+    if (v === "PUBLICO") return "Órgão público";
+    if (v === "PF") return "Pessoa física";
+    return "Empresa privada";
+  }
+
+  async function fileToBase64(file: File) {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result || ""));
+      fr.onerror = () => reject(new Error("Falha ao ler arquivo"));
+      fr.readAsDataURL(file);
+    });
+    const idx = dataUrl.indexOf("base64,");
+    return idx >= 0 ? dataUrl.slice(idx + 7) : dataUrl;
+  }
+
+  async function anexarDocumento(idContrato: number) {
+    if (!docArquivo) return;
+    const nomeArquivo = docArquivo.name || "documento";
+    const mimeType = docArquivo.type || "application/octet-stream";
+    const conteudoBase64 = await fileToBase64(docArquivo);
+    const prefix = docTipo
+      .replaceAll("_", " ")
+      .replace("TERMO RESCISAO", "TERMO DE RESCISÃO")
+      .replace("TERMO SUSPENSAO", "TERMO DE SUSPENSÃO")
+      .replace("TERMO REINICIO", "TERMO DE REINÍCIO");
+    const texto = docDescricao.trim() ? `${prefix} — ${docDescricao.trim()}` : prefix;
+    const ev = await api.post(`/api/contratos/${idContrato}/observacoes`, { texto, nivel: "NORMAL", tipoOrigem: "DOCUMENTO" });
+    const eventoId = Number((ev.data as any)?.id);
+    if (!Number.isFinite(eventoId) || eventoId <= 0) throw new Error("Falha ao criar evento do documento");
+    await api.post(`/api/contratos/${idContrato}/eventos/${eventoId}/anexos`, { nomeArquivo, mimeType, conteudoBase64 });
+    setDocArquivo(null);
+    setDocDescricao("");
+    setDocTipo("CONTRATO");
+  }
+
+  useEffect(() => {
     if (!isPublico) return;
     const total = parseMoneyBR(valorConcedenteInicial) + parseMoneyBR(valorProprioInicial);
     setValorTotalInicial(formatMoneyBRFromDigits(String(Math.round(total * 100))));
@@ -170,11 +257,15 @@ export default function NovoContratoClient() {
         return;
       }
 
+      const vincId = contratoVinculadoId ? Number(contratoVinculadoId) : null;
+      const papelFinal = vincId ? "CONTRATANTE" : tipoPapel;
       const payload = {
+        contratoPrincipalId: vincId && Number.isFinite(vincId) ? vincId : null,
         numeroContrato,
         nome: nome || null,
         objeto: objeto || null,
         descricao: descricao || null,
+        tipoPapel: papelFinal,
         tipoContratante,
         empresaParceiraNome: empresaParceiraNome || null,
         empresaParceiraDocumento: empresaParceiraDocumento || null,
@@ -193,12 +284,15 @@ export default function NovoContratoClient() {
       };
       if (contratoId) {
         await api.put(`/api/contratos/${contratoId}`, payload);
+        await anexarDocumento(Number(contratoId));
         router.push(`/dashboard/contratos?id=${contratoId}`);
       } else {
         const res = await api.post("/api/contratos", payload);
         const id = (res.data as any)?.id;
-        if (id) router.push(`/dashboard/contratos?id=${id}`);
-        else router.push("/dashboard/contratos");
+        if (id) {
+          await anexarDocumento(Number(id));
+          router.push(`/dashboard/contratos?id=${id}`);
+        } else router.push("/dashboard/contratos");
       }
     } catch (e: any) {
       setErr(e?.response?.data?.message || e?.message || "Erro ao salvar contrato");
@@ -208,7 +302,7 @@ export default function NovoContratoClient() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-3xl">
+    <div className="p-6 space-y-6 max-w-4xl">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold">{isEdit ? "Editar Contrato" : "Novo Contrato"}</h1>
@@ -217,6 +311,13 @@ export default function NovoContratoClient() {
         <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push("/dashboard/contratos")}>
           Voltar
         </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${badgeClass(status === "ATIVO" ? "ok" : "info")}`}>{status || "—"}</span>
+        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${badgeClass("info")}`}>{papelLabel(tipoPapel)}</span>
+        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${badgeClass("info")}`}>{tipoContraparteLabel(tipoContratante)}</span>
+        {contratoVinculadoId ? <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${badgeClass("warn")}`}>Vinculado</span> : null}
       </div>
 
       {isEdit && aditivosInfo ? (
@@ -249,14 +350,50 @@ export default function NovoContratoClient() {
             </select>
           </div>
           <div>
-            <div className="text-sm text-slate-600">Tipo de contratante</div>
-            <select className="input" value={tipoContratante} onChange={(e) => setTipoContratante(e.target.value as any)}>
-              <option value="PUBLICO">Órgão público</option>
-              <option value="PRIVADO">Empresa privada (PJ)</option>
-              <option value="PF">Pessoa física (PF)</option>
-            </select>
+            <div className="text-sm text-slate-600">Tipo de contrato (papel)</div>
+            <div className="mt-2 flex gap-4 flex-wrap">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="radio" name="papel" checked={tipoPapel === "CONTRATADO"} onChange={() => setTipoPapel("CONTRATADO")} />
+                Somos CONTRATADOS
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="radio" name="papel" checked={tipoPapel === "CONTRATANTE"} onChange={() => setTipoPapel("CONTRATANTE")} />
+                Somos CONTRATANTES
+              </label>
+            </div>
           </div>
           <div>
+            <div className="text-sm text-slate-600">Tipo da contraparte</div>
+            <select className="input" value={tipoContratante} onChange={(e) => setTipoContratante(e.target.value as any)}>
+              <option value="PUBLICO">Empresa pública</option>
+              <option value="PRIVADO">Empresa privada</option>
+              <option value="PF">Pessoa física</option>
+            </select>
+          </div>
+          <div className="md:col-span-2">
+            <div className="text-sm text-slate-600">Contrato vinculado (opcional)</div>
+            <select
+              className="input"
+              value={contratoVinculadoId}
+              onChange={(e) => {
+                const v = e.target.value;
+                setContratoVinculadoId(v);
+                if (v) setTipoPapel("CONTRATANTE");
+              }}
+              disabled={tipoPapel === "CONTRATADO"}
+            >
+              <option value="">—</option>
+              {contratosVinculo.map((c) => (
+                <option key={c.id} value={String(c.id)}>
+                  {c.numeroContrato}
+                  {c.empresa ? ` — ${c.empresa}` : ""}
+                  {c.nome ? ` (${c.nome})` : ""}
+                </option>
+              ))}
+            </select>
+            {tipoPapel === "CONTRATADO" ? <div className="mt-1 text-xs text-slate-500">Disponível quando o papel for "Somos contratantes".</div> : null}
+          </div>
+          <div className="md:col-span-2">
             <div className="text-sm text-slate-600">Nome do contrato</div>
             <input className="input" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex: Construção UBS" />
           </div>
@@ -315,6 +452,37 @@ export default function NovoContratoClient() {
             <div>
               <div className="text-sm text-slate-600">CNPJ/CPF</div>
               <input className="input" value={empresaParceiraDocumento} onChange={(e) => setEmpresaParceiraDocumento(e.target.value)} placeholder="Opcional" />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-slate-50 p-4">
+          <div className="text-sm font-semibold">Documento</div>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <div className="text-sm text-slate-600">Tipo</div>
+              <select className="input" value={docTipo} onChange={(e) => setDocTipo(e.target.value as any)}>
+                <option value="CONTRATO">Contrato</option>
+                <option value="OS">OS</option>
+                <option value="ADITIVO">Aditivo</option>
+                <option value="MEDICAO">Medição</option>
+                <option value="COMUNICACAO">Comunicação</option>
+                <option value="TERMO_RESCISAO">Termo de Rescisão</option>
+                <option value="TERMO_SUSPENSAO">Termo de Suspensão</option>
+                <option value="TERMO_REINICIO">Termo de Reinício</option>
+                <option value="OUTROS">Outros</option>
+              </select>
+            </div>
+            <div>
+              <div className="text-sm text-slate-600">Arquivo</div>
+              <input className="input py-1.5" type="file" onChange={(e) => setDocArquivo(e.target.files?.[0] || null)} />
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-sm text-slate-600">Descrição do documento</div>
+              <input className="input" value={docDescricao} onChange={(e) => setDocDescricao(e.target.value)} placeholder="Ex: Contrato assinado, OS emitida, termo, comunicado, etc." />
+            </div>
+            <div className="md:col-span-2 text-xs text-slate-500">
+              Ao salvar, se houver arquivo selecionado, ele será anexado no histórico do contrato (Eventos → Documentos).
             </div>
           </div>
         </div>

@@ -96,6 +96,7 @@ export default function ContratosDashboardClient() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [status, setStatus] = useState("");
+  const [papel, setPapel] = useState("");
   const [kpis, setKpis] = useState<DashboardKpis | null>(null);
   const [cards, setCards] = useState<DashboardCards | null>(null);
   const [alertas, setAlertas] = useState<DashboardAlerta[]>([]);
@@ -115,9 +116,10 @@ export default function ContratosDashboardClient() {
   const query = useMemo(() => {
     const p = new URLSearchParams();
     if (status) p.set("status", status);
+    if (papel) p.set("papel", papel);
     const s = p.toString();
     return s ? `?${s}` : "";
-  }, [status]);
+  }, [status, papel]);
 
   async function carregar() {
     try {
@@ -226,6 +228,14 @@ export default function ContratosDashboardClient() {
           <div>
             <div className="text-xs text-[#6B7280]">Período</div>
             <input className="input w-[140px]" type="month" value={periodo} onChange={(e) => setPeriodo(e.target.value)} />
+          </div>
+          <div>
+            <div className="text-xs text-[#6B7280]">Natureza</div>
+            <select className="input w-[190px]" value={papel} onChange={(e) => setPapel(e.target.value)}>
+              <option value="">Todos</option>
+              <option value="CONTRATADO">Receita (somos contratados)</option>
+              <option value="CONTRATANTE">Despesa (somos contratantes)</option>
+            </select>
           </div>
           <div>
             <div className="text-xs text-[#6B7280]">Status</div>

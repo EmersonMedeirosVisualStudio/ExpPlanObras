@@ -1,10 +1,12 @@
 import { z } from 'zod';
 
 export const createContratoSchema = z.object({
+  contratoPrincipalId: z.number().int().positive().optional().nullable(),
   numeroContrato: z.string().min(2),
   nome: z.string().optional().nullable(),
   objeto: z.string().optional().nullable(),
   descricao: z.string().optional().nullable(),
+  tipoPapel: z.enum(['CONTRATADO', 'CONTRATANTE']).optional().nullable(),
   tipoContratante: z.enum(['PUBLICO', 'PRIVADO', 'PF']).optional().nullable(),
   empresaParceiraNome: z.string().optional().nullable(),
   empresaParceiraDocumento: z.string().optional().nullable(),
@@ -26,10 +28,12 @@ export const createContratoSchema = z.object({
 });
 
 export const updateContratoSchema = z.object({
+  contratoPrincipalId: z.number().int().positive().optional().nullable(),
   numeroContrato: z.string().min(2).optional(),
   nome: z.string().optional().nullable(),
   objeto: z.string().optional().nullable(),
   descricao: z.string().optional().nullable(),
+  tipoPapel: z.enum(['CONTRATADO', 'CONTRATANTE']).optional().nullable(),
   tipoContratante: z.enum(['PUBLICO', 'PRIVADO', 'PF']).optional().nullable(),
   empresaParceiraNome: z.string().optional().nullable(),
   empresaParceiraDocumento: z.string().optional().nullable(),

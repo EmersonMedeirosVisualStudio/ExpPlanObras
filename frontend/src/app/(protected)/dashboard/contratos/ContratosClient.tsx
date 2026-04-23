@@ -11,6 +11,7 @@ type ContratoRow = {
   nome: string | null;
   objeto: string | null;
   contratoPrincipalId?: number | null;
+  tipoPapel?: "CONTRATADO" | "CONTRATANTE" | null;
   tipoContratante: "PUBLICO" | "PRIVADO" | "PF";
   empresaParceiraNome: string | null;
   empresaParceiraDocumento?: string | null;
@@ -542,7 +543,7 @@ export default function ContratosClient() {
 
             <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="text-sm font-semibold">{detail.contratoPrincipalId ? "Empresa contratada" : "Empresa contratante"}</div>
+                <div className="text-sm font-semibold">{String(detail.tipoPapel || "").toUpperCase() === "CONTRATANTE" ? "Empresa contratada" : "Empresa contratante"}</div>
                 <button
                   className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-1.5 text-xs text-[#111827] hover:bg-[#F9FAFB]"
                   type="button"
