@@ -742,7 +742,7 @@ export default function ContratosClient() {
                     </div>
                   </div>
 
-                  <div className="mt-2 text-sm font-semibold">Empresa parceira</div>
+                  <div className="mt-2 text-sm font-semibold">Contraparte</div>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div>
                       <div className="flex items-end justify-between gap-2">
@@ -752,7 +752,7 @@ export default function ContratosClient() {
                           type="button"
                           onClick={() => router.push("/dashboard/engenharia/contrapartes")}
                         >
-                          CRUD empresas
+                          Gerenciar contrapartes
                         </button>
                       </div>
                       <div className="relative">

@@ -172,7 +172,7 @@ export const APP_MENU: MenuSectionConfig[] = [
       },
       {
         key: 'contratos-lista',
-        label: 'Lista',
+        label: 'Contratos',
         href: '/dashboard/contratos',
         icon: 'list',
         permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,

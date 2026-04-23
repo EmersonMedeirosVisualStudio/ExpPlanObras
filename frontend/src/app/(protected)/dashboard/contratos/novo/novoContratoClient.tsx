@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
+import { Eye, Trash2 } from "lucide-react";
 
 function parseMoneyBR(input: string) {
   const s = String(input || "")
@@ -46,11 +47,24 @@ export default function NovoContratoClient() {
 
   const [vigenciaCalculada, setVigenciaCalculada] = useState<string>("");
   const [aditivosInfo, setAditivosInfo] = useState<{ total: number; rascunho: number } | null>(null);
-  const [docTipo, setDocTipo] = useState<
-    "CONTRATO" | "OS" | "ADITIVO" | "MEDICAO" | "COMUNICACAO" | "TERMO_RESCISAO" | "TERMO_SUSPENSAO" | "TERMO_REINICIO" | "OUTROS"
-  >("CONTRATO");
-  const [docDescricao, setDocDescricao] = useState("");
-  const [docArquivo, setDocArquivo] = useState<File | null>(null);
+  type DocTipo =
+    | "CONTRATO"
+    | "OS"
+    | "ADITIVO"
+    | "MEDICAO"
+    | "COMUNICACAO"
+    | "TERMO_RESCISAO"
+    | "TERMO_SUSPENSAO"
+    | "TERMO_REINICIO"
+    | "OUTROS";
+  type DocDraft = { id: string; tipo: DocTipo; descricao: string; file: File };
+  const [docTipoDraft, setDocTipoDraft] = useState<DocTipo>("CONTRATO");
+  const [docDescricaoDraft, setDocDescricaoDraft] = useState("");
+  const [docArquivoDraft, setDocArquivoDraft] = useState<File | null>(null);
+  const [docInputKey, setDocInputKey] = useState(1);
+  const [docsDraft, setDocsDraft] = useState<DocDraft[]>([]);
+  const [docSelecionadoId, setDocSelecionadoId] = useState<string>("");
+  const [docPreviewUrl, setDocPreviewUrl] = useState<string | null>(null);
 
   const [valorConcedenteInicial, setValorConcedenteInicial] = useState("0,00");
   const [valorProprioInicial, setValorProprioInicial] = useState("0,00");
@@ -198,6 +212,55 @@ export default function NovoContratoClient() {
     return "Empresa privada";
   }
 
+  function docTipoLabel(t: DocTipo) {
+    switch (t) {
+      case "CONTRATO":
+        return "Contrato";
+      case "OS":
+        return "OS";
+      case "ADITIVO":
+        return "Aditivo";
+      case "MEDICAO":
+        return "Medição";
+      case "COMUNICACAO":
+        return "Comunicação";
+      case "TERMO_RESCISAO":
+        return "Termo de Rescisão";
+      case "TERMO_SUSPENSAO":
+        return "Termo de Suspensão";
+      case "TERMO_REINICIO":
+        return "Termo de Reinício";
+      default:
+        return "Outros";
+    }
+  }
+
+  useEffect(() => {
+    const selected = docsDraft.find((d) => d.id === docSelecionadoId) || null;
+    if (docPreviewUrl) URL.revokeObjectURL(docPreviewUrl);
+    if (!selected) {
+      setDocPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(selected.file);
+    setDocPreviewUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [docSelecionadoId, docsDraft]);
+
+  function addDocumento() {
+    if (!docArquivoDraft) return;
+    const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? (crypto as any).randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const next: DocDraft = { id, tipo: docTipoDraft, descricao: docDescricaoDraft.trim(), file: docArquivoDraft };
+    setDocsDraft((p) => [...p, next]);
+    setDocTipoDraft("CONTRATO");
+    setDocDescricaoDraft("");
+    setDocArquivoDraft(null);
+    setDocInputKey((k) => k + 1);
+    setDocSelecionadoId((cur) => cur || id);
+  }
+
   async function fileToBase64(file: File) {
     const dataUrl = await new Promise<string>((resolve, reject) => {
       const fr = new FileReader();
@@ -209,24 +272,21 @@ export default function NovoContratoClient() {
     return idx >= 0 ? dataUrl.slice(idx + 7) : dataUrl;
   }
 
-  async function anexarDocumento(idContrato: number) {
-    if (!docArquivo) return;
-    const nomeArquivo = docArquivo.name || "documento";
-    const mimeType = docArquivo.type || "application/octet-stream";
-    const conteudoBase64 = await fileToBase64(docArquivo);
-    const prefix = docTipo
-      .replaceAll("_", " ")
-      .replace("TERMO RESCISAO", "TERMO DE RESCISÃO")
-      .replace("TERMO SUSPENSAO", "TERMO DE SUSPENSÃO")
-      .replace("TERMO REINICIO", "TERMO DE REINÍCIO");
-    const texto = docDescricao.trim() ? `${prefix} — ${docDescricao.trim()}` : prefix;
-    const ev = await api.post(`/api/contratos/${idContrato}/observacoes`, { texto, nivel: "NORMAL", tipoOrigem: "DOCUMENTO" });
-    const eventoId = Number((ev.data as any)?.id);
-    if (!Number.isFinite(eventoId) || eventoId <= 0) throw new Error("Falha ao criar evento do documento");
-    await api.post(`/api/contratos/${idContrato}/eventos/${eventoId}/anexos`, { nomeArquivo, mimeType, conteudoBase64 });
-    setDocArquivo(null);
-    setDocDescricao("");
-    setDocTipo("CONTRATO");
+  async function anexarDocumentos(idContrato: number) {
+    const docs = docsDraft.slice();
+    if (!docs.length) return;
+    for (const d of docs) {
+      const nomeArquivo = d.file.name || "documento";
+      const mimeType = d.file.type || "application/octet-stream";
+      const conteudoBase64 = await fileToBase64(d.file);
+      const texto = d.descricao ? `${docTipoLabel(d.tipo)} — ${d.descricao}` : docTipoLabel(d.tipo);
+      const ev = await api.post(`/api/contratos/${idContrato}/observacoes`, { texto, nivel: "NORMAL", tipoOrigem: "DOCUMENTO" });
+      const eventoId = Number((ev.data as any)?.id);
+      if (!Number.isFinite(eventoId) || eventoId <= 0) throw new Error("Falha ao criar evento do documento");
+      await api.post(`/api/contratos/${idContrato}/eventos/${eventoId}/anexos`, { nomeArquivo, mimeType, conteudoBase64 });
+    }
+    setDocsDraft([]);
+    setDocSelecionadoId("");
   }
 
   useEffect(() => {
@@ -284,13 +344,13 @@ export default function NovoContratoClient() {
       };
       if (contratoId) {
         await api.put(`/api/contratos/${contratoId}`, payload);
-        await anexarDocumento(Number(contratoId));
+        await anexarDocumentos(Number(contratoId));
         router.push(`/dashboard/contratos?id=${contratoId}`);
       } else {
         const res = await api.post("/api/contratos", payload);
         const id = (res.data as any)?.id;
         if (id) {
-          await anexarDocumento(Number(id));
+          await anexarDocumentos(Number(id));
           router.push(`/dashboard/contratos?id=${id}`);
         } else router.push("/dashboard/contratos");
       }
@@ -439,9 +499,9 @@ export default function NovoContratoClient() {
 
         <div className="rounded-xl border bg-slate-50 p-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="text-sm font-semibold">Empresa parceira</div>
+            <div className="text-sm font-semibold">Contraparte</div>
             <button className="rounded-lg border bg-white px-3 py-1 text-sm hover:bg-slate-50" type="button" onClick={() => router.push("/dashboard/engenharia/contrapartes")}>
-              Gerenciar empresas
+              Gerenciar contrapartes
             </button>
           </div>
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -457,11 +517,11 @@ export default function NovoContratoClient() {
         </div>
 
         <div className="rounded-xl border bg-slate-50 p-4">
-          <div className="text-sm font-semibold">Documento</div>
+          <div className="text-sm font-semibold">Documentos</div>
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <div className="text-sm text-slate-600">Tipo</div>
-              <select className="input" value={docTipo} onChange={(e) => setDocTipo(e.target.value as any)}>
+              <select className="input" value={docTipoDraft} onChange={(e) => setDocTipoDraft(e.target.value as any)}>
                 <option value="CONTRATO">Contrato</option>
                 <option value="OS">OS</option>
                 <option value="ADITIVO">Aditivo</option>
@@ -475,16 +535,97 @@ export default function NovoContratoClient() {
             </div>
             <div>
               <div className="text-sm text-slate-600">Arquivo</div>
-              <input className="input py-1.5" type="file" onChange={(e) => setDocArquivo(e.target.files?.[0] || null)} />
+              <input key={docInputKey} className="input py-1.5" type="file" onChange={(e) => setDocArquivoDraft(e.target.files?.[0] || null)} />
             </div>
             <div className="md:col-span-2">
-              <div className="text-sm text-slate-600">Descrição do documento</div>
-              <input className="input" value={docDescricao} onChange={(e) => setDocDescricao(e.target.value)} placeholder="Ex: Contrato assinado, OS emitida, termo, comunicado, etc." />
+              <div className="text-sm text-slate-600">Descrição</div>
+              <input className="input" value={docDescricaoDraft} onChange={(e) => setDocDescricaoDraft(e.target.value)} placeholder="Ex: Contrato assinado, OS emitida, termo, comunicado, etc." />
             </div>
-            <div className="md:col-span-2 text-xs text-slate-500">
-              Ao salvar, se houver arquivo selecionado, ele será anexado no histórico do contrato (Eventos → Documentos).
+            <div className="md:col-span-2 flex items-center justify-end">
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
+                type="button"
+                onClick={addDocumento}
+                disabled={!docArquivoDraft}
+              >
+                Adicionar documento
+              </button>
             </div>
           </div>
+
+          {docsDraft.length ? (
+            <div className="mt-4 overflow-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-white text-left text-slate-700">
+                  <tr className="border-b">
+                    <th className="px-3 py-2">#</th>
+                    <th className="px-3 py-2">Descrição</th>
+                    <th className="px-3 py-2 text-right">Ação</th>
+                  </tr>
+                </thead>
+                <tbody className="text-slate-900">
+                  {docsDraft.map((d, idx) => (
+                    <tr key={d.id} className="border-b">
+                      <td className="px-3 py-2">{idx + 1}</td>
+                      <td className="px-3 py-2">
+                        <div className="font-semibold">
+                          {docTipoLabel(d.tipo)}
+                          {d.descricao ? ` — ${d.descricao}` : ""}
+                        </div>
+                        <div className="text-xs text-slate-500">{d.file.name}</div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            className="rounded-lg border bg-white p-2 hover:bg-slate-50"
+                            type="button"
+                            title="Exibir"
+                            onClick={() => setDocSelecionadoId(d.id)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button
+                            className="rounded-lg border border-red-200 bg-white p-2 text-red-700 hover:bg-red-50"
+                            type="button"
+                            title="Excluir"
+                            onClick={() => {
+                              setDocsDraft((p) => p.filter((x) => x.id !== d.id));
+                              setDocSelecionadoId((cur) => (cur === d.id ? "" : cur));
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="mt-3 text-xs text-slate-500">Nenhum documento adicionado.</div>
+          )}
+
+          {docPreviewUrl && docSelecionadoId ? (
+            <div className="mt-4 rounded-lg border bg-white p-3">
+              <div className="text-sm font-semibold">Visualização</div>
+              <div className="mt-2">
+                {(() => {
+                  const d = docsDraft.find((x) => x.id === docSelecionadoId) || null;
+                  const mt = d?.file?.type || "";
+                  if (!d) return null;
+                  if (mt.startsWith("image/")) return <img className="max-h-[420px] w-auto rounded" src={docPreviewUrl} alt="Documento" />;
+                  if (mt === "application/pdf" || d.file.name.toLowerCase().endsWith(".pdf"))
+                    return <iframe className="h-[520px] w-full rounded" src={docPreviewUrl} title="Documento" />;
+                  return (
+                    <a className="text-sm text-blue-700 hover:underline" href={docPreviewUrl} download={d.file.name}>
+                      Baixar arquivo
+                    </a>
+                  );
+                })()}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="rounded-xl border bg-slate-50 p-4">
