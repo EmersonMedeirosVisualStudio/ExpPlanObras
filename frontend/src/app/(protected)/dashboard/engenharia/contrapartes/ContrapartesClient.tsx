@@ -963,23 +963,7 @@ export default function ContrapartesClient() {
                 type="button"
                 onClick={() => {
                   setEdicaoId(null);
-                  setNovo({
-                    tipo: "PJ",
-                    nomeRazao: "",
-                    documento: "",
-                    email: "",
-                    telefone: "",
-                    classificacaoStatus: "EM_AVALIACAO",
-                    cep: "",
-                    logradouro: "",
-                    numero: "",
-                    complemento: "",
-                    bairro: "",
-                    cidade: "",
-                    uf: "",
-                    latitude: "",
-                    longitude: "",
-                  });
+                  limparFormularioCompleto();
                 }}
               >
                 Cancelar
