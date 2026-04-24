@@ -182,6 +182,7 @@ export default function AditivosClient() {
   const sp = useSearchParams();
   const contratoId = sp.get("contratoId");
   const tab = sp.get("tab") || "dashboard";
+  const returnTo = sp.get("returnTo");
   const apiBase = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
   const tokenForLinks = useMemo(() => {
     try {
@@ -611,8 +612,16 @@ export default function AditivosClient() {
           <h1 className="text-2xl font-semibold">Aditivos de Contrato</h1>
           <div className="text-sm text-slate-600">Selecione um contrato e gerencie aditivos com histórico, snapshot e aplicação no contrato.</div>
         </div>
-        <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push("/dashboard/contratos")}>
-          Voltar para Contratos
+        <button
+          className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+          type="button"
+          onClick={() => {
+            if (returnTo) router.push(returnTo);
+            else if (contratoId) router.push(`/dashboard/contratos?id=${contratoId}`);
+            else router.push("/dashboard/contratos");
+          }}
+        >
+          {contratoId || returnTo ? "Voltar ao contrato" : "Voltar para Contratos"}
         </button>
       </div>
 

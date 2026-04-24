@@ -59,6 +59,7 @@ export default function ContratoPlanejamentoClient() {
   const router = useRouter();
   const sp = useSearchParams();
   const contratoId = sp.get("id");
+  const returnTo = sp.get("returnTo");
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -268,7 +269,11 @@ export default function ContratoPlanejamentoClient() {
           <div className="text-sm text-slate-600">Arraste para mover no tempo, redimensione para alterar duração e use dependências para encadear tarefas.</div>
         </div>
         <div className="flex gap-2">
-          <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push(`/dashboard/contratos?id=${contratoId}`)}>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+            type="button"
+            onClick={() => router.push(returnTo || `/dashboard/contratos?id=${contratoId}`)}
+          >
             Voltar ao contrato
           </button>
           <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50" type="button" onClick={seedCronograma} disabled={loading}>

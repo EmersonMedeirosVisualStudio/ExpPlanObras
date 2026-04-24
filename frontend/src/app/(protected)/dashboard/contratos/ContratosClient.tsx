@@ -141,6 +141,17 @@ function normalizeTipoContratante(v: unknown): ContratoRow["tipoContratante"] {
   return "PRIVADO";
 }
 
+function parseDateOnlyValue(v: string | null) {
+  const s = String(v || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function diffDays(a: Date, b: Date) {
+  return Math.round((b.getTime() - a.getTime()) / (24 * 3600 * 1000));
+}
+
 function labelSubStatus(v: unknown) {
   const s = String(v || "").toUpperCase();
   if (s === "PLANEJADO") return "Planejado";
@@ -494,6 +505,18 @@ export default function ContratosClient() {
     return c;
   }, [contraparteFiltroId, papelFiltro, q, statusAllSelected, tipoContratanteFiltro]);
 
+  const prazos = useMemo(() => {
+    if (!detail) return { prazoInicialDias: null as number | null, prazoAtualDias: null as number | null, diasRestantes: null as number | null };
+    const base = parseDateOnlyValue(detail.dataOS || detail.dataAssinatura || null);
+    const vigInicial = parseDateOnlyValue(detail.vigenciaInicial);
+    const vigAtual = parseDateOnlyValue(detail.vigenciaAtual);
+    const prazoInicialDias = base && vigInicial ? Math.max(0, diffDays(base, vigInicial)) : null;
+    const prazoAtualDias = base && vigAtual ? Math.max(0, diffDays(base, vigAtual)) : prazoInicialDias;
+    const hoje = parseDateOnlyValue(new Date().toISOString());
+    const diasRestantes = hoje && vigAtual ? Math.max(0, diffDays(hoje, vigAtual)) : null;
+    return { prazoInicialDias, prazoAtualDias, diasRestantes };
+  }, [detail]);
+
   function limparFiltros() {
     setQ("");
     setContraparteFiltroId(null);
@@ -758,21 +781,30 @@ export default function ContratosClient() {
             <button
               className="rounded-lg bg-[#2563EB] px-3 py-2 text-sm text-white hover:bg-[#1D4ED8]"
               type="button"
-              onClick={() => router.push(`/dashboard/contratos/planejamento?id=${contratoId}`)}
+              onClick={() => {
+                const returnTo = encodeURIComponent(`/dashboard/contratos?id=${contratoId}`);
+                router.push(`/dashboard/contratos/planejamento?id=${contratoId}&returnTo=${returnTo}`);
+              }}
             >
               Planejamento (Gantt)
             </button>
             <button
               className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
               type="button"
-              onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}`)}
+              onClick={() => {
+                const returnTo = encodeURIComponent(`/dashboard/contratos?id=${contratoId}`);
+                router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}&returnTo=${returnTo}`);
+              }}
             >
               Aditivos
             </button>
             <button
               className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
               type="button"
-              onClick={() => router.push(`/dashboard/contratos/medicoes?contratoId=${contratoId}`)}
+              onClick={() => {
+                const returnTo = encodeURIComponent(`/dashboard/contratos?id=${contratoId}`);
+                router.push(`/dashboard/contratos/medicoes?contratoId=${contratoId}&returnTo=${returnTo}`);
+              }}
             >
               Medições
             </button>
@@ -830,6 +862,21 @@ export default function ContratosClient() {
                 <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
                   <div className="text-xs text-[#6B7280]">Vigência atual</div>
                   <div className="font-semibold">{detail.vigenciaAtual ? new Date(detail.vigenciaAtual).toLocaleDateString("pt-BR") : "—"}</div>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
+                  <div className="text-xs text-[#6B7280]">Prazo inicial</div>
+                  <div className="font-semibold">{prazos.prazoInicialDias != null ? `${prazos.prazoInicialDias} dias` : "—"}</div>
+                </div>
+                <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
+                  <div className="text-xs text-[#6B7280]">Prazo atual</div>
+                  <div className="font-semibold">{prazos.prazoAtualDias != null ? `${prazos.prazoAtualDias} dias` : "—"}</div>
+                </div>
+                <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
+                  <div className="text-xs text-[#6B7280]">Dias restantes</div>
+                  <div className="font-semibold">{prazos.diasRestantes != null ? `${prazos.diasRestantes} dias` : "—"}</div>
                 </div>
               </div>
             </section>
