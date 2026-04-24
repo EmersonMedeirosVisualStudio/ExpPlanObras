@@ -38,6 +38,13 @@ const OBRA_STATUS_OPTIONS = [
   "FINALIZADA",
 ] as const;
 
+type ObraStatus = (typeof OBRA_STATUS_OPTIONS)[number];
+
+function toObraStatus(value: unknown): ObraStatus | null {
+  const normalized = String(value || "").toUpperCase();
+  return (OBRA_STATUS_OPTIONS as readonly string[]).includes(normalized) ? (normalized as ObraStatus) : null;
+}
+
 const OBRA_STATUS_LABEL_MAP: Record<string, string> = {
   AGUARDANDO_RECURSOS: "Aguardando recursos",
   AGUARDANDO_CONTRATO: "Aguardando assinatura do contrato",
@@ -72,9 +79,7 @@ export default function EngenhariaObrasPage() {
   const [contratos, setContratos] = useState<ContratoRow[]>([]);
   const [contrapartes, setContrapartes] = useState<ContraparteRow[]>([]);
 
-  const [statusSel, setStatusSel] = useState<Record<(typeof OBRA_STATUS_OPTIONS)[number], boolean>>(() =>
-    Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, true])) as any
-  );
+  const [statusSel, setStatusSel] = useState<Record<ObraStatus, boolean>>(() => Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, true])) as Record<ObraStatus, boolean>);
   const [numeroContratoFiltro, setNumeroContratoFiltro] = useState("");
   const [contraparteFiltro, setContraparteFiltro] = useState("");
   const [tipoContratanteFiltro, setTipoContratanteFiltro] = useState<"" | "PUBLICO" | "PRIVADO" | "PF">("");
@@ -182,7 +187,8 @@ export default function EngenhariaObrasPage() {
     }
 
     return obras.filter((o) => {
-      if (hasStatusFilter && !statusSel[(o.status as any) || "NAO_INICIADA"]) return false;
+      const statusKey = toObraStatus(o.status) || "NAO_INICIADA";
+      if (hasStatusFilter && !statusSel[statusKey]) return false;
 
       const contrato = contratoById.get(o.contratoId) || null;
       if (numContrato && String(contrato?.numeroContrato || "") !== numContrato) return false;
