@@ -668,8 +668,9 @@ export default function EngenhariaCadastroObraPage() {
 
   useEffect(() => {
     if (!obraId) return;
-    setActiveObra({ id: obraId, nome: obraSelecionada?.name || undefined });
-  }, [obraId, obraSelecionada?.name]);
+    const selected = obrasContrato.find((o) => o.id === obraId) || null;
+    setActiveObra({ id: obraId, nome: selected?.name || undefined });
+  }, [obraId, obrasContrato]);
 
   useEffect(() => {
     if (!contratoId) return;
