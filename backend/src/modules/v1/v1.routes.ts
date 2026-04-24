@@ -1917,6 +1917,7 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!buf || !buf.length) return fail(reply, 422, 'Arquivo vazio.');
     if (buf.length > 10 * 1024 * 1024) return fail(reply, 413, 'Arquivo muito grande (limite 10MB).');
 
+    const bytes = new Uint8Array(buf);
     const created = await prisma.engenhariaContraparteDocumento.create({
       data: {
         tenantId: ctx.tenantId,
@@ -1924,7 +1925,7 @@ export default async function v1Routes(server: FastifyInstance) {
         nomeArquivo: String(body.nomeArquivo).trim(),
         mimeType: String(body.mimeType).trim(),
         tamanhoBytes: buf.length,
-        conteudo: buf,
+        conteudo: bytes,
         actorUserId: ctx.userId,
       },
       select: { id: true },
