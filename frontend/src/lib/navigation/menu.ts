@@ -216,13 +216,6 @@ export const APP_MENU: MenuSectionConfig[] = [
         homePriority: 13,
       },
       {
-        key: 'engenharia-obras-cadastro',
-        label: 'Cadastro de Obra',
-        href: '/dashboard/engenharia/obras/cadastro',
-        icon: 'plus',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
         key: 'engenharia-obras',
         label: 'Obras',
         icon: 'construction',
@@ -230,7 +223,7 @@ export const APP_MENU: MenuSectionConfig[] = [
         children: [
           {
             key: 'engenharia-obras-selecionar',
-            label: 'Selecionar Obra',
+            label: 'Obras',
             href: '/dashboard/engenharia/obras',
             icon: 'arrow-left-right',
             permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
@@ -412,6 +405,13 @@ export const APP_MENU: MenuSectionConfig[] = [
             ],
           },
         ],
+      },
+      {
+        key: 'engenharia-obras-cadastro',
+        label: 'Obra selecionada',
+        href: '/dashboard/engenharia/obras/cadastro',
+        icon: 'plus',
+        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
       },
     ],
   },

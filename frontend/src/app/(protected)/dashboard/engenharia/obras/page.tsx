@@ -1,156 +1,201 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { setActiveObra } from "@/lib/obra/active";
 import api from "@/lib/api";
 
-type ObraRef = { id: number; nome: string };
-type ResponsavelObraRef = {
-  idResponsavelObra: number;
-  idObra: number;
-  tipo: "RESPONSAVEL_TECNICO" | "FISCAL_OBRA";
-  nome: string;
-  registroProfissional: string | null;
-  cpf: string | null;
-  email: string | null;
-  telefone: string | null;
-  ativo: boolean;
+type ObraRow = {
+  id: number;
+  contratoId: number;
+  name: string;
+  type: "PUBLICA" | "PARTICULAR";
+  status: string;
 };
+
+type ContratoRow = {
+  id: number;
+  numeroContrato: string;
+  tipoContratante: "PUBLICO" | "PRIVADO" | "PF" | string;
+  tipoPapel?: "CONTRATADO" | "CONTRATANTE" | null;
+  empresaParceiraNome: string | null;
+  empresaParceiraDocumento?: string | null;
+};
+
+type ContraparteRow = {
+  idContraparte: number;
+  nomeRazao: string;
+  documento: string | null;
+};
+
+const OBRA_STATUS_OPTIONS = [
+  "AGUARDANDO_RECURSOS",
+  "AGUARDANDO_CONTRATO",
+  "AGUARDANDO_OS",
+  "NAO_INICIADA",
+  "EM_ANDAMENTO",
+  "PARADA",
+  "FINALIZADA",
+] as const;
+
+const OBRA_STATUS_LABEL_MAP: Record<string, string> = {
+  AGUARDANDO_RECURSOS: "Aguardando recursos",
+  AGUARDANDO_CONTRATO: "Aguardando assinatura do contrato",
+  AGUARDANDO_OS: "Aguardando OS",
+  NAO_INICIADA: "Não iniciada",
+  EM_ANDAMENTO: "Em andamento",
+  PARADA: "Parada",
+  FINALIZADA: "Finalizada",
+};
+
+const OBRA_STATUS_COLOR_MAP: Record<string, string> = {
+  AGUARDANDO_RECURSOS: "#EAB308",
+  AGUARDANDO_CONTRATO: "#EAB308",
+  AGUARDANDO_OS: "#F97316",
+  NAO_INICIADA: "#6B7280",
+  EM_ANDAMENTO: "#22C55E",
+  PARADA: "#EF4444",
+  FINALIZADA: "#3B82F6",
+};
+
+function onlyDigits(value: string) {
+  return String(value || "").replace(/\D/g, "");
+}
 
 export default function EngenhariaObrasPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const [q, setQ] = useState("");
   const [filtrosAberto, setFiltrosAberto] = useState(false);
+  const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [obras, setObras] = useState<ObraRef[]>([]);
-  const [responsaveis, setResponsaveis] = useState<ResponsavelObraRef[]>([]);
-  const [obraCadastroId, setObraCadastroId] = useState<number | null>(null);
-  const [edicaoId, setEdicaoId] = useState<number | null>(null);
-  const [formResp, setFormResp] = useState({
-    tipo: "RESPONSAVEL_TECNICO" as "RESPONSAVEL_TECNICO" | "FISCAL_OBRA",
-    nome: "",
-    registroProfissional: "",
-    cpf: "",
-    email: "",
-    telefone: "",
-    ativo: true,
-  });
+  const [obras, setObras] = useState<ObraRow[]>([]);
+  const [contratos, setContratos] = useState<ContratoRow[]>([]);
+  const [contrapartes, setContrapartes] = useState<ContraparteRow[]>([]);
+
+  const [statusSel, setStatusSel] = useState<Record<(typeof OBRA_STATUS_OPTIONS)[number], boolean>>(() =>
+    Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, true])) as any
+  );
+  const [numeroContratoFiltro, setNumeroContratoFiltro] = useState("");
+  const [contraparteFiltro, setContraparteFiltro] = useState("");
+  const [tipoContratanteFiltro, setTipoContratanteFiltro] = useState<"" | "PUBLICO" | "PRIVADO" | "PF">("");
+  const [papelFiltro, setPapelFiltro] = useState<"" | "CONTRATADO" | "CONTRATANTE">("");
 
   async function carregar() {
     try {
       setLoading(true);
       setErr(null);
-      const { data: json } = await api.get("/api/v1/dashboard/me/filtros");
-      if (!json?.success) throw new Error(json?.message || "Erro ao carregar obras");
-      const lista = Array.isArray(json.data?.obras) ? json.data.obras : [];
-      const obrasNormalizadas = lista.map((o: any) => ({ id: Number(o.id), nome: String(o.nome || `Obra #${o.id}`) }));
-      setObras(obrasNormalizadas);
-      if (!obraCadastroId && obrasNormalizadas.length > 0) setObraCadastroId(obrasNormalizadas[0].id);
+      const [obrasRes, contratosRes, contrapartesRes] = await Promise.all([
+        api.get("/api/obras"),
+        api.get("/api/contratos"),
+        api.get("/api/v1/engenharia/contrapartes").catch(() => ({ data: null } as any)),
+      ]);
+
+      const obrasData = Array.isArray(obrasRes.data) ? obrasRes.data : [];
+      setObras(
+        obrasData.map((o: any) => ({
+          id: Number(o.id),
+          contratoId: Number(o.contratoId || 0),
+          name: String(o.name || ""),
+          type: (String(o.type || "PARTICULAR").toUpperCase() as any) || "PARTICULAR",
+          status: String(o.status || "NAO_INICIADA"),
+        }))
+      );
+
+      const contratosData = Array.isArray(contratosRes.data) ? contratosRes.data : [];
+      setContratos(
+        contratosData.map((c: any) => ({
+          id: Number(c.id),
+          numeroContrato: String(c.numeroContrato || ""),
+          tipoContratante: String(c.tipoContratante || ""),
+          tipoPapel: (c.tipoPapel ?? null) as any,
+          empresaParceiraNome: c.empresaParceiraNome ? String(c.empresaParceiraNome) : null,
+          empresaParceiraDocumento: c.empresaParceiraDocumento ? String(c.empresaParceiraDocumento) : null,
+        }))
+      );
+
+      const cpRaw = (contrapartesRes as any)?.data;
+      const cpJson = cpRaw && typeof cpRaw === "object" ? cpRaw : null;
+      const cpData = cpJson?.success ? cpJson.data : Array.isArray(cpRaw) ? cpRaw : [];
+      setContrapartes(
+        (Array.isArray(cpData) ? cpData : []).map((x: any) => ({
+          idContraparte: Number(x.idContraparte),
+          nomeRazao: String(x.nomeRazao || ""),
+          documento: x.documento ? String(x.documento) : null,
+        }))
+      );
     } catch (e: any) {
-      setErr(e?.message || "Erro ao carregar obras");
+      setErr(e?.response?.data?.message || e?.message || "Erro ao carregar obras");
       setObras([]);
+      setContratos([]);
+      setContrapartes([]);
     } finally {
       setLoading(false);
     }
   }
 
-  async function carregarResponsaveis(idObra: number) {
-    try {
-      setErr(null);
-      const { data: json } = await api.get(`/api/v1/engenharia/obras/responsaveis`, { params: { idObra } });
-      if (!json?.success) throw new Error(json?.message || "Erro ao carregar responsáveis.");
-      const lista = Array.isArray(json.data) ? json.data : [];
-      setResponsaveis(lista);
-    } catch (e: any) {
-      setErr(e?.message || "Erro ao carregar responsáveis.");
-      setResponsaveis([]);
+  const contratoById = useMemo(() => new Map(contratos.map((c) => [c.id, c])), [contratos]);
+  const contraparteByDoc = useMemo(() => {
+    const m = new Map<string, ContraparteRow>();
+    for (const c of contrapartes) {
+      const d = onlyDigits(String(c.documento || ""));
+      if (d && !m.has(d)) m.set(d, c);
     }
-  }
-
-  async function salvarResponsavel() {
-    if (!obraCadastroId) return;
-    try {
-      setErr(null);
-      const payload = {
-        idObra: obraCadastroId,
-        tipo: formResp.tipo,
-        nome: formResp.nome,
-        registroProfissional: formResp.registroProfissional || null,
-        cpf: formResp.cpf || null,
-        email: formResp.email || null,
-        telefone: formResp.telefone || null,
-        ativo: formResp.ativo,
-      };
-      const url = edicaoId ? `/api/v1/engenharia/obras/responsaveis/${edicaoId}` : "/api/v1/engenharia/obras/responsaveis";
-      const { data: json } = edicaoId ? await api.put(url, payload) : await api.post(url, payload);
-      if (!json?.success) throw new Error(json?.message || "Erro ao salvar responsável.");
-      setEdicaoId(null);
-      setFormResp({ tipo: "RESPONSAVEL_TECNICO", nome: "", registroProfissional: "", cpf: "", email: "", telefone: "", ativo: true });
-      await carregarResponsaveis(obraCadastroId);
-    } catch (e: any) {
-      setErr(e?.message || "Erro ao salvar responsável.");
-    }
-  }
-
-  async function excluirResponsavel(idResponsavelObra: number) {
-    if (!window.confirm("Excluir este registro?")) return;
-    try {
-      setErr(null);
-      const { data: json } = await api.delete(`/api/v1/engenharia/obras/responsaveis/${idResponsavelObra}`);
-      if (!json?.success) throw new Error(json?.message || "Erro ao excluir responsável.");
-      if (!obraCadastroId) return;
-      await carregarResponsaveis(obraCadastroId);
-    } catch (e: any) {
-      setErr(e?.message || "Erro ao excluir responsável.");
-    }
-  }
-
-  function iniciarEdicao(r: ResponsavelObraRef) {
-    setEdicaoId(r.idResponsavelObra);
-    setObraCadastroId(r.idObra);
-    setFormResp({
-      tipo: r.tipo,
-      nome: r.nome || "",
-      registroProfissional: r.registroProfissional || "",
-      cpf: r.cpf || "",
-      email: r.email || "",
-      telefone: r.telefone || "",
-      ativo: r.ativo,
-    });
-  }
-
-  const filtradas = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    if (!term) return obras;
-    return obras.filter((o) => String(o.id).includes(term) || o.nome.toLowerCase().includes(term));
-  }, [obras, q]);
+    return m;
+  }, [contrapartes]);
 
   useEffect(() => {
     carregar();
   }, []);
 
-  useEffect(() => {
-    const raw = searchParams.get("obraId");
-    if (!raw) return;
-    const id = Number(raw);
-    if (!Number.isInteger(id) || id <= 0) return;
-    if (obras.some((o) => o.id === id)) setObraCadastroId(id);
-  }, [searchParams, obras]);
+  const contratoNumeroOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of contratos) if (c.numeroContrato?.trim()) set.add(c.numeroContrato.trim());
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [contratos]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (window.location.hash !== "#cadastro-responsaveis") return;
-    const el = document.getElementById("cadastro-responsaveis");
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [searchParams, obras, obraCadastroId]);
+  const contraparteOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of contrapartes) {
+      const doc = c.documento ? onlyDigits(c.documento) : "";
+      const label = `${c.idContraparte} - ${c.nomeRazao}${doc ? " - " + doc : ""}`;
+      if (c.nomeRazao?.trim()) set.add(label);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [contrapartes]);
 
-  useEffect(() => {
-    if (!obraCadastroId) return;
-    carregarResponsaveis(obraCadastroId);
-  }, [obraCadastroId]);
+  const filtradas = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    const numContrato = numeroContratoFiltro.trim();
+    const contraparteTxt = contraparteFiltro.trim().toLowerCase();
+    const statusAtivos = OBRA_STATUS_OPTIONS.filter((s) => statusSel[s]);
+    const totalSelected = statusAtivos.length;
+    const hasStatusFilter = totalSelected > 0 && totalSelected < OBRA_STATUS_OPTIONS.length;
+
+    function matchContraparte(contrato: ContratoRow | null) {
+      if (!contraparteTxt) return true;
+      if (!contrato) return false;
+      const docDigits = onlyDigits(String(contrato.empresaParceiraDocumento || ""));
+      const cp = docDigits ? contraparteByDoc.get(docDigits) || null : null;
+      const label = cp ? `${cp.idContraparte} - ${cp.nomeRazao}${cp.documento ? " - " + onlyDigits(cp.documento) : ""}` : "";
+      const fallback = `${contrato.empresaParceiraNome || ""} ${docDigits}`.trim();
+      return `${label} ${fallback}`.toLowerCase().includes(contraparteTxt);
+    }
+
+    return obras.filter((o) => {
+      if (hasStatusFilter && !statusSel[(o.status as any) || "NAO_INICIADA"]) return false;
+
+      const contrato = contratoById.get(o.contratoId) || null;
+      if (numContrato && String(contrato?.numeroContrato || "") !== numContrato) return false;
+      if (tipoContratanteFiltro && String(contrato?.tipoContratante || "").toUpperCase() !== tipoContratanteFiltro) return false;
+      if (papelFiltro && String(contrato?.tipoPapel || "").toUpperCase() !== papelFiltro) return false;
+      if (!matchContraparte(contrato)) return false;
+
+      if (!term) return true;
+      const contratoTexto = contrato ? `${contrato.numeroContrato} ${contrato.empresaParceiraNome || ""} ${contrato.empresaParceiraDocumento || ""}` : "";
+      const hay = `${o.id} ${o.name} ${o.status} ${contratoTexto}`.toLowerCase();
+      return hay.includes(term);
+    });
+  }, [q, numeroContratoFiltro, contraparteFiltro, tipoContratanteFiltro, papelFiltro, obras, contratoById, contraparteByDoc, statusSel]);
 
   return (
     <div className="p-6 space-y-6 max-w-5xl text-slate-900">
@@ -188,141 +233,139 @@ export default function EngenhariaObrasPage() {
           </button>
         </div>
         {filtrosAberto ? (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
-            <div className="md:col-span-4">
-              <div className="text-sm text-slate-600">Buscar obra</div>
-              <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Digite ID ou nome" />
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+              <div className="md:col-span-6">
+                <div className="text-sm text-slate-600">Buscar</div>
+                <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Digite ID da obra, nome, contrato, contraparte..." />
+              </div>
+              <div className="md:col-span-3">
+                <div className="text-sm text-slate-600">Nº contrato</div>
+                <input className="input" list="obrasContratoNumeroList" value={numeroContratoFiltro} onChange={(e) => setNumeroContratoFiltro(e.target.value)} placeholder="Selecione" />
+                <datalist id="obrasContratoNumeroList">
+                  {contratoNumeroOptions.map((n) => (
+                    <option key={n} value={n} />
+                  ))}
+                </datalist>
+              </div>
+              <div className="md:col-span-3">
+                <div className="text-sm text-slate-600">Contraparte</div>
+                <input className="input" list="obrasContraparteList" value={contraparteFiltro} onChange={(e) => setContraparteFiltro(e.target.value)} placeholder="ID - nome - documento" />
+                <datalist id="obrasContraparteList">
+                  {contraparteOptions.map((n) => (
+                    <option key={n} value={n} />
+                  ))}
+                </datalist>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+              <div className="md:col-span-3">
+                <div className="text-sm text-slate-600">Tipo do contrato</div>
+                <select className="input" value={tipoContratanteFiltro} onChange={(e) => setTipoContratanteFiltro(e.target.value as any)}>
+                  <option value="">Todos</option>
+                  <option value="PUBLICO">Público</option>
+                  <option value="PRIVADO">Privado</option>
+                  <option value="PF">PF</option>
+                </select>
+              </div>
+              <div className="md:col-span-3">
+                <div className="text-sm text-slate-600">Papel no contrato</div>
+                <select className="input" value={papelFiltro} onChange={(e) => setPapelFiltro(e.target.value as any)}>
+                  <option value="">Todos</option>
+                  <option value="CONTRATANTE">Contratante</option>
+                  <option value="CONTRATADO">Contratado</option>
+                </select>
+              </div>
+              <div className="md:col-span-6">
+                <div className="text-sm text-slate-600">Status</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                    onClick={() => setStatusSel(Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, true])) as any)}
+                  >
+                    Todos
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                    onClick={() => setStatusSel(Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, false])) as any)}
+                  >
+                    Nenhum
+                  </button>
+                  <div className="flex flex-wrap items-center gap-4">
+                    {OBRA_STATUS_OPTIONS.map((s) => (
+                      <label key={s} className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={!!statusSel[s]} onChange={(e) => setStatusSel((p) => ({ ...p, [s]: e.target.checked } as any))} />
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: OBRA_STATUS_COLOR_MAP[s] || "#9CA3AF" }} />
+                        <span>{OBRA_STATUS_LABEL_MAP[s] || s}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         ) : null}
       </div>
 
-      <div id="cadastro-responsaveis" className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-        <div className="text-lg font-semibold">Obras — Cadastros: Responsáveis Técnicos e Fiscais</div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
-          <div className="md:col-span-2">
-            <div className="text-sm text-slate-600">Obra</div>
-            <select className="input" value={obraCadastroId || ""} onChange={(e) => setObraCadastroId(Number(e.target.value || 0) || null)}>
-              <option value="">Selecione</option>
-              {obras.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.nome}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <div className="text-sm text-slate-600">Tipo</div>
-            <select className="input" value={formResp.tipo} onChange={(e) => setFormResp((p) => ({ ...p, tipo: e.target.value as any }))}>
-              <option value="RESPONSAVEL_TECNICO">Responsável Técnico</option>
-              <option value="FISCAL_OBRA">Fiscal da Obra</option>
-            </select>
-          </div>
-          <div className="md:col-span-3">
-            <div className="text-sm text-slate-600">Nome</div>
-            <input className="input" value={formResp.nome} onChange={(e) => setFormResp((p) => ({ ...p, nome: e.target.value }))} />
-          </div>
-          <div>
-            <div className="text-sm text-slate-600">Registro (CREA/CAU)</div>
-            <input className="input" value={formResp.registroProfissional} onChange={(e) => setFormResp((p) => ({ ...p, registroProfissional: e.target.value }))} />
-          </div>
-          <div>
-            <div className="text-sm text-slate-600">CPF</div>
-            <input className="input" value={formResp.cpf} onChange={(e) => setFormResp((p) => ({ ...p, cpf: e.target.value }))} />
-          </div>
-          <div>
-            <div className="text-sm text-slate-600">E-mail</div>
-            <input className="input" value={formResp.email} onChange={(e) => setFormResp((p) => ({ ...p, email: e.target.value }))} />
-          </div>
-          <div>
-            <div className="text-sm text-slate-600">Telefone</div>
-            <input className="input" value={formResp.telefone} onChange={(e) => setFormResp((p) => ({ ...p, telefone: e.target.value }))} />
-          </div>
-          <div className="flex items-end">
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={formResp.ativo} onChange={(e) => setFormResp((p) => ({ ...p, ativo: e.target.checked }))} />
-              Ativo
-            </label>
-          </div>
-        </div>
-        <div className="flex justify-end gap-2">
-          {edicaoId ? (
-            <button
-              type="button"
-              className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-              onClick={() => {
-                setEdicaoId(null);
-                setFormResp({ tipo: "RESPONSAVEL_TECNICO", nome: "", registroProfissional: "", cpf: "", email: "", telefone: "", ativo: true });
-              }}
-            >
-              Cancelar
-            </button>
-          ) : null}
-          <button className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white" type="button" onClick={salvarResponsavel} disabled={!obraCadastroId || !formResp.nome.trim()}>
-            {edicaoId ? "Salvar alterações" : "Cadastrar"}
-          </button>
-        </div>
-
+      <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+        <div className="text-lg font-semibold">Obras cadastradas</div>
         <div className="overflow-auto">
-          <table className="min-w-full text-sm">
+          <table className="min-w-[1100px] w-full text-sm">
             <thead className="bg-slate-50 text-left text-slate-700">
               <tr>
-                <th className="px-3 py-2">Tipo</th>
-                <th className="px-3 py-2">Nome</th>
-                <th className="px-3 py-2">Registro</th>
-                <th className="px-3 py-2">Contato</th>
+                <th className="px-3 py-2">Obra</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Ações</th>
+                <th className="px-3 py-2">Nº contrato</th>
+                <th className="px-3 py-2">Contraparte</th>
+                <th className="px-3 py-2">Tipo do contrato</th>
+                <th className="px-3 py-2">Papel no contrato</th>
               </tr>
             </thead>
             <tbody>
-              {responsaveis.map((r) => (
-                <tr key={r.idResponsavelObra} className="border-t">
-                  <td className="px-3 py-2">{r.tipo === "RESPONSAVEL_TECNICO" ? "Responsável Técnico" : "Fiscal da Obra"}</td>
-                  <td className="px-3 py-2">{r.nome}</td>
-                  <td className="px-3 py-2">{r.registroProfissional || "-"}</td>
-                  <td className="px-3 py-2">{[r.email, r.telefone].filter(Boolean).join(" · ") || "-"}</td>
-                  <td className="px-3 py-2">{r.ativo ? "ATIVO" : "INATIVO"}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex gap-2">
-                      <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => iniciarEdicao(r)}>
-                        Editar
-                      </button>
-                      <button type="button" className="rounded border px-2 py-1 text-xs text-red-700" onClick={() => excluirResponsavel(r.idResponsavelObra)}>
-                        Excluir
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {!responsaveis.length ? (
+              {filtradas.map((o) => {
+                const contrato = contratoById.get(o.contratoId) || null;
+                const docDigits = onlyDigits(String(contrato?.empresaParceiraDocumento || ""));
+                const cp = docDigits ? contraparteByDoc.get(docDigits) || null : null;
+                const cpLabel = cp ? `${cp.idContraparte} - ${cp.nomeRazao}${cp.documento ? " - " + onlyDigits(cp.documento) : ""}` : `${contrato?.empresaParceiraNome || "-"}${docDigits ? " - " + docDigits : ""}`;
+                return (
+                  <tr
+                    key={o.id}
+                    className="border-t cursor-pointer hover:bg-slate-50"
+                    onClick={() => {
+                      setActiveObra({ id: o.id, nome: o.name });
+                      router.push(`/dashboard/engenharia/obras/${o.id}`);
+                    }}
+                  >
+                    <td className="px-3 py-2">
+                      <div className="font-semibold">#{o.id} — {o.name}</div>
+                      <div className="text-xs text-slate-500">{o.type === "PUBLICA" ? "Pública" : "Particular"}</div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: OBRA_STATUS_COLOR_MAP[o.status] || "#9CA3AF" }} />
+                        <span>{OBRA_STATUS_LABEL_MAP[o.status] || o.status}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">{contrato?.numeroContrato || "-"}</td>
+                    <td className="px-3 py-2">{cpLabel || "-"}</td>
+                    <td className="px-3 py-2">{contrato?.tipoContratante ? String(contrato.tipoContratante) : "-"}</td>
+                    <td className="px-3 py-2">{contrato?.tipoPapel ? String(contrato.tipoPapel) : "-"}</td>
+                  </tr>
+                );
+              })}
+              {!filtradas.length ? (
                 <tr>
                   <td className="px-3 py-6 text-center text-slate-500" colSpan={6}>
-                    Sem responsáveis cadastrados para a obra selecionada.
+                    Nenhuma obra encontrada.
                   </td>
                 </tr>
               ) : null}
             </tbody>
           </table>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3">
-        {filtradas.map((o) => (
-          <button
-            key={o.id}
-            type="button"
-            className="rounded-xl border bg-white p-4 shadow-sm text-left hover:bg-slate-50"
-            onClick={() => {
-              setActiveObra({ id: o.id, nome: o.nome });
-              router.push(`/dashboard/engenharia/obras/${o.id}`);
-            }}
-          >
-            <div className="font-semibold">{o.nome}</div>
-            <div className="text-sm text-slate-600">Abrir janelas da obra</div>
-          </button>
-        ))}
-        {!filtradas.length ? <div className="rounded-xl border bg-white p-6 text-sm text-slate-500">Nenhuma obra encontrada.</div> : null}
       </div>
     </div>
   );

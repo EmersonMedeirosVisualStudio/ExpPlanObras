@@ -899,13 +899,6 @@ export default function EngenhariaCadastroObraPage() {
             >
               Visualizar contrato
             </button>
-            <button
-              type="button"
-              className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8]"
-              onClick={() => router.push("/dashboard/contratos/novo")}
-            >
-              Novo Contrato
-            </button>
           </div>
         </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
@@ -966,6 +959,10 @@ export default function EngenhariaCadastroObraPage() {
             className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-60"
             disabled={!contratoId}
             onClick={() => {
+              if (obraFormAberto && !obraId) {
+                setObraFormAberto(false);
+                return;
+              }
               setObraFormAberto(true);
               setObraId(null);
               setEnderecoId(null);
@@ -1152,7 +1149,13 @@ export default function EngenhariaCadastroObraPage() {
             type="button"
             className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-60"
             disabled={!obraId}
-            onClick={limparEnderecoForm}
+            onClick={() => {
+              if (enderecoFormAberto && !enderecoId) {
+                setEnderecoFormAberto(false);
+                return;
+              }
+              limparEnderecoForm();
+            }}
           >
             Novo Endereço
           </button>
