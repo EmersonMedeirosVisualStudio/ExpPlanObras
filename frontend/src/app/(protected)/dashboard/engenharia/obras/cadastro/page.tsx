@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
+import { setActiveObra } from "@/lib/obra/active";
 
 const MapaObras = dynamic(() => import("@/components/MapaObras"), {
   ssr: false,
@@ -666,6 +667,11 @@ export default function EngenhariaCadastroObraPage() {
   }, [sp]);
 
   useEffect(() => {
+    if (!obraId) return;
+    setActiveObra({ id: obraId, nome: obraSelecionada?.name || undefined });
+  }, [obraId, obraSelecionada?.name]);
+
+  useEffect(() => {
     if (!contratoId) return;
     setObraId(null);
     setEnderecoId(null);
@@ -884,11 +890,27 @@ export default function EngenhariaCadastroObraPage() {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            disabled={!obraId}
+            onClick={() => router.push(`/dashboard/engenharia/obras/ativa/dashboard`)}
+          >
+            Dashboard
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            disabled={!obraId}
+            onClick={() => router.push(`/dashboard/obras/documentos?tipo=OBRA&id=${obraId}`)}
+          >
+            Documentos da obra
+          </button>
+          <button
+            type="button"
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
             disabled={!obraId}
             onClick={() => router.push(`/dashboard/engenharia/obras/${obraId}/planilha`)}
           >
-            Planejar
+            Planejamento
           </button>
           <button
             type="button"

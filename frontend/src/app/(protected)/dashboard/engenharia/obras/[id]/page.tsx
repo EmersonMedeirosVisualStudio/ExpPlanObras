@@ -306,8 +306,13 @@ export default function EngenhariaObraHomePage() {
                 <div>
                   <span className="text-slate-500">Status:</span> <span className="font-medium">{contrato.statusContrato || "—"}</span>
                 </div>
-                <button className="mt-2 rounded-md border px-3 py-1.5 text-xs" type="button" onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/contrato`)}>
-                  Ver detalhes
+                <button
+                  className="mt-2 rounded-md border px-3 py-1.5 text-xs disabled:opacity-60"
+                  type="button"
+                  disabled={!contrato.idContrato}
+                  onClick={() => router.push(`/dashboard/contratos?id=${contrato.idContrato}`)}
+                >
+                  Abrir contrato
                 </button>
               </div>
             ) : (
