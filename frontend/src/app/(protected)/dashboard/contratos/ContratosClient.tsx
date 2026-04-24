@@ -221,6 +221,7 @@ export default function ContratosClient() {
     const t = String(urlTipoContratante || "").trim().toUpperCase();
     return t === "PUBLICO" ? "PUBLICO" : t === "PF" ? "PF" : t === "PRIVADO" ? "PRIVADO" : "";
   });
+  const [filtrosOpen, setFiltrosOpen] = useState(false);
 
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailErr, setDetailErr] = useState<string | null>(null);
@@ -408,6 +409,28 @@ export default function ContratosClient() {
       return hay.includes(qq);
     });
   }, [rows, q, statusSel, contraparteFiltroId, contrapartes, papelFiltro, tipoContratanteFiltro]);
+
+  const statusAllSelected = useMemo(() => {
+    return STATUS_FILTER_OPTIONS.every((o) => Boolean(statusSel[o.key]));
+  }, [statusSel]);
+
+  const filtrosAtivosCount = useMemo(() => {
+    let c = 0;
+    if (q.trim()) c += 1;
+    if (contraparteFiltroId) c += 1;
+    if (papelFiltro) c += 1;
+    if (tipoContratanteFiltro) c += 1;
+    if (!statusAllSelected) c += 1;
+    return c;
+  }, [contraparteFiltroId, papelFiltro, q, statusAllSelected, tipoContratanteFiltro]);
+
+  function limparFiltros() {
+    setQ("");
+    setContraparteFiltroId(null);
+    setPapelFiltro("");
+    setTipoContratanteFiltro("");
+    setStatusSel(buildAllStatusSelected());
+  }
 
   async function carregarLista() {
     try {
@@ -971,21 +994,56 @@ export default function ContratosClient() {
       </div>
 
       <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-          <div className="lg:col-span-2">
-            <div className="space-y-2">
-              <div>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
+              onClick={() => setFiltrosOpen((v) => !v)}
+            >
+              {filtrosOpen ? "Ocultar filtros" : "Exibir filtros"}
+              {filtrosAtivosCount ? (
+                <span className="ml-1 inline-flex items-center rounded-full bg-[#DBEAFE] px-2 py-0.5 text-xs font-semibold text-[#1D4ED8]">
+                  {filtrosAtivosCount} ativo{filtrosAtivosCount > 1 ? "s" : ""}
+                </span>
+              ) : null}
+            </button>
+            {filtrosAtivosCount ? (
+              <button
+                type="button"
+                className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
+                onClick={limparFiltros}
+              >
+                Limpar
+              </button>
+            ) : null}
+          </div>
+
+          <button
+            className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50"
+            type="button"
+            onClick={carregarLista}
+            disabled={loading}
+          >
+            {loading ? "Atualizando..." : "Atualizar"}
+          </button>
+        </div>
+
+        {filtrosOpen ? (
+          <div className="mt-4 space-y-3">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+              <div className="lg:col-span-3">
                 <div className="text-xs text-[#6B7280]">Busca</div>
                 <input className="input h-9 text-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Número/nome/empresa" />
               </div>
-              <div>
+              <div className="lg:col-span-3">
                 <div className="text-xs text-[#6B7280]">Contraparte</div>
                 <select
                   className="input h-9 text-sm"
                   value={contraparteFiltroId ? String(contraparteFiltroId) : ""}
                   onChange={(e) => setContraparteFiltroId(e.target.value ? Number(e.target.value) : null)}
                 >
-                  <option value="">Todas</option>
+                  <option value="">Todos</option>
                   {contrapartes.map((c) => (
                     <option key={c.idContraparte} value={String(c.idContraparte)}>
                       #{c.idContraparte} - {c.nomeRazao} - {c.documento ? formatCpfCnpj(c.documento) : "-"}
@@ -993,7 +1051,7 @@ export default function ContratosClient() {
                   ))}
                 </select>
               </div>
-              <div>
+              <div className="lg:col-span-3">
                 <div className="text-xs text-[#6B7280]">Tipo de contrato (papel)</div>
                 <select className="input h-9 text-sm" value={papelFiltro} onChange={(e) => setPapelFiltro(e.target.value as any)}>
                   <option value="">Todos</option>
@@ -1001,7 +1059,7 @@ export default function ContratosClient() {
                   <option value="CONTRATANTE">Somos CONTRATANTES</option>
                 </select>
               </div>
-              <div>
+              <div className="lg:col-span-3">
                 <div className="text-xs text-[#6B7280]">Tipo de contraparte</div>
                 <select className="input h-9 text-sm" value={tipoContratanteFiltro} onChange={(e) => setTipoContratanteFiltro(e.target.value as any)}>
                   <option value="">Todos</option>
@@ -1011,51 +1069,42 @@ export default function ContratosClient() {
                 </select>
               </div>
             </div>
-          </div>
-          <div className="lg:col-span-9">
-            <div className="text-xs text-[#6B7280]">Status</div>
-            <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7">
-                {STATUS_FILTER_OPTIONS.map((o) => (
-                  <label key={o.key} className="flex items-center gap-1.5 whitespace-nowrap text-xs">
-                    <input type="checkbox" checked={Boolean(statusSel[o.key])} onChange={(e) => setStatusSel((p) => ({ ...p, [o.key]: e.target.checked }))} />
-                    {o.label}
-                  </label>
-                ))}
-              </div>
-              <div className="mt-3 flex gap-2">
-                <button
-                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-1.5 text-xs text-[#111827] hover:bg-[#F9FAFB]"
-                  type="button"
-                  onClick={() => setStatusSel(buildAllStatusSelected())}
-                >
-                  Marcar todos
-                </button>
-                <button
-                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-1.5 text-xs text-[#111827] hover:bg-[#F9FAFB]"
-                  type="button"
-                  onClick={() => {
-                    const next: Record<StatusCalc, boolean> = {} as any;
-                    for (const o of STATUS_FILTER_OPTIONS) next[o.key] = false;
-                    setStatusSel(next);
-                  }}
-                >
-                  Limpar
-                </button>
+
+            <div>
+              <div className="text-xs text-[#6B7280]">Status</div>
+              <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
+                <div className="flex items-center gap-4 overflow-x-auto whitespace-nowrap">
+                  {STATUS_FILTER_OPTIONS.map((o) => (
+                    <label key={o.key} className="flex items-center gap-1.5 text-xs">
+                      <input type="checkbox" checked={Boolean(statusSel[o.key])} onChange={(e) => setStatusSel((p) => ({ ...p, [o.key]: e.target.checked }))} />
+                      {o.label}
+                    </label>
+                  ))}
+                  <div className="flex items-center gap-2 pl-2">
+                    <button
+                      className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-1.5 text-xs text-[#111827] hover:bg-[#F9FAFB]"
+                      type="button"
+                      onClick={() => setStatusSel(buildAllStatusSelected())}
+                    >
+                      Marcar todos
+                    </button>
+                    <button
+                      className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-1.5 text-xs text-[#111827] hover:bg-[#F9FAFB]"
+                      type="button"
+                      onClick={() => {
+                        const next: Record<StatusCalc, boolean> = {} as any;
+                        for (const o of STATUS_FILTER_OPTIONS) next[o.key] = false;
+                        setStatusSel(next);
+                      }}
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-          <div className="flex items-end justify-end gap-2 lg:col-span-1">
-            <button
-              className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-50"
-              type="button"
-              onClick={carregarLista}
-              disabled={loading}
-            >
-              {loading ? "Atualizando..." : "Atualizar"}
-            </button>
-          </div>
-        </div>
+        ) : null}
         {err ? <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
       </section>
 
