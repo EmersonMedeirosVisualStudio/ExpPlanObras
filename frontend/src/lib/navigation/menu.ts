@@ -199,13 +199,6 @@ export const APP_MENU: MenuSectionConfig[] = [
         permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
       },
       {
-        key: 'subcontratos',
-        label: 'Subcontratos',
-        href: '/dashboard/contratos/subcontratos',
-        icon: 'handshake',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
         key: 'contratos-medicoes',
         label: 'Medições',
         href: '/dashboard/contratos/medicoes',

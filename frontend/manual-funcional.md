@@ -3078,7 +3078,7 @@ Natureza do contrato (papel) e impacto financeiro:
 
 - **Somos CONTRATADOS** → natureza **Receita** (aparece no **Faturamento**).
 - **Somos CONTRATANTES** → natureza **Despesa** (não aparece no **Faturamento**).
-- Se o contrato estiver **vinculado** a um contrato principal (subcontrato), o papel obrigatório é **CONTRATANTES**.
+- Se o contrato estiver **vinculado** a um contrato principal (contrato vinculado), o papel obrigatório é **CONTRATANTES**.
 
 Telas:
 
@@ -3093,7 +3093,6 @@ Menu (padrão):
 - Contratos → Planejamento (Gantt)
 - Contratos → Documentos
 - Contratos → Aditivos
-- Contratos → Subcontratos (contratos vinculados a um contrato principal)
 - Contratos → Contrapartes (Empresas/Pessoas externas)
 
 Colunas e inteligência (lista):
@@ -3298,12 +3297,12 @@ Observação (escala):
 
 - o tempo real atual é baseado em SSE (stream) no backend; no estado atual, ele é ótimo para MVP e ambiente padrão, mas em múltiplas instâncias pode exigir pub/sub (ex.: Redis) para garantir entrega consistente.
 
-### 21.7 Subcontratos (contrato principal x subcontrato)
+### 21.7 Contratos vinculados (contrato principal x contrato vinculado)
 
 Conceito:
 
 - **Contrato principal**: ex.: Prefeitura contrata a nossa empresa (Tenant).
-- **Subcontrato**: quando a nossa empresa subcontrata uma empresa/PF (Contraparte) para executar parte ou todo o contrato principal.
+- **Contrato vinculado**: quando a nossa empresa contrata uma empresa/PF (Contraparte) para executar parte ou todo o contrato principal.
 
 Modelo de empresas (regra):
 
@@ -3315,23 +3314,23 @@ Papéis (regra):
 - Contrato principal:
   - contratante = contraparte
   - contratada = tenant
-- Subcontrato:
+- Contrato vinculado:
   - contratante = tenant
   - contratada = contraparte
 
 Vínculo obrigatório:
 
-- Todo subcontrato deve referenciar o contrato principal (`contratoPrincipalId`).
-- Fluxo de tela: selecionar contrato principal → listar subcontratos → selecionar subcontrato → operar detalhes/medições/pagamentos.
+- Todo contrato vinculado deve referenciar o contrato principal (`contratoPrincipalId`).
+- Fluxo de tela: abrir contrato principal → ver lista de **Contratos vinculados** (lado a lado com Aditivos e Medições) → clicar em um contrato vinculado para abrir o detalhe.
 
 Controle financeiro (regra obrigatória):
 
-- `SOMA(subcontratos.valor_total) <= contrato_principal.valor_total`
+- `SOMA(contratos_vinculados.valor_total) <= contrato_principal.valor_total`
 - Se a soma ultrapassar o contrato principal: o sistema bloqueia o cadastro/edição (para evitar estouro financeiro).
 
-Medições por contrato (subcontrato ou principal):
+Medições por contrato (vinculado ou principal):
 
-- Medição pertence a um contrato (principal ou subcontrato).
+- Medição pertence a um contrato (principal ou vinculado).
 - `SOMA(medicoes PENDENTE+APROVADO) <= valor do contrato`
 - Status da medição: PENDENTE, APROVADO, REJEITADO.
 
@@ -3343,14 +3342,14 @@ Pagamentos por contrato:
 
 Controle de vigência (regra crítica):
 
-- `subcontrato.data_fim <= contrato_principal.data_fim`
-- Se violar: não bloqueia automaticamente, mas o sistema gera alerta forte no subcontrato.
+- `contrato_vinculado.data_fim <= contrato_principal.data_fim`
+- Se violar: não bloqueia automaticamente, mas o sistema gera alerta forte no contrato vinculado.
 
 Regras de exclusão:
 
-- Se existir medição ou pagamento, não pode excluir o subcontrato.
+- Se existir medição ou pagamento, não pode excluir o contrato vinculado.
 
-Status padrão do subcontrato:
+Status padrão do contrato vinculado:
 
 - Planejado
 - Em execução
@@ -3358,7 +3357,6 @@ Status padrão do subcontrato:
 - Concluído
 - Bloqueado
 
-Telas:
+Onde consultar:
 
-- Subcontratos: `/dashboard/contratos/subcontratos?contratoId={ID_CONTRATO_PRINCIPAL}`
-- Dentro do contrato selecionado (`/dashboard/contratos?id={ID}`) há um botão **Subcontratos** que abre a tela já filtrada.
+- Dentro do contrato selecionado (`/dashboard/contratos?id={ID}`), na seção **Contratos vinculados**.

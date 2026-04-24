@@ -1,3 +1,0 @@
-ALTER TABLE "User" ADD COLUMN "oauthProvider" TEXT;
-ALTER TABLE "User" ADD COLUMN "oauthId" TEXT;
-

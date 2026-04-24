@@ -1,4 +1,0 @@
-ALTER TABLE "Tenant" ADD COLUMN "subscriptionStatus" TEXT NOT NULL DEFAULT 'TRIAL';
-ALTER TABLE "Tenant" ADD COLUMN "trialEndsAt" DATETIME;
-ALTER TABLE "Tenant" ADD COLUMN "paidUntil" DATETIME;
-

@@ -40,6 +40,34 @@ type ContratoDetail = ContratoRow & {
   indicadores?: { valorExecutado: number | null; valorPago: number | null };
 };
 
+type ContratoVinculadoRow = {
+  id: number;
+  numeroContrato: string;
+  empresaParceiraNome: string | null;
+  status: string;
+  valorTotalAtual: number | null;
+};
+
+type AditivoLiteRow = {
+  id: number;
+  numeroAditivo: string;
+  tipo: "PRAZO" | "VALOR" | "REPROGRAMACAO" | string;
+  status: string;
+  dataAssinatura: string | null;
+  prazoAdicionadoDias: number | null;
+  valorTotalAdicionado: number | null;
+  valorConcedenteAdicionado: number | null;
+  valorProprioAdicionado: number | null;
+};
+
+type MedicaoLiteRow = {
+  id: number;
+  contratoId: number;
+  date: string;
+  amount: number;
+  status: "PENDENTE" | "APROVADO" | "REJEITADO";
+};
+
 type ContraparteLite = {
   idContraparte: number;
   tipo: "PJ" | "PF";
@@ -111,6 +139,36 @@ function normalizeTipoContratante(v: unknown): ContratoRow["tipoContratante"] {
   const t = String(v || "PRIVADO").toUpperCase();
   if (t === "PUBLICO" || t === "PRIVADO" || t === "PF") return t;
   return "PRIVADO";
+}
+
+function labelSubStatus(v: unknown) {
+  const s = String(v || "").toUpperCase();
+  if (s === "PLANEJADO") return "Planejado";
+  if (s === "EM_EXECUCAO") return "Em execução";
+  if (s === "AGUARDANDO") return "Aguardando";
+  if (s === "CONCLUIDO") return "Concluído";
+  if (s === "BLOQUEADO") return "Bloqueado";
+  return s || "—";
+}
+
+function labelMedicaoStatus(v: unknown) {
+  const s = String(v || "").toUpperCase();
+  if (s === "PENDENTE") return "Pendente";
+  if (s === "APROVADO") return "Aprovado";
+  if (s === "REJEITADO") return "Rejeitado";
+  return s || "—";
+}
+
+function formatAditivoImpacto(a: AditivoLiteRow) {
+  const parts: string[] = [];
+  const dias = a.prazoAdicionadoDias != null ? Number(a.prazoAdicionadoDias) : null;
+  if (dias && Number.isFinite(dias) && dias !== 0) parts.push(`${dias > 0 ? "+" : ""}${dias} dias`);
+  const vt = a.valorTotalAdicionado != null ? Number(a.valorTotalAdicionado) : null;
+  const vc = a.valorConcedenteAdicionado != null ? Number(a.valorConcedenteAdicionado) : null;
+  const vp = a.valorProprioAdicionado != null ? Number(a.valorProprioAdicionado) : null;
+  if (vt && Number.isFinite(vt) && vt !== 0) parts.push(moeda(vt));
+  else if ((vc && Number.isFinite(vc) && vc !== 0) || (vp && Number.isFinite(vp) && vp !== 0)) parts.push(`C:${moeda(vc || 0)} P:${moeda(vp || 0)}`);
+  return parts.length ? parts.join(" • ") : "—";
 }
 
 function toDateInputValue(v: unknown) {
@@ -226,6 +284,18 @@ export default function ContratosClient() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailErr, setDetailErr] = useState<string | null>(null);
   const [detail, setDetail] = useState<ContratoDetail | null>(null);
+
+  const [vinculadosLoading, setVinculadosLoading] = useState(false);
+  const [vinculadosErr, setVinculadosErr] = useState<string | null>(null);
+  const [vinculados, setVinculados] = useState<ContratoVinculadoRow[]>([]);
+
+  const [aditivosLoading, setAditivosLoading] = useState(false);
+  const [aditivosErr, setAditivosErr] = useState<string | null>(null);
+  const [aditivos, setAditivos] = useState<AditivoLiteRow[]>([]);
+
+  const [medicoesLoading, setMedicoesLoading] = useState(false);
+  const [medicoesErr, setMedicoesErr] = useState<string | null>(null);
+  const [medicoes, setMedicoes] = useState<MedicaoLiteRow[]>([]);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
@@ -487,6 +557,92 @@ export default function ContratosClient() {
     }
   }
 
+  async function carregarVinculados(id: string) {
+    if (!id) return;
+    try {
+      setVinculadosLoading(true);
+      setVinculadosErr(null);
+      const res = await api.get(`/api/contratos/${id}/subcontratos`);
+      const rows = (res.data as any[]) || [];
+      setVinculados(
+        rows
+          .map((r: any) => ({
+            id: Number(r.id),
+            numeroContrato: String(r.numeroContrato || ""),
+            empresaParceiraNome: r.empresaParceiraNome ? String(r.empresaParceiraNome) : null,
+            status: String(r.status || ""),
+            valorTotalAtual: r.valorTotalAtual == null ? null : Number(r.valorTotalAtual),
+          }))
+          .filter((r: ContratoVinculadoRow) => Number.isFinite(r.id) && r.id > 0)
+      );
+    } catch (e: any) {
+      setVinculados([]);
+      setVinculadosErr(e?.response?.data?.message || e?.message || "Erro ao carregar contratos vinculados");
+    } finally {
+      setVinculadosLoading(false);
+    }
+  }
+
+  async function carregarAditivos(id: string) {
+    if (!id) return;
+    try {
+      setAditivosLoading(true);
+      setAditivosErr(null);
+      const res = await api.get(`/api/contratos/${id}/aditivos`);
+      const rows = (res.data as any[]) || [];
+      setAditivos(
+        rows
+          .map((r: any) => ({
+            id: Number(r.id),
+            numeroAditivo: String(r.numeroAditivo || ""),
+            tipo: String(r.tipo || ""),
+            status: String(r.status || ""),
+            dataAssinatura: r.dataAssinatura ? String(r.dataAssinatura) : null,
+            prazoAdicionadoDias: r.prazoAdicionadoDias == null ? null : Number(r.prazoAdicionadoDias),
+            valorTotalAdicionado: r.valorTotalAdicionado == null ? null : Number(r.valorTotalAdicionado),
+            valorConcedenteAdicionado: r.valorConcedenteAdicionado == null ? null : Number(r.valorConcedenteAdicionado),
+            valorProprioAdicionado: r.valorProprioAdicionado == null ? null : Number(r.valorProprioAdicionado),
+          }))
+          .filter((r: AditivoLiteRow) => Number.isFinite(r.id) && r.id > 0)
+      );
+    } catch (e: any) {
+      setAditivos([]);
+      setAditivosErr(e?.response?.data?.message || e?.message || "Erro ao carregar aditivos");
+    } finally {
+      setAditivosLoading(false);
+    }
+  }
+
+  async function carregarMedicoes(id: string) {
+    if (!id) return;
+    try {
+      setMedicoesLoading(true);
+      setMedicoesErr(null);
+      const res = await api.get(`/api/contratos/${id}/medicoes`);
+      const rows = (res.data as any[]) || [];
+      setMedicoes(
+        rows
+          .map((r: any) => ({
+            id: Number(r.id),
+            contratoId: Number(r.contratoId),
+            date: String(r.date || ""),
+            amount: Number(r.amount || 0),
+            status: (String(r.status || "PENDENTE").toUpperCase() as any) || "PENDENTE",
+          }))
+          .filter((r: MedicaoLiteRow) => Number.isFinite(r.id) && r.id > 0)
+      );
+    } catch (e: any) {
+      setMedicoes([]);
+      setMedicoesErr(e?.response?.data?.message || e?.message || "Erro ao carregar medições");
+    } finally {
+      setMedicoesLoading(false);
+    }
+  }
+
+  async function carregarRelacionados(id: string) {
+    await Promise.all([carregarVinculados(id), carregarAditivos(id), carregarMedicoes(id)]);
+  }
+
   useEffect(() => {
     carregarLista();
   }, []);
@@ -496,13 +652,22 @@ export default function ContratosClient() {
     const unsubs = [
       realtimeClient.subscribe("contratos", "contrato_atualizado", () => {
         carregarLista();
-        if (contratoId) carregarDetalhe(contratoId);
+        if (contratoId) {
+          carregarDetalhe(contratoId);
+          carregarRelacionados(contratoId);
+        }
       }),
       realtimeClient.subscribe("contratos", "evento_criado", () => {
-        if (contratoId) carregarDetalhe(contratoId);
+        if (contratoId) {
+          carregarDetalhe(contratoId);
+          carregarRelacionados(contratoId);
+        }
       }),
       realtimeClient.subscribe("contratos", "anexo_criado", () => {
-        if (contratoId) carregarDetalhe(contratoId);
+        if (contratoId) {
+          carregarDetalhe(contratoId);
+          carregarRelacionados(contratoId);
+        }
       }),
     ];
     return () => {
@@ -511,10 +676,18 @@ export default function ContratosClient() {
   }, [contratoId]);
 
   useEffect(() => {
-    if (contratoId) carregarDetalhe(contratoId);
-    else {
+    if (contratoId) {
+      carregarDetalhe(contratoId);
+      carregarRelacionados(contratoId);
+    } else {
       setDetail(null);
       setDetailErr(null);
+      setVinculados([]);
+      setVinculadosErr(null);
+      setAditivos([]);
+      setAditivosErr(null);
+      setMedicoes([]);
+      setMedicoesErr(null);
     }
   }, [contratoId]);
 
@@ -595,13 +768,6 @@ export default function ContratosClient() {
               onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}`)}
             >
               Aditivos
-            </button>
-            <button
-              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
-              type="button"
-              onClick={() => router.push(`/dashboard/contratos/subcontratos?contratoId=${contratoId}`)}
-            >
-              Subcontratos
             </button>
             <button
               className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
@@ -728,6 +894,133 @@ export default function ContratosClient() {
                 </div>
               </section>
             ) : null}
+
+            <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold">Contratos vinculados</div>
+                  <div className="text-xs text-[#6B7280]">Contratos que referenciam este contrato como principal.</div>
+                </div>
+                <div className="text-xs text-[#6B7280]">{vinculados.length}</div>
+              </div>
+              {vinculadosErr ? <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">{vinculadosErr}</div> : null}
+              {vinculadosLoading ? <div className="mt-2 text-xs text-[#6B7280]">Carregando...</div> : null}
+              <div className="mt-3 overflow-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-[#F9FAFB] text-left text-[#111827]">
+                    <tr>
+                      <th className="px-3 py-2">Número</th>
+                      <th className="px-3 py-2">Contraparte</th>
+                      <th className="px-3 py-2">Status</th>
+                      <th className="px-3 py-2 text-right">Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vinculados.map((r) => (
+                      <tr key={r.id} className="border-t border-[#E5E7EB] cursor-pointer hover:bg-[#F9FAFB]" onClick={() => router.push(`/dashboard/contratos?id=${r.id}`)}>
+                        <td className="px-3 py-2 font-semibold">{r.numeroContrato || `#${r.id}`}</td>
+                        <td className="px-3 py-2">{r.empresaParceiraNome || "—"}</td>
+                        <td className="px-3 py-2">{labelSubStatus(r.status)}</td>
+                        <td className="px-3 py-2 text-right">{moeda(Number(r.valorTotalAtual || 0))}</td>
+                      </tr>
+                    ))}
+                    {!vinculados.length && !vinculadosLoading ? (
+                      <tr>
+                        <td colSpan={4} className="px-3 py-6 text-center text-[#6B7280]">
+                          Nenhum contrato vinculado.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold">Aditivos</div>
+                  <div className="text-xs text-[#6B7280]">Histórico de mudanças no contrato.</div>
+                </div>
+                <div className="text-xs text-[#6B7280]">{aditivos.length}</div>
+              </div>
+              {aditivosErr ? <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">{aditivosErr}</div> : null}
+              {aditivosLoading ? <div className="mt-2 text-xs text-[#6B7280]">Carregando...</div> : null}
+              <div className="mt-3 overflow-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-[#F9FAFB] text-left text-[#111827]">
+                    <tr>
+                      <th className="px-3 py-2">Nº</th>
+                      <th className="px-3 py-2">Tipo</th>
+                      <th className="px-3 py-2">Status</th>
+                      <th className="px-3 py-2">Assinatura</th>
+                      <th className="px-3 py-2 text-right">Impacto</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {aditivos.map((a) => (
+                      <tr
+                        key={a.id}
+                        className="border-t border-[#E5E7EB] cursor-pointer hover:bg-[#F9FAFB]"
+                        onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}&tab=lista`)}
+                      >
+                        <td className="px-3 py-2 font-semibold">{a.numeroAditivo || `#${a.id}`}</td>
+                        <td className="px-3 py-2">{String(a.tipo || "").toUpperCase()}</td>
+                        <td className="px-3 py-2">{String(a.status || "").toUpperCase()}</td>
+                        <td className="px-3 py-2">{a.dataAssinatura ? new Date(a.dataAssinatura).toLocaleDateString("pt-BR") : "—"}</td>
+                        <td className="px-3 py-2 text-right">{formatAditivoImpacto(a)}</td>
+                      </tr>
+                    ))}
+                    {!aditivos.length && !aditivosLoading ? (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-6 text-center text-[#6B7280]">
+                          Nenhum aditivo cadastrado.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold">Medições realizadas</div>
+                  <div className="text-xs text-[#6B7280]">Lançamentos de execução financeira do contrato.</div>
+                </div>
+                <div className="text-xs text-[#6B7280]">{medicoes.length}</div>
+              </div>
+              {medicoesErr ? <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">{medicoesErr}</div> : null}
+              {medicoesLoading ? <div className="mt-2 text-xs text-[#6B7280]">Carregando...</div> : null}
+              <div className="mt-3 overflow-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-[#F9FAFB] text-left text-[#111827]">
+                    <tr>
+                      <th className="px-3 py-2">Data</th>
+                      <th className="px-3 py-2">Status</th>
+                      <th className="px-3 py-2 text-right">Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {medicoes.map((m) => (
+                      <tr key={m.id} className="border-t border-[#E5E7EB]">
+                        <td className="px-3 py-2">{m.date ? new Date(m.date).toLocaleDateString("pt-BR") : "—"}</td>
+                        <td className="px-3 py-2">{labelMedicaoStatus(m.status)}</td>
+                        <td className="px-3 py-2 text-right">{moeda(Number(m.amount || 0))}</td>
+                      </tr>
+                    ))}
+                    {!medicoes.length && !medicoesLoading ? (
+                      <tr>
+                        <td colSpan={3} className="px-3 py-6 text-center text-[#6B7280]">
+                          Nenhuma medição cadastrada.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
 
             <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-12">
               <div className="flex items-center justify-between gap-2 flex-wrap">
