@@ -876,9 +876,32 @@ export default function EngenhariaCadastroObraPage() {
 
   return (
     <div className="space-y-6 text-[#111827]">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Engenharia → Cadastro de Obra</h1>
-        <div className="text-sm text-slate-600">Crie obras e depois selecione a obra para abrir as janelas operacionais.</div>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Engenharia → Obra selecionada</h1>
+          <div className="text-sm text-slate-600">Cadastre/edite a obra selecionada e acesse Planejar/Executar.</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+            disabled={!obraId}
+            onClick={() => router.push(`/dashboard/engenharia/obras/${obraId}/planilha`)}
+          >
+            Planejar
+          </button>
+          <button
+            type="button"
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-60"
+            disabled={!obraId}
+            onClick={() => router.push(`/dashboard/engenharia/obras/${obraId}/programacao`)}
+          >
+            Executar
+          </button>
+          <button type="button" className="rounded-lg border px-4 py-2 text-sm" onClick={() => router.push("/dashboard/engenharia/obras")}>
+            Voltar
+          </button>
+        </div>
       </div>
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}

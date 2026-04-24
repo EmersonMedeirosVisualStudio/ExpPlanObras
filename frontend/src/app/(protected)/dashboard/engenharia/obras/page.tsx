@@ -78,6 +78,7 @@ export default function EngenhariaObrasPage() {
   const [obras, setObras] = useState<ObraRow[]>([]);
   const [contratos, setContratos] = useState<ContratoRow[]>([]);
   const [contrapartes, setContrapartes] = useState<ContraparteRow[]>([]);
+  const [obraSelecionadaId, setObraSelecionadaId] = useState<number | null>(null);
 
   const [statusSel, setStatusSel] = useState<Record<ObraStatus, boolean>>(() => Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, true])) as Record<ObraStatus, boolean>);
   const [numeroContratoFiltro, setNumeroContratoFiltro] = useState("");
@@ -318,6 +319,7 @@ export default function EngenhariaObrasPage() {
 
       <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="text-lg font-semibold">Obras cadastradas</div>
+        <div className="text-xs text-slate-500">Clique 1x para selecionar. Dê duplo clique para abrir a obra selecionada.</div>
         <div className="overflow-auto">
           <table className="min-w-[1100px] w-full text-sm">
             <thead className="bg-slate-50 text-left text-slate-700">
@@ -339,10 +341,14 @@ export default function EngenhariaObrasPage() {
                 return (
                   <tr
                     key={o.id}
-                    className="border-t cursor-pointer hover:bg-slate-50"
+                    className={`border-t cursor-pointer hover:bg-slate-50 ${obraSelecionadaId === o.id ? "bg-blue-50" : ""}`}
                     onClick={() => {
                       setActiveObra({ id: o.id, nome: o.name });
-                      router.push(`/dashboard/engenharia/obras/${o.id}`);
+                      setObraSelecionadaId(o.id);
+                    }}
+                    onDoubleClick={() => {
+                      setActiveObra({ id: o.id, nome: o.name });
+                      router.push(`/dashboard/engenharia/obras/cadastro?obraId=${o.id}`);
                     }}
                   >
                     <td className="px-3 py-2">
