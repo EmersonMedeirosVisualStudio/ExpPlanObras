@@ -46,6 +46,7 @@ model Tenant {
   contratosEventosAnexos ContratoEventoAnexo[]
   contratosMedicoes ContratoMedicao[]
   contratosPagamentos ContratoPagamento[]
+  contratosProgramacaoFinanceira ContratoProgramacaoFinanceira[]
   obras     Obra[]
   enderecosObra EnderecoObra[]
   obrasPlanilhasContratadas ObraPlanilhaContratada[]
@@ -339,6 +340,7 @@ model Contrato {
   eventosAnexos  ContratoEventoAnexo[]
   medicoes       ContratoMedicao[]
   pagamentos     ContratoPagamento[]
+  programacaoFinanceira ContratoProgramacaoFinanceira[]
 
   @@unique([tenantId, numeroContrato])
   @@index([tenantId])
@@ -384,6 +386,24 @@ model ContratoPagamento {
   @@index([contratoId])
   @@index([medicaoId])
   @@index([tenantId, contratoId, date])
+}
+
+model ContratoProgramacaoFinanceira {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int
+  contratoId  Int
+  competencia DateTime
+  valorPrevisto Decimal
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contrato    Contrato @relation(fields: [contratoId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, contratoId, competencia])
+  @@index([tenantId])
+  @@index([contratoId])
+  @@index([tenantId, contratoId, competencia])
 }
 
 model ContratoAditivo {

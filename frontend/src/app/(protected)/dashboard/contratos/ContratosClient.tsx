@@ -338,6 +338,24 @@ export default function ContratosClient() {
 
   const [statusSel, setStatusSel] = useState<Record<StatusCalc, boolean>>(() => parseStatusFilterParam(urlStatus));
   const [q, setQ] = useState(urlQ);
+  const [alertaVigenciaDias, setAlertaVigenciaDias] = useState<number>(() => {
+    if (typeof window === "undefined") return 60;
+    try {
+      const raw = localStorage.getItem("contratos_alerta_vigencia_dias");
+      const n = raw != null ? Number(raw) : NaN;
+      if (Number.isFinite(n) && n > 0) return Math.trunc(n);
+    } catch {
+    }
+    return 60;
+  });
+  const [somenteVigenciaAlerta, setSomenteVigenciaAlerta] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("contratos_alerta_vigencia_dias", String(Math.max(1, Math.trunc(Number(alertaVigenciaDias || 0)))));
+    } catch {
+    }
+  }, [alertaVigenciaDias]);
 
   useEffect(() => {
     if (contratoId) return;
@@ -463,7 +481,19 @@ export default function ContratosClient() {
     const contraparte = contraparteFiltroId ? contrapartes.find((c) => c.idContraparte === contraparteFiltroId) || null : null;
     const contraparteDocDigits = contraparte?.documento ? onlyDigits(contraparte.documento) : "";
     const contraparteNome = contraparte?.nomeRazao ? String(contraparte.nomeRazao).trim().toLowerCase() : "";
+    const hoje = parseDateOnlyValue(new Date().toISOString());
+    const diasLimite = Math.max(1, Math.trunc(Number(alertaVigenciaDias || 0)));
+
+    function isVigenciaAlerta(r: ContratoRow) {
+      if (!hoje) return false;
+      const vig = parseDateOnlyValue(r.vigenciaAtual);
+      if (!vig) return false;
+      const dias = diffDays(hoje, vig);
+      return dias <= diasLimite;
+    }
+
     return rows.filter((r) => {
+      if (somenteVigenciaAlerta && !isVigenciaAlerta(r)) return false;
       if (hasStatusFilter) {
         const s = (String(r.statusCalculado || "").toUpperCase() || "EM_ANDAMENTO") as StatusCalc;
         if (!statusSel[s]) return false;
@@ -489,7 +519,7 @@ export default function ContratosClient() {
       const hay = `${r.numeroContrato || ""} ${r.nome || ""} ${r.objeto || ""} ${r.empresaParceiraNome || ""}`.toLowerCase();
       return hay.includes(qq);
     });
-  }, [rows, q, statusSel, contraparteFiltroId, contrapartes, papelFiltro, tipoContratanteFiltro]);
+  }, [rows, q, statusSel, contraparteFiltroId, contrapartes, papelFiltro, tipoContratanteFiltro, alertaVigenciaDias, somenteVigenciaAlerta]);
 
   const statusAllSelected = useMemo(() => {
     return STATUS_FILTER_OPTIONS.every((o) => Boolean(statusSel[o.key]));
@@ -786,6 +816,16 @@ export default function ContratosClient() {
           </div>
           <div className="flex gap-2">
             <button
+              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
+              type="button"
+              onClick={() => {
+                const returnTo = encodeURIComponent(`/dashboard/contratos?id=${contratoId}`);
+                router.push(`/dashboard/contratos/documentos?contratoId=${contratoId}&returnTo=${returnTo}`);
+              }}
+            >
+              Documentos do contrato
+            </button>
+            <button
               className="rounded-lg bg-[#2563EB] px-3 py-2 text-sm text-white hover:bg-[#1D4ED8]"
               type="button"
               onClick={() => {
@@ -794,6 +834,16 @@ export default function ContratosClient() {
               }}
             >
               Planejamento (Gantt)
+            </button>
+            <button
+              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
+              type="button"
+              onClick={() => {
+                const returnTo = encodeURIComponent(`/dashboard/contratos?id=${contratoId}`);
+                router.push(`/dashboard/contratos/programacao-financeira?contratoId=${contratoId}&returnTo=${returnTo}`);
+              }}
+            >
+              Programação financeira
             </button>
             <button
               className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
@@ -1331,12 +1381,31 @@ export default function ContratosClient() {
     <div className="space-y-6 text-[#111827]">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold">Contratos</h1>
+          <h1 className="text-2xl font-semibold">Contratos Cadastrados</h1>
           <div className="text-sm text-[#6B7280]">Cadastre, acompanhe e integre com medições/pagamentos e obras.</div>
         </div>
-        <button className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8]" type="button" onClick={() => router.push("/dashboard/contratos/novo")}>
-          Novo Contrato
-        </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <div className="text-sm text-[#111827]">Alerta de Vigência</div>
+            <input
+              className="input h-9 w-24 text-sm text-right"
+              inputMode="numeric"
+              value={String(alertaVigenciaDias)}
+              onChange={(e) => {
+                const n = Math.trunc(Number(String(e.target.value || "").replace(/\D/g, "") || 0));
+                setAlertaVigenciaDias(n > 0 ? n : 1);
+              }}
+            />
+            <div className="text-sm text-[#111827]">dias</div>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-[#111827]">
+            <input type="checkbox" checked={somenteVigenciaAlerta} onChange={(e) => setSomenteVigenciaAlerta(e.target.checked)} />
+            Mostrar somente contratos no alerta
+          </label>
+          <button className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8]" type="button" onClick={() => router.push("/dashboard/contratos/novo")}>
+            Novo Contrato
+          </button>
+        </div>
       </div>
 
       <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
@@ -1484,9 +1553,15 @@ export default function ContratosClient() {
             </thead>
             <tbody className="text-[#111827]">
               {filtered.map((r) => (
+                (() => {
+                  const hoje = parseDateOnlyValue(new Date().toISOString());
+                  const vig = parseDateOnlyValue(r.vigenciaAtual);
+                  const diasLimite = Math.max(1, Math.trunc(Number(alertaVigenciaDias || 0)));
+                  const isAlerta = Boolean(hoje && vig && diffDays(hoje, vig) <= diasLimite);
+                  return (
                 <tr
                   key={r.id}
-                  className="border-t border-[#E5E7EB] hover:bg-[#F3F4F6] cursor-pointer"
+                  className={`border-t border-[#E5E7EB] hover:bg-[#F3F4F6] cursor-pointer ${isAlerta ? "bg-red-50" : ""}`}
                   onClick={() => router.push(`/dashboard/contratos?id=${r.id}`)}
                 >
                   <td className="px-3 py-2">
@@ -1499,7 +1574,7 @@ export default function ContratosClient() {
                   <td className="px-3 py-2">{r.tipoContratante}</td>
                   <td className="px-3 py-2">{r.empresaParceiraNome || "—"}</td>
                   <td className="px-3 py-2 text-right">{moeda(Number(r.valorTotalAtual || 0))}</td>
-                  <td className="px-3 py-2">{r.vigenciaAtual ? new Date(r.vigenciaAtual).toLocaleDateString("pt-BR") : "—"}</td>
+                  <td className={`px-3 py-2 ${isAlerta ? "font-semibold text-red-700" : ""}`}>{r.vigenciaAtual ? new Date(r.vigenciaAtual).toLocaleDateString("pt-BR") : "—"}</td>
                   <td className={`px-3 py-2 ${statusUi(r.statusCalculado).className}`}>
                     <span className="inline-flex items-center gap-2">
                       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: statusUi(r.statusCalculado).dot }} />
@@ -1507,6 +1582,8 @@ export default function ContratosClient() {
                     </span>
                   </td>
                 </tr>
+                  );
+                })()
               ))}
               {!filtered.length ? (
                 <tr>

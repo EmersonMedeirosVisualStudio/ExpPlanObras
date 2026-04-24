@@ -776,6 +776,105 @@ export async function deleteContratoPagamento(tenantId: number, contratoId: numb
   });
 }
 
+export async function listContratoProgramacaoFinanceira(tenantId: number, contratoId: number) {
+  return withRLS(tenantId, async (tx) => {
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId }, select: { id: true } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
+    const rows = await tx.contratoProgramacaoFinanceira.findMany({ where: { tenantId, contratoId }, orderBy: [{ competencia: 'asc' }, { id: 'asc' }] });
+    return rows.map((r: any) => ({
+      id: r.id,
+      contratoId: r.contratoId,
+      competencia: r.competencia.toISOString(),
+      valorPrevisto: toNumberOrNull(r.valorPrevisto) ?? 0,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    }));
+  });
+}
+
+export async function createContratoProgramacaoFinanceira(tenantId: number, contratoId: number, input: { competencia: string; valorPrevisto: number }) {
+  return withRLS(tenantId, async (tx) => {
+    const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId }, select: { id: true } }).catch(() => null);
+    if (!contrato) throw new Error('Contrato não encontrado');
+
+    const competencia = parseDateOnly(input.competencia);
+    if (!competencia) throw new Error('Competência inválida');
+
+    const valorPrevisto = Number(input.valorPrevisto || 0);
+    if (!Number.isFinite(valorPrevisto) || valorPrevisto <= 0) throw new Error('Valor previsto inválido');
+
+    try {
+      const created = await tx.contratoProgramacaoFinanceira.create({
+        data: {
+          tenantId,
+          contratoId,
+          competencia,
+          valorPrevisto,
+        },
+      });
+      publish(`contrato:${contratoId}`, 'contrato_atualizado', { contratoId });
+      publish('contratos', 'contrato_atualizado', { contratoId });
+      return {
+        id: created.id,
+        contratoId: created.contratoId,
+        competencia: created.competencia.toISOString(),
+        valorPrevisto: toNumberOrNull(created.valorPrevisto) ?? 0,
+        createdAt: created.createdAt.toISOString(),
+        updatedAt: created.updatedAt.toISOString(),
+      };
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (msg.toLowerCase().includes('unique') || msg.toLowerCase().includes('duplicate')) throw new Error('Já existe programação cadastrada para esta competência.');
+      throw e;
+    }
+  });
+}
+
+export async function updateContratoProgramacaoFinanceira(tenantId: number, contratoId: number, itemId: number, input: { competencia: string; valorPrevisto: number }) {
+  return withRLS(tenantId, async (tx) => {
+    const row = await tx.contratoProgramacaoFinanceira.findFirst({ where: { tenantId, contratoId, id: itemId } }).catch(() => null);
+    if (!row) throw new Error('Programação não encontrada');
+
+    const competencia = parseDateOnly(input.competencia);
+    if (!competencia) throw new Error('Competência inválida');
+
+    const valorPrevisto = Number(input.valorPrevisto || 0);
+    if (!Number.isFinite(valorPrevisto) || valorPrevisto <= 0) throw new Error('Valor previsto inválido');
+
+    try {
+      const updated = await tx.contratoProgramacaoFinanceira.update({
+        where: { id: itemId },
+        data: { competencia, valorPrevisto },
+      });
+      publish(`contrato:${contratoId}`, 'contrato_atualizado', { contratoId });
+      publish('contratos', 'contrato_atualizado', { contratoId });
+      return {
+        id: updated.id,
+        contratoId: updated.contratoId,
+        competencia: updated.competencia.toISOString(),
+        valorPrevisto: toNumberOrNull(updated.valorPrevisto) ?? 0,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+      };
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (msg.toLowerCase().includes('unique') || msg.toLowerCase().includes('duplicate')) throw new Error('Já existe programação cadastrada para esta competência.');
+      throw e;
+    }
+  });
+}
+
+export async function deleteContratoProgramacaoFinanceira(tenantId: number, contratoId: number, itemId: number) {
+  return withRLS(tenantId, async (tx) => {
+    const row = await tx.contratoProgramacaoFinanceira.findFirst({ where: { tenantId, contratoId, id: itemId } }).catch(() => null);
+    if (!row) throw new Error('Programação não encontrada');
+    await tx.contratoProgramacaoFinanceira.delete({ where: { id: itemId } });
+    publish(`contrato:${contratoId}`, 'contrato_atualizado', { contratoId });
+    publish('contratos', 'contrato_atualizado', { contratoId });
+    return { ok: true };
+  });
+}
+
 export async function getContratoById(tenantId: number, id: number) {
   return withRLS(tenantId, async (tx) => {
     const contrato = await tx.contrato

@@ -12,8 +12,10 @@ import {
   addContratoEventoAnexo,
   createContratoMedicao,
   createContratoPagamento,
+  createContratoProgramacaoFinanceira,
   createSubcontrato,
   deleteContratoPagamento,
+  deleteContratoProgramacaoFinanceira,
   deleteSubcontrato,
   deleteCronogramaDependencia,
   getContratoConsolidado,
@@ -28,6 +30,7 @@ import {
   listContratoEventos,
   listContratoMedicoes,
   listContratoPagamentos,
+  listContratoProgramacaoFinanceira,
   listContratoServicos,
   listSubcontratos,
   listContratos,
@@ -36,6 +39,7 @@ import {
   updateContrato,
   updateContratoAditivo,
   updateContratoMedicaoStatus,
+  updateContratoProgramacaoFinanceira,
   updateCronogramaItemDatas,
   updateSubcontrato,
 } from './contratos.service.js';
@@ -405,6 +409,82 @@ export default async function contratosRoutes(server: FastifyInstance) {
         return reply.send(ok);
       } catch (e: any) {
         return reply.code(400).send({ message: e?.message || 'Erro ao excluir pagamento' });
+      }
+    }
+  );
+
+  server.get(
+    '/:id/programacao-financeira',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id } = request.params as any;
+      try {
+        const rows = await listContratoProgramacaoFinanceira(tenantId, id);
+        return reply.send(rows);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao listar programação financeira' });
+      }
+    }
+  );
+
+  server.post(
+    '/:id/programacao-financeira',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        body: z.object({
+          competencia: z.string().min(10),
+          valorPrevisto: z.number().positive(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id } = request.params as any;
+      try {
+        const created = await createContratoProgramacaoFinanceira(tenantId, id, request.body as any);
+        return reply.send(created);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao criar programação financeira' });
+      }
+    }
+  );
+
+  server.put(
+    '/:id/programacao-financeira/:itemId',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }),
+        body: z.object({
+          competencia: z.string().min(10),
+          valorPrevisto: z.number().positive(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id, itemId } = request.params as any;
+      try {
+        const updated = await updateContratoProgramacaoFinanceira(tenantId, id, itemId, request.body as any);
+        return reply.send(updated);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao atualizar programação financeira' });
+      }
+    }
+  );
+
+  server.delete(
+    '/:id/programacao-financeira/:itemId',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const tenantId = (request.user as any).tenantId as number;
+      const { id, itemId } = request.params as any;
+      try {
+        const ok = await deleteContratoProgramacaoFinanceira(tenantId, id, itemId);
+        return reply.send(ok);
+      } catch (e: any) {
+        return reply.code(400).send({ message: e?.message || 'Erro ao excluir programação financeira' });
       }
     }
   );
