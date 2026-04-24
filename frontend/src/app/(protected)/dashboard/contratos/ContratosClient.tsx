@@ -202,6 +202,8 @@ export default function ContratosClient() {
   const urlStatus = sp.get("status");
   const urlQ = sp.get("q") || "";
   const urlContraparteId = sp.get("contraparteId");
+  const urlPapel = sp.get("papel");
+  const urlTipoContratante = sp.get("tipoContratante");
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -210,6 +212,14 @@ export default function ContratosClient() {
   const [contraparteFiltroId, setContraparteFiltroId] = useState<number | null>(() => {
     const n = urlContraparteId ? Number(urlContraparteId) : null;
     return n && Number.isFinite(n) ? n : null;
+  });
+  const [papelFiltro, setPapelFiltro] = useState<"" | "CONTRATADO" | "CONTRATANTE">(() => {
+    const p = String(urlPapel || "").trim().toUpperCase();
+    return p === "CONTRATADO" ? "CONTRATADO" : p === "CONTRATANTE" ? "CONTRATANTE" : "";
+  });
+  const [tipoContratanteFiltro, setTipoContratanteFiltro] = useState<"" | "PUBLICO" | "PRIVADO" | "PF">(() => {
+    const t = String(urlTipoContratante || "").trim().toUpperCase();
+    return t === "PUBLICO" ? "PUBLICO" : t === "PF" ? "PF" : t === "PRIVADO" ? "PRIVADO" : "";
   });
 
   const [detailLoading, setDetailLoading] = useState(false);
@@ -253,7 +263,11 @@ export default function ContratosClient() {
     setQ(urlQ);
     const n = urlContraparteId ? Number(urlContraparteId) : null;
     setContraparteFiltroId(n && Number.isFinite(n) ? n : null);
-  }, [contratoId, urlStatus, urlQ, urlContraparteId]);
+    const p = String(urlPapel || "").trim().toUpperCase();
+    setPapelFiltro(p === "CONTRATADO" ? "CONTRATADO" : p === "CONTRATANTE" ? "CONTRATANTE" : "");
+    const t = String(urlTipoContratante || "").trim().toUpperCase();
+    setTipoContratanteFiltro(t === "PUBLICO" ? "PUBLICO" : t === "PF" ? "PF" : t === "PRIVADO" ? "PRIVADO" : "");
+  }, [contratoId, urlStatus, urlQ, urlContraparteId, urlPapel, urlTipoContratante]);
 
   useEffect(() => {
     let cancelled = false;
@@ -372,6 +386,14 @@ export default function ContratosClient() {
         const s = (String(r.statusCalculado || "").toUpperCase() || "EM_ANDAMENTO") as StatusCalc;
         if (!statusSel[s]) return false;
       }
+      if (papelFiltro) {
+        const rp = String(r.tipoPapel || "").toUpperCase();
+        if (rp !== papelFiltro) return false;
+      }
+      if (tipoContratanteFiltro) {
+        const rt = String(r.tipoContratante || "").toUpperCase();
+        if (rt !== tipoContratanteFiltro) return false;
+      }
       if (contraparteFiltroId) {
         if (contraparteDocDigits) {
           const doc = onlyDigits(String(r.empresaParceiraDocumento || ""));
@@ -385,7 +407,7 @@ export default function ContratosClient() {
       const hay = `${r.numeroContrato || ""} ${r.nome || ""} ${r.objeto || ""} ${r.empresaParceiraNome || ""}`.toLowerCase();
       return hay.includes(qq);
     });
-  }, [rows, q, statusSel, contraparteFiltroId, contrapartes]);
+  }, [rows, q, statusSel, contraparteFiltroId, contrapartes, papelFiltro, tipoContratanteFiltro]);
 
   async function carregarLista() {
     try {
@@ -969,6 +991,23 @@ export default function ContratosClient() {
                       #{c.idContraparte} - {c.nomeRazao} - {c.documento ? formatCpfCnpj(c.documento) : "-"}
                     </option>
                   ))}
+                </select>
+              </div>
+              <div>
+                <div className="text-xs text-[#6B7280]">Tipo de contrato (papel)</div>
+                <select className="input h-9 text-sm" value={papelFiltro} onChange={(e) => setPapelFiltro(e.target.value as any)}>
+                  <option value="">Todos</option>
+                  <option value="CONTRATADO">Somos CONTRATADOS</option>
+                  <option value="CONTRATANTE">Somos CONTRATANTES</option>
+                </select>
+              </div>
+              <div>
+                <div className="text-xs text-[#6B7280]">Tipo de contraparte</div>
+                <select className="input h-9 text-sm" value={tipoContratanteFiltro} onChange={(e) => setTipoContratanteFiltro(e.target.value as any)}>
+                  <option value="">Todos</option>
+                  <option value="PUBLICO">Empresa pública</option>
+                  <option value="PRIVADO">Empresa privada</option>
+                  <option value="PF">Pessoa física</option>
                 </select>
               </div>
             </div>

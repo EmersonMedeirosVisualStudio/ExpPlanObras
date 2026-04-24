@@ -146,6 +146,7 @@ model Tenant {
   engenhariaContrapartes EngenhariaContraparte[]
   engenhariaContrapartesAvaliacoes EngenhariaContraparteAvaliacao[]
   engenhariaContrapartesOcorrencias EngenhariaContraparteOcorrencia[]
+  engenhariaContrapartesDocumentos EngenhariaContraparteDocumento[]
 }
 
 model User {
@@ -3024,6 +3025,7 @@ model EngenhariaContraparte {
   tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   avaliacoes          EngenhariaContraparteAvaliacao[]
   ocorrencias         EngenhariaContraparteOcorrencia[]
+  documentos          EngenhariaContraparteDocumento[]
 
   @@index([tenantId])
   @@index([tenantId, tipo])
@@ -3032,6 +3034,24 @@ model EngenhariaContraparte {
   @@index([tenantId, documento])
   @@index([tenantId, cidade])
   @@index([tenantId, uf])
+}
+
+model EngenhariaContraparteDocumento {
+  id           Int      @id @default(autoincrement())
+  tenantId     Int
+  contraparteId Int
+  nomeArquivo  String
+  mimeType     String
+  tamanhoBytes Int
+  conteudo     Bytes
+  createdAt    DateTime @default(now())
+  actorUserId  Int?
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contraparte  EngenhariaContraparte @relation(fields: [contraparteId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, contraparteId])
 }
 
 model EngenhariaContraparteAvaliacao {

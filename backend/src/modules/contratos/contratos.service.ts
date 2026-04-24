@@ -1418,14 +1418,17 @@ export async function downloadContratoEventoAnexo(tenantId: number, contratoId: 
   });
 }
 
-export async function getContratosDashboard(tenantId: number, input?: { status?: string | null; papel?: string | null }) {
+export async function getContratosDashboard(tenantId: number, input?: { status?: string | null; papel?: string | null; tipoContratante?: string | null }) {
   return withRLS(tenantId, async (tx) => {
     const status = input?.status ? String(input.status).trim().toUpperCase() : null;
     const papelRaw = input?.papel ? String(input.papel).trim().toUpperCase() : null;
     const tipoPapel = papelRaw === 'CONTRATANTE' ? 'CONTRATANTE' : papelRaw === 'CONTRATADO' ? 'CONTRATADO' : null;
+    const tipoContratanteRaw = input?.tipoContratante ? String(input.tipoContratante).trim().toUpperCase() : null;
+    const tipoContratante = tipoContratanteRaw === 'PUBLICO' ? 'PUBLICO' : tipoContratanteRaw === 'PF' ? 'PF' : tipoContratanteRaw === 'PRIVADO' ? 'PRIVADO' : null;
     const whereContrato: any = { tenantId, contratoPrincipalId: null };
     if (status) whereContrato.status = status;
     if (tipoPapel) whereContrato.tipoPapel = tipoPapel;
+    if (tipoContratante) whereContrato.tipoContratante = tipoContratante;
 
     const now = new Date();
     const in30 = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
@@ -1455,11 +1458,12 @@ export async function getContratosDashboard(tenantId: number, input?: { status?:
           obra: {
             tenantId,
             contrato:
-              status || tipoPapel
+              status || tipoPapel || tipoContratante
                 ? {
                     contratoPrincipalId: null,
                     status: status ? status : undefined,
                     tipoPapel: tipoPapel ? tipoPapel : undefined,
+                    tipoContratante: tipoContratante ? tipoContratante : undefined,
                   }
                 : { contratoPrincipalId: null },
           },
@@ -1471,11 +1475,12 @@ export async function getContratosDashboard(tenantId: number, input?: { status?:
           obra: {
             tenantId,
             contrato:
-              status || tipoPapel
+              status || tipoPapel || tipoContratante
                 ? {
                     contratoPrincipalId: null,
                     status: status ? status : undefined,
                     tipoPapel: tipoPapel ? tipoPapel : undefined,
+                    tipoContratante: tipoContratante ? tipoContratante : undefined,
                   }
                 : { contratoPrincipalId: null },
           },

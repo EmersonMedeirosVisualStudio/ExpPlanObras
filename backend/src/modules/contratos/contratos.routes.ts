@@ -126,13 +126,14 @@ export default async function contratosRoutes(server: FastifyInstance) {
         querystring: z.object({
           status: z.string().optional(),
           papel: z.string().optional(),
+          tipoContratante: z.string().optional(),
         }),
       },
     },
     async (request, reply) => {
       const tenantId = (request.user as any).tenantId as number;
       const q = request.query as any;
-      const data = await getContratosDashboard(tenantId, { status: q?.status, papel: q?.papel });
+      const data = await getContratosDashboard(tenantId, { status: q?.status, papel: q?.papel, tipoContratante: q?.tipoContratante });
       return reply.send(data);
     }
   );

@@ -5,6 +5,43 @@ import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { Eye, Trash2 } from "lucide-react";
 
+type ApiEnvelope<T> = { success: boolean; message?: string; data: T };
+function unwrapApiData<T>(json: any): T {
+  if (json && typeof json === "object" && "data" in json) return (json as ApiEnvelope<T>).data;
+  return json as T;
+}
+
+function onlyDigits(value: string) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function formatCpfCnpj(value: string) {
+  const d = onlyDigits(value).slice(0, 14);
+  if (!d) return "";
+  if (d.length <= 11) {
+    const p1 = d.slice(0, 3);
+    const p2 = d.slice(3, 6);
+    const p3 = d.slice(6, 9);
+    const p4 = d.slice(9, 11);
+    let out = p1;
+    if (p2) out += `.${p2}`;
+    if (p3) out += `.${p3}`;
+    if (p4) out += `-${p4}`;
+    return out;
+  }
+  const p1 = d.slice(0, 2);
+  const p2 = d.slice(2, 5);
+  const p3 = d.slice(5, 8);
+  const p4 = d.slice(8, 12);
+  const p5 = d.slice(12, 14);
+  let out = p1;
+  if (p2) out += `.${p2}`;
+  if (p3) out += `.${p3}`;
+  if (p4) out += `/${p4}`;
+  if (p5) out += `-${p5}`;
+  return out;
+}
+
 function parseMoneyBR(input: string) {
   const s = String(input || "")
     .replace(/\./g, "")
@@ -101,6 +138,10 @@ export default function NovoContratoClient() {
   const [contratosVinculo, setContratosVinculo] = useState<Array<{ id: number; numeroContrato: string; nome: string | null; empresa: string | null }>>([]);
   const [empresaParceiraNome, setEmpresaParceiraNome] = useState("");
   const [empresaParceiraDocumento, setEmpresaParceiraDocumento] = useState("");
+  const [contraparteSearch, setContraparteSearch] = useState("");
+  const [contraparteSugestoes, setContraparteSugestoes] = useState<Array<{ id: number; nomeRazao: string; documento: string | null }>>([]);
+  const [contraparteSugOpen, setContraparteSugOpen] = useState(false);
+  const [contraparteSugLoading, setContraparteSugLoading] = useState(false);
   const [status, setStatus] = useState("ATIVO");
   const [dataAssinatura, setDataAssinatura] = useState("");
   const [dataOS, setDataOS] = useState("");
@@ -218,8 +259,13 @@ export default function NovoContratoClient() {
         setTipoPapel(String(c.tipoPapel || "CONTRATADO").toUpperCase() === "CONTRATANTE" ? "CONTRATANTE" : "CONTRATADO");
         setTipoContratante((String(c.tipoContratante || "PRIVADO").toUpperCase() === "PUBLICO" ? "PUBLICO" : String(c.tipoContratante || "PRIVADO").toUpperCase() === "PF" ? "PF" : "PRIVADO") as any);
         setContratoVinculadoId(c.contratoPrincipalId != null ? String(Number(c.contratoPrincipalId)) : "");
-        setEmpresaParceiraNome(c.empresaParceiraNome ? String(c.empresaParceiraNome) : "");
-        setEmpresaParceiraDocumento(c.empresaParceiraDocumento ? String(c.empresaParceiraDocumento) : "");
+        const nomeCp = c.empresaParceiraNome ? String(c.empresaParceiraNome) : "";
+        const docCp = c.empresaParceiraDocumento ? String(c.empresaParceiraDocumento) : "";
+        setEmpresaParceiraNome(nomeCp);
+        setEmpresaParceiraDocumento(docCp);
+        setContraparteSearch(nomeCp);
+        setContraparteSugestoes([]);
+        setContraparteSugOpen(false);
         setStatus(String(c.status || "ATIVO"));
         setDataAssinatura(c.dataAssinatura ? new Date(String(c.dataAssinatura)).toISOString().slice(0, 10) : "");
         setDataOS(c.dataOS ? new Date(String(c.dataOS)).toISOString().slice(0, 10) : "");
@@ -290,6 +336,42 @@ export default function NovoContratoClient() {
       cancelled = true;
     };
   }, [contratoId]);
+
+  useEffect(() => {
+    const q = String(contraparteSearch || "").trim();
+    if (q.length < 2) {
+      setContraparteSugestoes([]);
+      setContraparteSugLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setContraparteSugLoading(true);
+    const t = window.setTimeout(async () => {
+      try {
+        const res = await api.get("/api/v1/engenharia/contrapartes", { params: { q, status: "ATIVO" } });
+        const data = unwrapApiData<any>(res.data);
+        if (cancelled) return;
+        const rows = (Array.isArray(data) ? data : [])
+          .map((r: any) => ({
+            id: Number(r.idContraparte),
+            nomeRazao: String(r.nomeRazao || ""),
+            documento: r.documento ? String(r.documento) : null,
+          }))
+          .filter((r: any) => Number.isFinite(r.id) && r.id > 0 && r.nomeRazao)
+          .slice(0, 12);
+        setContraparteSugestoes(rows);
+      } catch {
+        if (cancelled) return;
+        setContraparteSugestoes([]);
+      } finally {
+        if (!cancelled) setContraparteSugLoading(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [contraparteSearch]);
 
   useEffect(() => {
     if (tipoPapel === "CONTRATADO" && contratoVinculadoId) setContratoVinculadoId("");
@@ -648,11 +730,49 @@ export default function NovoContratoClient() {
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <div className="text-sm text-slate-600">Nome</div>
-              <input className="input" value={empresaParceiraNome} onChange={(e) => setEmpresaParceiraNome(e.target.value)} placeholder="Ex: Construtora XPTO" />
+              <div className="relative">
+                <input
+                  className="input"
+                  value={contraparteSearch}
+                  onFocus={() => setContraparteSugOpen(true)}
+                  onBlur={() => window.setTimeout(() => setContraparteSugOpen(false), 120)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setContraparteSearch(v);
+                    setContraparteSugOpen(true);
+                    setEmpresaParceiraNome("");
+                    setEmpresaParceiraDocumento("");
+                  }}
+                  placeholder="Ex: #12 - Construtora XPTO"
+                />
+                {contraparteSugOpen ? (
+                  <div className="absolute z-20 mt-1 w-full rounded-lg border bg-white shadow-sm max-h-64 overflow-auto">
+                    {contraparteSugLoading ? <div className="px-3 py-2 text-sm text-slate-600">Carregando...</div> : null}
+                    {!contraparteSugLoading && !contraparteSugestoes.length ? <div className="px-3 py-2 text-sm text-slate-600">Sem resultados.</div> : null}
+                    {contraparteSugestoes.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setContraparteSearch(`#${c.id} - ${c.nomeRazao}`);
+                          setEmpresaParceiraNome(c.nomeRazao);
+                          setEmpresaParceiraDocumento(c.documento ? onlyDigits(c.documento) : "");
+                          setContraparteSugOpen(false);
+                        }}
+                      >
+                        <div className="font-medium">#{c.id} - {c.nomeRazao}</div>
+                        <div className="text-xs text-slate-600">{c.documento ? formatCpfCnpj(c.documento) : "-"}</div>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </div>
             <div>
               <div className="text-sm text-slate-600">CNPJ/CPF</div>
-              <input className="input" value={empresaParceiraDocumento} onChange={(e) => setEmpresaParceiraDocumento(e.target.value)} placeholder="Opcional" />
+              <input className="input" value={empresaParceiraDocumento ? formatCpfCnpj(empresaParceiraDocumento) : ""} readOnly placeholder="CNPJ/CPF" />
             </div>
           </div>
         </div>

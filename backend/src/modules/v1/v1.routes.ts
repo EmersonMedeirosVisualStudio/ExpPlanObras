@@ -1864,6 +1864,112 @@ export default async function v1Routes(server: FastifyInstance) {
     return ok(reply, { success: true });
   });
 
+  server.get('/engenharia/contrapartes/:id/documentos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const params = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const existing = await prisma.engenhariaContraparte.findFirst({ where: { id: params.id, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
+    if (!existing) return fail(reply, 404, 'Contraparte não encontrada');
+
+    const rows = await prisma.engenhariaContraparteDocumento.findMany({
+      where: { tenantId: ctx.tenantId, contraparteId: params.id },
+      orderBy: { id: 'desc' },
+      take: 200,
+      select: { id: true, nomeArquivo: true, mimeType: true, tamanhoBytes: true, createdAt: true },
+    });
+
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idDocumento: r.id,
+        nomeArquivo: r.nomeArquivo,
+        mimeType: r.mimeType,
+        tamanhoBytes: r.tamanhoBytes,
+        criadoEm: r.createdAt,
+      }))
+    );
+  });
+
+  server.post('/engenharia/contrapartes/:id/documentos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const params = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        nomeArquivo: z.string().min(1),
+        mimeType: z.string().min(1),
+        conteudoBase64: z.string().min(1),
+      })
+      .parse(request.body || {});
+
+    const existing = await prisma.engenhariaContraparte.findFirst({ where: { id: params.id, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
+    if (!existing) return fail(reply, 404, 'Contraparte não encontrada');
+
+    const raw = String(body.conteudoBase64 || '');
+    const base64 = raw.includes('base64,') ? raw.split('base64,').slice(1).join('base64,') : raw;
+    let buf: Buffer;
+    try {
+      buf = Buffer.from(base64, 'base64');
+    } catch {
+      return fail(reply, 422, 'Arquivo inválido (base64).');
+    }
+    if (!buf || !buf.length) return fail(reply, 422, 'Arquivo vazio.');
+    if (buf.length > 10 * 1024 * 1024) return fail(reply, 413, 'Arquivo muito grande (limite 10MB).');
+
+    const created = await prisma.engenhariaContraparteDocumento.create({
+      data: {
+        tenantId: ctx.tenantId,
+        contraparteId: params.id,
+        nomeArquivo: String(body.nomeArquivo).trim(),
+        mimeType: String(body.mimeType).trim(),
+        tamanhoBytes: buf.length,
+        conteudo: buf,
+        actorUserId: ctx.userId,
+      },
+      select: { id: true },
+    });
+
+    return ok(reply, { idDocumento: created.id });
+  });
+
+  server.get('/engenharia/contrapartes/:id/documentos/:docId/download', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const params = z
+      .object({ id: z.coerce.number().int().positive(), docId: z.coerce.number().int().positive() })
+      .parse(request.params || {});
+
+    const doc = await prisma.engenhariaContraparteDocumento
+      .findFirst({
+        where: { tenantId: ctx.tenantId, contraparteId: params.id, id: params.docId },
+        select: { nomeArquivo: true, mimeType: true, conteudo: true },
+      })
+      .catch(() => null);
+    if (!doc) return fail(reply, 404, 'Documento não encontrado');
+
+    reply.header('Content-Type', doc.mimeType || 'application/octet-stream');
+    reply.header('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.nomeArquivo || 'documento')}"`);
+    return reply.send(doc.conteudo);
+  });
+
+  server.delete('/engenharia/contrapartes/:id/documentos/:docId', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const params = z
+      .object({ id: z.coerce.number().int().positive(), docId: z.coerce.number().int().positive() })
+      .parse(request.params || {});
+
+    const existing = await prisma.engenhariaContraparteDocumento.findFirst({
+      where: { tenantId: ctx.tenantId, contraparteId: params.id, id: params.docId },
+      select: { id: true },
+    });
+    if (!existing) return fail(reply, 404, 'Documento não encontrado');
+
+    await prisma.engenhariaContraparteDocumento.delete({ where: { id: params.docId } });
+    return ok(reply, { success: true });
+  });
+
   server.get('/engenharia/contrapartes/:id/avaliacoes', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;

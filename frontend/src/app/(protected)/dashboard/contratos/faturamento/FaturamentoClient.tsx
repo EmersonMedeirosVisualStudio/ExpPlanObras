@@ -10,6 +10,8 @@ type ContratoLite = {
   nome: string | null;
   objeto: string | null;
   empresaParceiraNome: string | null;
+  tipoPapel?: "CONTRATADO" | "CONTRATANTE" | null;
+  tipoContratante?: "PUBLICO" | "PRIVADO" | "PF" | null;
 };
 
 type SerieRow = {
@@ -64,6 +66,8 @@ export default function FaturamentoClient() {
   const [contratoId, setContratoId] = useState<string>("");
   const [empresa, setEmpresa] = useState("");
   const [modo, setModo] = useState<"MENSAL" | "ACUMULADO">("MENSAL");
+  const [papelFiltro, setPapelFiltro] = useState<"" | "CONTRATADO" | "CONTRATANTE">("CONTRATADO");
+  const [tipoContratanteFiltro, setTipoContratanteFiltro] = useState<"" | "PUBLICO" | "PRIVADO" | "PF">("");
 
   const [contratos, setContratos] = useState<ContratoLite[]>([]);
   const [loading, setLoading] = useState(false);
@@ -79,7 +83,9 @@ export default function FaturamentoClient() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await api.get("/api/contratos", { params: { apenasPrincipais: "true", papel: "CONTRATADO" } });
+        const params: any = { apenasPrincipais: "true" };
+        if (papelFiltro) params.papel = papelFiltro;
+        const res = await api.get("/api/contratos", { params });
         const rows = Array.isArray(res.data) ? (res.data as any[]) : [];
         const mapped: ContratoLite[] = rows.map((r) => ({
           id: Number(r.id),
@@ -88,6 +94,14 @@ export default function FaturamentoClient() {
           nome: r.nome ? String(r.nome) : null,
           objeto: r.objeto ? String(r.objeto) : null,
           empresaParceiraNome: r.empresaParceiraNome ? String(r.empresaParceiraNome) : null,
+          tipoPapel: r.tipoPapel ? (String(r.tipoPapel).toUpperCase() === "CONTRATANTE" ? "CONTRATANTE" : "CONTRATADO") : null,
+          tipoContratante: r.tipoContratante
+            ? ((String(r.tipoContratante).toUpperCase() === "PUBLICO"
+                ? "PUBLICO"
+                : String(r.tipoContratante).toUpperCase() === "PF"
+                  ? "PF"
+                  : "PRIVADO") as any)
+            : null,
         }));
         if (cancelled) return;
         setContratos(mapped.filter((c) => Number.isFinite(c.id)));
@@ -99,9 +113,20 @@ export default function FaturamentoClient() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [papelFiltro]);
 
-  const contratosPrincipais = useMemo(() => contratos.filter((c) => !c.contratoPrincipalId), [contratos]);
+  const contratosPrincipais = useMemo(() => {
+    return contratos
+      .filter((c) => !c.contratoPrincipalId)
+      .filter((c) => (tipoContratanteFiltro ? String(c.tipoContratante || "").toUpperCase() === tipoContratanteFiltro : true));
+  }, [contratos, tipoContratanteFiltro]);
+
+  useEffect(() => {
+    if (!contratoId) return;
+    const id = Number(contratoId);
+    if (!Number.isFinite(id)) return;
+    if (!contratosPrincipais.some((c) => c.id === id)) setContratoId("");
+  }, [contratoId, contratosPrincipais]);
 
   const serie = useMemo(() => {
     if (modo === "MENSAL") return serieMensal;
@@ -264,6 +289,23 @@ export default function FaturamentoClient() {
           <div className="md:col-span-1">
             <div className="text-sm text-[#6B7280]">Fim</div>
             <input className="input bg-white text-[#111827]" type="month" value={periodoFim} onChange={(e) => setPeriodoFim(e.target.value)} />
+          </div>
+          <div className="md:col-span-2">
+            <div className="text-sm text-[#6B7280]">Tipo de contrato (papel)</div>
+            <select className="input bg-white text-[#111827]" value={papelFiltro} onChange={(e) => setPapelFiltro(e.target.value as any)}>
+              <option value="">Todos</option>
+              <option value="CONTRATADO">Somos CONTRATADOS</option>
+              <option value="CONTRATANTE">Somos CONTRATANTES</option>
+            </select>
+          </div>
+          <div className="md:col-span-2">
+            <div className="text-sm text-[#6B7280]">Tipo de contraparte</div>
+            <select className="input bg-white text-[#111827]" value={tipoContratanteFiltro} onChange={(e) => setTipoContratanteFiltro(e.target.value as any)}>
+              <option value="">Todos</option>
+              <option value="PUBLICO">Empresa pública</option>
+              <option value="PRIVADO">Empresa privada</option>
+              <option value="PF">Pessoa física</option>
+            </select>
           </div>
           <div className="md:col-span-2">
             <div className="text-sm text-[#6B7280]">Contrato</div>

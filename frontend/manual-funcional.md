@@ -2256,13 +2256,16 @@ Funcionalidades associadas:
 Uso da tela (UX padrão):
 
 - Botão **Nova contraparte** fica no topo (lado direito, alinhado ao título).
-- O card **Nova/Editar contraparte** inicia oculto e abre ao clicar em **Nova contraparte** ou ao selecionar uma linha da lista.
-- Clique na linha da lista abre a contraparte selecionada para **edição**.
+- O card **Nova/Editar contraparte** inicia oculto e abre ao clicar em **Nova contraparte** ou no botão **Editar** da linha.
+- Clique na linha da lista **seleciona** a contraparte e exibe apenas:
+  - **Histórico do parceiro**
+  - **Documentos do parceiro**
 - Na lista, a primeira coluna é **Alerta** (pendências/erros de cadastro) e a segunda coluna é o **ID** da contraparte.
 - A coluna **Ações** possui botões (ícones):
   - **Editar contraparte**
   - **Visualizar contratos com a contraparte** (abre a tela de Contratos já filtrada pela contraparte)
   - **Excluir** (respeitando o bloqueio por vínculo com contratos).
+ - Filtro de status (classificação): por padrão vem marcado **todos exceto “Não recomendado”**.
 
 #### 11.12.1 Histórico por parceiro (como usar)
 
@@ -2272,6 +2275,7 @@ Para cada contraparte, o sistema mantém histórico consolidado em:
   - Contratos: lista de contratos vinculados à contraparte (locação ativa/passiva e serviço).
   - Avaliações: registros de nota e/ou comentário por gestor responsável.
   - Ocorrências: registros de eventos relevantes (tipo, gravidade, data, descrição), opcionalmente vinculados a um contrato.
+  - Documentos do parceiro: upload/lista/visualização e exclusão de arquivos anexados à contraparte.
 
 ### 11.13 Gestão de consumos por unidade/obra
 
@@ -3102,10 +3106,18 @@ Filtros (lista de contratos):
 - Busca: número/nome/empresa.
 - Status: seleção por checkbox.
 - **Contraparte**: select abaixo da Busca (lista `#id - nome - documento`) para filtrar contratos vinculados à contraparte.
+- **Tipo de contrato (papel)**: Todos / Somos CONTRATADOS / Somos CONTRATANTES.
+- **Tipo de contraparte**: Todos / Empresa pública / Empresa privada / Pessoa física.
 
 Dashboard de contratos:
 
 - `/dashboard/contratos/dashboard` (KPIs consolidados)
+- Filtros: Status, Tipo de contrato (papel) e Tipo de contraparte.
+
+Faturamento:
+
+- `/dashboard/contratos/faturamento`
+- Filtros: período (início/fim), Tipo de contrato (papel), Tipo de contraparte, contrato e empresa/cliente.
 
 #### Contrapartes (empresas/pessoas externas) no contrato
 
@@ -3125,6 +3137,9 @@ Como o contrato guarda a contraparte hoje:
 - No contrato existem estes campos para a contraparte principal: `empresaParceiraNome` e `empresaParceiraDocumento`.
 - O cadastro “oficial” da contraparte fica em **Contrapartes**, mas o contrato armazena **nome e documento** para registro e consulta.
 - No formulário do contrato existe o botão **Gerenciar contrapartes** para abrir a tela de contrapartes e manter o cadastro.
+- No Novo/Editar contrato, a seleção é via **selectext**:
+  - **Nome**: selecionar pelo formato `#id - nome`.
+  - **CNPJ/CPF**: preenchido automaticamente a partir da seleção.
 
 O que significa “hoje o contrato guarda só uma empresaParceira”:
 

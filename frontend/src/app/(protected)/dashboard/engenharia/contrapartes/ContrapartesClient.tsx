@@ -160,6 +160,23 @@ type OcorrenciaDTO = {
   criadoEm: string;
 };
 
+type DocumentoParceiroDTO = {
+  idDocumento: number;
+  nomeArquivo: string;
+  mimeType: string;
+  tamanhoBytes: number;
+  criadoEm: string;
+};
+
+function fileToBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Erro ao ler arquivo"));
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.readAsDataURL(file);
+  });
+}
+
 function contraparteAlertUi(r: ContraparteDTO) {
   const issues: string[] = [];
   const nome = String(r.nomeRazao || "").trim();
@@ -190,7 +207,7 @@ export default function ContrapartesClient() {
   const [tipo, setTipo] = useState<"" | "PJ" | "PF">("");
   const [cidade, setCidade] = useState("");
   const [uf, setUf] = useState("");
-  const [classificacaoSel, setClassificacaoSel] = useState<ClassificacaoStatus[]>([]);
+  const [classificacaoSel, setClassificacaoSel] = useState<ClassificacaoStatus[]>(() => CLASSIFICACOES.filter((x) => x !== "NAO_RECOMENDADO"));
   const [rows, setRows] = useState<ContraparteDTO[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -237,6 +254,13 @@ export default function ContrapartesClient() {
   const [contratos, setContratos] = useState<ContratoDTO[]>([]);
   const [avaliacoes, setAvaliacoes] = useState<AvaliacaoDTO[]>([]);
   const [ocorrencias, setOcorrencias] = useState<OcorrenciaDTO[]>([]);
+
+  const [docsParceiro, setDocsParceiro] = useState<DocumentoParceiroDTO[]>([]);
+  const [docUploadFile, setDocUploadFile] = useState<File | null>(null);
+  const [docUploading, setDocUploading] = useState(false);
+  const [docPreviewUrl, setDocPreviewUrl] = useState<string | null>(null);
+  const [docPreviewMime, setDocPreviewMime] = useState<string | null>(null);
+  const [docPreviewName, setDocPreviewName] = useState<string | null>(null);
 
   const [novaAvaliacao, setNovaAvaliacao] = useState({ nota: "", comentario: "" });
   const [novaOcorrencia, setNovaOcorrencia] = useState({ idContratoLocacao: "", tipo: "", gravidade: "MEDIA" as OcorrenciaDTO["gravidade"], dataOcorrencia: "", descricao: "" });
@@ -326,6 +350,74 @@ export default function ContrapartesClient() {
       setOcorrencias([]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function carregarDocsParceiro(idContraparte: number) {
+    try {
+      setErr(null);
+      const res = await api.get(`/api/v1/engenharia/contrapartes/${idContraparte}/documentos`);
+      const data = unwrapApiData<any>(res.data);
+      setDocsParceiro(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setDocsParceiro([]);
+      setErr(e?.response?.data?.message || e?.message || "Erro ao carregar documentos do parceiro");
+    }
+  }
+
+  async function adicionarDocParceiro() {
+    if (!idSelecionado) return;
+    if (!docUploadFile) return;
+    try {
+      setDocUploading(true);
+      setErr(null);
+      const conteudoBase64 = await fileToBase64(docUploadFile);
+      const payload: any = {
+        nomeArquivo: docUploadFile.name,
+        mimeType: docUploadFile.type || "application/octet-stream",
+        conteudoBase64,
+      };
+      await api.post(`/api/v1/engenharia/contrapartes/${idSelecionado}/documentos`, payload);
+      setDocUploadFile(null);
+      await carregarDocsParceiro(idSelecionado);
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Erro ao enviar documento do parceiro");
+    } finally {
+      setDocUploading(false);
+    }
+  }
+
+  async function excluirDocParceiro(idDocumento: number) {
+    if (!idSelecionado) return;
+    if (!window.confirm("Excluir este documento do parceiro?")) return;
+    try {
+      setErr(null);
+      await api.delete(`/api/v1/engenharia/contrapartes/${idSelecionado}/documentos/${idDocumento}`);
+      if (docPreviewUrl) {
+        URL.revokeObjectURL(docPreviewUrl);
+        setDocPreviewUrl(null);
+        setDocPreviewMime(null);
+        setDocPreviewName(null);
+      }
+      await carregarDocsParceiro(idSelecionado);
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Erro ao excluir documento do parceiro");
+    }
+  }
+
+  async function visualizarDocParceiro(doc: DocumentoParceiroDTO) {
+    if (!idSelecionado) return;
+    try {
+      setErr(null);
+      const res = await api.get(`/api/v1/engenharia/contrapartes/${idSelecionado}/documentos/${doc.idDocumento}/download`, { responseType: "blob" as any });
+      const blob = res.data as Blob;
+      const url = URL.createObjectURL(blob);
+      if (docPreviewUrl) URL.revokeObjectURL(docPreviewUrl);
+      setDocPreviewUrl(url);
+      setDocPreviewMime(doc.mimeType || blob.type || "application/octet-stream");
+      setDocPreviewName(doc.nomeArquivo);
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Erro ao baixar documento do parceiro");
     }
   }
 
@@ -718,6 +810,7 @@ export default function ContrapartesClient() {
   useEffect(() => {
     if (!idSelecionado) return;
     carregarHistorico(idSelecionado);
+    carregarDocsParceiro(idSelecionado);
   }, [idSelecionado]);
 
   return (
@@ -837,7 +930,7 @@ export default function ContrapartesClient() {
                     setTipo("");
                     setCidade("");
                     setUf("");
-                    setClassificacaoSel([]);
+                    setClassificacaoSel(CLASSIFICACOES.filter((x) => x !== "NAO_RECOMENDADO"));
                   }}
                 >
                   Limpar
@@ -1129,7 +1222,7 @@ export default function ContrapartesClient() {
                   className={`border-t border-[#E5E7EB] cursor-pointer hover:bg-[#F9FAFB] ${idSelecionado === r.idContraparte ? "bg-[#EFF6FF]" : ""}`}
                   onClick={() => {
                     setIdSelecionado(r.idContraparte);
-                    prepararEdicao(r);
+                    setFormOpen(false);
                   }}
                 >
                   <td className="px-3 py-2">
@@ -1345,6 +1438,121 @@ export default function ContrapartesClient() {
                   {!ocorrencias.length ? <div className="text-sm text-[#6B7280]">Sem ocorrências.</div> : null}
                 </div>
               </div>
+            </div>
+          </>
+        ) : null}
+      </div>
+
+      <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-[#0EA5E9]" />
+          <div>
+            <div className="text-sm font-semibold">Documentos do parceiro</div>
+            <div className="text-xs text-[#6B7280]">Arquivos anexados à contraparte (PDF, imagem etc.).</div>
+          </div>
+        </div>
+        {!selecionado ? <div className="text-sm text-[#6B7280]">Selecione uma contraparte na tabela acima para visualizar os documentos.</div> : null}
+
+        {selecionado ? (
+          <>
+            <div className="flex items-end justify-between gap-3 flex-wrap">
+              <div className="text-sm text-[#6B7280]">
+                {selecionado.nomeRazao} • ID {selecionado.idContraparte}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  className="input"
+                  type="file"
+                  onChange={(e) => setDocUploadFile(e.target.files?.[0] || null)}
+                  disabled={docUploading}
+                />
+                <button
+                  type="button"
+                  className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-60"
+                  onClick={adicionarDocParceiro}
+                  disabled={!docUploadFile || docUploading}
+                >
+                  {docUploading ? "Enviando..." : "Adicionar"}
+                </button>
+              </div>
+            </div>
+
+            {docPreviewUrl ? (
+              <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3 space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="text-sm font-semibold">{docPreviewName || "Documento"}</div>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
+                    onClick={() => {
+                      if (docPreviewUrl) URL.revokeObjectURL(docPreviewUrl);
+                      setDocPreviewUrl(null);
+                      setDocPreviewMime(null);
+                      setDocPreviewName(null);
+                    }}
+                  >
+                    Fechar visualização
+                  </button>
+                </div>
+                {docPreviewMime?.includes("pdf") ? (
+                  <iframe className="w-full h-[520px] rounded-lg bg-white" src={docPreviewUrl} />
+                ) : docPreviewMime?.startsWith("image/") ? (
+                  <img className="max-h-[520px] w-auto rounded-lg border border-[#E5E7EB] bg-white" src={docPreviewUrl} alt={docPreviewName || "Documento"} />
+                ) : (
+                  <a className="text-sm text-[#2563EB] underline" href={docPreviewUrl} target="_blank" rel="noreferrer">
+                    Abrir documento
+                  </a>
+                )}
+              </div>
+            ) : null}
+
+            <div className="overflow-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-[#F9FAFB] text-left text-[#111827]">
+                  <tr>
+                    <th className="px-3 py-2">Arquivo</th>
+                    <th className="px-3 py-2">Tipo</th>
+                    <th className="px-3 py-2">Tamanho</th>
+                    <th className="px-3 py-2">Criado em</th>
+                    <th className="px-3 py-2">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {docsParceiro.map((d) => (
+                    <tr key={d.idDocumento} className="border-t border-[#E5E7EB]">
+                      <td className="px-3 py-2">{d.nomeArquivo}</td>
+                      <td className="px-3 py-2">{d.mimeType}</td>
+                      <td className="px-3 py-2">{Math.round((Number(d.tamanhoBytes || 0) / 1024) * 10) / 10} KB</td>
+                      <td className="px-3 py-2">{String(d.criadoEm || "").slice(0, 19).replace("T", " ")}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
+                            onClick={() => visualizarDocParceiro(d)}
+                          >
+                            Exibir
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-lg border border-red-200 bg-white px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                            onClick={() => excluirDocParceiro(d.idDocumento)}
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {!docsParceiro.length ? (
+                    <tr>
+                      <td className="px-3 py-6 text-center text-[#6B7280]" colSpan={5}>
+                        Sem documentos.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
             </div>
           </>
         ) : null}

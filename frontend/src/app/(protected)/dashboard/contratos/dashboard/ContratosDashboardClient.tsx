@@ -97,6 +97,7 @@ export default function ContratosDashboardClient() {
   const [err, setErr] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [papel, setPapel] = useState("");
+  const [tipoContratante, setTipoContratante] = useState("");
   const [kpis, setKpis] = useState<DashboardKpis | null>(null);
   const [cards, setCards] = useState<DashboardCards | null>(null);
   const [alertas, setAlertas] = useState<DashboardAlerta[]>([]);
@@ -117,9 +118,10 @@ export default function ContratosDashboardClient() {
     const p = new URLSearchParams();
     if (status) p.set("status", status);
     if (papel) p.set("papel", papel);
+    if (tipoContratante) p.set("tipoContratante", tipoContratante);
     const s = p.toString();
     return s ? `?${s}` : "";
-  }, [status, papel]);
+  }, [status, papel, tipoContratante]);
 
   async function carregar() {
     try {
@@ -230,11 +232,20 @@ export default function ContratosDashboardClient() {
             <input className="input w-[140px]" type="month" value={periodo} onChange={(e) => setPeriodo(e.target.value)} />
           </div>
           <div>
-            <div className="text-xs text-[#6B7280]">Natureza</div>
-            <select className="input w-[190px]" value={papel} onChange={(e) => setPapel(e.target.value)}>
+            <div className="text-xs text-[#6B7280]">Tipo de contrato (papel)</div>
+            <select className="input w-[210px]" value={papel} onChange={(e) => setPapel(e.target.value)}>
               <option value="">Todos</option>
-              <option value="CONTRATADO">Receita (somos contratados)</option>
-              <option value="CONTRATANTE">Despesa (somos contratantes)</option>
+              <option value="CONTRATADO">Somos CONTRATADOS</option>
+              <option value="CONTRATANTE">Somos CONTRATANTES</option>
+            </select>
+          </div>
+          <div>
+            <div className="text-xs text-[#6B7280]">Tipo de contraparte</div>
+            <select className="input w-[190px]" value={tipoContratante} onChange={(e) => setTipoContratante(e.target.value)}>
+              <option value="">Todos</option>
+              <option value="PUBLICO">Empresa pública</option>
+              <option value="PRIVADO">Empresa privada</option>
+              <option value="PF">Pessoa física</option>
             </select>
           </div>
           <div>
