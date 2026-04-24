@@ -178,32 +178,11 @@ export const APP_MENU: MenuSectionConfig[] = [
         permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
       },
       {
-        key: 'contratos-planejamento',
-        label: 'Planejamento (Gantt)',
-        href: '/dashboard/contratos/planejamento',
-        icon: 'gantt-chart',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
         key: 'contratos-documentos',
         label: 'Documentos',
         href: '/dashboard/obras/documentos?tipo=CONTRATO',
         icon: 'paperclip',
         permission: PERMISSIONS.DOCUMENTOS_VIEW,
-      },
-      {
-        key: 'contratos-aditivos',
-        label: 'Aditivos',
-        href: '/dashboard/contratos/aditivos',
-        icon: 'file-pen',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
-      },
-      {
-        key: 'contratos-medicoes',
-        label: 'Medições',
-        href: '/dashboard/contratos/medicoes',
-        icon: 'clipboard-check',
-        permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
       },
       {
         key: 'contratos-indicadores',

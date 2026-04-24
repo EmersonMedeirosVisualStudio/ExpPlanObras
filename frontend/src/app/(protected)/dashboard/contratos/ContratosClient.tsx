@@ -17,7 +17,7 @@ type ContratoRow = {
   empresaParceiraDocumento?: string | null;
   descricao?: string | null;
   status: string;
-  statusCalculado?: "EM_ANDAMENTO" | "A_VENCER" | "VENCIDO" | "CONCLUIDO" | "SEM_RECURSOS" | "NAO_INICIADO" | "CANCELADO";
+  statusCalculado?: "NAO_INICIADO" | "EM_EXECUCAO" | "PARADO" | "RESCINDIDO" | "CONCLUIDO" | "CANCELADO";
   alerta?: "OK" | "PENDENTE" | "CRITICO";
   alertas?: string[];
   dataAssinatura: string | null;
@@ -196,32 +196,31 @@ function alertaUi(alerta?: "OK" | "PENDENTE" | "CRITICO") {
 }
 
 function statusUi(status?: ContratoRow["statusCalculado"] | null) {
-  const s = status || "EM_ANDAMENTO";
+  const s = status || "NAO_INICIADO";
   switch (s) {
-    case "A_VENCER":
-      return { label: "A vencer", icon: "🟡", className: "text-amber-700" };
-    case "VENCIDO":
-      return { label: "Vencido", icon: "🔴", className: "text-red-700" };
+    case "EM_EXECUCAO":
+      return { label: "Em execução", dot: "#22C55E", className: "text-emerald-700" };
+    case "PARADO":
+      return { label: "Parado", dot: "#EF4444", className: "text-red-700" };
+    case "RESCINDIDO":
+      return { label: "Contrato rescindido", dot: "#F97316", className: "text-orange-700" };
     case "CONCLUIDO":
-      return { label: "Concluído", icon: "🔵", className: "text-blue-700" };
-    case "SEM_RECURSOS":
-      return { label: "Sem recursos", icon: "🟣", className: "text-purple-700" };
+      return { label: "Concluído", dot: "#3B82F6", className: "text-blue-700" };
     case "NAO_INICIADO":
-      return { label: "Não iniciado", icon: "⚪", className: "text-slate-600" };
+      return { label: "Não iniciado", dot: "#EAB308", className: "text-amber-700" };
     case "CANCELADO":
-      return { label: "Cancelado", icon: "⚫", className: "text-slate-800" };
+      return { label: "Cancelado", dot: "#6B7280", className: "text-slate-700" };
     default:
-      return { label: "Em andamento", icon: "🟢", className: "text-emerald-700" };
+      return { label: "Não iniciado", dot: "#EAB308", className: "text-amber-700" };
   }
 }
 
 const STATUS_FILTER_OPTIONS: Array<{ key: StatusCalc; label: string }> = [
-  { key: "EM_ANDAMENTO", label: "Em andamento" },
-  { key: "A_VENCER", label: "A vencer" },
-  { key: "VENCIDO", label: "Vencido" },
-  { key: "CONCLUIDO", label: "Concluído" },
-  { key: "SEM_RECURSOS", label: "Sem recursos" },
   { key: "NAO_INICIADO", label: "Não iniciado" },
+  { key: "EM_EXECUCAO", label: "Em execução" },
+  { key: "PARADO", label: "Parado" },
+  { key: "RESCINDIDO", label: "Contrato rescindido" },
+  { key: "CONCLUIDO", label: "Concluído" },
   { key: "CANCELADO", label: "Cancelado" },
 ];
 
@@ -268,6 +267,7 @@ export default function ContratosClient() {
   const router = useRouter();
   const sp = useSearchParams();
   const contratoId = sp.get("id");
+  const saved = sp.get("saved");
   const urlStatus = sp.get("status");
   const urlQ = sp.get("q") || "";
   const urlContraparteId = sp.get("contraparteId");
@@ -322,7 +322,7 @@ export default function ContratosClient() {
   const [empresaSugestoesOpen, setEmpresaSugestoesOpen] = useState(false);
   const [empresaSugestoesLoading, setEmpresaSugestoesLoading] = useState(false);
   const [empresaSugestoes, setEmpresaSugestoes] = useState<ContraparteLite[]>([]);
-  const [eStatus, setEStatus] = useState("ATIVO");
+  const [eStatus, setEStatus] = useState("NAO_INICIADO");
   const [eDataAssinatura, setEDataAssinatura] = useState("");
   const [eDataOS, setEDataOS] = useState("");
   const [ePrazoValor, setEPrazoValor] = useState("");
@@ -515,6 +515,12 @@ export default function ContratosClient() {
     const hoje = parseDateOnlyValue(new Date().toISOString());
     const diasRestantes = hoje && vigAtual ? Math.max(0, diffDays(hoje, vigAtual)) : null;
     return { prazoInicialDias, prazoAtualDias, diasRestantes };
+  }, [detail]);
+
+  const podeEditarContrato = useMemo(() => {
+    if (!detail) return false;
+    const s = String(detail.statusCalculado || "").toUpperCase();
+    return s === "NAO_INICIADO";
   }, [detail]);
 
   function limparFiltros() {
@@ -716,7 +722,8 @@ export default function ContratosClient() {
 
   function abrirEdicao() {
     if (!contratoId) return;
-    router.push(`/dashboard/contratos/novo?id=${contratoId}`);
+    const returnTo = encodeURIComponent(`/dashboard/contratos?id=${contratoId}`);
+    router.push(`/dashboard/contratos/novo?id=${contratoId}&returnTo=${returnTo}`);
   }
 
   async function salvarEdicao() {
@@ -809,14 +816,6 @@ export default function ContratosClient() {
               Medições
             </button>
             <button
-              className="rounded-lg bg-[#2563EB] px-3 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-60"
-              type="button"
-              onClick={abrirEdicao}
-              disabled={!detail}
-            >
-              Editar contrato
-            </button>
-            <button
               className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
               type="button"
               onClick={() => router.push("/dashboard/contratos")}
@@ -825,6 +824,10 @@ export default function ContratosClient() {
             </button>
           </div>
         </div>
+
+        {saved ? (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Contrato salvo com sucesso.</div>
+        ) : null}
 
         {detailErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{detailErr}</div> : null}
         {detailLoading ? <div className="text-sm text-[#6B7280]">Carregando...</div> : null}
@@ -839,10 +842,11 @@ export default function ContratosClient() {
                   <div className="mt-2 text-sm text-[#6B7280]">{detail.nome || detail.objeto || "—"}</div>
                 </div>
                 <button
-                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-60"
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:cursor-not-allowed disabled:opacity-60"
                   type="button"
                   onClick={abrirEdicao}
-                  disabled={!detail}
+                  disabled={!podeEditarContrato}
+                  title={podeEditarContrato ? "Editar contrato" : "Somente contratos com status 'Não iniciado' podem ser editados."}
                 >
                   Editar contrato
                 </button>
@@ -852,7 +856,10 @@ export default function ContratosClient() {
                 <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
                   <div className="text-xs text-[#6B7280]">Status</div>
                   <div className={`font-semibold ${statusUi(detail.statusCalculado).className}`}>
-                    {statusUi(detail.statusCalculado).icon} {statusUi(detail.statusCalculado).label}
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: statusUi(detail.statusCalculado).dot }} />
+                      <span>{statusUi(detail.statusCalculado).label}</span>
+                    </span>
                   </div>
                 </div>
                 <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
@@ -1149,13 +1156,12 @@ export default function ContratosClient() {
                     <div>
                       <div className="text-sm text-[#6B7280]">Status</div>
                       <select className="input" value={eStatus} onChange={(e) => setEStatus(e.target.value)}>
-                        <option value="ATIVO">Ativo</option>
-                        <option value="PENDENTE">Pendente</option>
-                        <option value="PARALISADO">Paralisado</option>
-                        <option value="ENCERRADO">Encerrado</option>
-                        <option value="FINALIZADO">Finalizado</option>
+                        <option value="NAO_INICIADO">Não iniciado</option>
+                        <option value="EM_EXECUCAO">Em execução</option>
+                        <option value="PARADO">Parado</option>
+                        <option value="CONCLUIDO">Concluído</option>
                         <option value="CANCELADO">Cancelado</option>
-                        <option value="RESCINDIDO">Rescindido</option>
+                        <option value="RESCINDIDO">Contrato rescindido</option>
                       </select>
                     </div>
                     <div>
@@ -1417,7 +1423,10 @@ export default function ContratosClient() {
                   {STATUS_FILTER_OPTIONS.map((o) => (
                     <label key={o.key} className="flex items-center gap-1.5 text-xs">
                       <input type="checkbox" checked={Boolean(statusSel[o.key])} onChange={(e) => setStatusSel((p) => ({ ...p, [o.key]: e.target.checked }))} />
-                      {o.label}
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: statusUi(o.key).dot }} />
+                        <span>{o.label}</span>
+                      </span>
                     </label>
                   ))}
                   <div className="flex items-center gap-2 pl-2">
@@ -1450,6 +1459,15 @@ export default function ContratosClient() {
 
       <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
         <div className="text-sm font-semibold">Lista</div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#6B7280]">
+          <span>Legenda:</span>
+          {STATUS_FILTER_OPTIONS.map((o) => (
+            <span key={o.key} className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: statusUi(o.key).dot }} />
+              <span>{o.label}</span>
+            </span>
+          ))}
+        </div>
         <div className="mt-3 overflow-auto">
           <table className="min-w-full text-sm">
             <thead className="bg-[#F9FAFB] text-left text-[#111827]">
@@ -1483,7 +1501,10 @@ export default function ContratosClient() {
                   <td className="px-3 py-2 text-right">{moeda(Number(r.valorTotalAtual || 0))}</td>
                   <td className="px-3 py-2">{r.vigenciaAtual ? new Date(r.vigenciaAtual).toLocaleDateString("pt-BR") : "—"}</td>
                   <td className={`px-3 py-2 ${statusUi(r.statusCalculado).className}`}>
-                    {statusUi(r.statusCalculado).icon} {statusUi(r.statusCalculado).label}
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: statusUi(r.statusCalculado).dot }} />
+                      <span>{statusUi(r.statusCalculado).label}</span>
+                    </span>
                   </td>
                 </tr>
               ))}

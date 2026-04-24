@@ -124,9 +124,21 @@ export default function NovoContratoClient() {
   const router = useRouter();
   const sp = useSearchParams();
   const contratoId = sp.get("id");
+  const returnTo = sp.get("returnTo");
   const isEdit = Boolean(contratoId);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [fieldErr, setFieldErr] = useState<Record<string, string>>({});
+
+  function normalizeContratoStatus(input: unknown) {
+    const s = String(input || "").toUpperCase();
+    if (s === "NAO_INICIADO" || s === "EM_EXECUCAO" || s === "PARADO" || s === "RESCINDIDO" || s === "CONCLUIDO" || s === "CANCELADO") return s;
+    if (s === "PENDENTE") return "NAO_INICIADO";
+    if (s === "ATIVO") return "EM_EXECUCAO";
+    if (s === "PARALISADO") return "PARADO";
+    if (s === "ENCERRADO" || s === "FINALIZADO") return "CONCLUIDO";
+    return "NAO_INICIADO";
+  }
 
   const [numeroContrato, setNumeroContrato] = useState("");
   const [nome, setNome] = useState("");
@@ -142,7 +154,7 @@ export default function NovoContratoClient() {
   const [contraparteSugestoes, setContraparteSugestoes] = useState<Array<{ id: number; nomeRazao: string; documento: string | null }>>([]);
   const [contraparteSugOpen, setContraparteSugOpen] = useState(false);
   const [contraparteSugLoading, setContraparteSugLoading] = useState(false);
-  const [status, setStatus] = useState("ATIVO");
+  const [status, setStatus] = useState("NAO_INICIADO");
   const [dataAssinatura, setDataAssinatura] = useState("");
   const [dataOS, setDataOS] = useState("");
   const [prazoValor, setPrazoValor] = useState("");
@@ -266,7 +278,7 @@ export default function NovoContratoClient() {
         setContraparteSearch(nomeCp);
         setContraparteSugestoes([]);
         setContraparteSugOpen(false);
-        setStatus(String(c.status || "ATIVO"));
+        setStatus(normalizeContratoStatus(c.status || "NAO_INICIADO"));
         setDataAssinatura(c.dataAssinatura ? new Date(String(c.dataAssinatura)).toISOString().slice(0, 10) : "");
         setDataOS(c.dataOS ? new Date(String(c.dataOS)).toISOString().slice(0, 10) : "");
 
@@ -486,8 +498,16 @@ export default function NovoContratoClient() {
     try {
       setLoading(true);
       setErr(null);
+      setFieldErr({});
       if (!baseDate || !prazoDias || prazoDias <= 0) {
         setErr("Informe a data base (OS ou Assinatura) e o prazo ou a vigência.");
+        setFieldErr((p) => ({
+          ...p,
+          dataAssinatura: !dataAssinatura && !dataOS ? "Informe a data base" : "",
+          dataOS: !dataAssinatura && !dataOS ? "Informe a data base" : "",
+          prazoValor: !prazoDias ? "Informe o prazo" : "",
+          vigenciaFim: !prazoDias ? "Informe a vigência" : "",
+        }));
         return;
       }
 
@@ -495,6 +515,7 @@ export default function NovoContratoClient() {
       const vta = parseMoneyBR(valorTotalAtual);
       if (vti <= 0 || vta <= 0) {
         setErr("Valor total do contrato deve ser maior que zero.");
+        setFieldErr((p) => ({ ...p, valorTotalInicial: "Valor inválido", valorTotalAtual: "Valor inválido" }));
         return;
       }
 
@@ -526,17 +547,28 @@ export default function NovoContratoClient() {
       if (contratoId) {
         await api.put(`/api/contratos/${contratoId}`, payload);
         await anexarDocumentos(Number(contratoId));
-        router.push(`/dashboard/contratos?id=${contratoId}`);
+        const baseUrl = returnTo || `/dashboard/contratos?id=${contratoId}`;
+        const [path, qs] = baseUrl.split("?");
+        const params = new URLSearchParams(qs || "");
+        params.set("saved", "1");
+        router.push(`${path}?${params.toString()}`);
       } else {
         const res = await api.post("/api/contratos", payload);
         const id = (res.data as any)?.id;
         if (id) {
           await anexarDocumentos(Number(id));
-          router.push(`/dashboard/contratos?id=${id}`);
+          const baseUrl = `/dashboard/contratos?id=${id}`;
+          const [path, qs] = baseUrl.split("?");
+          const params = new URLSearchParams(qs || "");
+          params.set("saved", "1");
+          router.push(`${path}?${params.toString()}`);
         } else router.push("/dashboard/contratos");
       }
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || "Erro ao salvar contrato");
+      const msg = e?.response?.data?.message || e?.message || "Erro ao salvar contrato";
+      setErr(msg);
+      const m = String(msg || "").toLowerCase();
+      if (m.includes("numero") && m.includes("contrato")) setFieldErr((p) => ({ ...p, numeroContrato: String(msg) }));
     } finally {
       setLoading(false);
     }
@@ -549,13 +581,26 @@ export default function NovoContratoClient() {
           <h1 className="text-2xl font-semibold">{isEdit ? "Editar Contrato" : "Novo Contrato"}</h1>
           <div className="text-sm text-slate-600">Um contrato pode existir sem obra; obras podem ser vinculadas depois.</div>
         </div>
-        <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push("/dashboard/contratos")}>
-          Voltar
+        <button
+          className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+          type="button"
+          onClick={() => {
+            if (isEdit && contratoId) router.push(returnTo || `/dashboard/contratos?id=${contratoId}`);
+            else router.push("/dashboard/contratos");
+          }}
+        >
+          {isEdit ? "Voltar ao contrato" : "Voltar"}
         </button>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${badgeClass(status === "ATIVO" ? "ok" : "info")}`}>{status || "—"}</span>
+        <span
+          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${badgeClass(
+            status === "EM_EXECUCAO" ? "ok" : status === "PARADO" || status === "RESCINDIDO" || status === "CANCELADO" ? "warn" : "info"
+          )}`}
+        >
+          {status || "—"}
+        </span>
         <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${badgeClass("info")}`}>{papelLabel(tipoPapel)}</span>
         <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${badgeClass("info")}`}>{tipoContraparteLabel(tipoContratante)}</span>
         {contratoVinculadoId ? <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${badgeClass("warn")}`}>Vinculado</span> : null}
@@ -576,18 +621,23 @@ export default function NovoContratoClient() {
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
             <div className="text-sm text-slate-600">Número do contrato</div>
-            <input className="input" value={numeroContrato} onChange={(e) => setNumeroContrato(e.target.value)} placeholder="Ex: 012/2026" />
+            <input
+              className={`input ${fieldErr.numeroContrato ? "ring-2 ring-red-400" : ""}`}
+              value={numeroContrato}
+              onChange={(e) => setNumeroContrato(e.target.value)}
+              placeholder="Ex: 012/2026"
+            />
+            {fieldErr.numeroContrato ? <div className="mt-1 text-xs text-red-600">{fieldErr.numeroContrato}</div> : null}
           </div>
           <div>
             <div className="text-sm text-slate-600">Status</div>
             <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="ATIVO">Ativo</option>
-              <option value="PENDENTE">Pendente</option>
-              <option value="PARALISADO">Paralisado</option>
-              <option value="ENCERRADO">Encerrado</option>
-              <option value="FINALIZADO">Finalizado</option>
+              <option value="NAO_INICIADO">Não iniciado</option>
+              <option value="EM_EXECUCAO">Em execução</option>
+              <option value="PARADO">Parado</option>
+              <option value="CONCLUIDO">Concluído</option>
               <option value="CANCELADO">Cancelado</option>
-              <option value="RESCINDIDO">Rescindido</option>
+              <option value="RESCINDIDO">Contrato rescindido</option>
             </select>
           </div>
           <div>
@@ -653,17 +703,24 @@ export default function NovoContratoClient() {
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-12">
             <div className="md:col-span-3">
               <div className="text-sm text-slate-600">Data assinatura</div>
-              <input className="input" type="date" value={dataAssinatura} onChange={(e) => setDataAssinatura(e.target.value)} />
+              <input
+                className={`input ${fieldErr.dataAssinatura ? "ring-2 ring-red-400" : ""}`}
+                type="date"
+                value={dataAssinatura}
+                onChange={(e) => setDataAssinatura(e.target.value)}
+              />
+              {fieldErr.dataAssinatura ? <div className="mt-1 text-xs text-red-600">{fieldErr.dataAssinatura}</div> : null}
             </div>
             <div className="md:col-span-3">
               <div className="text-sm text-slate-600">Data OS (preferencial)</div>
-              <input className="input" type="date" value={dataOS} onChange={(e) => setDataOS(e.target.value)} />
+              <input className={`input ${fieldErr.dataOS ? "ring-2 ring-red-400" : ""}`} type="date" value={dataOS} onChange={(e) => setDataOS(e.target.value)} />
+              {fieldErr.dataOS ? <div className="mt-1 text-xs text-red-600">{fieldErr.dataOS}</div> : null}
             </div>
             <div className="md:col-span-6">
               <div className="text-sm text-slate-600">Prazo</div>
               <div className="flex gap-2">
                 <input
-                  className="input flex-1"
+                  className={`input flex-1 ${fieldErr.prazoValor ? "ring-2 ring-red-400" : ""}`}
                   value={prazoValor}
                   onChange={(e) => {
                     setDatasLastEdited("PRAZO");
@@ -689,7 +746,7 @@ export default function NovoContratoClient() {
             <div className="md:col-span-12">
               <div className="text-sm text-slate-600">Vigência (fim)</div>
               <input
-                className="input"
+                className={`input ${fieldErr.vigenciaFim ? "ring-2 ring-red-400" : ""}`}
                 type="date"
                 value={vigenciaFim}
                 onChange={(e) => {
@@ -716,6 +773,8 @@ export default function NovoContratoClient() {
                   });
                 }}
               />
+              {fieldErr.prazoValor ? <div className="mt-1 text-xs text-red-600">{fieldErr.prazoValor}</div> : null}
+              {!fieldErr.prazoValor && fieldErr.vigenciaFim ? <div className="mt-1 text-xs text-red-600">{fieldErr.vigenciaFim}</div> : null}
             </div>
           </div>
         </div>
@@ -931,11 +990,21 @@ export default function NovoContratoClient() {
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
                 <div className="text-sm text-slate-600">Valor total (inicial)</div>
-                <input className="input" value={valorTotalInicial} onChange={(e) => setValorTotalInicial(formatMoneyBRFromDigits(e.target.value))} />
+                <input
+                  className={`input ${fieldErr.valorTotalInicial ? "ring-2 ring-red-400" : ""}`}
+                  value={valorTotalInicial}
+                  onChange={(e) => setValorTotalInicial(formatMoneyBRFromDigits(e.target.value))}
+                />
+                {fieldErr.valorTotalInicial ? <div className="mt-1 text-xs text-red-600">{fieldErr.valorTotalInicial}</div> : null}
               </div>
               <div>
                 <div className="text-sm text-slate-600">Valor total (atual)</div>
-                <input className="input" value={valorTotalAtual} onChange={(e) => setValorTotalAtual(formatMoneyBRFromDigits(e.target.value))} />
+                <input
+                  className={`input ${fieldErr.valorTotalAtual ? "ring-2 ring-red-400" : ""}`}
+                  value={valorTotalAtual}
+                  onChange={(e) => setValorTotalAtual(formatMoneyBRFromDigits(e.target.value))}
+                />
+                {fieldErr.valorTotalAtual ? <div className="mt-1 text-xs text-red-600">{fieldErr.valorTotalAtual}</div> : null}
               </div>
             </div>
           )}

@@ -19,11 +19,12 @@ type DashboardKpis = {
 
 type DashboardCards = {
   total: number;
-  emAndamento: number;
-  aVencer: number;
-  vencidos: number;
-  concluidos: number;
-  semRecursos: number;
+  naoIniciado: number;
+  emExecucao: number;
+  parado: number;
+  rescindido: number;
+  concluido: number;
+  cancelado: number;
 };
 
 type DashboardAlerta = {
@@ -171,11 +172,12 @@ export default function ContratosDashboardClient() {
   const situacaoTotal = Math.max(1, Number(cards?.total ?? 0));
   const donutParts = useMemo(() => {
     const parts = [
-      { label: "Em andamento", value: Number(cards?.emAndamento ?? 0), color: DASH_COLORS.green },
-      { label: "A vencer (≤ 30 dias)", value: Number(cards?.aVencer ?? 0), color: DASH_COLORS.amber },
-      { label: "Vencidos", value: Number(cards?.vencidos ?? 0), color: DASH_COLORS.red },
-      { label: "Concluídos", value: Number(cards?.concluidos ?? 0), color: DASH_COLORS.purple },
-      { label: "Sem recursos", value: Number(cards?.semRecursos ?? 0), color: DASH_COLORS.slate },
+      { label: "Não iniciado", value: Number(cards?.naoIniciado ?? 0), color: DASH_COLORS.amber },
+      { label: "Em execução", value: Number(cards?.emExecucao ?? 0), color: DASH_COLORS.green },
+      { label: "Parado", value: Number(cards?.parado ?? 0), color: DASH_COLORS.red },
+      { label: "Contrato rescindido", value: Number(cards?.rescindido ?? 0), color: "#F97316" },
+      { label: "Concluído", value: Number(cards?.concluido ?? 0), color: DASH_COLORS.primary },
+      { label: "Cancelado", value: Number(cards?.cancelado ?? 0), color: DASH_COLORS.slate },
     ].filter((p) => p.value > 0);
     const sum = parts.reduce((acc, p) => acc + p.value, 0) || 1;
     let cursor = 0;
@@ -205,10 +207,7 @@ export default function ContratosDashboardClient() {
 
   function abrirPorAlerta(a: DashboardAlerta) {
     const codigo = String(a.codigo || "").toUpperCase();
-    if (codigo === "CONTRATOS_VENCIDOS") return router.push("/dashboard/contratos?status=VENCIDO");
-    if (codigo === "CONTRATOS_A_VENCER") return router.push("/dashboard/contratos?status=A_VENCER");
-    if (codigo === "SEM_RECURSOS") return router.push("/dashboard/contratos?status=SEM_RECURSOS");
-    if (codigo === "ADITIVOS_PENDENTES") return router.push("/dashboard/contratos/aditivos");
+    if (codigo === "CONTRATOS_PARADOS") return router.push("/dashboard/contratos?status=PARADO");
     return router.push("/dashboard/contratos");
   }
 
@@ -252,13 +251,12 @@ export default function ContratosDashboardClient() {
             <div className="text-xs text-[#6B7280]">Status</div>
             <select className="input w-[170px]" value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">Todos</option>
-              <option value="ATIVO">Ativo</option>
-              <option value="PENDENTE">Pendente</option>
-              <option value="PARALISADO">Paralisado</option>
-              <option value="ENCERRADO">Encerrado</option>
-              <option value="FINALIZADO">Finalizado</option>
+              <option value="NAO_INICIADO">Não iniciado</option>
+              <option value="EM_EXECUCAO">Em execução</option>
+              <option value="PARADO">Parado</option>
+              <option value="CONCLUIDO">Concluído</option>
               <option value="CANCELADO">Cancelado</option>
-              <option value="RESCINDIDO">Rescindido</option>
+              <option value="RESCINDIDO">Contrato rescindido</option>
             </select>
           </div>
           <button
@@ -274,7 +272,7 @@ export default function ContratosDashboardClient() {
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
 
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-6">
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-7">
         <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl" style={iconBoxStyle(DASH_COLORS.primary)} />
@@ -286,20 +284,20 @@ export default function ContratosDashboardClient() {
         </div>
         <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl" style={iconBoxStyle(DASH_COLORS.green)} />
+            <div className="h-10 w-10 rounded-xl" style={iconBoxStyle(DASH_COLORS.amber)} />
             <div className="min-w-0">
-              <div className="text-xs text-[#6B7280]">Em andamento</div>
-              <div className="text-2xl font-semibold">{cards?.emAndamento ?? 0}</div>
-              <div className="text-xs text-[#6B7280]">{(((cards?.emAndamento ?? 0) / situacaoTotal) * 100).toFixed(1)}% do total</div>
+              <div className="text-xs text-[#6B7280]">Não iniciado</div>
+              <div className="text-2xl font-semibold">{cards?.naoIniciado ?? 0}</div>
+              <div className="text-xs text-[#6B7280]">{(((cards?.naoIniciado ?? 0) / situacaoTotal) * 100).toFixed(1)}% do total</div>
             </div>
           </div>
         </div>
         <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl" style={iconBoxStyle(DASH_COLORS.amber)} />
+            <div className="h-10 w-10 rounded-xl" style={iconBoxStyle(DASH_COLORS.green)} />
             <div className="min-w-0">
-              <div className="text-xs text-[#6B7280]">A vencer (≤ 30 dias)</div>
-              <div className="text-2xl font-semibold">{cards?.aVencer ?? kpis?.vencendoEm30Dias ?? 0}</div>
+              <div className="text-xs text-[#6B7280]">Em execução</div>
+              <div className="text-2xl font-semibold">{cards?.emExecucao ?? 0}</div>
             </div>
           </div>
         </div>
@@ -307,17 +305,26 @@ export default function ContratosDashboardClient() {
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl" style={iconBoxStyle(DASH_COLORS.red)} />
             <div className="min-w-0">
-              <div className="text-xs text-[#6B7280]">Vencidos</div>
-              <div className="text-2xl font-semibold">{cards?.vencidos ?? kpis?.atrasados ?? 0}</div>
+              <div className="text-xs text-[#6B7280]">Parado</div>
+              <div className="text-2xl font-semibold">{cards?.parado ?? 0}</div>
             </div>
           </div>
         </div>
         <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl" style={iconBoxStyle(DASH_COLORS.purple)} />
+            <div className="h-10 w-10 rounded-xl" style={iconBoxStyle("#F97316")} />
             <div className="min-w-0">
-              <div className="text-xs text-[#6B7280]">Concluídos</div>
-              <div className="text-2xl font-semibold">{cards?.concluidos ?? 0}</div>
+              <div className="text-xs text-[#6B7280]">Contrato rescindido</div>
+              <div className="text-2xl font-semibold">{cards?.rescindido ?? 0}</div>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl" style={iconBoxStyle(DASH_COLORS.primary)} />
+            <div className="min-w-0">
+              <div className="text-xs text-[#6B7280]">Concluído</div>
+              <div className="text-2xl font-semibold">{cards?.concluido ?? 0}</div>
             </div>
           </div>
         </div>
@@ -325,8 +332,8 @@ export default function ContratosDashboardClient() {
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl" style={iconBoxStyle(DASH_COLORS.slate)} />
             <div className="min-w-0">
-              <div className="text-xs text-[#6B7280]">Sem recursos</div>
-              <div className="text-2xl font-semibold">{cards?.semRecursos ?? 0}</div>
+              <div className="text-xs text-[#6B7280]">Cancelado</div>
+              <div className="text-2xl font-semibold">{cards?.cancelado ?? 0}</div>
             </div>
           </div>
         </div>
@@ -335,7 +342,7 @@ export default function ContratosDashboardClient() {
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between gap-2">
-            <div className="text-sm font-semibold">Situação dos contratos</div>
+            <div className="text-sm font-semibold">Status dos contratos</div>
             <div className="text-xs text-[#6B7280]">Total: {cards?.total ?? 0}</div>
           </div>
           <div className="flex items-center gap-4">

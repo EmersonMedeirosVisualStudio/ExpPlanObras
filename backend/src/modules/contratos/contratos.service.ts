@@ -139,30 +139,24 @@ function computeStatusEAlertas(row: any) {
   if (valorTotalAtual <= 0) issues.push(valorTotalAtual === 0 ? 'Valor total do contrato é 0' : 'Valor total do contrato é negativo');
 
   const now = new Date();
-  const end = vigAtual;
   const statusManual = String(row.status || '').toUpperCase();
 
   let statusCalc:
-    | 'EM_ANDAMENTO'
-    | 'A_VENCER'
-    | 'VENCIDO'
-    | 'CONCLUIDO'
-    | 'SEM_RECURSOS'
     | 'NAO_INICIADO'
-    | 'CANCELADO' = 'EM_ANDAMENTO';
+    | 'EM_EXECUCAO'
+    | 'PARADO'
+    | 'RESCINDIDO'
+    | 'CONCLUIDO'
+    | 'CANCELADO' = 'NAO_INICIADO';
 
-  if (['CANCELADO', 'RESCINDIDO'].includes(statusManual)) statusCalc = 'CANCELADO';
-  else if (['ENCERRADO', 'FINALIZADO', 'CONCLUIDO'].includes(statusManual)) statusCalc = 'CONCLUIDO';
-  else if (valorTotalAtual > 0 && valorPagoContrato >= valorTotalAtual) statusCalc = 'SEM_RECURSOS';
+  if (statusManual === 'CANCELADO') statusCalc = 'CANCELADO';
+  else if (statusManual === 'RESCINDIDO') statusCalc = 'RESCINDIDO';
+  else if (['CONCLUIDO', 'ENCERRADO', 'FINALIZADO'].includes(statusManual)) statusCalc = 'CONCLUIDO';
+  else if (['PARADO', 'PARALISADO'].includes(statusManual)) statusCalc = 'PARADO';
+  else if (['EM_EXECUCAO', 'ATIVO'].includes(statusManual)) statusCalc = 'EM_EXECUCAO';
+  else if (statusManual === 'PENDENTE') statusCalc = 'NAO_INICIADO';
   else if (!dataOS && valorExecutadoContrato <= 0) statusCalc = 'NAO_INICIADO';
-  else if (end) {
-    const diffDays = Math.ceil((dateOnly(end).getTime() - dateOnly(now).getTime()) / (24 * 3600 * 1000));
-    if (diffDays < 0) statusCalc = 'VENCIDO';
-    else if (diffDays <= 30) statusCalc = 'A_VENCER';
-    else statusCalc = 'EM_ANDAMENTO';
-  } else {
-    statusCalc = 'EM_ANDAMENTO';
-  }
+  else statusCalc = 'EM_EXECUCAO';
 
   let alerta: 'OK' | 'PENDENTE' | 'CRITICO' = 'OK';
   if (issues.length) {
@@ -1420,13 +1414,29 @@ export async function downloadContratoEventoAnexo(tenantId: number, contratoId: 
 
 export async function getContratosDashboard(tenantId: number, input?: { status?: string | null; papel?: string | null; tipoContratante?: string | null }) {
   return withRLS(tenantId, async (tx) => {
-    const status = input?.status ? String(input.status).trim().toUpperCase() : null;
+    const statusRaw = input?.status ? String(input.status).trim().toUpperCase() : null;
+    const statusIn =
+      statusRaw === 'NAO_INICIADO'
+        ? ['NAO_INICIADO', 'PENDENTE']
+        : statusRaw === 'EM_EXECUCAO'
+          ? ['EM_EXECUCAO', 'ATIVO']
+          : statusRaw === 'PARADO'
+            ? ['PARADO', 'PARALISADO']
+            : statusRaw === 'CONCLUIDO'
+              ? ['CONCLUIDO', 'ENCERRADO', 'FINALIZADO']
+              : statusRaw === 'CANCELADO'
+                ? ['CANCELADO']
+                : statusRaw === 'RESCINDIDO'
+                  ? ['RESCINDIDO']
+                  : statusRaw
+                    ? [statusRaw]
+                    : null;
     const papelRaw = input?.papel ? String(input.papel).trim().toUpperCase() : null;
     const tipoPapel = papelRaw === 'CONTRATANTE' ? 'CONTRATANTE' : papelRaw === 'CONTRATADO' ? 'CONTRATADO' : null;
     const tipoContratanteRaw = input?.tipoContratante ? String(input.tipoContratante).trim().toUpperCase() : null;
     const tipoContratante = tipoContratanteRaw === 'PUBLICO' ? 'PUBLICO' : tipoContratanteRaw === 'PF' ? 'PF' : tipoContratanteRaw === 'PRIVADO' ? 'PRIVADO' : null;
     const whereContrato: any = { tenantId, contratoPrincipalId: null };
-    if (status) whereContrato.status = status;
+    if (statusIn && statusIn.length) whereContrato.status = { in: statusIn };
     if (tipoPapel) whereContrato.tipoPapel = tipoPapel;
     if (tipoContratante) whereContrato.tipoContratante = tipoContratante;
 
@@ -1440,13 +1450,14 @@ export async function getContratosDashboard(tenantId: number, input?: { status?:
         where: {
           ...whereContrato,
           vigenciaAtual: { gte: now, lte: in30 },
+          status: { notIn: ['CONCLUIDO', 'ENCERRADO', 'FINALIZADO', 'CANCELADO', 'RESCINDIDO'] },
         },
       }),
       tx.contrato.count({
         where: {
           ...whereContrato,
           vigenciaAtual: { lt: now },
-          status: { notIn: ['ENCERRADO', 'FINALIZADO', 'CANCELADO', 'RESCINDIDO'] },
+          status: { notIn: ['CONCLUIDO', 'ENCERRADO', 'FINALIZADO', 'CANCELADO', 'RESCINDIDO'] },
         },
       }),
     ]);
@@ -1458,10 +1469,10 @@ export async function getContratosDashboard(tenantId: number, input?: { status?:
           obra: {
             tenantId,
             contrato:
-              status || tipoPapel || tipoContratante
+              (statusIn && statusIn.length) || tipoPapel || tipoContratante
                 ? {
                     contratoPrincipalId: null,
-                    status: status ? status : undefined,
+                    status: statusIn && statusIn.length ? { in: statusIn } : undefined,
                     tipoPapel: tipoPapel ? tipoPapel : undefined,
                     tipoContratante: tipoContratante ? tipoContratante : undefined,
                   }
@@ -1475,10 +1486,10 @@ export async function getContratosDashboard(tenantId: number, input?: { status?:
           obra: {
             tenantId,
             contrato:
-              status || tipoPapel || tipoContratante
+              (statusIn && statusIn.length) || tipoPapel || tipoContratante
                 ? {
                     contratoPrincipalId: null,
-                    status: status ? status : undefined,
+                    status: statusIn && statusIn.length ? { in: statusIn } : undefined,
                     tipoPapel: tipoPapel ? tipoPapel : undefined,
                     tipoContratante: tipoContratante ? tipoContratante : undefined,
                   }
@@ -1513,59 +1524,38 @@ export async function getContratosDashboard(tenantId: number, input?: { status?:
       },
     });
 
-    const pagoRows: Array<{ contratoId: number; valorPago: any }> = status
-      ? await tx.$queryRaw`
-          SELECT o."contratoId"::int AS "contratoId", COALESCE(SUM(p."amount"), 0) AS "valorPago"
-          FROM "Pagamento" p
-          JOIN "Obra" o ON o."id" = p."obraId"
-          JOIN "Contrato" c ON c."id" = o."contratoId"
-          WHERE o."tenantId" = ${tenantId} AND c."tenantId" = ${tenantId} AND c."status" = ${status} AND o."contratoId" IS NOT NULL
-          GROUP BY o."contratoId"
-        `
-      : await tx.$queryRaw`
-          SELECT o."contratoId"::int AS "contratoId", COALESCE(SUM(p."amount"), 0) AS "valorPago"
-          FROM "Pagamento" p
-          JOIN "Obra" o ON o."id" = p."obraId"
-          WHERE o."tenantId" = ${tenantId} AND o."contratoId" IS NOT NULL
-          GROUP BY o."contratoId"
-        `;
-
-    const valorPagoByContratoId = new Map<number, number>();
-    for (const r of pagoRows || []) {
-      const id = Number((r as any).contratoId);
-      const v = (r as any).valorPago;
-      const n = typeof v === 'number' ? v : v ? Number(v) : 0;
-      if (Number.isFinite(id)) valorPagoByContratoId.set(id, Number.isFinite(n) ? n : 0);
+    function normalizeStatusForDashboard(row: any) {
+      const st = String(row?.status || '').toUpperCase();
+      if (st === 'CANCELADO') return 'CANCELADO';
+      if (st === 'RESCINDIDO') return 'RESCINDIDO';
+      if (['CONCLUIDO', 'ENCERRADO', 'FINALIZADO'].includes(st)) return 'CONCLUIDO';
+      if (['PARADO', 'PARALISADO'].includes(st)) return 'PARADO';
+      if (['EM_EXECUCAO', 'ATIVO'].includes(st)) return 'EM_EXECUCAO';
+      if (st === 'PENDENTE') return 'NAO_INICIADO';
+      const dataOS = row?.dataOS ? new Date(row.dataOS) : null;
+      return dataOS ? 'EM_EXECUCAO' : 'NAO_INICIADO';
     }
 
-    const closedStatuses = new Set(['ENCERRADO', 'FINALIZADO', 'CANCELADO', 'RESCINDIDO']);
-    let concluidos = 0;
-    let vencidos = 0;
-    let aVencer = 0;
-    let semRecursos = 0;
-    let ativosElegiveis = 0;
+    let naoIniciado = 0;
+    let emExecucao = 0;
+    let parado = 0;
+    let rescindido = 0;
+    let concluido = 0;
+    let cancelado = 0;
 
     for (const c of contratos) {
-      const st = String((c as any).status || '').toUpperCase();
-      if (st === 'ENCERRADO' || st === 'FINALIZADO') concluidos += 1;
-      const isClosed = closedStatuses.has(st);
-      if (!isClosed) ativosElegiveis += 1;
-
-      const vig = (c as any).vigenciaAtual as Date | null;
-      if (!isClosed && vig && vig.getTime() < now.getTime()) vencidos += 1;
-      if (!isClosed && vig && vig.getTime() >= now.getTime() && vig.getTime() <= in30.getTime()) aVencer += 1;
-
-      const total = (c as any).valorTotalAtual;
-      const totalN = typeof total === 'number' ? total : total ? Number(total) : 0;
-      const pagoN = valorPagoByContratoId.get(Number(c.id)) ?? 0;
-      if (!isClosed && totalN > 0 && pagoN >= totalN) semRecursos += 1;
+      const s = normalizeStatusForDashboard(c);
+      if (s === 'NAO_INICIADO') naoIniciado += 1;
+      else if (s === 'EM_EXECUCAO') emExecucao += 1;
+      else if (s === 'PARADO') parado += 1;
+      else if (s === 'RESCINDIDO') rescindido += 1;
+      else if (s === 'CONCLUIDO') concluido += 1;
+      else if (s === 'CANCELADO') cancelado += 1;
     }
-
-    const emAndamento = Math.max(0, ativosElegiveis - vencidos - aVencer - semRecursos);
 
     const aditivosAgg = await tx.contratoAditivo.groupBy({
       by: ['status'],
-      where: status ? { tenantId, contrato: { status } } : { tenantId },
+      where: statusIn && statusIn.length ? { tenantId, contrato: { status: { in: statusIn } } } : { tenantId },
       _count: { _all: true },
     });
     const aditivosPorStatus: Record<string, number> = {};
@@ -1588,6 +1578,8 @@ export async function getContratosDashboard(tenantId: number, input?: { status?:
         contrato: { select: { numeroContrato: true } },
       },
     });
+
+    const closedStatuses = new Set(['CONCLUIDO', 'ENCERRADO', 'FINALIZADO', 'CANCELADO', 'RESCINDIDO']);
 
     const prazoCriticoRows = contratos
       .filter((c) => {
@@ -1623,18 +1615,19 @@ export async function getContratosDashboard(tenantId: number, input?: { status?:
     const start6m = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1, 0, 0, 0, 0));
     const endNext = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0));
 
-    const executadoMesRows: Array<{ mes: string; total: any }> = status
-      ? await tx.$queryRaw`
+    const executadoMesRows: Array<{ mes: string; total: any }> =
+      statusIn && statusIn.length
+        ? await tx.$queryRaw`
           SELECT to_char(date_trunc('month', m."date"), 'YYYY-MM') AS "mes", COALESCE(SUM(m."amount"), 0) AS "total"
           FROM "Medicao" m
           JOIN "Obra" o ON o."id" = m."obraId"
           JOIN "Contrato" c ON c."id" = o."contratoId"
-          WHERE o."tenantId" = ${tenantId} AND c."tenantId" = ${tenantId} AND c."status" = ${status}
+          WHERE o."tenantId" = ${tenantId} AND c."tenantId" = ${tenantId} AND c."status" IN (${Prisma.join(statusIn)})
             AND m."date" >= ${start6m} AND m."date" < ${endNext}
           GROUP BY 1
           ORDER BY 1 ASC
         `
-      : await tx.$queryRaw`
+        : await tx.$queryRaw`
           SELECT to_char(date_trunc('month', m."date"), 'YYYY-MM') AS "mes", COALESCE(SUM(m."amount"), 0) AS "total"
           FROM "Medicao" m
           JOIN "Obra" o ON o."id" = m."obraId"
@@ -1644,17 +1637,29 @@ export async function getContratosDashboard(tenantId: number, input?: { status?:
           ORDER BY 1 ASC
         `;
 
-    const contratadoMesRows: Array<{ mes: string; total: any }> = await tx.$queryRaw`
-      SELECT to_char(date_trunc('month', COALESCE(c."dataOS", c."dataAssinatura", c."createdAt")), 'YYYY-MM') AS "mes",
-             COALESCE(SUM(c."valorTotalAtual"), 0) AS "total"
-      FROM "Contrato" c
-      WHERE c."tenantId" = ${tenantId}
-        AND (${status}::text IS NULL OR c."status" = ${status})
-        AND COALESCE(c."dataOS", c."dataAssinatura", c."createdAt") >= ${start6m}
-        AND COALESCE(c."dataOS", c."dataAssinatura", c."createdAt") < ${endNext}
-      GROUP BY 1
-      ORDER BY 1 ASC
-    `;
+    const contratadoMesRows: Array<{ mes: string; total: any }> =
+      statusIn && statusIn.length
+        ? await tx.$queryRaw`
+            SELECT to_char(date_trunc('month', COALESCE(c."dataOS", c."dataAssinatura", c."createdAt")), 'YYYY-MM') AS "mes",
+                   COALESCE(SUM(c."valorTotalAtual"), 0) AS "total"
+            FROM "Contrato" c
+            WHERE c."tenantId" = ${tenantId}
+              AND c."status" IN (${Prisma.join(statusIn)})
+              AND COALESCE(c."dataOS", c."dataAssinatura", c."createdAt") >= ${start6m}
+              AND COALESCE(c."dataOS", c."dataAssinatura", c."createdAt") < ${endNext}
+            GROUP BY 1
+            ORDER BY 1 ASC
+          `
+        : await tx.$queryRaw`
+            SELECT to_char(date_trunc('month', COALESCE(c."dataOS", c."dataAssinatura", c."createdAt")), 'YYYY-MM') AS "mes",
+                   COALESCE(SUM(c."valorTotalAtual"), 0) AS "total"
+            FROM "Contrato" c
+            WHERE c."tenantId" = ${tenantId}
+              AND COALESCE(c."dataOS", c."dataAssinatura", c."createdAt") >= ${start6m}
+              AND COALESCE(c."dataOS", c."dataAssinatura", c."createdAt") < ${endNext}
+            GROUP BY 1
+            ORDER BY 1 ASC
+          `;
 
     const execByMes = new Map<string, number>();
     for (const r of executadoMesRows || []) {
@@ -1695,16 +1700,17 @@ export async function getContratosDashboard(tenantId: number, input?: { status?:
       },
       cards: {
         total: totalContratos,
-        emAndamento,
-        aVencer,
-        vencidos,
-        concluidos,
-        semRecursos,
+        naoIniciado,
+        emExecucao,
+        parado,
+        rescindido,
+        concluido,
+        cancelado,
       },
       alertas: [
-        { codigo: 'CONTRATOS_VENCIDOS', titulo: 'Contratos vencidos', severidade: 'CRITICO', quantidade: vencidos },
-        { codigo: 'CONTRATOS_A_VENCER', titulo: 'Contratos a vencer (30 dias)', severidade: 'ALERTA', quantidade: aVencer },
-        { codigo: 'SEM_RECURSOS', titulo: 'Sem recursos', severidade: 'ALERTA', quantidade: semRecursos },
+        { codigo: 'CONTRATOS_ATRASADOS', titulo: 'Contratos atrasados (vigência vencida)', severidade: 'CRITICO', quantidade: atrasados },
+        { codigo: 'CONTRATOS_VENCENDO_30', titulo: 'Contratos vencendo em 30 dias', severidade: 'ALERTA', quantidade: vencendo },
+        { codigo: 'CONTRATOS_PARADOS', titulo: 'Contratos parados', severidade: 'ALERTA', quantidade: parado },
         { codigo: 'ADITIVOS_PENDENTES', titulo: 'Aditivos pendentes de aprovação', severidade: 'ALERTA', quantidade: aditivosPendentes },
       ].filter((a) => (a as any).quantidade > 0),
       prazoCritico: prazoCriticoRows,

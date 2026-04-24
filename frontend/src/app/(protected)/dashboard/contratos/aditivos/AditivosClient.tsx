@@ -5,18 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { realtimeClient } from "@/lib/realtime/client";
 
-type ContratoLite = {
-  id: number;
-  numeroContrato: string;
-  nome: string | null;
-  objeto: string | null;
-  tipoContratante: "PUBLICO" | "PRIVADO" | "PF";
-  empresaParceiraNome: string | null;
-  vigenciaAtual: string | null;
-  valorTotalAtual: number | null;
-  planilhaVersao?: number | null;
-};
-
 type AditivoRow = {
   id: number;
   numeroAditivo: string;
@@ -194,8 +182,6 @@ export default function AditivosClient() {
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [contratos, setContratos] = useState<ContratoLite[]>([]);
-  const [qContrato, setQContrato] = useState("");
 
   const [consolidado, setConsolidado] = useState<Consolidado | null>(null);
   const [aditivos, setAditivos] = useState<AditivoRow[]>([]);
@@ -229,18 +215,6 @@ export default function AditivosClient() {
   const [docPdf, setDocPdf] = useState<File | null>(null);
   const [formErr, setFormErr] = useState<string | null>(null);
 
-  const contratoSelecionado = useMemo(() => {
-    if (!contratoId) return null;
-    const id = Number(contratoId);
-    return contratos.find((c) => c.id === id) || null;
-  }, [contratoId, contratos]);
-
-  const contratosFiltrados = useMemo(() => {
-    const q = qContrato.trim().toLowerCase();
-    if (!q) return contratos;
-    return contratos.filter((c) => `${c.numeroContrato} ${c.nome || ""} ${c.objeto || ""} ${c.empresaParceiraNome || ""}`.toLowerCase().includes(q));
-  }, [contratos, qContrato]);
-
   function setQuery(next: Record<string, string | null | undefined>) {
     const p = new URLSearchParams(sp.toString());
     for (const [k, v] of Object.entries(next)) {
@@ -249,37 +223,6 @@ export default function AditivosClient() {
     }
     const s = p.toString();
     router.push(`/dashboard/contratos/aditivos${s ? `?${s}` : ""}`);
-  }
-
-  async function carregarContratos() {
-    try {
-      setLoading(true);
-      setErr(null);
-      const res = await api.get("/api/contratos");
-      const normalizeTipoContratante = (v: unknown): ContratoLite["tipoContratante"] => {
-        const t = String(v || "PRIVADO").toUpperCase();
-        if (t === "PUBLICO" || t === "PRIVADO" || t === "PF") return t;
-        return "PRIVADO";
-      };
-      setContratos(
-        (res.data as any[])?.map((x) => ({
-          id: Number(x.id),
-          numeroContrato: String(x.numeroContrato),
-          nome: x.nome ?? null,
-          objeto: x.objeto ?? null,
-          tipoContratante: normalizeTipoContratante(x.tipoContratante),
-          empresaParceiraNome: x.empresaParceiraNome ?? null,
-          vigenciaAtual: x.vigenciaAtual ?? null,
-          valorTotalAtual: x.valorTotalAtual == null ? null : Number(x.valorTotalAtual),
-          planilhaVersao: x.planilhaVersao == null ? null : Number(x.planilhaVersao),
-        })) ?? []
-      );
-    } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || "Erro ao carregar contratos");
-      setContratos([]);
-    } finally {
-      setLoading(false);
-    }
   }
 
   async function carregarContratoSelecionado() {
@@ -327,10 +270,6 @@ export default function AditivosClient() {
       setLoading(false);
     }
   }
-
-  useEffect(() => {
-    carregarContratos();
-  }, []);
 
   useEffect(() => {
     carregarContratoSelecionado();
@@ -610,7 +549,7 @@ export default function AditivosClient() {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold">Aditivos de Contrato</h1>
-          <div className="text-sm text-slate-600">Selecione um contrato e gerencie aditivos com histórico, snapshot e aplicação no contrato.</div>
+          <div className="text-sm text-slate-600">Gerencie aditivos com histórico, snapshot e aplicação no contrato.</div>
         </div>
         <button
           className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
@@ -627,34 +566,24 @@ export default function AditivosClient() {
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
 
-      <section className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm space-y-3">
-        <div className="text-sm font-semibold">Selecionar contrato</div>
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-          <input className="input bg-white text-slate-900 md:col-span-2" value={qContrato} onChange={(e) => setQContrato(e.target.value)} placeholder="Buscar por nº, nome ou empresa" />
-          <select className="input bg-white text-slate-900" value={contratoId || ""} onChange={(e) => setQuery({ contratoId: e.target.value || null, tab: "dashboard" })}>
-            <option value="">Selecione</option>
-            {contratosFiltrados.map((c) => (
-              <option key={c.id} value={String(c.id)}>
-                #{c.id} • {c.numeroContrato} • {c.nome || c.objeto || "—"}
-              </option>
-            ))}
-          </select>
-        </div>
-        {loading ? <div className="text-sm text-slate-500">Carregando...</div> : null}
-      </section>
-
-      {contratoSelecionado ? (
+      {!contratoId ? (
+        <section className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm space-y-2">
+          <div className="text-sm font-semibold">Abra pelo contrato</div>
+          <div className="text-sm text-slate-600">A tela de aditivos é acessada pelo contrato selecionado.</div>
+        </section>
+      ) : (
         <section className="rounded-xl border border-[#e6edf5] bg-white p-4 shadow-sm space-y-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
               <div className="text-sm text-slate-500">Contrato</div>
               <div className="text-lg font-semibold">
-                {contratoSelecionado.numeroContrato} — {contratoSelecionado.nome || contratoSelecionado.objeto || "—"}
+                {String((consolidado as any)?.contrato?.numeroContrato || "—")} — {String((consolidado as any)?.contrato?.nome || (consolidado as any)?.contrato?.objeto || "—")}
               </div>
               <div className="text-sm text-slate-600">
-                {contratoSelecionado.empresaParceiraNome || "Sem empresa"} • Vigência:{" "}
-                {contratoSelecionado.vigenciaAtual ? new Date(contratoSelecionado.vigenciaAtual).toLocaleDateString("pt-BR") : "—"} • Valor atual:{" "}
-                {moeda(Number(contratoSelecionado.valorTotalAtual || 0))} • Planilha v{Math.trunc(Number(contratoSelecionado.planilhaVersao ?? (consolidado as any)?.contrato?.planilhaVersao ?? 1))}
+                {String((consolidado as any)?.contrato?.empresaParceiraNome || "Sem empresa")} • Vigência:{" "}
+                {(consolidado as any)?.contrato?.vigenciaAtual ? new Date((consolidado as any).contrato.vigenciaAtual).toLocaleDateString("pt-BR") : "—"} • Valor atual:{" "}
+                {moeda(Number((consolidado as any)?.contrato?.valorTotalAtual || 0))} • Planilha v
+                {Math.trunc(Number((consolidado as any)?.contrato?.planilhaVersao ?? 1))}
               </div>
             </div>
             <div className="flex gap-2">
@@ -666,9 +595,6 @@ export default function AditivosClient() {
               </button>
               <button className={`rounded-lg px-3 py-2 text-sm ${tab === "eventos" ? "bg-slate-900 text-white" : "border bg-white hover:bg-slate-50"}`} type="button" onClick={() => setQuery({ tab: "eventos" })}>
                 Eventos
-              </button>
-              <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push(`/dashboard/contratos/novo?id=${contratoSelecionado.id}`)}>
-                Editar contrato
               </button>
             </div>
           </div>
