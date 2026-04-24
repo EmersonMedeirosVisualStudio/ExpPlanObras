@@ -706,6 +706,7 @@ export default function AditivosClient() {
             <div className="space-y-4">
               <div className="rounded-xl border bg-slate-50 p-3">
                 <div className="flex gap-4 flex-wrap items-center">
+                  <div className="text-sm font-semibold text-slate-700">Filtro:</div>
                   <label className="flex items-center gap-2 text-sm">
                     <input type="checkbox" checked={filtroContrato} onChange={(e) => setFiltroContrato(e.target.checked)} />
                     Contrato
@@ -827,7 +828,7 @@ export default function AditivosClient() {
             </div>
           ) : null}
         </section>
-      ) : null}
+      )}
 
       {filePreview ? (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={fecharPreviewArquivo}>
