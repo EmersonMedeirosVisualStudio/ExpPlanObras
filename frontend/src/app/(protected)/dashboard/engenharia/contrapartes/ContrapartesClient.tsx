@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { FileText, Pencil, Plus, Trash2 } from "lucide-react";
 
@@ -202,6 +202,13 @@ function contraparteAlertUi(r: ContraparteDTO) {
 
 export default function ContrapartesClient() {
   const router = useRouter();
+  const sp = useSearchParams();
+  const urlIdContraparte = sp.get("idContraparte");
+  const returnTo = sp.get("returnTo");
+  const targetId = useMemo(() => {
+    const n = urlIdContraparte ? Number(urlIdContraparte) : null;
+    return n && Number.isFinite(n) && n > 0 ? n : null;
+  }, [urlIdContraparte]);
   const [filtrosAberto, setFiltrosAberto] = useState(false);
   const [q, setQ] = useState("");
   const [tipo, setTipo] = useState<"" | "PJ" | "PF">("");
@@ -679,6 +686,13 @@ export default function ContrapartesClient() {
   }, []);
 
   useEffect(() => {
+    if (!targetId) return;
+    if (idSelecionado) return;
+    if (!rows.length) return;
+    if (rows.some((r) => r.idContraparte === targetId)) setIdSelecionado(targetId);
+  }, [targetId, rows, idSelecionado]);
+
+  useEffect(() => {
     let active = true;
     (async () => {
       try {
@@ -820,19 +834,30 @@ export default function ContrapartesClient() {
           <h1 className="text-2xl font-semibold">Parceiros Comerciais (Contrapartes)</h1>
           <p className="text-sm text-[#6B7280]">Cadastro unificado de pessoas jurídicas e pessoas físicas.</p>
         </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-lg bg-[#16A34A] px-4 py-2 text-sm text-white hover:bg-[#15803D] disabled:opacity-60"
-          onClick={() => {
-            setEdicaoId(null);
-            limparFormularioCompleto();
-            setFormOpen(true);
-          }}
-          disabled={loading}
-        >
-          <Plus className="h-4 w-4" />
-          Nova contraparte
-        </button>
+        <div className="flex items-center gap-2">
+          {returnTo ? (
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
+              onClick={() => router.push(returnTo)}
+            >
+              Voltar
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-lg bg-[#16A34A] px-4 py-2 text-sm text-white hover:bg-[#15803D] disabled:opacity-60"
+            onClick={() => {
+              setEdicaoId(null);
+              limparFormularioCompleto();
+              setFormOpen(true);
+            }}
+            disabled={loading}
+          >
+            <Plus className="h-4 w-4" />
+            Nova contraparte
+          </button>
+        </div>
       </div>
 
       <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-3">

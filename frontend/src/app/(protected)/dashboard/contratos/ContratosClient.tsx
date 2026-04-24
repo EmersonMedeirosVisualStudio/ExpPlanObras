@@ -215,6 +215,17 @@ function statusUi(status?: ContratoRow["statusCalculado"] | null) {
   }
 }
 
+function normalizeContratoStatusForSelect(v: unknown): StatusCalc {
+  const s = String(v || "").toUpperCase();
+  if (s === "CANCELADO") return "CANCELADO";
+  if (s === "RESCINDIDO") return "RESCINDIDO";
+  if (["CONCLUIDO", "ENCERRADO", "FINALIZADO"].includes(s)) return "CONCLUIDO";
+  if (["PARADO", "PARALISADO"].includes(s)) return "PARADO";
+  if (["EM_EXECUCAO", "ATIVO"].includes(s)) return "EM_EXECUCAO";
+  if (s === "NAO_INICIADO" || s === "PENDENTE") return "NAO_INICIADO";
+  return "EM_EXECUCAO";
+}
+
 const STATUS_FILTER_OPTIONS: Array<{ key: StatusCalc; label: string }> = [
   { key: "NAO_INICIADO", label: "Não iniciado" },
   { key: "EM_EXECUCAO", label: "Em execução" },
@@ -356,6 +367,9 @@ export default function ContratosClient() {
     } catch {
     }
   }, [alertaVigenciaDias]);
+
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [statusUpdateErr, setStatusUpdateErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (contratoId) return;
@@ -826,16 +840,6 @@ export default function ContratosClient() {
               Documentos do contrato
             </button>
             <button
-              className="rounded-lg bg-[#2563EB] px-3 py-2 text-sm text-white hover:bg-[#1D4ED8]"
-              type="button"
-              onClick={() => {
-                const returnTo = encodeURIComponent(`/dashboard/contratos?id=${contratoId}`);
-                router.push(`/dashboard/contratos/planejamento?id=${contratoId}&returnTo=${returnTo}`);
-              }}
-            >
-              Planejamento (Gantt)
-            </button>
-            <button
               className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
               type="button"
               onClick={() => {
@@ -905,11 +909,42 @@ export default function ContratosClient() {
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
                   <div className="text-xs text-[#6B7280]">Status</div>
-                  <div className={`font-semibold ${statusUi(detail.statusCalculado).className}`}>
+                  <div className="mt-1">
                     <span className="inline-flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: statusUi(detail.statusCalculado).dot }} />
-                      <span>{statusUi(detail.statusCalculado).label}</span>
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: statusUi(normalizeContratoStatusForSelect(detail.statusCalculado || detail.status)).dot }}
+                      />
+                      <select
+                        className={`h-8 rounded-md bg-transparent text-sm font-semibold outline-none ${statusUi(normalizeContratoStatusForSelect(detail.statusCalculado || detail.status)).className}`}
+                        value={normalizeContratoStatusForSelect(detail.statusCalculado || detail.status)}
+                        onChange={async (e) => {
+                          const next = String(e.target.value || "").toUpperCase() as StatusCalc;
+                          try {
+                            setStatusUpdating(true);
+                            setStatusUpdateErr(null);
+                            setDetail((cur) => (cur ? ({ ...cur, status: next, statusCalculado: next } as any) : cur));
+                            await api.put(`/api/contratos/${contratoId}`, { status: next });
+                            await carregarLista();
+                            await carregarDetalhe(contratoId);
+                          } catch (err: any) {
+                            setStatusUpdateErr(err?.response?.data?.message || err?.message || "Erro ao atualizar status");
+                            await carregarDetalhe(contratoId);
+                          } finally {
+                            setStatusUpdating(false);
+                          }
+                        }}
+                        disabled={statusUpdating}
+                        title={statusUpdating ? "Atualizando..." : "Alterar status do contrato"}
+                      >
+                        {STATUS_FILTER_OPTIONS.map((o) => (
+                          <option key={o.key} value={o.key}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
                     </span>
+                    {statusUpdateErr ? <div className="mt-2 text-xs text-red-700">{statusUpdateErr}</div> : null}
                   </div>
                 </div>
                 <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
@@ -944,7 +979,19 @@ export default function ContratosClient() {
                 <button
                   className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-1.5 text-xs text-[#111827] hover:bg-[#F9FAFB]"
                   type="button"
-                  onClick={() => router.push("/dashboard/engenharia/contrapartes")}
+                  onClick={() => {
+                    const returnTo = encodeURIComponent(`/dashboard/contratos?id=${contratoId}`);
+                    const docDigits = onlyDigits(String(detail.empresaParceiraDocumento || ""));
+                    const nome = String(detail.empresaParceiraNome || "").trim().toLowerCase();
+                    const match =
+                      docDigits
+                        ? contrapartes.find((c) => onlyDigits(String(c.documento || "")) === docDigits) || null
+                        : nome
+                          ? contrapartes.find((c) => String(c.nomeRazao || "").trim().toLowerCase() === nome) || null
+                          : null;
+                    if (match?.idContraparte) router.push(`/dashboard/engenharia/contrapartes?idContraparte=${match.idContraparte}&returnTo=${returnTo}`);
+                    else router.push(`/dashboard/engenharia/contrapartes?returnTo=${returnTo}`);
+                  }}
                 >
                   Empresa
                 </button>

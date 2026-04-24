@@ -94,6 +94,27 @@ export default function EngenhariaObraHomePage() {
   const janelas = useMemo<Janela[]>(
     () => [
       {
+        key: "planilha-orcamentaria",
+        titulo: "Planilha orçamentária",
+        desc: "Versões do orçamento da obra (itens, subitens e serviços). Base para cronograma e custos.",
+        href: (id) => `/dashboard/engenharia/obras/${id}/planilha`,
+        nivel: "GESTAO",
+      },
+      {
+        key: "cronograma",
+        titulo: "Programação financeira (cronograma)",
+        desc: "Cronograma físico-financeiro da obra com histórico de versões e leitura de execução.",
+        href: (id) => `/dashboard/engenharia/obras/${id}/cronograma`,
+        nivel: "GESTAO",
+      },
+      {
+        key: "centros-custo",
+        titulo: "Centro de custos",
+        desc: "Cadastros e vínculos do centro de custo (base da programação e apropriação).",
+        href: () => `/dashboard/engenharia/centros-custo`,
+        nivel: "GESTAO",
+      },
+      {
         key: "programacao",
         titulo: "PES (Programação de Execução de Serviços)",
         desc: "Planejamento operacional por centro de custo, com mão de obra, equipamentos e insumos.",
@@ -108,17 +129,17 @@ export default function EngenhariaObraHomePage() {
         nivel: "GESTAO",
       },
       {
-        key: "planilha",
-        titulo: "Planilha contratada",
-        desc: "Base oficial de serviços da obra (pré-requisito para iniciar programação e apropriação).",
-        href: (id) => `/dashboard/engenharia/obras/${id}/planilha`,
-        nivel: "GESTAO",
-      },
-      {
         key: "apropriacao",
         titulo: "Apropriação",
         desc: "Registro do executado por serviço e centro de custo (base de produtividade e custos).",
         href: (id) => `/dashboard/engenharia/obras/${id}/apropriacao`,
+        nivel: "OPERACAO",
+      },
+      {
+        key: "diario-obra",
+        titulo: "Diário de Obra",
+        desc: "Rotina de campo (diário, evidências, ocorrências e histórico).",
+        href: () => `/dashboard/fiscalizacao/painel`,
         nivel: "OPERACAO",
       },
       {
@@ -136,11 +157,18 @@ export default function EngenhariaObraHomePage() {
         nivel: "GESTAO",
       },
       {
-        key: "cronograma",
-        titulo: "Cronograma (Físico-Financeiro)",
-        desc: "Planejamento macro e coerência com o planejamento operacional.",
+        key: "medicoes",
+        titulo: "Medições",
+        desc: "Fiscalização e medições (acompanhamento e validação).",
+        href: () => `/dashboard/fiscalizacao/painel`,
+        nivel: "OPERACAO",
+      },
+      {
+        key: "atividades",
+        titulo: "Atividades",
+        desc: "Atividades e progresso vinculados à obra (visão operacional).",
         href: () => `/dashboard/engenharia/painel`,
-        nivel: "GESTAO",
+        nivel: "OPERACAO",
       },
       {
         key: "fiscalizacao",
@@ -203,6 +231,20 @@ export default function EngenhariaObraHomePage() {
         titulo: "Contrapartes e Contratos",
         desc: "Parceiros comerciais e contratos de locação/serviço.",
         href: () => `/dashboard/engenharia/contrapartes`,
+        nivel: "CADASTRO",
+      },
+      {
+        key: "responsaveis-tecnicos",
+        titulo: "Responsáveis Técnicos",
+        desc: "Cadastro de responsáveis técnicos por obra.",
+        href: (id) => `/dashboard/engenharia/obras?obraId=${id}#cadastro-responsaveis`,
+        nivel: "CADASTRO",
+      },
+      {
+        key: "fiscais",
+        titulo: "Fiscais",
+        desc: "Cadastro de fiscais por obra.",
+        href: (id) => `/dashboard/engenharia/obras?obraId=${id}#cadastro-responsaveis`,
         nivel: "CADASTRO",
       },
     ],

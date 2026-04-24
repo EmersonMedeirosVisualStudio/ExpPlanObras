@@ -22,6 +22,7 @@ export default function EngenhariaObrasPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [q, setQ] = useState("");
+  const [filtrosAberto, setFiltrosAberto] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [obras, setObras] = useState<ObraRef[]>([]);
@@ -158,23 +159,42 @@ export default function EngenhariaObrasPage() {
           <h1 className="text-2xl font-semibold text-slate-900">Engenharia → Obras</h1>
           <div className="text-sm text-slate-600">Selecione uma obra para abrir as janelas operacionais (planejamento, apropriação, equipamentos, insumos e documentos).</div>
         </div>
-        <button className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" type="button" onClick={carregar} disabled={loading}>
-          {loading ? "Carregando..." : "Atualizar"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+            type="button"
+            onClick={() => router.push("/dashboard/obras")}
+            disabled={loading}
+          >
+            Nova obra
+          </button>
+          <button className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" type="button" onClick={carregar} disabled={loading}>
+            {loading ? "Carregando..." : "Atualizar"}
+          </button>
+        </div>
       </div>
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
 
       <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
-          <div className="md:col-span-4">
-            <div className="text-sm text-slate-600">Buscar obra</div>
-            <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Digite ID ou nome" />
-          </div>
-          <div className="md:col-span-2 flex items-end justify-end">
-            <div className="text-sm text-slate-500">{filtradas.length} obra(s)</div>
-          </div>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-sm text-slate-600">{filtradas.length} obra(s)</div>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            type="button"
+            onClick={() => setFiltrosAberto((v) => !v)}
+          >
+            {filtrosAberto ? "Ocultar filtros" : "Mostrar filtros"}
+          </button>
         </div>
+        {filtrosAberto ? (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
+            <div className="md:col-span-4">
+              <div className="text-sm text-slate-600">Buscar obra</div>
+              <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Digite ID ou nome" />
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div id="cadastro-responsaveis" className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
