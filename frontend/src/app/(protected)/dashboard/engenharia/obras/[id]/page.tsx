@@ -269,8 +269,8 @@ export default function EngenhariaObraHomePage() {
     <div className="p-6 space-y-6 max-w-6xl">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold">Obra #{idObra}</h1>
-          <div className="text-sm text-slate-600">Janelas operacionais da obra selecionada.</div>
+          <h1 className="text-2xl font-semibold">Obra - Menu Diversos</h1>
+          <div className="text-sm text-slate-600">Obra #{idObra} — janelas operacionais da obra selecionada.</div>
         </div>
         <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={() => router.push("/dashboard/engenharia/obras")}>
           Trocar obra

@@ -116,7 +116,7 @@ function daysDiffFromToday(dateIso: unknown) {
 
 export default function EngenhariaObrasPage() {
   const router = useRouter();
-  const [filtrosAberto, setFiltrosAberto] = useState(true);
+  const [filtrosAberto, setFiltrosAberto] = useState(false);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
