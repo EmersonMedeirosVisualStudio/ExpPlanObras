@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Filter, Plus, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { setActiveObra } from "@/lib/obra/active";
 import api from "@/lib/api";
 
@@ -71,7 +72,7 @@ function onlyDigits(value: string) {
 
 export default function EngenhariaObrasPage() {
   const router = useRouter();
-  const [filtrosAberto, setFiltrosAberto] = useState(false);
+  const [filtrosAberto, setFiltrosAberto] = useState(true);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -79,6 +80,8 @@ export default function EngenhariaObrasPage() {
   const [contratos, setContratos] = useState<ContratoRow[]>([]);
   const [contrapartes, setContrapartes] = useState<ContraparteRow[]>([]);
   const [obraSelecionadaId, setObraSelecionadaId] = useState<number | null>(null);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
 
   const [statusSel, setStatusSel] = useState<Record<ObraStatus, boolean>>(() => Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, true])) as Record<ObraStatus, boolean>);
   const [numeroContratoFiltro, setNumeroContratoFiltro] = useState("");
@@ -204,23 +207,44 @@ export default function EngenhariaObrasPage() {
     });
   }, [q, numeroContratoFiltro, contraparteFiltro, tipoContratanteFiltro, papelFiltro, obras, contratoById, contraparteByDoc, statusSel]);
 
+  useEffect(() => {
+    setPageIndex(0);
+  }, [q, numeroContratoFiltro, contraparteFiltro, tipoContratanteFiltro, papelFiltro, statusSel]);
+
+  const pageCount = useMemo(() => Math.max(1, Math.ceil(filtradas.length / pageSize)), [filtradas.length, pageSize]);
+  const safePageIndex = Math.min(pageIndex, pageCount - 1);
+  const paged = useMemo(() => {
+    const start = safePageIndex * pageSize;
+    return filtradas.slice(start, start + pageSize);
+  }, [filtradas, safePageIndex, pageSize]);
+
+  const pageFrom = filtradas.length ? safePageIndex * pageSize + 1 : 0;
+  const pageTo = Math.min(filtradas.length, (safePageIndex + 1) * pageSize);
+
   return (
-    <div className="p-6 space-y-6 max-w-5xl text-slate-900">
+    <div className="p-4 sm:p-6 space-y-6 max-w-6xl mx-auto text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Engenharia → Obras</h1>
           <div className="text-sm text-slate-600">Selecione uma obra para abrir as janelas operacionais (planejamento, apropriação, equipamentos, insumos e documentos).</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
           <button
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+            className="w-full sm:w-auto rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60 inline-flex items-center justify-center gap-2"
             type="button"
             onClick={() => router.push("/dashboard/obras")}
             disabled={loading}
           >
+            <Plus className="h-4 w-4" />
             Nova obra
           </button>
-          <button className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" type="button" onClick={carregar} disabled={loading}>
+          <button
+            className="w-full sm:w-auto rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center justify-center gap-2"
+            type="button"
+            onClick={carregar}
+            disabled={loading}
+          >
+            <RefreshCw className="h-4 w-4" />
             {loading ? "Carregando..." : "Atualizar"}
           </button>
         </div>
@@ -230,13 +254,17 @@ export default function EngenhariaObrasPage() {
 
       <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="text-sm text-slate-600">{filtradas.length} obra(s)</div>
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-slate-600" />
+            <div className="text-sm font-semibold text-slate-900">Filtros</div>
+          </div>
           <button
-            className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            className="rounded-lg border bg-white px-3 py-2 text-sm text-blue-700 hover:bg-slate-50 inline-flex items-center gap-2"
             type="button"
             onClick={() => setFiltrosAberto((v) => !v)}
           >
             {filtrosAberto ? "Ocultar filtros" : "Mostrar filtros"}
+            {filtrosAberto ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
         </div>
         {filtrosAberto ? (
@@ -286,24 +314,29 @@ export default function EngenhariaObrasPage() {
               </div>
               <div className="md:col-span-6">
                 <div className="text-sm text-slate-600">Status</div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-                    onClick={() => setStatusSel(Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, true])) as any)}
-                  >
-                    Todos
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-                    onClick={() => setStatusSel(Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, false])) as any)}
-                  >
-                    Nenhum
-                  </button>
-                  <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                      onClick={() => setStatusSel(Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, true])) as any)}
+                    >
+                      Todos
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                      onClick={() => setStatusSel(Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, false])) as any)}
+                    >
+                      Nenhum
+                    </button>
+                  </div>
+                  <div className="text-xs text-slate-500">{filtradas.length} obra(s)</div>
+                </div>
+                <div className="mt-2 overflow-x-auto">
+                  <div className="flex items-center gap-2 min-w-max pb-1">
                     {OBRA_STATUS_OPTIONS.map((s) => (
-                      <label key={s} className="flex items-center gap-2 text-sm">
+                      <label key={s} className="flex items-center gap-2 text-sm rounded-full border bg-white px-3 py-2 hover:bg-slate-50 whitespace-nowrap">
                         <input type="checkbox" checked={!!statusSel[s]} onChange={(e) => setStatusSel((p) => ({ ...p, [s]: e.target.checked } as any))} />
                         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: OBRA_STATUS_COLOR_MAP[s] || "#9CA3AF" }} />
                         <span>{OBRA_STATUS_LABEL_MAP[s] || s}</span>
@@ -313,14 +346,101 @@ export default function EngenhariaObrasPage() {
                 </div>
               </div>
             </div>
+            <div className="flex items-center justify-end gap-2 flex-wrap">
+              <button
+                type="button"
+                className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
+                onClick={() => {
+                  setQ("");
+                  setNumeroContratoFiltro("");
+                  setContraparteFiltro("");
+                  setTipoContratanteFiltro("");
+                  setPapelFiltro("");
+                  setStatusSel(Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, true])) as any);
+                }}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                Limpar filtros
+              </button>
+            </div>
           </div>
         ) : null}
       </div>
 
       <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-        <div className="text-lg font-semibold">Obras cadastradas</div>
-        <div className="text-xs text-slate-500">Clique 1x para selecionar. Dê duplo clique para abrir a obra selecionada.</div>
-        <div className="overflow-auto">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="text-lg font-semibold">Obras cadastradas</div>
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">{filtradas.length} obra(s)</div>
+          </div>
+        </div>
+        <div className="text-xs text-slate-500 md:hidden">Toque para selecionar. Depois toque em “Abrir” para entrar na obra selecionada.</div>
+        <div className="text-xs text-slate-500 hidden md:block">Clique 1x para selecionar. Dê duplo clique para abrir a obra selecionada.</div>
+
+        <div className="md:hidden space-y-2">
+          {paged.map((o) => {
+            const contrato = contratoById.get(o.contratoId) || null;
+            const docDigits = onlyDigits(String(contrato?.empresaParceiraDocumento || ""));
+            const cp = docDigits ? contraparteByDoc.get(docDigits) || null : null;
+            const cpLabel = cp ? `${cp.idContraparte} - ${cp.nomeRazao}${cp.documento ? " - " + onlyDigits(cp.documento) : ""}` : `${contrato?.empresaParceiraNome || "-"}${docDigits ? " - " + docDigits : ""}`;
+            const statusKey = toObraStatus(o.status) || "NAO_INICIADA";
+            const selected = obraSelecionadaId === o.id;
+            return (
+              <div
+                key={o.id}
+                className={`rounded-xl border p-3 ${selected ? "border-blue-200 bg-blue-50" : "bg-white"}`}
+                onClick={() => {
+                  setActiveObra({ id: o.id, nome: o.name });
+                  setObraSelecionadaId(o.id);
+                }}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-semibold truncate">#{o.id} — {o.name}</div>
+                    <div className="text-xs text-slate-500">{o.type === "PUBLICA" ? "Pública" : "Particular"}</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      setActiveObra({ id: o.id, nome: o.name });
+                      router.push(`/dashboard/engenharia/obras/cadastro?obraId=${o.id}`);
+                    }}
+                  >
+                    Abrir
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="mt-2 flex items-center gap-2 text-sm">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: OBRA_STATUS_COLOR_MAP[statusKey] || "#9CA3AF" }} />
+                  <span>{OBRA_STATUS_LABEL_MAP[statusKey] || statusKey}</span>
+                </div>
+                <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-slate-600">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-500">Nº contrato</span>
+                    <span className="text-slate-700">{contrato?.numeroContrato || "-"}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-500">Contraparte</span>
+                    <span className="text-slate-700 truncate max-w-[220px]">{cpLabel || "-"}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-500">Tipo do contrato</span>
+                    <span className="text-slate-700">{contrato?.tipoContratante ? String(contrato.tipoContratante) : "-"}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-500">Papel no contrato</span>
+                    <span className="text-slate-700">{contrato?.tipoPapel ? String(contrato.tipoPapel) : "-"}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {!paged.length ? <div className="rounded-lg border bg-slate-50 p-4 text-sm text-slate-600">Nenhuma obra encontrada.</div> : null}
+        </div>
+
+        <div className="hidden md:block overflow-auto">
           <table className="min-w-[1100px] w-full text-sm">
             <thead className="bg-slate-50 text-left text-slate-700">
               <tr>
@@ -333,11 +453,12 @@ export default function EngenhariaObrasPage() {
               </tr>
             </thead>
             <tbody>
-              {filtradas.map((o) => {
+              {paged.map((o) => {
                 const contrato = contratoById.get(o.contratoId) || null;
                 const docDigits = onlyDigits(String(contrato?.empresaParceiraDocumento || ""));
                 const cp = docDigits ? contraparteByDoc.get(docDigits) || null : null;
                 const cpLabel = cp ? `${cp.idContraparte} - ${cp.nomeRazao}${cp.documento ? " - " + onlyDigits(cp.documento) : ""}` : `${contrato?.empresaParceiraNome || "-"}${docDigits ? " - " + docDigits : ""}`;
+                const statusKey = toObraStatus(o.status) || "NAO_INICIADA";
                 return (
                   <tr
                     key={o.id}
@@ -357,8 +478,8 @@ export default function EngenhariaObrasPage() {
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: OBRA_STATUS_COLOR_MAP[o.status] || "#9CA3AF" }} />
-                        <span>{OBRA_STATUS_LABEL_MAP[o.status] || o.status}</span>
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: OBRA_STATUS_COLOR_MAP[statusKey] || "#9CA3AF" }} />
+                        <span>{OBRA_STATUS_LABEL_MAP[statusKey] || statusKey}</span>
                       </div>
                     </td>
                     <td className="px-3 py-2">{contrato?.numeroContrato || "-"}</td>
@@ -368,7 +489,7 @@ export default function EngenhariaObrasPage() {
                   </tr>
                 );
               })}
-              {!filtradas.length ? (
+              {!paged.length ? (
                 <tr>
                   <td className="px-3 py-6 text-center text-slate-500" colSpan={6}>
                     Nenhuma obra encontrada.
@@ -377,6 +498,38 @@ export default function EngenhariaObrasPage() {
               ) : null}
             </tbody>
           </table>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 flex-wrap pt-2">
+          <div className="text-xs text-slate-500">
+            {filtradas.length ? `Exibindo ${pageFrom} a ${pageTo} de ${filtradas.length}` : "Exibindo 0"}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50 inline-flex items-center gap-2"
+              disabled={safePageIndex <= 0}
+              onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <div className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700">
+              {safePageIndex + 1}
+            </div>
+            <button
+              type="button"
+              className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50 inline-flex items-center gap-2"
+              disabled={safePageIndex >= pageCount - 1}
+              onClick={() => setPageIndex((p) => Math.min(pageCount - 1, p + 1))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            <select className="input w-[140px]" value={String(pageSize)} onChange={(e) => setPageSize(Number(e.target.value) || 10)}>
+              <option value="10">10 por página</option>
+              <option value="25">25 por página</option>
+              <option value="50">50 por página</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>
