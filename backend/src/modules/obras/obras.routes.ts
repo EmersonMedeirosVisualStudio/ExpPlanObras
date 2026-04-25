@@ -3,8 +3,6 @@ import { z } from 'zod';
 import { createObraSchema, updateObraSchema, updateOrcamentoSchema, createCustoSchema } from './obras.schema.js';
 import { createObra, getObras, getObraById, updateObra, deleteObra, getOrcamento, updateOrcamento, addCusto, removeCusto, getEnderecoObra, upsertEnderecoObra, listEnderecosObra, createEnderecoObra, updateEnderecoObraById, deleteEnderecoObraById, ensurePlanilhaContratadaMinima, getPlanilhaContratadaResumo, listPlanilhaContratadaItens, addPlanilhaContratadaItem, getObrasResumoFinanceiro, type AbrangenciaContext, type OrigemEndereco } from './obras.service.js';
 import { authenticate } from '../../utils/authenticate.js';
-import { parseCSV } from '../../utils/csv.js';
-import { ensureContratoPendente } from '../contratos/contratos.service.js';
 
 export default async function obraRoutes(server: FastifyInstance) {
   server.addHook('onRequest', authenticate);
@@ -699,90 +697,6 @@ export default async function obraRoutes(server: FastifyInstance) {
       }
     }
   );
-
-  server.post('/import', async (request, reply) => {
-    const { tenantId } = request.user as any;
-    const file = await (request as any).file();
-    if (!file) {
-      return reply.code(400).send({ message: 'Arquivo CSV não enviado (campo "file")' });
-    }
-    const chunks: Buffer[] = [];
-    for await (const chunk of file.file) {
-      chunks.push(chunk as Buffer);
-    }
-    const buffer = Buffer.concat(chunks);
-    const text = buffer.toString('utf-8');
-    const { headers, rows } = parseCSV(text);
-
-    if (headers.length === 0 || rows.length === 0) {
-      return reply.code(400).send({ message: 'CSV vazio ou inválido' });
-    }
-
-    const m = (k: string) => k.toLowerCase();
-    const toNumber = (v?: string) => {
-      if (!v) return undefined;
-      const norm = v.replace(/\./g, '').replace(',', '.');
-      const n = parseFloat(norm);
-      return isNaN(n) ? undefined : n;
-    };
-
-    const contratoPendenteId = await ensureContratoPendente(tenantId);
-
-    const results = { imported: 0, errors: [] as Array<{ line: number; error: string }> };
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
-      try {
-        const contratoIdRaw = r[m('contratoid')] || r[m('contrato_id')] || r[m('id_contrato')] || '';
-        const contratoIdParsed = contratoIdRaw ? Number(String(contratoIdRaw).trim()) : NaN;
-        const contratoId = Number.isFinite(contratoIdParsed) && contratoIdParsed > 0 ? contratoIdParsed : contratoPendenteId;
-        const input = {
-          name: r[m('name')] || r[m('nome')] || '',
-          contratoId,
-          type: (r[m('type')] || r[m('tipo')] || 'PARTICULAR').toUpperCase() as any,
-          status: (r[m('status')] || 'NAO_INICIADA').toUpperCase() as any,
-          description: r[m('description')] || r[m('descricao')] || undefined,
-          valorPrevisto: toNumber(r[m('valorprevisto')] || r[m('valor_previsto')])
-        };
-        if (!input.name || input.name.length < 3) {
-          throw new Error('Nome da obra é obrigatório (mín. 3 caracteres)');
-        }
-        const created = await createObra(input as any, tenantId);
-
-        const logradouro = r[m('street')] || r[m('rua')] || undefined;
-        const numero = r[m('number')] || r[m('numero')] || undefined;
-        const bairro = r[m('neighborhood')] || r[m('bairro')] || undefined;
-        const cidade = r[m('city')] || r[m('cidade')] || undefined;
-        const uf = r[m('state')] || r[m('uf')] || r[m('estado')] || undefined;
-        const latitude = r[m('latitude')] || undefined;
-        const longitude = r[m('longitude')] || undefined;
-        const hasAny = !!(logradouro || numero || bairro || cidade || uf || latitude || longitude);
-
-        if (hasAny) {
-          await upsertEnderecoObra(
-            Number(created.id),
-            tenantId,
-            {
-              logradouro: logradouro ? String(logradouro) : null,
-              numero: numero ? String(numero) : null,
-              bairro: bairro ? String(bairro) : null,
-              cidade: cidade ? String(cidade) : null,
-              uf: uf ? String(uf) : null,
-              latitude: latitude ? String(latitude) : null,
-              longitude: longitude ? String(longitude) : null,
-              origemEndereco: 'MANUAL',
-              origemCoordenada: 'MANUAL',
-            },
-            { empresa: true, obras: [], unidades: [] }
-          );
-        }
-        results.imported++;
-      } catch (e: any) {
-        results.errors.push({ line: i + 2, error: e.message || String(e) });
-      }
-    }
-
-    return reply.code(207).send(results);
-  });
 
   server.get(
     '/:id/orcamento',

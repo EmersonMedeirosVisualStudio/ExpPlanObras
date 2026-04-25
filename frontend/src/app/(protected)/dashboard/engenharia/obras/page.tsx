@@ -12,11 +12,17 @@ type ObraRow = {
   name: string;
   type: "PUBLICA" | "PARTICULAR";
   status: string;
+  valorPrevisto: number | null;
 };
 
 type ContratoRow = {
   id: number;
   numeroContrato: string;
+  objeto: string | null;
+  valorTotalAtual: number | null;
+  prazoDias: number | null;
+  vigenciaInicial: string | null;
+  vigenciaAtual: string | null;
   tipoContratante: "PUBLICO" | "PRIVADO" | "PF" | string;
   tipoPapel?: "CONTRATADO" | "CONTRATANTE" | null;
   empresaParceiraNome: string | null;
@@ -70,6 +76,44 @@ function onlyDigits(value: string) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function moeda(v: number) {
+  const n = Number(v || 0);
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number.isFinite(n) ? n : 0);
+}
+
+function parseMoneyBR(input: string) {
+  const s = String(input || "")
+    .replace(/\./g, "")
+    .replace(",", ".")
+    .replace(/[^\d.]/g, "");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatMoneyBRFromDigits(digits: string) {
+  const d = (digits || "").replace(/\D/g, "");
+  const cents = d ? Number(d) : 0;
+  const value = cents / 100;
+  return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtDateShort(v: unknown) {
+  if (!v) return "-";
+  const d = new Date(String(v));
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleDateString("pt-BR");
+}
+
+function daysDiffFromToday(dateIso: unknown) {
+  if (!dateIso) return null;
+  const d = new Date(String(dateIso));
+  if (Number.isNaN(d.getTime())) return null;
+  const end = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const nowD = new Date();
+  const start = new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate()).getTime();
+  return Math.floor((end - start) / 86400000);
+}
+
 export default function EngenhariaObrasPage() {
   const router = useRouter();
   const [filtrosAberto, setFiltrosAberto] = useState(true);
@@ -89,6 +133,17 @@ export default function EngenhariaObrasPage() {
   const [tipoContratanteFiltro, setTipoContratanteFiltro] = useState<"" | "PUBLICO" | "PRIVADO" | "PF">("");
   const [papelFiltro, setPapelFiltro] = useState<"" | "CONTRATADO" | "CONTRATANTE">("");
 
+  const [cadastroAberto, setCadastroAberto] = useState(false);
+  const [cadastroContratoId, setCadastroContratoId] = useState<number>(0);
+  const [cadastroNome, setCadastroNome] = useState("");
+  const [cadastroTipo, setCadastroTipo] = useState<"PUBLICA" | "PARTICULAR">("PARTICULAR");
+  const [cadastroStatus, setCadastroStatus] = useState<string>("NAO_INICIADA");
+  const [cadastroValorPrevisto, setCadastroValorPrevisto] = useState("");
+  const [cadastroDescricao, setCadastroDescricao] = useState("");
+  const [cadastroErr, setCadastroErr] = useState<string | null>(null);
+  const [cadastroOk, setCadastroOk] = useState<string | null>(null);
+  const [cadastroSaving, setCadastroSaving] = useState(false);
+
   async function carregar() {
     try {
       setLoading(true);
@@ -107,6 +162,7 @@ export default function EngenhariaObrasPage() {
           name: String(o.name || ""),
           type: (String(o.type || "PARTICULAR").toUpperCase() as any) || "PARTICULAR",
           status: String(o.status || "NAO_INICIADA"),
+          valorPrevisto: o.valorPrevisto == null ? null : Number(o.valorPrevisto),
         }))
       );
 
@@ -115,6 +171,11 @@ export default function EngenhariaObrasPage() {
         contratosData.map((c: any) => ({
           id: Number(c.id),
           numeroContrato: String(c.numeroContrato || ""),
+          objeto: c.objeto ?? null,
+          valorTotalAtual: c.valorTotalAtual == null ? null : Number(c.valorTotalAtual),
+          prazoDias: c.prazoDias == null ? null : Number(c.prazoDias),
+          vigenciaInicial: c.vigenciaInicial ?? null,
+          vigenciaAtual: c.vigenciaAtual ?? null,
           tipoContratante: String(c.tipoContratante || ""),
           tipoPapel: (c.tipoPapel ?? null) as any,
           empresaParceiraNome: c.empresaParceiraNome ? String(c.empresaParceiraNome) : null,
@@ -143,6 +204,7 @@ export default function EngenhariaObrasPage() {
   }
 
   const contratoById = useMemo(() => new Map(contratos.map((c) => [c.id, c])), [contratos]);
+  const contratoCadastro = useMemo(() => (cadastroContratoId ? contratoById.get(cadastroContratoId) || null : null), [cadastroContratoId, contratoById]);
   const contraparteByDoc = useMemo(() => {
     const m = new Map<string, ContraparteRow>();
     for (const c of contrapartes) {
@@ -221,6 +283,62 @@ export default function EngenhariaObrasPage() {
   const pageFrom = filtradas.length ? safePageIndex * pageSize + 1 : 0;
   const pageTo = Math.min(filtradas.length, (safePageIndex + 1) * pageSize);
 
+  const obrasCadastroContrato = useMemo(() => {
+    if (!cadastroContratoId) return [];
+    return obras.filter((o) => Number(o.contratoId) === Number(cadastroContratoId));
+  }, [obras, cadastroContratoId]);
+
+  const obrasCadastroCount = obrasCadastroContrato.length;
+  const obrasCadastroTotal = useMemo(() => obrasCadastroContrato.reduce((acc, o) => acc + (Number(o.valorPrevisto || 0) || 0), 0), [obrasCadastroContrato]);
+  const contratoValor = contratoCadastro?.valorTotalAtual != null ? Number(contratoCadastro.valorTotalAtual || 0) : null;
+  const cadastroValorPrevistoNum = useMemo(() => parseMoneyBR(cadastroValorPrevisto), [cadastroValorPrevisto]);
+  const obrasCadastroTotalComNova = obrasCadastroTotal + (cadastroNome.trim().length >= 3 ? cadastroValorPrevistoNum : 0);
+  const excedeContrato = contratoValor != null && contratoValor > 0 && obrasCadastroTotalComNova > contratoValor;
+  const diasRestantes = useMemo(() => daysDiffFromToday(contratoCadastro?.vigenciaAtual), [contratoCadastro?.vigenciaAtual]);
+
+  async function salvarNovaObra() {
+    try {
+      setCadastroSaving(true);
+      setCadastroErr(null);
+      setCadastroOk(null);
+
+      const nome = cadastroNome.trim();
+      if (!cadastroContratoId || !Number.isInteger(cadastroContratoId) || cadastroContratoId <= 0) {
+        throw new Error("Número do contrato válido é obrigatório.");
+      }
+      if (nome.length < 3) throw new Error("Nome da obra é obrigatório (mín. 3 caracteres).");
+
+      const payload: any = {
+        contratoId: cadastroContratoId,
+        name: nome,
+        type: cadastroTipo,
+        status: String(cadastroStatus || "NAO_INICIADA").toUpperCase(),
+        description: cadastroDescricao.trim() ? cadastroDescricao.trim() : undefined,
+      };
+      if (cadastroValorPrevistoNum > 0) payload.valorPrevisto = cadastroValorPrevistoNum;
+
+      const res = await api.post("/api/obras", payload);
+      const id = Number(res?.data?.id || 0);
+      setCadastroOk(id ? `Obra cadastrada com sucesso (ID #${id}).` : "Obra cadastrada com sucesso.");
+      setCadastroNome("");
+      setCadastroTipo("PARTICULAR");
+      setCadastroStatus("NAO_INICIADA");
+      setCadastroValorPrevisto("");
+      setCadastroDescricao("");
+      await carregar();
+    } catch (e: any) {
+      setCadastroErr(e?.response?.data?.message || e?.message || "Falha ao cadastrar obra.");
+    } finally {
+      setCadastroSaving(false);
+    }
+  }
+
+  function selecionarObra(idObra: number, nome?: string) {
+    setActiveObra({ id: idObra, nome: nome || undefined });
+    setObraSelecionadaId(idObra);
+    router.push(`/dashboard/engenharia/obras/${idObra}`);
+  }
+
   return (
     <div className="p-4 sm:p-6 space-y-6 w-full max-w-none text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -232,7 +350,21 @@ export default function EngenhariaObrasPage() {
           <button
             className="w-full sm:w-auto rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60 inline-flex items-center justify-center gap-2"
             type="button"
-            onClick={() => router.push("/dashboard/obras")}
+            onClick={() => {
+              const current = cadastroAberto;
+              setCadastroOk(null);
+              setCadastroErr(null);
+              if (current) {
+                setCadastroAberto(false);
+                return;
+              }
+              const contratoFromFiltro = numeroContratoFiltro.trim()
+                ? contratos.find((c) => String(c.numeroContrato || "").trim() === numeroContratoFiltro.trim())?.id || 0
+                : 0;
+              const nonPending = contratos.find((c) => String(c.numeroContrato || "").toUpperCase() !== "PENDENTE")?.id || 0;
+              setCadastroContratoId(contratoFromFiltro || cadastroContratoId || nonPending || (contratos[0]?.id || 0));
+              setCadastroAberto(true);
+            }}
             disabled={loading}
           >
             <Plus className="h-4 w-4" />
@@ -312,38 +444,38 @@ export default function EngenhariaObrasPage() {
                   <option value="CONTRATADO">Contratado</option>
                 </select>
               </div>
-              <div className="md:col-span-6">
-                <div className="text-sm text-slate-600">Status</div>
-                <div className="mt-2 rounded-xl border bg-white p-2">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        className="rounded-lg border bg-white px-2.5 py-1.5 text-xs hover:bg-slate-50"
-                        onClick={() => setStatusSel(Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, true])) as any)}
-                      >
-                        Todos
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-lg border bg-white px-2.5 py-1.5 text-xs hover:bg-slate-50"
-                        onClick={() => setStatusSel(Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, false])) as any)}
-                      >
-                        Nenhum
-                      </button>
-                    </div>
-                    <div className="text-xs text-slate-500">{filtradas.length} obra(s)</div>
+            </div>
+            <div>
+              <div className="text-sm text-slate-600">Status</div>
+              <div className="mt-2 rounded-xl border bg-white p-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="rounded-lg border bg-white px-2.5 py-1.5 text-xs hover:bg-slate-50"
+                      onClick={() => setStatusSel(Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, true])) as any)}
+                    >
+                      Todos
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border bg-white px-2.5 py-1.5 text-xs hover:bg-slate-50"
+                      onClick={() => setStatusSel(Object.fromEntries(OBRA_STATUS_OPTIONS.map((k) => [k, false])) as any)}
+                    >
+                      Nenhum
+                    </button>
                   </div>
-                  <div className="mt-2 overflow-x-auto">
-                    <div className="flex items-center gap-2 min-w-max pb-1">
-                      {OBRA_STATUS_OPTIONS.map((s) => (
-                        <label key={s} className="flex items-center gap-2 text-xs rounded-full border bg-white px-2.5 py-1.5 hover:bg-slate-50 whitespace-nowrap">
-                          <input type="checkbox" checked={!!statusSel[s]} onChange={(e) => setStatusSel((p) => ({ ...p, [s]: e.target.checked } as any))} />
-                          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: OBRA_STATUS_COLOR_MAP[s] || "#9CA3AF" }} />
-                          <span>{OBRA_STATUS_LABEL_MAP[s] || s}</span>
-                        </label>
-                      ))}
-                    </div>
+                  <div className="text-xs text-slate-500">{filtradas.length} obra(s)</div>
+                </div>
+                <div className="mt-2 overflow-x-auto">
+                  <div className="flex items-center gap-2 min-w-max pb-1">
+                    {OBRA_STATUS_OPTIONS.map((s) => (
+                      <label key={s} className="flex items-center gap-2 text-xs rounded-full border bg-white px-2.5 py-1.5 hover:bg-slate-50 whitespace-nowrap">
+                        <input type="checkbox" checked={!!statusSel[s]} onChange={(e) => setStatusSel((p) => ({ ...p, [s]: e.target.checked } as any))} />
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: OBRA_STATUS_COLOR_MAP[s] || "#9CA3AF" }} />
+                        <span>{OBRA_STATUS_LABEL_MAP[s] || s}</span>
+                      </label>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -368,6 +500,158 @@ export default function EngenhariaObrasPage() {
           </div>
         ) : null}
       </div>
+
+      {cadastroAberto ? (
+        <div className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-lg font-semibold">Cadastro de Obra</div>
+              <div className="text-sm text-slate-600">Obrigatório: número do contrato válido e nome da obra.</div>
+            </div>
+            <button
+              type="button"
+              className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              onClick={() => setCadastroAberto(false)}
+              disabled={cadastroSaving}
+            >
+              Fechar
+            </button>
+          </div>
+
+          {cadastroErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{cadastroErr}</div> : null}
+          {cadastroOk ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">{cadastroOk}</div> : null}
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+            <div className="md:col-span-4">
+              <div className="text-sm text-slate-600">Contrato *</div>
+              <select
+                className="input"
+                value={cadastroContratoId ? String(cadastroContratoId) : ""}
+                onChange={(e) => setCadastroContratoId(e.target.value ? Number(e.target.value) : 0)}
+              >
+                <option value="">Selecione</option>
+                {contratos.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.numeroContrato || `#${c.id}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="md:col-span-8">
+              <div className="text-sm text-slate-600">Objeto</div>
+              <input className="input" value={contratoCadastro?.objeto || ""} readOnly />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+            <div className="md:col-span-3">
+              <div className="text-sm text-slate-600">Valor do contrato</div>
+              <input className="input" value={contratoValor != null ? moeda(contratoValor) : ""} readOnly />
+            </div>
+            <div className="md:col-span-3">
+              <div className="text-sm text-slate-600">Prazo (dias)</div>
+              <input className="input" value={contratoCadastro?.prazoDias != null ? String(contratoCadastro.prazoDias) : ""} readOnly />
+            </div>
+            <div className="md:col-span-4">
+              <div className="text-sm text-slate-600">Vigência</div>
+              <input
+                className="input"
+                value={
+                  contratoCadastro?.vigenciaInicial || contratoCadastro?.vigenciaAtual
+                    ? `${fmtDateShort(contratoCadastro?.vigenciaInicial)} → ${fmtDateShort(contratoCadastro?.vigenciaAtual)}`
+                    : ""
+                }
+                readOnly
+              />
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-sm text-slate-600">Dias restantes</div>
+              <input className="input" value={diasRestantes == null ? "" : String(diasRestantes)} readOnly />
+            </div>
+          </div>
+
+          {cadastroContratoId ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+              <div className="md:col-span-4 rounded-lg border bg-white p-3">
+                <div className="text-xs text-slate-600">Quantidade de obras cadastradas neste contrato</div>
+                <div className="text-lg font-semibold">{obrasCadastroCount}</div>
+              </div>
+              <div className="md:col-span-4 rounded-lg border bg-white p-3">
+                <div className="text-xs text-slate-600">Valor total das obras (somatório)</div>
+                <div className="text-lg font-semibold">{moeda(obrasCadastroTotal)}</div>
+              </div>
+              <div className={`md:col-span-4 rounded-lg border bg-white p-3 ${excedeContrato ? "border-red-200 bg-red-50" : ""}`}>
+                <div className="text-xs text-slate-600">Valor total após cadastrar</div>
+                <div className={`text-lg font-semibold ${excedeContrato ? "text-red-700" : ""}`}>{moeda(obrasCadastroTotalComNova)}</div>
+                {excedeContrato ? <div className="mt-1 text-xs text-red-700">Alerta: o somatório das obras ultrapassa o valor do contrato.</div> : null}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="rounded-lg border bg-white p-4 space-y-3">
+            <div className="text-sm font-semibold">Dados da obra</div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+              <div className="md:col-span-6">
+                <div className="text-sm text-slate-600">Nome da Obra *</div>
+                <input className="input" value={cadastroNome} onChange={(e) => setCadastroNome(e.target.value)} />
+              </div>
+              <div className="md:col-span-3">
+                <div className="text-sm text-slate-600">Tipo</div>
+                <select className="input" value={cadastroTipo} onChange={(e) => setCadastroTipo(e.target.value as any)}>
+                  <option value="PARTICULAR">Particular</option>
+                  <option value="PUBLICA">Pública</option>
+                </select>
+              </div>
+              <div className="md:col-span-3">
+                <div className="text-sm text-slate-600">Status</div>
+                <select className="input" value={cadastroStatus} onChange={(e) => setCadastroStatus(e.target.value)}>
+                  <option value="NAO_INICIADA">Não iniciada</option>
+                  <option value="EM_ANDAMENTO">Em andamento</option>
+                  <option value="PARADA">Parada</option>
+                  <option value="FINALIZADA">Finalizada</option>
+                  <option value="AGUARDANDO_RECURSOS">Aguardando recursos</option>
+                  <option value="AGUARDANDO_CONTRATO">Aguardando contrato</option>
+                  <option value="AGUARDANDO_OS">Aguardando OS</option>
+                </select>
+              </div>
+              <div className="md:col-span-4">
+                <div className="text-sm text-slate-600">Valor Previsto (R$)</div>
+                <input className="input" value={cadastroValorPrevisto} onChange={(e) => setCadastroValorPrevisto(formatMoneyBRFromDigits(e.target.value))} />
+              </div>
+              <div className="md:col-span-12">
+                <div className="text-sm text-slate-600">Descrição</div>
+                <textarea className="input min-h-24" value={cadastroDescricao} onChange={(e) => setCadastroDescricao(e.target.value)} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 flex-wrap">
+              <button
+                type="button"
+                className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                onClick={() => {
+                  setCadastroNome("");
+                  setCadastroTipo("PARTICULAR");
+                  setCadastroStatus("NAO_INICIADA");
+                  setCadastroValorPrevisto("");
+                  setCadastroDescricao("");
+                  setCadastroErr(null);
+                  setCadastroOk(null);
+                }}
+                disabled={cadastroSaving}
+              >
+                Limpar
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white hover:bg-green-500 disabled:opacity-60"
+                onClick={salvarNovaObra}
+                disabled={cadastroSaving || !cadastroContratoId || cadastroNome.trim().length < 3}
+              >
+                {cadastroSaving ? "Salvando..." : "Cadastrar Obra"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -406,11 +690,10 @@ export default function EngenhariaObrasPage() {
                     className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
                     onClick={(ev) => {
                       ev.stopPropagation();
-                      setActiveObra({ id: o.id, nome: o.name });
-                      router.push(`/dashboard/engenharia/obras/cadastro?obraId=${o.id}`);
+                      selecionarObra(o.id, o.name);
                     }}
                   >
-                    Abrir
+                    Selecionar obra
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
@@ -452,6 +735,7 @@ export default function EngenhariaObrasPage() {
                 <th className="px-3 py-2">Contraparte</th>
                 <th className="px-3 py-2">Tipo do contrato</th>
                 <th className="px-3 py-2">Papel no contrato</th>
+                    <th className="px-3 py-2">Ação</th>
               </tr>
             </thead>
             <tbody>
@@ -470,8 +754,7 @@ export default function EngenhariaObrasPage() {
                       setObraSelecionadaId(o.id);
                     }}
                     onDoubleClick={() => {
-                      setActiveObra({ id: o.id, nome: o.name });
-                      router.push(`/dashboard/engenharia/obras/cadastro?obraId=${o.id}`);
+                          selecionarObra(o.id, o.name);
                     }}
                   >
                     <td className="px-3 py-2">
@@ -488,12 +771,25 @@ export default function EngenhariaObrasPage() {
                     <td className="px-3 py-2">{cpLabel || "-"}</td>
                     <td className="px-3 py-2">{contrato?.tipoContratante ? String(contrato.tipoContratante) : "-"}</td>
                     <td className="px-3 py-2">{contrato?.tipoPapel ? String(contrato.tipoPapel) : "-"}</td>
+                        <td className="px-3 py-2">
+                          <button
+                            type="button"
+                            className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              selecionarObra(o.id, o.name);
+                            }}
+                          >
+                            Selecionar obra
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </td>
                   </tr>
                 );
               })}
               {!paged.length ? (
                 <tr>
-                  <td className="px-3 py-6 text-center text-slate-500" colSpan={6}>
+                      <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
                     Nenhuma obra encontrada.
                   </td>
                 </tr>

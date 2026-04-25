@@ -61,7 +61,7 @@ export default function DashboardCeoClient() {
           <h2 className="mb-4 text-lg font-semibold">Ações rápidas</h2>
           <div className="grid grid-cols-2 gap-3">
             <Atalho href="/dashboard/contratos" label="Contratos" />
-            <Atalho href="/dashboard/obras" label="Obras" />
+            <Atalho href="/dashboard/engenharia/obras" label="Obras" />
             <Atalho href="/dashboard/obras/mapa" label="Mapa das Obras" />
             <Atalho href="/dashboard/execucao/medicoes" label="Medições" />
             <Atalho href="/dashboard/suprimentos/solicitacoes" label="Suprimentos" />
@@ -124,4 +124,3 @@ function Atalho({ href, label }: { href: string; label: string }) {
     </Link>
   );
 }
-

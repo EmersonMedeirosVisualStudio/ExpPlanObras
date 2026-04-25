@@ -1368,6 +1368,7 @@ A obra é o principal ponto de ligação entre os módulos.
 #### Implementação (no sistema)
 
 - Engenharia → Obras → dar duplo clique na obra para abrir a tela **Obra selecionada**
+- Engenharia → Obras → também é possível clicar no botão **Selecionar obra**
 - Na tela **Obra selecionada** ficam os acessos (botões): Dashboard, Documentos da obra, Planejamento e Execução
 
 #### Validação

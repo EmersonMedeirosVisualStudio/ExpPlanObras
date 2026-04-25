@@ -19,7 +19,7 @@ function buildDoc(row: any): SearchDocumentInput {
     subtitulo: subtitulo || null,
     codigoReferencia: String(id),
     statusReferencia: status,
-    rota: `/dashboard/obras?id=${id}`,
+    rota: `/dashboard/engenharia/obras/${id}`,
     resumoTexto: null,
     termosBusca: termos,
     palavrasChave: null,
