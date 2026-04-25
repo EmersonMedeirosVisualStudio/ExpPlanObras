@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { setActiveObra } from "@/lib/obra/active";
 
 type Janela = { key: string; titulo: string; desc: string; href: (idObra: number) => string; nivel: "OPERACAO" | "GESTAO" | "CADASTRO" };
@@ -30,8 +30,12 @@ type ContratoDaObra = {
 export default function EngenhariaObraHomePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const sp = useSearchParams();
 
   const idObra = Number(params?.id || 0);
+  const obraNomeParam = String(sp?.get("obraNome") || "").trim();
+  const contratoIdParam = Number(sp?.get("contratoId") || 0);
+  const contratoNumeroParam = String(sp?.get("contratoNumero") || "").trim();
   const [responsaveis, setResponsaveis] = useState<ResponsavelObraRef[]>([]);
   const [carregandoResponsaveis, setCarregandoResponsaveis] = useState(false);
   const [erroResponsaveis, setErroResponsaveis] = useState<string | null>(null);
@@ -42,8 +46,26 @@ export default function EngenhariaObraHomePage() {
 
   useEffect(() => {
     if (!idObra) return;
-    setActiveObra({ id: idObra });
-  }, [idObra]);
+    setActiveObra({ id: idObra, nome: obraNomeParam || undefined });
+  }, [idObra, obraNomeParam]);
+
+  useEffect(() => {
+    if (!idObra) return;
+    if (!contratoIdParam && !contratoNumeroParam) return;
+    setContrato((prev) => {
+      if (prev) return prev;
+      return {
+        idObra,
+        nomeObra: obraNomeParam || `Obra #${idObra}`,
+        idContrato: Number.isFinite(contratoIdParam) && contratoIdParam > 0 ? contratoIdParam : null,
+        numeroContrato: contratoNumeroParam || "-",
+        statusContrato: null,
+        valorContratado: 0,
+        valorExecutado: 0,
+        valorPago: 0,
+      };
+    });
+  }, [idObra, contratoIdParam, contratoNumeroParam, obraNomeParam]);
 
   useEffect(() => {
     if (!idObra) return;
@@ -270,7 +292,9 @@ export default function EngenhariaObraHomePage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold">Obra - Menu Diversos</h1>
-          <div className="text-sm text-slate-600">Obra #{idObra} — janelas operacionais da obra selecionada.</div>
+          <div className="text-sm text-slate-600">
+            {`Obra #${idObra}${obraNomeParam ? ` — ${obraNomeParam}` : ""}${contrato?.numeroContrato?.trim() ? ` — Contrato: ${contrato.numeroContrato}` : ""} — janelas operacionais da obra selecionada.`}
+          </div>
         </div>
         <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={() => router.push("/dashboard/engenharia/obras")}>
           Trocar obra

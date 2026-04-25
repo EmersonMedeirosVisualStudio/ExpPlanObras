@@ -339,10 +339,15 @@ export default function EngenhariaObrasPage() {
     router.push(`/dashboard/engenharia/obras/cadastro?obraId=${idObra}`);
   }
 
-  function abrirMenuDiversos(idObra: number, nome?: string) {
+  function abrirMenuDiversos(idObra: number, nome?: string, contratoId?: number, contratoNumero?: string | null) {
     setActiveObra({ id: idObra, nome: nome || undefined });
     setObraSelecionadaId(idObra);
-    router.push(`/dashboard/engenharia/obras/${idObra}`);
+    const qp = new URLSearchParams();
+    if (nome) qp.set("obraNome", nome);
+    if (contratoId && Number.isFinite(contratoId) && contratoId > 0) qp.set("contratoId", String(contratoId));
+    if (contratoNumero) qp.set("contratoNumero", String(contratoNumero));
+    const suffix = qp.toString() ? `?${qp.toString()}` : "";
+    router.push(`/dashboard/engenharia/obras/${idObra}${suffix}`);
   }
 
   return (
@@ -706,7 +711,7 @@ export default function EngenhariaObrasPage() {
                     className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
                     onClick={(ev) => {
                       ev.stopPropagation();
-                      abrirMenuDiversos(o.id, o.name);
+                      abrirMenuDiversos(o.id, o.name, o.contratoId, contrato?.numeroContrato || null);
                     }}
                   >
                     Menu Diversos
@@ -769,7 +774,7 @@ export default function EngenhariaObrasPage() {
                       abrirObraSelecionada(o.id, o.name);
                     }}
                     onDoubleClick={() => {
-                      abrirMenuDiversos(o.id, o.name);
+                      abrirMenuDiversos(o.id, o.name, o.contratoId, contrato?.numeroContrato || null);
                     }}
                   >
                     <td className="px-3 py-2">
@@ -804,7 +809,7 @@ export default function EngenhariaObrasPage() {
                           className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
                           onClick={(ev) => {
                             ev.stopPropagation();
-                            abrirMenuDiversos(o.id, o.name);
+                            abrirMenuDiversos(o.id, o.name, o.contratoId, contrato?.numeroContrato || null);
                           }}
                         >
                           Menu Diversos
