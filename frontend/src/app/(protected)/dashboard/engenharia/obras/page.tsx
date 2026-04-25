@@ -333,7 +333,13 @@ export default function EngenhariaObrasPage() {
     }
   }
 
-  function selecionarObra(idObra: number, nome?: string) {
+  function abrirObraSelecionada(idObra: number, nome?: string) {
+    setActiveObra({ id: idObra, nome: nome || undefined });
+    setObraSelecionadaId(idObra);
+    router.push(`/dashboard/engenharia/obras/cadastro?obraId=${idObra}`);
+  }
+
+  function abrirMenuDiversos(idObra: number, nome?: string) {
     setActiveObra({ id: idObra, nome: nome || undefined });
     setObraSelecionadaId(idObra);
     router.push(`/dashboard/engenharia/obras/${idObra}`);
@@ -660,8 +666,8 @@ export default function EngenhariaObrasPage() {
             <div className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">{filtradas.length} obra(s)</div>
           </div>
         </div>
-        <div className="text-xs text-slate-500 md:hidden">Toque para selecionar. Depois toque em “Abrir” para entrar na obra selecionada.</div>
-        <div className="text-xs text-slate-500 hidden md:block">Clique 1x para selecionar. Dê duplo clique para abrir a obra selecionada.</div>
+        <div className="text-xs text-slate-500 md:hidden">Toque na linha para abrir “Obra selecionada”. Use “Menu Diversos” para acessar o card alternativo.</div>
+        <div className="text-xs text-slate-500 hidden md:block">Clique na linha para abrir “Obra selecionada”. Use a coluna Ação para “Menu Diversos”.</div>
 
         <div className="md:hidden space-y-2">
           {paged.map((o) => {
@@ -676,8 +682,7 @@ export default function EngenhariaObrasPage() {
                 key={o.id}
                 className={`rounded-xl border p-3 ${selected ? "border-blue-200 bg-blue-50" : "bg-white"}`}
                 onClick={() => {
-                  setActiveObra({ id: o.id, nome: o.name });
-                  setObraSelecionadaId(o.id);
+                  abrirObraSelecionada(o.id, o.name);
                 }}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -690,10 +695,21 @@ export default function EngenhariaObrasPage() {
                     className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
                     onClick={(ev) => {
                       ev.stopPropagation();
-                      selecionarObra(o.id, o.name);
+                      abrirObraSelecionada(o.id, o.name);
                     }}
                   >
                     Selecionar obra
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      abrirMenuDiversos(o.id, o.name);
+                    }}
+                  >
+                    Menu Diversos
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
@@ -750,11 +766,10 @@ export default function EngenhariaObrasPage() {
                     key={o.id}
                     className={`border-t cursor-pointer hover:bg-slate-50 ${obraSelecionadaId === o.id ? "bg-blue-50" : ""}`}
                     onClick={() => {
-                      setActiveObra({ id: o.id, nome: o.name });
-                      setObraSelecionadaId(o.id);
+                      abrirObraSelecionada(o.id, o.name);
                     }}
                     onDoubleClick={() => {
-                          selecionarObra(o.id, o.name);
+                      abrirMenuDiversos(o.id, o.name);
                     }}
                   >
                     <td className="px-3 py-2">
@@ -771,19 +786,32 @@ export default function EngenhariaObrasPage() {
                     <td className="px-3 py-2">{cpLabel || "-"}</td>
                     <td className="px-3 py-2">{contrato?.tipoContratante ? String(contrato.tipoContratante) : "-"}</td>
                     <td className="px-3 py-2">{contrato?.tipoPapel ? String(contrato.tipoPapel) : "-"}</td>
-                        <td className="px-3 py-2">
-                          <button
-                            type="button"
-                            className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
-                            onClick={(ev) => {
-                              ev.stopPropagation();
-                              selecionarObra(o.id, o.name);
-                            }}
-                          >
-                            Selecionar obra
-                            <ChevronRight className="h-4 w-4" />
-                          </button>
-                        </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            abrirObraSelecionada(o.id, o.name);
+                          }}
+                        >
+                          Selecionar obra
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            abrirMenuDiversos(o.id, o.name);
+                          }}
+                        >
+                          Menu Diversos
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
