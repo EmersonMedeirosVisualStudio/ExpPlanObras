@@ -479,6 +479,8 @@ export default function ContrapartesClient() {
           ...p,
           cep: d.cep ? String(d.cep) : p.cep,
           logradouro: d.logradouro ? String(d.logradouro) : p.logradouro,
+          numero: d.numero ? String(d.numero) : p.numero,
+          complemento: d.complemento ? String(d.complemento) : p.complemento,
           bairro: d.bairro ? String(d.bairro) : p.bairro,
           cidade: d.cidade ? String(d.cidade) : p.cidade,
           uf: d.uf ? String(d.uf).toUpperCase() : p.uf,

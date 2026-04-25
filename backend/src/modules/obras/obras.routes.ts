@@ -25,6 +25,95 @@ export default async function obraRoutes(server: FastifyInstance) {
     return d.length === 8 ? d : '';
   }
 
+  function removeDiacritics(value: string) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function normalizeStateName(value: string) {
+    return removeDiacritics(String(value || '').trim())
+      .toUpperCase()
+      .replace(/[^A-Z\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  const UF_LIST = [
+    'AC',
+    'AL',
+    'AM',
+    'AP',
+    'BA',
+    'CE',
+    'DF',
+    'ES',
+    'GO',
+    'MA',
+    'MG',
+    'MS',
+    'MT',
+    'PA',
+    'PB',
+    'PE',
+    'PI',
+    'PR',
+    'RJ',
+    'RN',
+    'RO',
+    'RR',
+    'RS',
+    'SC',
+    'SE',
+    'SP',
+    'TO',
+  ];
+
+  const UF_BY_STATE_NAME: Record<string, string> = {
+    ACRE: 'AC',
+    ALAGOAS: 'AL',
+    AMAPA: 'AP',
+    AMAZONAS: 'AM',
+    BAHIA: 'BA',
+    CEARA: 'CE',
+    'DISTRITO FEDERAL': 'DF',
+    'ESPIRITO SANTO': 'ES',
+    GOIAS: 'GO',
+    MARANHAO: 'MA',
+    'MATO GROSSO': 'MT',
+    'MATO GROSSO DO SUL': 'MS',
+    'MINAS GERAIS': 'MG',
+    PARA: 'PA',
+    PARAIBA: 'PB',
+    PARANA: 'PR',
+    PERNAMBUCO: 'PE',
+    PIAUI: 'PI',
+    'RIO DE JANEIRO': 'RJ',
+    'RIO GRANDE DO NORTE': 'RN',
+    'RIO GRANDE DO SUL': 'RS',
+    RONDONIA: 'RO',
+    RORAIMA: 'RR',
+    'SANTA CATARINA': 'SC',
+    'SAO PAULO': 'SP',
+    SERGIPE: 'SE',
+    TOCANTINS: 'TO',
+  };
+
+  function normalizeUfFromNominatim(candidate: unknown, isoCandidate: unknown, stateNameCandidate: unknown) {
+    const uf = String(candidate || '').trim().toUpperCase();
+    if (uf.length === 2 && UF_LIST.includes(uf)) return uf;
+
+    const iso = String(isoCandidate || '').trim().toUpperCase();
+    if (iso.startsWith('BR-') && iso.length >= 5) {
+      const s = iso.slice(-2);
+      if (UF_LIST.includes(s)) return s;
+    }
+
+    const stateName = normalizeStateName(String(stateNameCandidate || ''));
+    if (!stateName) return null;
+    return UF_BY_STATE_NAME[stateName] || null;
+  }
+
   function parseLatLngFromText(value: string) {
     const s = String(value || '').trim();
     const m = s.match(/@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/) || s.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
@@ -64,11 +153,13 @@ export default async function obraRoutes(server: FastifyInstance) {
     const json: any = await r.json().catch(() => null);
     const a = json?.address;
     if (!a) return null;
+    const uf = normalizeUfFromNominatim(a.state_code, a['ISO3166-2-lvl4'], a.state);
     return {
       logradouro: a.road || a.pedestrian || a.highway || null,
+      numero: a.house_number || null,
       bairro: a.suburb || a.neighbourhood || a.quarter || null,
-      cidade: a.city || a.town || a.village || null,
-      uf: a.state_code || a.state || null,
+      cidade: a.city || a.town || a.village || a.municipality || a.county || null,
+      uf,
       cep: a.postcode ? normalizeCep(String(a.postcode)) : null,
     };
   }
@@ -129,7 +220,7 @@ export default async function obraRoutes(server: FastifyInstance) {
           latitude: coords.latitude,
           longitude: coords.longitude,
           logradouro: addr?.logradouro ?? null,
-          numero: null,
+          numero: addr?.numero ?? null,
           complemento: null,
           bairro: addr?.bairro ?? null,
           cidade: addr?.cidade ?? null,
