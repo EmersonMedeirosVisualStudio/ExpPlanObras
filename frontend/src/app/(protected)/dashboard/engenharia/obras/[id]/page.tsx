@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { setActiveObra } from "@/lib/obra/active";
+import api from "@/lib/api";
 
 type Janela = { key: string; titulo: string; desc: string; href: (idObra: number) => string; nivel: "OPERACAO" | "GESTAO" | "CADASTRO" };
 type ResponsavelObraRef = {
@@ -73,12 +74,13 @@ export default function EngenhariaObraHomePage() {
     (async () => {
       try {
         setCarregandoContrato(true);
-        const res = await fetch(`/api/v1/engenharia/obras/${idObra}/contrato`, { cache: "no-store" });
-        const json = await res.json().catch(() => null);
-        if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar contrato.");
-        if (active) setContrato(json.data as ContratoDaObra);
-      } catch {
-        if (active) setContrato(null);
+        const res = await api.get(`/api/v1/engenharia/obras/${idObra}/contrato`);
+        const json: any = res?.data;
+        if (!json?.success) throw new Error(json?.message || "Erro ao carregar contrato.");
+        if (active) setContrato((json.data || null) as ContratoDaObra | null);
+      } catch (e: any) {
+        if (!active) return;
+        if (!contratoIdParam && !contratoNumeroParam) setContrato(null);
       } finally {
         if (active) setCarregandoContrato(false);
       }
@@ -86,7 +88,7 @@ export default function EngenhariaObraHomePage() {
     return () => {
       active = false;
     };
-  }, [idObra]);
+  }, [idObra, contratoIdParam, contratoNumeroParam]);
 
   useEffect(() => {
     if (!idObra) return;
@@ -95,14 +97,14 @@ export default function EngenhariaObraHomePage() {
       try {
         setCarregandoResponsaveis(true);
         setErroResponsaveis(null);
-        const res = await fetch(`/api/v1/engenharia/obras/responsaveis?idObra=${idObra}`, { cache: "no-store" });
-        const json = await res.json().catch(() => null);
-        if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar responsáveis.");
-        const lista = Array.isArray(json.data) ? json.data : [];
+        const res = await api.get(`/api/v1/engenharia/obras/responsaveis?idObra=${idObra}`);
+        const json: any = res?.data;
+        if (!json?.success) throw new Error(json?.message || "Erro ao carregar responsáveis.");
+        const lista = Array.isArray(json?.data) ? json.data : [];
         if (active) setResponsaveis(lista);
       } catch (e: any) {
         if (!active) return;
-        setErroResponsaveis(e?.message || "Erro ao carregar responsáveis.");
+        setErroResponsaveis(e?.response?.data?.message || e?.message || "Erro ao carregar responsáveis.");
         setResponsaveis([]);
       } finally {
         if (active) setCarregandoResponsaveis(false);
@@ -297,7 +299,7 @@ export default function EngenhariaObraHomePage() {
           </div>
         </div>
         <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={() => router.push("/dashboard/engenharia/obras")}>
-          Trocar obra
+          Voltar
         </button>
       </div>
 
@@ -307,13 +309,6 @@ export default function EngenhariaObraHomePage() {
             <div className="text-lg font-semibold">Dados principais da obra</div>
             <div className="text-sm text-slate-600">Responsável técnico e fiscal vinculados à obra.</div>
           </div>
-          <button
-            className="rounded-lg border px-4 py-2 text-sm"
-            type="button"
-            onClick={() => router.push(`/dashboard/engenharia/obras?obraId=${idObra}#cadastro-responsaveis`)}
-          >
-            {!hasResponsavelTecnico || !hasFiscal ? "Cadastrar agora" : "Gerenciar no cadastro"}
-          </button>
         </div>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
