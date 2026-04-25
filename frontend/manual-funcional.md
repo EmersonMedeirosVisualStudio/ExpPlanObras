@@ -248,8 +248,8 @@ Implementação atual relevante:
 
 - Contratos: cadastro de contrapartes com suporte a PJ e PF (criar, listar, editar e inativar).
 - Obras: cadastro de responsáveis por obra com tipos "Responsável Técnico" e "Fiscal da Obra" (CRUD).
-- Obra ativa: definida ao selecionar obra em **Engenharia → Obras → Selecionar Obra** (persistida para navegação por contexto).
-- Contrato da obra: acesso pela obra selecionada (resumo na home da obra e tela de detalhes somente leitura).
+- Obra ativa: definida ao dar duplo clique numa obra em **Engenharia → Obras** (abre **Obra selecionada**) e fica ativa para navegação por contexto.
+- Contrato da obra: não existe tela dedicada; o vínculo obra↔contrato é gerenciado pela lista de obras do contrato e pela tela **Obra selecionada**.
 
 ### 4.2 Barra superior (empresa e utilitários)
 
@@ -1367,8 +1367,8 @@ A obra é o principal ponto de ligação entre os módulos.
 
 #### Implementação (no sistema)
 
-- Engenharia → Obras → selecionar obra
-- Janelas por obra: PES, Apropriação, Cronograma, Fiscalização e Medições, Suprimentos e Consumos
+- Engenharia → Obras → dar duplo clique na obra para abrir a tela **Obra selecionada**
+- Na tela **Obra selecionada** ficam os acessos (botões): Dashboard, Documentos da obra, Planejamento e Execução
 
 #### Validação
 
@@ -3098,7 +3098,7 @@ Menu (padrão):
 Colunas e inteligência (lista):
 
 - **ALERTA**: ✔ OK (verde) / ⚠ Pendente (amarelo) / ✖ Crítico (vermelho) com tooltip das pendências.
-- **STATUS** (calculado): 🟢 Em andamento / 🟡 A vencer / 🔴 Vencido / 🔵 Concluído / 🟣 Sem recursos / ⚪ Não iniciado / ⚫ Cancelado.
+- **STATUS** (calculado): 🟢 Em execução / 🔴 Parado / 🟠 Contrato rescindido / 🔵 Concluído / 🟡 Não iniciado / ⚫ Cancelado.
 
 Filtros (lista de contratos):
 

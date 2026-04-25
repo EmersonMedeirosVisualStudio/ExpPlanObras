@@ -96,6 +96,19 @@ function normalizeCep(value: string) {
   return d.length === 8 ? d : "";
 }
 
+function formatCep(value: string) {
+  const d = onlyDigits(value).slice(0, 8);
+  if (d.length <= 5) return d;
+  return `${d.slice(0, 5)}-${d.slice(5)}`;
+}
+
+function normalizeUfInput(value: string) {
+  return String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z]/g, "")
+    .slice(0, 2);
+}
+
 function removeDiacritics(s: string) {
   return String(s || "")
     .normalize("NFD")
@@ -182,6 +195,7 @@ export default function EngenhariaCadastroObraPage() {
   const [cidadesUf, setCidadesUf] = useState<string[]>([]);
   const [ufsEncontradosPorCidade, setUfsEncontradosPorCidade] = useState<string[]>([]);
   const [cidadeUfInvalidaMsg, setCidadeUfInvalidaMsg] = useState<string>("");
+  const [ufInvalidaMsg, setUfInvalidaMsg] = useState<string>("");
   const [ibgeUfIdBySigla, setIbgeUfIdBySigla] = useState<Record<string, number>>({});
   const [localizacaoInformadaOpen, setLocalizacaoInformadaOpen] = useState(false);
   const [lastLinkSnapshot, setLastLinkSnapshot] = useState<{
@@ -371,6 +385,7 @@ export default function EngenhariaCadastroObraPage() {
     setCidadesUf([]);
     setUfsEncontradosPorCidade([]);
     setCidadeUfInvalidaMsg("");
+    setUfInvalidaMsg("");
     setFormEndereco({
       nomeEndereco: "Principal",
       principal: enderecos.length === 0,
@@ -421,11 +436,11 @@ export default function EngenhariaCadastroObraPage() {
           ...p,
           origemEndereco: "LINK" as const,
           origemCoordenada: "LINK" as const,
-          cep: d.cep ? String(d.cep) : p.cep,
+          cep: d.cep ? formatCep(String(d.cep)) : p.cep,
           logradouro: d.logradouro ? String(d.logradouro) : p.logradouro,
           bairro: d.bairro ? String(d.bairro) : p.bairro,
           cidade: d.cidade ? String(d.cidade) : p.cidade,
-          uf: d.uf ? String(d.uf).toUpperCase() : p.uf,
+          uf: d.uf ? normalizeUfInput(String(d.uf)) : p.uf,
           latitude: d.latitude ? String(d.latitude) : p.latitude,
           longitude: d.longitude ? String(d.longitude) : p.longitude,
         };
@@ -464,12 +479,12 @@ export default function EngenhariaCadastroObraPage() {
         const next: typeof formEndereco = {
           ...p,
           origemEndereco: "CEP",
-          cep: d.cep ? String(d.cep) : cepDigits,
+          cep: d.cep ? formatCep(String(d.cep)) : formatCep(cepDigits),
           logradouro: d.logradouro ? String(d.logradouro) : p.logradouro,
           complemento: d.complemento ? String(d.complemento) : p.complemento,
           bairro: d.bairro ? String(d.bairro) : p.bairro,
           cidade: d.cidade ? String(d.cidade) : p.cidade,
-          uf: d.uf ? String(d.uf).toUpperCase() : p.uf,
+          uf: d.uf ? normalizeUfInput(String(d.uf)) : p.uf,
         };
 
         const coordsFromLink = String(p.origemCoordenada || "").toUpperCase() === "LINK";
@@ -494,7 +509,7 @@ export default function EngenhariaCadastroObraPage() {
   }
 
   async function buscarCepPeloEndereco() {
-    const uf = String(formEndereco.uf || "").trim().toUpperCase();
+    const uf = normalizeUfInput(formEndereco.uf);
     const cidade = String(formEndereco.cidade || "").trim();
     const logradouro = String(formEndereco.logradouro || "").trim();
     if (!logradouro || !cidade || !uf) {
@@ -512,7 +527,7 @@ export default function EngenhariaCadastroObraPage() {
         uf,
       });
       const d: any = res.data || {};
-      if (d.cep) setFieldEndereco("cep", String(d.cep));
+      if (d.cep) setFieldEndereco("cep", formatCep(String(d.cep)) as any);
     } catch (e: any) {
       setErr(e?.response?.data?.message || e?.message || "Erro ao buscar CEP.");
     } finally {
@@ -532,13 +547,13 @@ export default function EngenhariaCadastroObraPage() {
         origem: "MANUAL",
         origemEndereco: formEndereco.origemEndereco,
         origemCoordenada: formEndereco.origemCoordenada,
-        cep: formEndereco.cep || null,
+        cep: normalizeCep(formEndereco.cep) || null,
         logradouro: formEndereco.logradouro || null,
         numero: formEndereco.numero || null,
         complemento: formEndereco.complemento || null,
         bairro: formEndereco.bairro || null,
         cidade: formEndereco.cidade || null,
-        uf: formEndereco.uf || null,
+        uf: (normalizeUfInput(formEndereco.uf) || null) as any,
         latitude: formEndereco.latitude || null,
         longitude: formEndereco.longitude || null,
       };
@@ -586,6 +601,7 @@ export default function EngenhariaCadastroObraPage() {
     setCidadesUf([]);
     setUfsEncontradosPorCidade([]);
     setCidadeUfInvalidaMsg("");
+    setUfInvalidaMsg("");
     setFormEndereco({
       nomeEndereco: e.nomeEndereco || "Principal",
       principal: Boolean(e.principal),
@@ -600,13 +616,13 @@ export default function EngenhariaCadastroObraPage() {
           ? "CEP"
           : "MANUAL") as any,
       linkGoogleMaps: "",
-      cep: e.cep || "",
+      cep: e.cep ? formatCep(String(e.cep)) : "",
       logradouro: e.logradouro || "",
       numero: e.numero || "",
       complemento: e.complemento || "",
       bairro: e.bairro || "",
       cidade: e.cidade || "",
-      uf: e.uf || "",
+      uf: e.uf ? normalizeUfInput(String(e.uf)) : "",
       latitude: e.latitude || "",
       longitude: e.longitude || "",
     });
@@ -692,16 +708,14 @@ export default function EngenhariaCadastroObraPage() {
 
   useEffect(() => {
     if (!enderecoFormAberto) return;
-    const uf = String(formEndereco.uf || "")
-      .toUpperCase()
-      .replace(/[^A-Z]/g, "")
-      .slice(0, 2);
+    const uf = normalizeUfInput(formEndereco.uf);
     if (uf !== formEndereco.uf) setFieldEndereco("uf", uf as any);
     if (!uf || uf.length !== 2 || !UF_LIST.includes(uf)) {
       setCidadesUf([]);
       setCidadeUfInvalidaMsg("");
       return;
     }
+    if (ufInvalidaMsg) setUfInvalidaMsg("");
     const ufId = ibgeUfIdBySigla[uf];
     if (!ufId) return;
     let cancelled = false;
@@ -731,7 +745,7 @@ export default function EngenhariaCadastroObraPage() {
     return () => {
       cancelled = true;
     };
-  }, [enderecoFormAberto, formEndereco.uf, ibgeUfIdBySigla]);
+  }, [enderecoFormAberto, formEndereco.uf, ibgeUfIdBySigla, ufInvalidaMsg]);
 
   useEffect(() => {
     if (!enderecoFormAberto) return;
@@ -1033,7 +1047,7 @@ export default function EngenhariaCadastroObraPage() {
               });
             }}
           >
-            Nova Obra
+            Nova Obra do Contrato Selecionado
           </button>
         </div>
         {contratoSelecionado?.valorTotalAtual != null ? (
@@ -1203,7 +1217,7 @@ export default function EngenhariaCadastroObraPage() {
               limparEnderecoForm();
             }}
           >
-            Novo Endereço
+            Novo Endereço para Obra Selecionada
           </button>
         </div>
         <div className="overflow-auto">
@@ -1309,14 +1323,21 @@ export default function EngenhariaCadastroObraPage() {
             <div className="md:col-span-2">
               <div className="text-sm text-[#6B7280]">CEP</div>
               <div className="flex items-center gap-2">
-                <input className="input" value={formEndereco.cep} onChange={(e) => setFieldEndereco("cep", e.target.value as any)} placeholder="00000-000" />
+                <input
+                  className="input"
+                  inputMode="numeric"
+                  value={formEndereco.cep}
+                  onChange={(e) => setFieldEndereco("cep", formatCep(e.target.value) as any)}
+                  onBlur={() => setFieldEndereco("cep", formatCep(formEndereco.cep) as any)}
+                  placeholder="00000-000"
+                />
                 <button
                   type="button"
                   className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:opacity-60 whitespace-nowrap"
                   onClick={buscaEnderecoPorCep}
                   disabled={loading}
                 >
-                  Busca Endereço por CEP
+                  Preencher endereço pelo CEP
                 </button>
               </div>
               <div className="mt-2">
@@ -1326,7 +1347,7 @@ export default function EngenhariaCadastroObraPage() {
                   onClick={buscarCepPeloEndereco}
                   disabled={loading}
                 >
-                  Buscar CEP
+                  Buscar CEP (pela rua/cidade/UF)
                 </button>
               </div>
             </div>
@@ -1391,11 +1412,21 @@ export default function EngenhariaCadastroObraPage() {
                 className="input"
                 value={formEndereco.uf}
                 onChange={(e) => {
-                  setFieldEndereco("uf", e.target.value as any);
+                  const next = normalizeUfInput(e.target.value);
+                  if (next.length === 2 && !UF_LIST.includes(next)) {
+                    setUfInvalidaMsg("UF inválido. Use a sigla válida (ex.: SP, RJ, MG).");
+                    setFieldEndereco("uf", "" as any);
+                    setCidadesUf([]);
+                    setCidadeUfInvalidaMsg("");
+                    return;
+                  }
+                  if (ufInvalidaMsg) setUfInvalidaMsg("");
+                  setFieldEndereco("uf", next as any);
                   setFieldEndereco("origemEndereco", "MANUAL" as any);
                 }}
                 placeholder="SP"
               />
+              {ufInvalidaMsg ? <div className="mt-1 text-xs text-amber-700">{ufInvalidaMsg}</div> : null}
               {ufsEncontradosPorCidade.length ? (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {ufsEncontradosPorCidade.map((uf) => (
@@ -1417,7 +1448,7 @@ export default function EngenhariaCadastroObraPage() {
               <input className="input" value={formEndereco.complemento} onChange={(e) => setFieldEndereco("complemento", e.target.value as any)} />
             </div>
 
-            <div className="md:col-span-3">
+            <div className="md:col-span-2">
               <div className="text-sm text-[#6B7280]">Latitude</div>
               <input
                 className="input"
@@ -1428,7 +1459,7 @@ export default function EngenhariaCadastroObraPage() {
                 }}
               />
             </div>
-            <div className="md:col-span-3">
+            <div className="md:col-span-2">
               <div className="text-sm text-[#6B7280]">Longitude</div>
               <input
                 className="input"
@@ -1526,7 +1557,7 @@ export default function EngenhariaCadastroObraPage() {
 
       <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-3">
         <div>
-          <div className="text-sm font-semibold">Mapa</div>
+          <div className="text-sm font-semibold">Mapa - Obras do contrato selecionado</div>
           <div className="text-xs text-[#6B7280]">
             Ao selecionar uma obra ou endereço na lista, ele fica iluminado na lista e no mapa.
           </div>
