@@ -901,41 +901,18 @@ export default function EngenhariaCadastroObraPage() {
     <div className="space-y-6 text-[#111827]">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Engenharia → Obra selecionada</h1>
-          <div className="text-sm text-slate-600">Cadastre/edite a obra selecionada e acesse Planejar/Executar.</div>
+          <h1 className="text-2xl font-semibold text-slate-900">Obra selecionada</h1>
+          <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada</div>
+          <div className="text-sm text-slate-600">Cadastre/edite a obra selecionada.</div>
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
             className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             disabled={!obraId}
-            onClick={() => router.push(`/dashboard/engenharia/obras/ativa/dashboard`)}
+            onClick={() => router.push(`/dashboard/engenharia/obras/ativa/documentos`)}
           >
-            Dashboard
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            disabled={!obraId}
-            onClick={() => router.push(`/dashboard/obras/documentos?tipo=OBRA&id=${obraId}`)}
-          >
-            Documentos da obra
-          </button>
-          <button
-            type="button"
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
-            disabled={!obraId}
-            onClick={() => router.push(`/dashboard/engenharia/obras/${obraId}/planilha`)}
-          >
-            Planejamento
-          </button>
-          <button
-            type="button"
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-60"
-            disabled={!obraId}
-            onClick={() => router.push(`/dashboard/engenharia/obras/${obraId}/programacao`)}
-          >
-            Executar
+            Documentos
           </button>
           <button type="button" className="rounded-lg border px-4 py-2 text-sm" onClick={() => router.push("/dashboard/engenharia/obras")}>
             Voltar

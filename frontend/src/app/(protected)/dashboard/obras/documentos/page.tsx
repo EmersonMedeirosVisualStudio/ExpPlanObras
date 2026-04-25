@@ -13,6 +13,7 @@ export default function ObrasDocumentosPage() {
   const sp = useSearchParams();
   const initialTipo = (sp.get('tipo') || 'OBRA').toUpperCase();
   const initialId = sp.get('id') || '';
+  const lockObraContext = initialTipo === 'OBRA' && Boolean(initialId);
 
   const [tipo, setTipo] = useState<'OBRA' | 'CONTRATO'>(initialTipo === 'CONTRATO' ? 'CONTRATO' : 'OBRA');
   const [idRef, setIdRef] = useState(initialId);
@@ -135,16 +136,31 @@ export default function ObrasDocumentosPage() {
     }
   }
 
+  const breadcrumb = useMemo(() => {
+    if (tipo === 'OBRA') return 'Engenharia → Obras → Obra selecionada → Documentos';
+    return 'Contratos → Documentos';
+  }, [tipo]);
+
   return (
     <div className="max-w-7xl space-y-6 text-[#111827]">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
+          <div className="text-xs text-[#6B7280]">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Documentos</h1>
           <div className="mt-1 text-sm text-[#6B7280]">
             Organização por tipo/subtipo (categoria) e vínculo com obra/contrato. Contratos podem visualizar também os documentos das obras vinculadas.
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
+          {tipo === 'OBRA' && Number(idRef || 0) > 0 ? (
+            <button
+              className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
+              type="button"
+              onClick={() => router.push(`/dashboard/engenharia/obras/cadastro?obraId=${Number(idRef || 0)}`)}
+            >
+              Voltar
+            </button>
+          ) : null}
           <button className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]" type="button" onClick={carregar} disabled={loading}>
             Atualizar
           </button>
@@ -169,6 +185,7 @@ export default function ObrasDocumentosPage() {
                 setCategoriaPrefix(v === 'OBRA' ? 'OBRA:' : 'CONTRATO:');
                 setRows([]);
               }}
+              disabled={lockObraContext}
             >
               <option value="OBRA">Obra</option>
               <option value="CONTRATO">Contrato</option>
@@ -177,7 +194,7 @@ export default function ObrasDocumentosPage() {
           <div>
             <div className="text-sm text-[#6B7280]">ID</div>
             {tipo === 'OBRA' ? (
-              <input className="input" value={idRef} onChange={(e) => setIdRef(e.target.value)} placeholder="idObra" />
+              <input className="input" value={idRef} onChange={(e) => setIdRef(e.target.value)} placeholder="idObra" disabled={lockObraContext} />
             ) : (
               <div className="relative">
                 <input
@@ -193,6 +210,7 @@ export default function ObrasDocumentosPage() {
                   onFocus={() => setContratoOpen(true)}
                   onBlur={() => window.setTimeout(() => setContratoOpen(false), 120)}
                   placeholder="#id - Nº do contrato - Objeto"
+                  disabled={lockObraContext}
                 />
                 {contratoOpen ? (
                   <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-[#E5E7EB] bg-white shadow-sm">

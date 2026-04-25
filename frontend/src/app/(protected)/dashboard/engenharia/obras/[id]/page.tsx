@@ -293,6 +293,7 @@ export default function EngenhariaObraHomePage() {
     <div className="p-6 space-y-6 max-w-6xl">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
+          <div className="text-xs text-slate-500">Engenharia → Obras → Obra - Menu Diversos</div>
           <h1 className="text-2xl font-semibold">Obra - Menu Diversos</h1>
           <div className="text-sm text-slate-600">
             {`Obra #${idObra}${obraNomeParam ? ` — ${obraNomeParam}` : ""}${contrato?.numeroContrato?.trim() ? ` — Contrato: ${contrato.numeroContrato}` : ""} — janelas operacionais da obra selecionada.`}
