@@ -1602,6 +1602,7 @@ export default async function v1Routes(server: FastifyInstance) {
     if (term) {
       where.OR = [
         { name: { contains: term, mode: 'insensitive' } },
+        { professionalTitle: { contains: term, mode: 'insensitive' } },
         { conselho: { contains: term, mode: 'insensitive' } },
         { numeroRegistro: { contains: term, mode: 'insensitive' } },
         { email: { contains: term, mode: 'insensitive' } },
@@ -1620,6 +1621,7 @@ export default async function v1Routes(server: FastifyInstance) {
       rows.map((r) => ({
         idTecnico: r.id,
         nome: r.name,
+        tituloProfissional: r.professionalTitle ?? null,
         conselho: r.conselho ?? null,
         numeroRegistro: r.numeroRegistro ?? r.crea ?? null,
         cpf: null,
@@ -1637,6 +1639,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const body = z
       .object({
         nome: z.string().min(2),
+        tituloProfissional: z.string().optional().nullable(),
         conselho: z.string().min(2),
         numeroRegistro: z.string().min(1),
         cpf: z.string().optional().nullable(),
@@ -1665,11 +1668,13 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const email = body.email ? normalizeEmail(String(body.email)) : null;
     const phone = body.telefone ? String(body.telefone).trim() : null;
+    const professionalTitle = body.tituloProfissional ? String(body.tituloProfissional).trim() : null;
 
     const created = await prisma.responsavelTecnico.create({
       data: {
         tenantId: ctx.tenantId,
         name: String(body.nome).trim(),
+        professionalTitle: professionalTitle || null,
         conselho,
         numeroRegistro,
         crea: numeroRegistro,
@@ -1694,6 +1699,7 @@ export default async function v1Routes(server: FastifyInstance) {
     return ok(reply, {
       idTecnico: r.id,
       nome: r.name,
+      tituloProfissional: r.professionalTitle ?? null,
       conselho: r.conselho ?? null,
       numeroRegistro: r.numeroRegistro ?? r.crea ?? null,
       cpf: null,
@@ -1711,6 +1717,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const body = z
       .object({
         nome: z.string().min(2),
+        tituloProfissional: z.string().optional().nullable(),
         conselho: z.string().min(2),
         numeroRegistro: z.string().min(1),
         cpf: z.string().optional().nullable(),
@@ -1743,11 +1750,13 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const email = body.email ? normalizeEmail(String(body.email)) : null;
     const phone = body.telefone ? String(body.telefone).trim() : null;
+    const professionalTitle = body.tituloProfissional ? String(body.tituloProfissional).trim() : null;
 
     const updated = await prisma.responsavelTecnico.update({
       where: { id },
       data: {
         name: String(body.nome).trim(),
+        professionalTitle: professionalTitle || null,
         conselho,
         numeroRegistro,
         crea: numeroRegistro,

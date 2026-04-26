@@ -51,7 +51,37 @@ const STATUS_OPTIONS = [
   { value: "CANCELADO", label: "Cancelado" },
 ];
 
-const TIPO_OPTIONS = ["Hidráulico / Sanitário", "Elétrico", "Estrutural", "Arquitetônico", "Terraplenagem", "Outros"];
+const TIPO_OPTIONS_BASE = [
+  "Arquitetônico",
+  "Estrutural",
+  "Fundações",
+  "Geotécnico",
+  "Topográfico",
+  "Terraplenagem",
+  "Pavimentação",
+  "Drenagem / Pluvial",
+  "Hidrossanitário",
+  "Elétrico (BT/MT)",
+  "Iluminação",
+  "SPDA (Para-raios)",
+  "Incêndio (PPCI/AVCB)",
+  "Climatização (HVAC)",
+  "Gás (GN/GLP)",
+  "Telecom / Cabeamento",
+  "Automação / BMS",
+  "Acessibilidade",
+  "Paisagístico",
+  "As Built",
+  "Compatibilização",
+  "Outros",
+];
+
+function normalizeTipoLabel(value: string) {
+  return value
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
 
 export default function ProjetoFormClient() {
   const params = useParams<{ id?: string }>();
@@ -77,13 +107,52 @@ export default function ProjetoFormClient() {
 
   const [titulo, setTitulo] = useState("");
   const [endereco, setEndereco] = useState("");
-  const [tipo, setTipo] = useState<string>(TIPO_OPTIONS[0]);
+  const [tipo, setTipo] = useState<string>(TIPO_OPTIONS_BASE[0]);
+  const [tipoQuery, setTipoQuery] = useState<string>(TIPO_OPTIONS_BASE[0]);
+  const [tipoOptions, setTipoOptions] = useState<string[]>(TIPO_OPTIONS_BASE);
+  const [tipoOpen, setTipoOpen] = useState(false);
   const [numeroProjeto, setNumeroProjeto] = useState("");
   const [revisao, setRevisao] = useState("");
   const [status, setStatus] = useState<string>(STATUS_OPTIONS[0].value);
   const [dataProjeto, setDataProjeto] = useState("");
   const [dataAprovacao, setDataAprovacao] = useState("");
   const [descricao, setDescricao] = useState("");
+
+  const tipoFiltered = useMemo(() => {
+    const q = tipoQuery.trim().toLowerCase();
+    const base = tipoOptions;
+    if (!q) return base;
+    return base.filter((x) => x.toLowerCase().includes(q));
+  }, [tipoOptions, tipoQuery]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("engenharia:tiposProjeto") || "";
+      const parsed = JSON.parse(raw || "[]");
+      const extra = Array.isArray(parsed) ? parsed.map((x) => String(x || "").trim()).filter(Boolean) : [];
+      const merged = Array.from(new Set([...TIPO_OPTIONS_BASE, ...extra].map((x) => normalizeTipoLabel(x)))).filter(Boolean);
+      setTipoOptions(merged);
+    } catch {
+      setTipoOptions(TIPO_OPTIONS_BASE);
+    }
+  }, []);
+
+  function persistTipoOptions(next: string[]) {
+    try {
+      const extra = next.filter((x) => !TIPO_OPTIONS_BASE.includes(x));
+      localStorage.setItem("engenharia:tiposProjeto", JSON.stringify(extra));
+    } catch {}
+  }
+
+  function ensureTipoOption(value: string) {
+    const normalized = normalizeTipoLabel(value);
+    if (!normalized) return;
+    setTipoOptions((prev) => {
+      const next = Array.from(new Set([...prev, normalized]));
+      persistTipoOptions(next);
+      return next;
+    });
+  }
 
   const [respLoading, setRespLoading] = useState(false);
   const [respErr, setRespErr] = useState<string | null>(null);
@@ -113,7 +182,8 @@ export default function ProjetoFormClient() {
         };
         setTitulo(dto.titulo);
         setEndereco(dto.endereco || "");
-        setTipo(dto.tipo || TIPO_OPTIONS[0]);
+        setTipo(dto.tipo || TIPO_OPTIONS_BASE[0]);
+        setTipoQuery(dto.tipo || TIPO_OPTIONS_BASE[0]);
         setNumeroProjeto(dto.numeroProjeto || "");
         setRevisao(dto.revisao || "");
         setStatus(dto.status || STATUS_OPTIONS[0].value);
@@ -375,13 +445,64 @@ export default function ProjetoFormClient() {
             </div>
             <div>
               <div className="text-sm text-[#6B7280]">Tipo de Projeto *</div>
-              <select className="input" value={tipo} onChange={(e) => setTipo(e.target.value)}>
-                {TIPO_OPTIONS.map((x) => (
-                  <option key={x} value={x}>
-                    {x}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <input
+                  className="input"
+                  value={tipoQuery}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setTipoQuery(v);
+                    setTipo(v);
+                    setTipoOpen(true);
+                  }}
+                  onFocus={() => setTipoOpen(true)}
+                  onBlur={() => {
+                    const finalValue = normalizeTipoLabel(tipoQuery);
+                    if (finalValue) {
+                      setTipo(finalValue);
+                      setTipoQuery(finalValue);
+                      ensureTipoOption(finalValue);
+                    }
+                    setTimeout(() => setTipoOpen(false), 120);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const finalValue = normalizeTipoLabel(tipoQuery);
+                      if (finalValue) {
+                        setTipo(finalValue);
+                        setTipoQuery(finalValue);
+                        ensureTipoOption(finalValue);
+                        setTipoOpen(false);
+                      }
+                    }
+                    if (e.key === "Escape") setTipoOpen(false);
+                  }}
+                  placeholder="Digite para filtrar ou adicionar..."
+                />
+                {tipoOpen && tipoFiltered.length ? (
+                  <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-[#E5E7EB] bg-white shadow-sm">
+                    <div className="max-h-56 overflow-auto">
+                      {tipoFiltered.slice(0, 30).map((x) => (
+                        <button
+                          key={x}
+                          type="button"
+                          className={`block w-full px-3 py-2 text-left text-sm hover:bg-[#F9FAFB] ${x === tipo ? "bg-[#F9FAFB]" : ""}`}
+                          onMouseDown={(ev) => ev.preventDefault()}
+                          onClick={() => {
+                            setTipo(x);
+                            setTipoQuery(x);
+                            ensureTipoOption(x);
+                            setTipoOpen(false);
+                          }}
+                        >
+                          {x}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
             <div>
               <div className="text-sm text-[#6B7280]">Nº do Projeto</div>

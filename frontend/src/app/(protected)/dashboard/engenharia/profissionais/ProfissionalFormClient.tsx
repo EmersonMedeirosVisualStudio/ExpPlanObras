@@ -21,6 +21,7 @@ function safeInternalPath(v: string | null) {
 type TecnicoDTO = {
   idTecnico: number;
   nome: string;
+  tituloProfissional: string | null;
   conselho: string | null;
   numeroRegistro: string | null;
   email: string | null;
@@ -44,6 +45,7 @@ export default function ProfissionalFormClient() {
   const [err, setErr] = useState<string | null>(null);
 
   const [nome, setNome] = useState("");
+  const [tituloProfissional, setTituloProfissional] = useState("");
   const [conselho, setConselho] = useState("");
   const [numeroRegistro, setNumeroRegistro] = useState("");
   const [email, setEmail] = useState("");
@@ -62,12 +64,14 @@ export default function ProfissionalFormClient() {
         const dto: TecnicoDTO = {
           idTecnico: Number(d.idTecnico),
           nome: String(d.nome || ""),
+          tituloProfissional: d.tituloProfissional == null ? null : String(d.tituloProfissional),
           conselho: d.conselho == null ? null : String(d.conselho),
           numeroRegistro: d.numeroRegistro == null ? null : String(d.numeroRegistro),
           email: d.email == null ? null : String(d.email),
           telefone: d.telefone == null ? null : String(d.telefone),
         };
         setNome(dto.nome);
+        setTituloProfissional(dto.tituloProfissional || "");
         setConselho(dto.conselho || "");
         setNumeroRegistro(dto.numeroRegistro || "");
         setEmail(dto.email || "");
@@ -104,6 +108,7 @@ export default function ProfissionalFormClient() {
       setErr(null);
       const payload = {
         nome: n,
+        tituloProfissional: tituloProfissional.trim() || null,
         conselho: c,
         numeroRegistro: r,
         email: email.trim() || null,
@@ -168,6 +173,10 @@ export default function ProfissionalFormClient() {
             <div className="md:col-span-2">
               <div className="text-sm text-[#6B7280]">Nome *</div>
               <input className="input" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: João da Silva" />
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-sm text-[#6B7280]">Título profissional</div>
+              <input className="input" value={tituloProfissional} onChange={(e) => setTituloProfissional(e.target.value)} placeholder="Ex.: Engenheiro Civil, Eletricista, Arquiteto..." />
             </div>
             <div>
               <div className="text-sm text-[#6B7280]">Conselho *</div>

@@ -14,6 +14,7 @@ function unwrapApiData<T>(json: any): T {
 type ProfissionalRow = {
   idTecnico: number;
   nome: string;
+  tituloProfissional: string | null;
   conselho: string | null;
   numeroRegistro: string | null;
   email: string | null;
@@ -64,6 +65,7 @@ export default function ProfissionaisClient() {
             .map((r) => ({
               idTecnico: Number(r.idTecnico),
               nome: String(r.nome || ""),
+              tituloProfissional: r.tituloProfissional == null ? null : String(r.tituloProfissional),
               conselho: r.conselho == null ? null : String(r.conselho),
               numeroRegistro: r.numeroRegistro == null ? null : String(r.numeroRegistro),
               email: r.email == null ? null : String(r.email),
@@ -151,6 +153,7 @@ export default function ProfissionaisClient() {
               <thead>
                 <tr className="text-left text-[#6B7280] border-b">
                   <th className="py-2 pr-4">Nome</th>
+                  <th className="py-2 pr-4">Título</th>
                   <th className="py-2 pr-4">Conselho</th>
                   <th className="py-2 pr-4">Registro</th>
                   <th className="py-2 pr-4">E-mail</th>
@@ -165,6 +168,7 @@ export default function ProfissionaisClient() {
                       <div className="font-medium">{r.nome || "—"}</div>
                       <div className="text-xs text-[#6B7280]">ID: {r.idTecnico}</div>
                     </td>
+                    <td className="py-2 pr-4">{r.tituloProfissional || "—"}</td>
                     <td className="py-2 pr-4">{r.conselho || "—"}</td>
                     <td className="py-2 pr-4">{r.numeroRegistro || "—"}</td>
                     <td className="py-2 pr-4">{r.email || "—"}</td>
