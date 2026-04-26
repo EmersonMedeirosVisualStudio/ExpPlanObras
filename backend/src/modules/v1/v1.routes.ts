@@ -2122,6 +2122,157 @@ export default async function v1Routes(server: FastifyInstance) {
     return ok(reply, {}, { message: 'Projeto removido' });
   });
 
+  server.get('/engenharia/projetos/:id/anexos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const projeto = await prisma.engenhariaProjeto.findFirst({ where: { id, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
+    if (!projeto) return fail(reply, 404, 'Projeto não encontrado');
+
+    const rows = await prisma.engenhariaProjetoAnexo.findMany({
+      where: { tenantId: ctx.tenantId, projetoId: projeto.id },
+      orderBy: { id: 'desc' },
+      take: 200,
+      select: {
+        id: true,
+        nomeArquivo: true,
+        mimeType: true,
+        tamanhoBytes: true,
+        createdAt: true,
+        updatedAt: true,
+        anotacoesJson: true,
+      },
+    });
+
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idAnexo: r.id,
+        nomeArquivo: r.nomeArquivo,
+        mimeType: r.mimeType,
+        tamanhoBytes: r.tamanhoBytes,
+        criadoEm: r.createdAt.toISOString(),
+        atualizadoEm: r.updatedAt.toISOString(),
+        possuiAnotacoes: r.anotacoesJson != null,
+      }))
+    );
+  });
+
+  server.post('/engenharia/projetos/:id/anexos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const projeto = await prisma.engenhariaProjeto.findFirst({ where: { id, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
+    if (!projeto) return fail(reply, 404, 'Projeto não encontrado');
+
+    const file = await (request as any).file?.();
+    if (!file) return fail(reply, 400, 'Arquivo é obrigatório');
+
+    const mimeType = String(file.mimetype || '').trim().toLowerCase();
+    const nomeArquivo = String(file.filename || '').trim() || 'arquivo';
+
+    const allowed = mimeType === 'application/pdf' || mimeType.startsWith('image/');
+    if (!allowed) return fail(reply, 400, 'Tipo de arquivo inválido. Envie PDF ou imagem.');
+
+    const buffer: Buffer = await file.toBuffer();
+    if (!buffer?.length) return fail(reply, 400, 'Arquivo vazio');
+    if (buffer.length > 10 * 1024 * 1024) return fail(reply, 413, 'Arquivo excede 10MB');
+
+    const hashSha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+
+    const created = await prisma.engenhariaProjetoAnexo.create({
+      data: {
+        tenantId: ctx.tenantId,
+        projetoId: projeto.id,
+        nomeArquivo,
+        mimeType,
+        tamanhoBytes: buffer.length,
+        hashSha256,
+        data: buffer,
+        anotacoesJson: null,
+      },
+    });
+
+    await audit({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      entidade: 'engenharia_projetos_anexos',
+      idRegistro: String(created.id),
+      acao: 'CREATE',
+      dadosNovos: { id: created.id, projetoId: projeto.id, nomeArquivo, mimeType, tamanhoBytes: buffer.length, hashSha256 } as any,
+    });
+
+    return ok(reply, { idAnexo: created.id }, { message: 'Anexo enviado' });
+  });
+
+  server.get('/engenharia/projetos/anexos/:id/download', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const anexo = await prisma.engenhariaProjetoAnexo
+      .findFirst({
+        where: { id, tenantId: ctx.tenantId },
+        select: { id: true, nomeArquivo: true, mimeType: true, data: true },
+      })
+      .catch(() => null);
+    if (!anexo) return fail(reply, 404, 'Anexo não encontrado');
+
+    reply.header('Content-Type', anexo.mimeType || 'application/octet-stream');
+    reply.header('Content-Disposition', `inline; filename="${encodeURIComponent(anexo.nomeArquivo)}"`);
+    return reply.send(Buffer.from(anexo.data as any));
+  });
+
+  server.get('/engenharia/projetos/anexos/:id/anotacoes', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const anexo = await prisma.engenhariaProjetoAnexo
+      .findFirst({
+        where: { id, tenantId: ctx.tenantId },
+        select: { id: true, anotacoesJson: true },
+      })
+      .catch(() => null);
+    if (!anexo) return fail(reply, 404, 'Anexo não encontrado');
+    return ok(reply, { anotacoes: (anexo.anotacoesJson as any) ?? null });
+  });
+
+  server.put('/engenharia/projetos/anexos/:id/anotacoes', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z.object({ anotacoes: z.any().optional().nullable() }).parse(request.body || {});
+
+    const current = await prisma.engenhariaProjetoAnexo
+      .findFirst({
+        where: { id, tenantId: ctx.tenantId },
+        select: { id: true, anotacoesJson: true },
+      })
+      .catch(() => null);
+    if (!current) return fail(reply, 404, 'Anexo não encontrado');
+
+    const updated = await prisma.engenhariaProjetoAnexo.update({
+      where: { id },
+      data: { anotacoesJson: (body.anotacoes as any) ?? null },
+      select: { id: true },
+    });
+
+    await audit({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      entidade: 'engenharia_projetos_anexos_anotacoes',
+      idRegistro: String(updated.id),
+      acao: 'UPDATE',
+      dadosAnteriores: { anotacoes: current.anotacoesJson ? true : false } as any,
+      dadosNovos: { anotacoes: body.anotacoes ? true : false } as any,
+    });
+
+    return ok(reply, {}, { message: 'Anotações salvas' });
+  });
+
   server.get('/engenharia/projetos/responsaveis', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;

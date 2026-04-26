@@ -59,6 +59,7 @@ model Tenant {
   engenhariaProjetos EngenhariaProjeto[]
   engenhariaObrasProjetos EngenhariaObraProjeto[]
   engenhariaProjetosResponsaveis EngenhariaProjetoResponsavel[]
+  engenhariaProjetosAnexos EngenhariaProjetoAnexo[]
   history   TenantHistoryEntry[]
   subscriptions Subscription[]
   unidades  Unidade[]
@@ -788,9 +789,30 @@ model EngenhariaProjeto {
   tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   obras         EngenhariaObraProjeto[]
   responsaveis  EngenhariaProjetoResponsavel[]
+  anexos        EngenhariaProjetoAnexo[]
 
   @@index([tenantId])
   @@index([tenantId, titulo])
+}
+
+model EngenhariaProjetoAnexo {
+  id           Int      @id @default(autoincrement())
+  tenantId     Int
+  projetoId    Int
+  nomeArquivo  String
+  mimeType     String
+  tamanhoBytes Int
+  hashSha256   String?
+  data         Bytes
+  anotacoesJson Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  projeto      EngenhariaProjeto @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([projetoId])
 }
 
 model EngenhariaObraProjeto {

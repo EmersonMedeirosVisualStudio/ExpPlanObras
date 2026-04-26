@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
+import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
 
 type ApiEnvelope<T> = { success: boolean; message?: string; data: T };
 function unwrapApiData<T>(json: any): T {
@@ -35,6 +36,27 @@ type ProjetoResponsavelRow = {
   numeroDocumento: string | null;
   observacao: string | null;
 };
+
+type ProjetoAnexoRow = {
+  idAnexo: number;
+  nomeArquivo: string;
+  mimeType: string;
+  tamanhoBytes: number;
+  criadoEm: string;
+  atualizadoEm: string;
+  possuiAnotacoes: boolean;
+};
+
+type AnotacaoPoint = { x: number; y: number };
+type AnotacaoTool = "PEN" | "HIGHLIGHT" | "LINE" | "ERASER";
+type AnotacaoStroke = {
+  tool: AnotacaoTool;
+  color: string;
+  width: number;
+  opacity: number;
+  points: AnotacaoPoint[];
+};
+type AnotacoesDoc = { v: 1; pages: Record<string, AnotacaoStroke[]> };
 
 function safeInternalPath(v: string | null) {
   const s = String(v || "").trim();
@@ -81,6 +103,467 @@ function normalizeTipoLabel(value: string) {
     .trim()
     .replace(/\s+/g, " ")
     .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function fmtBytes(n: number) {
+  const v = Number(n || 0);
+  if (!Number.isFinite(v) || v <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let x = v;
+  let i = 0;
+  while (x >= 1024 && i < units.length - 1) {
+    x = x / 1024;
+    i++;
+  }
+  return `${x.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function getFileExt(name: string) {
+  const s = String(name || "").trim();
+  const idx = s.lastIndexOf(".");
+  if (idx <= 0) return "";
+  return s.slice(idx + 1).toLowerCase();
+}
+
+async function fetchAnexoArrayBuffer(anexoId: number) {
+  const res = await api.get(`/api/v1/engenharia/projetos/anexos/${anexoId}/download`, { responseType: "arraybuffer" });
+  const buf = res?.data as ArrayBuffer;
+  return buf;
+}
+
+function createEmptyAnotacoes(): AnotacoesDoc {
+  return { v: 1, pages: {} };
+}
+
+function AnexoViewerModal(props: {
+  open: boolean;
+  onClose: () => void;
+  anexo: ProjetoAnexoRow | null;
+  onSaved: () => void;
+}) {
+  const { open, onClose, anexo, onSaved } = props;
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageCount, setPageCount] = useState(1);
+  const [tool, setTool] = useState<AnotacaoTool>("PEN");
+  const [color, setColor] = useState("#ef4444");
+  const [width, setWidth] = useState(3);
+  const [opacity, setOpacity] = useState(1);
+
+  const pdfRef = useRef<any>(null);
+  const fileBufferRef = useRef<ArrayBuffer | null>(null);
+  const annotRef = useRef<AnotacoesDoc>(createEmptyAnotacoes());
+  const drawingRef = useRef(false);
+  const currentStrokeRef = useRef<AnotacaoStroke | null>(null);
+  const previewStrokeRef = useRef<AnotacaoStroke | null>(null);
+
+  const isPdf = (anexo?.mimeType || "").toLowerCase() === "application/pdf" || getFileExt(anexo?.nomeArquivo || "") === "pdf";
+
+  function getPageKey(p: number) {
+    return String(p);
+  }
+
+  function ensurePageStrokes(p: number) {
+    const k = getPageKey(p);
+    if (!annotRef.current.pages[k]) annotRef.current.pages[k] = [];
+    return annotRef.current.pages[k];
+  }
+
+  function setCanvasSize(cssW: number, cssH: number) {
+    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+    const base = baseCanvasRef.current;
+    const draw = drawCanvasRef.current;
+    if (!base || !draw) return;
+    base.style.width = `${cssW}px`;
+    base.style.height = `${cssH}px`;
+    draw.style.width = `${cssW}px`;
+    draw.style.height = `${cssH}px`;
+    base.width = Math.round(cssW * dpr);
+    base.height = Math.round(cssH * dpr);
+    draw.width = Math.round(cssW * dpr);
+    draw.height = Math.round(cssH * dpr);
+    const bctx = base.getContext("2d");
+    const dctx = draw.getContext("2d");
+    if (bctx) bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (dctx) dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function clearOverlay() {
+    const draw = drawCanvasRef.current;
+    if (!draw) return;
+    const ctx = draw.getContext("2d");
+    if (!ctx) return;
+    const w = parseFloat(draw.style.width || "0") || draw.width;
+    const h = parseFloat(draw.style.height || "0") || draw.height;
+    ctx.clearRect(0, 0, w, h);
+  }
+
+  function drawStroke(ctx: CanvasRenderingContext2D, stroke: AnotacaoStroke, cssW: number, cssH: number) {
+    if (!stroke.points.length) return;
+    const composite = stroke.tool === "ERASER" ? "destination-out" : "source-over";
+    ctx.save();
+    ctx.globalCompositeOperation = composite as any;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = stroke.color;
+    ctx.lineWidth = stroke.width;
+    ctx.globalAlpha = stroke.opacity;
+    const pts = stroke.points.map((p) => ({ x: p.x * cssW, y: p.y * cssH }));
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function redrawOverlay() {
+    const draw = drawCanvasRef.current;
+    if (!draw) return;
+    const ctx = draw.getContext("2d");
+    if (!ctx) return;
+    const cssW = parseFloat(draw.style.width || "0") || draw.width;
+    const cssH = parseFloat(draw.style.height || "0") || draw.height;
+    ctx.clearRect(0, 0, cssW, cssH);
+    const strokes = ensurePageStrokes(page);
+    for (const s of strokes) drawStroke(ctx, s, cssW, cssH);
+    if (previewStrokeRef.current) drawStroke(ctx, previewStrokeRef.current, cssW, cssH);
+  }
+
+  function eventToPoint(ev: PointerEvent) {
+    const draw = drawCanvasRef.current;
+    if (!draw) return null;
+    const rect = draw.getBoundingClientRect();
+    const x = (ev.clientX - rect.left) / rect.width;
+    const y = (ev.clientY - rect.top) / rect.height;
+    const nx = Math.max(0, Math.min(1, x));
+    const ny = Math.max(0, Math.min(1, y));
+    return { x: nx, y: ny };
+  }
+
+  async function carregarAnotacoes() {
+    if (!anexo?.idAnexo) return;
+    const res = await api.get(`/api/v1/engenharia/projetos/anexos/${anexo.idAnexo}/anotacoes`);
+    const d = unwrapApiData<any>(res?.data || null) as any;
+    const payload = d?.anotacoes ?? null;
+    if (!payload || typeof payload !== "object") {
+      annotRef.current = createEmptyAnotacoes();
+      return;
+    }
+    const pages = payload?.pages && typeof payload.pages === "object" ? payload.pages : {};
+    annotRef.current = { v: 1, pages: pages as any };
+  }
+
+  async function salvarAnotacoes() {
+    if (!anexo?.idAnexo) return;
+    try {
+      setLoading(true);
+      setErr(null);
+      await api.put(`/api/v1/engenharia/projetos/anexos/${anexo.idAnexo}/anotacoes`, { anotacoes: annotRef.current });
+      onSaved();
+      alert("Rabiscos salvos.");
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Erro ao salvar rabiscos.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function renderPdfPage(p: number) {
+    const pdf = pdfRef.current;
+    const container = containerRef.current;
+    if (!pdf || !container) return;
+    const pageObj = await pdf.getPage(p);
+    const v1 = pageObj.getViewport({ scale: 1 });
+    const maxW = Math.max(320, container.clientWidth - 2);
+    const scale = Math.min(2, Math.max(0.5, maxW / v1.width));
+    const viewport = pageObj.getViewport({ scale });
+    setCanvasSize(viewport.width, viewport.height);
+    const base = baseCanvasRef.current;
+    if (!base) return;
+    const ctx = base.getContext("2d");
+    if (!ctx) return;
+    await pageObj.render({ canvasContext: ctx as any, viewport: viewport as any }).promise;
+    previewStrokeRef.current = null;
+    redrawOverlay();
+  }
+
+  async function renderImage() {
+    const buf = fileBufferRef.current;
+    const container = containerRef.current;
+    if (!buf || !container) return;
+    const base = baseCanvasRef.current;
+    if (!base) return;
+    const blob = new Blob([buf], { type: anexo?.mimeType || "image/*" });
+    const url = URL.createObjectURL(blob);
+    try {
+      const img = new Image();
+      const loaded = await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Falha ao carregar imagem"));
+        img.src = url;
+      });
+      void loaded;
+      const maxW = Math.max(320, container.clientWidth - 2);
+      const scale = Math.min(2, Math.max(0.2, maxW / img.naturalWidth));
+      const cssW = img.naturalWidth * scale;
+      const cssH = img.naturalHeight * scale;
+      setCanvasSize(cssW, cssH);
+      const ctx = base.getContext("2d");
+      if (!ctx) return;
+      ctx.clearRect(0, 0, cssW, cssH);
+      ctx.drawImage(img, 0, 0, cssW, cssH);
+      previewStrokeRef.current = null;
+      redrawOverlay();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  async function carregarArquivoEPreparar() {
+    if (!anexo?.idAnexo) return;
+    setLoading(true);
+    setErr(null);
+    try {
+      const buf = await fetchAnexoArrayBuffer(anexo.idAnexo);
+      fileBufferRef.current = buf;
+      await carregarAnotacoes();
+      setPage(1);
+      previewStrokeRef.current = null;
+      if (isPdf) {
+        GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+        const task = getDocument({ data: new Uint8Array(buf) } as any);
+        const pdf = await task.promise;
+        pdfRef.current = pdf;
+        setPageCount(pdf.numPages || 1);
+        await renderPdfPage(1);
+      } else {
+        pdfRef.current = null;
+        setPageCount(1);
+        await renderImage();
+      }
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao abrir anexo.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    carregarArquivoEPreparar();
+  }, [open, anexo?.idAnexo]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!anexo?.idAnexo) return;
+    (async () => {
+      try {
+        setLoading(true);
+        setErr(null);
+        previewStrokeRef.current = null;
+        if (isPdf) await renderPdfPage(page);
+        else await renderImage();
+      } catch (e: any) {
+        setErr(e?.message || "Erro ao renderizar.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [page]);
+
+  useEffect(() => {
+    if (!open) return;
+    const draw = drawCanvasRef.current;
+    if (!draw) return;
+
+    function onPointerDown(ev: PointerEvent) {
+      if (loading) return;
+      const pt = eventToPoint(ev);
+      if (!pt) return;
+      drawingRef.current = true;
+      draw.setPointerCapture(ev.pointerId);
+      const stroke: AnotacaoStroke = {
+        tool,
+        color: tool === "ERASER" ? "#000000" : tool === "HIGHLIGHT" ? color : color,
+        width: tool === "HIGHLIGHT" ? Math.max(6, width * 2) : width,
+        opacity: tool === "HIGHLIGHT" ? Math.min(0.45, opacity) : opacity,
+        points: [pt],
+      };
+      currentStrokeRef.current = stroke;
+      previewStrokeRef.current = tool === "LINE" ? stroke : null;
+      redrawOverlay();
+    }
+
+    function onPointerMove(ev: PointerEvent) {
+      if (!drawingRef.current) return;
+      const pt = eventToPoint(ev);
+      if (!pt) return;
+      const cur = currentStrokeRef.current;
+      if (!cur) return;
+      if (tool === "LINE") {
+        const start = cur.points[0];
+        cur.points = [start, pt];
+        previewStrokeRef.current = cur;
+      } else {
+        cur.points.push(pt);
+      }
+      redrawOverlay();
+    }
+
+    function onPointerUp(ev: PointerEvent) {
+      if (!drawingRef.current) return;
+      drawingRef.current = false;
+      try {
+        draw.releasePointerCapture(ev.pointerId);
+      } catch {}
+      const cur = currentStrokeRef.current;
+      currentStrokeRef.current = null;
+      const valid = cur && cur.points.length >= (tool === "LINE" ? 2 : 1);
+      previewStrokeRef.current = null;
+      if (!valid) {
+        redrawOverlay();
+        return;
+      }
+      const strokes = ensurePageStrokes(page);
+      strokes.push(cur as any);
+      redrawOverlay();
+    }
+
+    draw.addEventListener("pointerdown", onPointerDown);
+    draw.addEventListener("pointermove", onPointerMove);
+    draw.addEventListener("pointerup", onPointerUp);
+    draw.addEventListener("pointercancel", onPointerUp);
+    return () => {
+      draw.removeEventListener("pointerdown", onPointerDown);
+      draw.removeEventListener("pointermove", onPointerMove);
+      draw.removeEventListener("pointerup", onPointerUp);
+      draw.removeEventListener("pointercancel", onPointerUp);
+    };
+  }, [open, tool, color, width, opacity, page, loading]);
+
+  if (!open || !anexo) return null;
+
+  const canPrev = isPdf && page > 1;
+  const canNext = isPdf && page < pageCount;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-6xl overflow-hidden rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] px-4 py-3">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold">{anexo.nomeArquivo}</div>
+            <div className="text-xs text-[#6B7280]">
+              {anexo.mimeType} • {fmtBytes(anexo.tamanhoBytes)} {isPdf ? `• Página ${page}/${pageCount}` : ""}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <a className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" href={`/api/v1/engenharia/projetos/anexos/${anexo.idAnexo}/download`} target="_blank" rel="noreferrer">
+              Abrir
+            </a>
+            <button className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" type="button" onClick={onClose} disabled={loading}>
+              Fechar
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-0 lg:grid-cols-[320px_1fr]">
+          <div className="border-b border-[#E5E7EB] p-4 lg:border-b-0 lg:border-r">
+            {err ? <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
+
+            <div className="space-y-3">
+              <div className="text-sm font-semibold">Ferramentas</div>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" className={`rounded-lg border px-3 py-2 text-sm ${tool === "PEN" ? "border-[#2563EB]" : "border-[#D1D5DB]"} hover:bg-[#F9FAFB]`} onClick={() => setTool("PEN")} disabled={loading}>
+                  Lápis
+                </button>
+                <button type="button" className={`rounded-lg border px-3 py-2 text-sm ${tool === "LINE" ? "border-[#2563EB]" : "border-[#D1D5DB]"} hover:bg-[#F9FAFB]`} onClick={() => setTool("LINE")} disabled={loading}>
+                  Régua
+                </button>
+                <button type="button" className={`rounded-lg border px-3 py-2 text-sm ${tool === "HIGHLIGHT" ? "border-[#2563EB]" : "border-[#D1D5DB]"} hover:bg-[#F9FAFB]`} onClick={() => setTool("HIGHLIGHT")} disabled={loading}>
+                  Tinta
+                </button>
+                <button type="button" className={`rounded-lg border px-3 py-2 text-sm ${tool === "ERASER" ? "border-[#2563EB]" : "border-[#D1D5DB]"} hover:bg-[#F9FAFB]`} onClick={() => setTool("ERASER")} disabled={loading}>
+                  Borracha
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-xs text-[#6B7280]">Cor</div>
+                  <input className="mt-1 h-10 w-full rounded-lg border border-[#D1D5DB] bg-white px-2" type="color" value={color} onChange={(e) => setColor(e.target.value)} disabled={loading || tool === "ERASER"} />
+                </div>
+                <div>
+                  <div className="text-xs text-[#6B7280]">Espessura</div>
+                  <input className="mt-1 w-full" type="range" min={1} max={14} value={width} onChange={(e) => setWidth(Number(e.target.value))} disabled={loading} />
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs text-[#6B7280]">Opacidade</div>
+                <input className="mt-1 w-full" type="range" min={0.1} max={1} step={0.05} value={opacity} onChange={(e) => setOpacity(Number(e.target.value))} disabled={loading} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]"
+                  onClick={() => {
+                    const strokes = ensurePageStrokes(page);
+                    strokes.pop();
+                    redrawOverlay();
+                  }}
+                  disabled={loading}
+                >
+                  Desfazer
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]"
+                  onClick={() => {
+                    annotRef.current.pages[getPageKey(page)] = [];
+                    clearOverlay();
+                  }}
+                  disabled={loading}
+                >
+                  Limpar
+                </button>
+              </div>
+
+              <button type="button" className="w-full rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50" onClick={salvarAnotacoes} disabled={loading}>
+                Salvar rabiscos
+              </button>
+
+              {isPdf ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB] disabled:opacity-50" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={loading || !canPrev}>
+                    Página -
+                  </button>
+                  <button type="button" className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB] disabled:opacity-50" onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={loading || !canNext}>
+                    Página +
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="p-4">
+            <div ref={containerRef} className="relative w-full overflow-auto rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-2">
+              <div className="relative inline-block">
+                <canvas ref={baseCanvasRef} className="block rounded" />
+                <canvas ref={drawCanvasRef} className="absolute left-0 top-0 cursor-crosshair rounded" />
+              </div>
+              {loading ? <div className="absolute inset-0 flex items-center justify-center text-sm text-[#6B7280]">Carregando...</div> : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function ProjetoFormClient() {
@@ -158,6 +641,13 @@ export default function ProjetoFormClient() {
   const [respErr, setRespErr] = useState<string | null>(null);
   const [respRows, setRespRows] = useState<ProjetoResponsavelRow[]>([]);
 
+  const [anexosLoading, setAnexosLoading] = useState(false);
+  const [anexosErr, setAnexosErr] = useState<string | null>(null);
+  const [anexosRows, setAnexosRows] = useState<ProjetoAnexoRow[]>([]);
+  const [anexosUpload, setAnexosUpload] = useState<File[]>([]);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerAnexo, setViewerAnexo] = useState<ProjetoAnexoRow | null>(null);
+
   useEffect(() => {
     if (!idProjeto) return;
     let active = true;
@@ -234,6 +724,68 @@ export default function ProjetoFormClient() {
     if (!idProjeto) return;
     carregarResponsaveisProjeto();
   }, [idProjeto]);
+
+  async function carregarAnexosProjeto(pid?: number | null) {
+    const id = typeof pid === "number" ? pid : idProjeto;
+    if (!id) return;
+    try {
+      setAnexosLoading(true);
+      setAnexosErr(null);
+      const res = await api.get(`/api/v1/engenharia/projetos/${id}/anexos`);
+      const list = unwrapApiData<any[]>(res?.data || []);
+      const mapped: ProjetoAnexoRow[] = Array.isArray(list)
+        ? list.map((r) => ({
+            idAnexo: Number(r.idAnexo),
+            nomeArquivo: String(r.nomeArquivo || ""),
+            mimeType: String(r.mimeType || ""),
+            tamanhoBytes: Number(r.tamanhoBytes || 0),
+            criadoEm: String(r.criadoEm || ""),
+            atualizadoEm: String(r.atualizadoEm || ""),
+            possuiAnotacoes: Boolean(r.possuiAnotacoes),
+          }))
+        : [];
+      setAnexosRows(mapped);
+    } catch (e: any) {
+      setAnexosErr(e?.response?.data?.message || e?.message || "Erro ao carregar anexos.");
+    } finally {
+      setAnexosLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!idProjeto) return;
+    carregarAnexosProjeto(idProjeto);
+  }, [idProjeto]);
+
+  async function uploadAnexosProjeto(pid: number, files: File[]) {
+    for (const f of files) {
+      const fd = new FormData();
+      fd.append("file", f);
+      await api.post(`/api/v1/engenharia/projetos/${pid}/anexos`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+    }
+  }
+
+  async function enviarAnexosAgora() {
+    if (!idProjeto) {
+      setAnexosErr("Salve o projeto antes de anexar arquivos.");
+      return;
+    }
+    if (!anexosUpload.length) return;
+    try {
+      setAnexosLoading(true);
+      setAnexosErr(null);
+      await uploadAnexosProjeto(idProjeto, anexosUpload);
+      setAnexosUpload([]);
+      await carregarAnexosProjeto(idProjeto);
+      alert("Anexos enviados.");
+    } catch (e: any) {
+      setAnexosErr(e?.response?.data?.message || e?.message || "Erro ao enviar anexos.");
+    } finally {
+      setAnexosLoading(false);
+    }
+  }
 
   async function adicionarResponsavelProjeto() {
     if (!idProjeto) {
@@ -371,6 +923,10 @@ export default function ProjetoFormClient() {
 
       if (idProjeto) {
         await api.put(`/api/v1/engenharia/projetos/${idProjeto}`, payload);
+        if (anexosUpload.length) {
+          await uploadAnexosProjeto(idProjeto, anexosUpload);
+          setAnexosUpload([]);
+        }
         router.push(backHref);
         return;
       }
@@ -378,6 +934,16 @@ export default function ProjetoFormClient() {
       const res = await api.post("/api/v1/engenharia/projetos", payload);
       const out = unwrapApiData<any>(res?.data || null) as any;
       const newId = Number(out?.idProjeto || 0);
+      if (Number.isInteger(newId) && newId > 0 && anexosUpload.length) {
+        try {
+          await uploadAnexosProjeto(newId, anexosUpload);
+          setAnexosUpload([]);
+        } catch {
+          alert("Projeto salvo, mas houve erro ao enviar anexos. Abra o projeto e tente novamente.");
+          router.push(`/dashboard/engenharia/projetos/${newId}?returnTo=${encodeURIComponent(backHref)}`);
+          return;
+        }
+      }
       if (autoLink && obraIdToLink && Number.isInteger(newId) && newId > 0) {
         await api.post("/api/v1/engenharia/obras/projetos", { idObra: obraIdToLink, idProjeto: newId });
         const importar = confirm("Deseja importar responsáveis do projeto para a obra agora?");
@@ -414,6 +980,15 @@ export default function ProjetoFormClient() {
 
   return (
     <div className="p-6 space-y-6 max-w-5xl text-[#111827]">
+      <AnexoViewerModal
+        open={viewerOpen}
+        anexo={viewerAnexo}
+        onClose={() => {
+          setViewerOpen(false);
+          setViewerAnexo(null);
+        }}
+        onSaved={() => carregarAnexosProjeto(idProjeto)}
+      />
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="text-xs text-[#6B7280]">{breadcrumb}</div>
@@ -533,6 +1108,78 @@ export default function ProjetoFormClient() {
             <div className="md:col-span-2">
               <div className="text-sm text-[#6B7280]">Descrição / Observações</div>
               <textarea className="input min-h-[110px]" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Observações, escopo, etc." />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
+        <div className="border-b border-[#E5E7EB] px-4 py-3 font-medium">Anexos (PDF / Imagem)</div>
+        <div className="p-4 space-y-3">
+          {anexosErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{anexosErr}</div> : null}
+
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="text-sm text-[#6B7280]">{idProjeto ? "Envie arquivos e visualize/anote no botão Visualizar." : "Salve o projeto para anexar arquivos."}</div>
+            <button className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" type="button" onClick={() => carregarAnexosProjeto(idProjeto)} disabled={!idProjeto || anexosLoading}>
+              Atualizar
+            </button>
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+            <input
+              type="file"
+              accept="application/pdf,image/*"
+              multiple
+              className="block w-full text-sm"
+              disabled={!idProjeto || anexosLoading || loading}
+              onChange={(e) => {
+                const list = e.target.files ? Array.from(e.target.files) : [];
+                setAnexosUpload(list);
+              }}
+            />
+            <button className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50" type="button" onClick={enviarAnexosAgora} disabled={!idProjeto || anexosLoading || !anexosUpload.length}>
+              Enviar
+            </button>
+          </div>
+
+          {anexosUpload.length ? (
+            <div className="text-xs text-[#6B7280]">
+              Selecionados: {anexosUpload.map((f) => `${f.name} (${fmtBytes(f.size)})`).join(" • ")}
+            </div>
+          ) : null}
+
+          <div className="overflow-hidden rounded-lg border border-[#E5E7EB]">
+            <div className="grid grid-cols-[1fr_140px] gap-0 bg-[#F9FAFB] px-3 py-2 text-xs font-semibold text-[#6B7280]">
+              <div>Arquivo</div>
+              <div className="text-right">Ações</div>
+            </div>
+            <div className="divide-y">
+              {!anexosRows.length ? (
+                <div className="px-3 py-3 text-sm text-[#6B7280]">{idProjeto ? (anexosLoading ? "Carregando..." : "Nenhum anexo ainda.") : "—"}</div>
+              ) : (
+                anexosRows.map((a) => (
+                  <div key={a.idAnexo} className="grid grid-cols-[1fr_140px] gap-0 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">{a.nomeArquivo}</div>
+                      <div className="mt-0.5 text-xs text-[#6B7280]">
+                        {a.mimeType} • {fmtBytes(a.tamanhoBytes)} {a.possuiAnotacoes ? "• com rabiscos" : ""}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-1.5 text-sm hover:bg-[#F9FAFB]"
+                        onClick={() => {
+                          setViewerAnexo(a);
+                          setViewerOpen(true);
+                        }}
+                      >
+                        Visualizar
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
