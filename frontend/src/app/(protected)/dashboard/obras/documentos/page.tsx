@@ -8,12 +8,21 @@ import api from '@/lib/api';
 
 type ContratoOption = { id: number; numeroContrato: string; objeto: string | null };
 
+function safeInternalPath(v: string | null) {
+  const s = String(v || '').trim();
+  if (!s) return null;
+  if (!s.startsWith('/')) return null;
+  if (s.startsWith('//')) return null;
+  return s;
+}
+
 export default function ObrasDocumentosPage() {
   const router = useRouter();
   const sp = useSearchParams();
   const initialTipo = (sp.get('tipo') || 'OBRA').toUpperCase();
   const initialId = sp.get('id') || '';
   const initialCategoria = (sp.get('categoriaPrefix') || '').trim().toUpperCase();
+  const returnTo = safeInternalPath(sp.get('returnTo') || sp.get('from'));
   const lockObraContext = initialTipo === 'OBRA' && Boolean(initialId);
 
   const [tipo, setTipo] = useState<'OBRA' | 'CONTRATO'>(initialTipo === 'CONTRATO' ? 'CONTRATO' : 'OBRA');
@@ -103,6 +112,7 @@ export default function ObrasDocumentosPage() {
       qp.set('tipo', tipo);
       qp.set('id', String(id));
       if (categoriaPrefix) qp.set('categoriaPrefix', categoriaPrefix);
+      if (returnTo) qp.set('returnTo', returnTo);
       router.replace(`/dashboard/obras/documentos?${qp.toString()}`);
       const data = await DocumentosApi.listar({
         limit: 200,
@@ -160,7 +170,15 @@ export default function ObrasDocumentosPage() {
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {tipo === 'OBRA' && Number(idRef || 0) > 0 ? (
+          {returnTo ? (
+            <button
+              className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
+              type="button"
+              onClick={() => router.push(returnTo)}
+            >
+              Voltar
+            </button>
+          ) : tipo === 'OBRA' && Number(idRef || 0) > 0 ? (
             <button
               className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
               type="button"

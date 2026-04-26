@@ -362,7 +362,8 @@ export default function EngenhariaObraHomePage() {
         key: "documentos",
         titulo: "Documentos da Obra",
         desc: "ART, projetos, revisões, laudos, pareceres, relatórios e evidências.",
-        href: () => `/dashboard/engenharia/obras/ativa/documentos`,
+        href: (id) =>
+          `/dashboard/obras/documentos?tipo=OBRA&id=${id}&returnTo=${encodeURIComponent(`/dashboard/engenharia/obras/${id}`)}`,
         nivel: "GESTAO",
       },
       {
@@ -439,21 +440,15 @@ export default function EngenhariaObraHomePage() {
         key: "projetos",
         titulo: "Cadastro de Projetos",
         desc: "Projetos da obra (documentos categorizados como OBRA:PROJETO).",
-        href: (id) => `/dashboard/obras/documentos?tipo=OBRA&id=${id}&categoriaPrefix=OBRA:PROJETO`,
+        href: (id) =>
+          `/dashboard/obras/documentos?tipo=OBRA&id=${id}&categoriaPrefix=OBRA:PROJETO&returnTo=${encodeURIComponent(`/dashboard/engenharia/obras/${id}`)}`,
         nivel: "CADASTRO",
       },
       {
         key: "responsaveis-tecnicos",
-        titulo: "Responsáveis Técnicos",
-        desc: "Cadastro de responsáveis técnicos por obra.",
+        titulo: "Responsáveis técnicos / Fiscais",
+        desc: "Cadastro de profissionais vinculados à obra (responsáveis técnicos e fiscais).",
         href: (id) => `/dashboard/engenharia/obras/${id}#responsaveis-tecnicos`,
-        nivel: "CADASTRO",
-      },
-      {
-        key: "fiscais",
-        titulo: "Fiscais",
-        desc: "Cadastro de fiscais por obra.",
-        href: (id) => `/dashboard/engenharia/obras/${id}#fiscais`,
         nivel: "CADASTRO",
       },
     ],
