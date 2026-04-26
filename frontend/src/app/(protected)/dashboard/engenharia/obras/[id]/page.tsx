@@ -46,11 +46,12 @@ type ContratoDaObra = {
 };
 
 type ResponsavelObraRow = {
-  idResponsavelObra: number;
+  idObraResponsabilidade: number;
   idObra: number;
   tipo: "RESPONSAVEL_TECNICO" | "FISCAL_OBRA";
   nome: string;
-  registroProfissional: string | null;
+  conselho: string | null;
+  numeroRegistro: string | null;
   cpf: string | null;
   email: string | null;
   telefone: string | null;
@@ -118,17 +119,18 @@ export default function EngenhariaObraHomePage() {
       qp.set("idObra", String(idObra));
       qp.set("tipo", tipo);
       qp.set("apenasAtivos", apenasAtivos ? "1" : "0");
-      const res = await api.get(`/api/v1/engenharia/obras/responsaveis?${qp.toString()}`);
+      const res = await api.get(`/api/v1/engenharia/obras/responsabilidades?${qp.toString()}`);
       const list = unwrapApiData<any[]>(res?.data || []);
       const rows = Array.isArray(list)
         ? (list
             .map((r) => ({
               ...r,
-              idResponsavelObra: Number(r.idResponsavelObra),
+              idObraResponsabilidade: Number(r.idObraResponsabilidade),
               idObra: Number(r.idObra),
               tipo: String(r.tipo || "").toUpperCase() === "FISCAL_OBRA" ? "FISCAL_OBRA" : "RESPONSAVEL_TECNICO",
               nome: String(r.nome || ""),
-              registroProfissional: r.registroProfissional == null ? null : String(r.registroProfissional),
+              conselho: r.conselho == null ? null : String(r.conselho),
+              numeroRegistro: r.numeroRegistro == null ? null : String(r.numeroRegistro),
               cpf: r.cpf == null ? null : String(r.cpf),
               email: r.email == null ? null : String(r.email),
               telefone: r.telefone == null ? null : String(r.telefone),
@@ -136,7 +138,7 @@ export default function EngenhariaObraHomePage() {
               criadoEm: r.criadoEm ? String(r.criadoEm) : undefined,
               atualizadoEm: r.atualizadoEm ? String(r.atualizadoEm) : undefined,
             }))
-            .filter((x) => Number.isFinite(x.idResponsavelObra) && x.idResponsavelObra > 0 && Number(x.idObra) === idObra)) as ResponsavelObraRow[]
+            .filter((x) => Number.isFinite(x.idObraResponsabilidade) && x.idObraResponsabilidade > 0 && Number(x.idObra) === idObra)) as ResponsavelObraRow[]
         : [];
       setCrudRows(rows);
     } catch (e: any) {
@@ -169,28 +171,41 @@ export default function EngenhariaObraHomePage() {
   }, [crudOpen, crudTipo, crudApenasAtivos]);
 
   async function criarResponsavel() {
-    const nome = (prompt(crudTipo === "FISCAL_OBRA" ? "Nome do fiscal:" : "Nome do responsável técnico:") || "").trim();
-    if (!nome) return;
-    const registroProfissional =
-      (prompt(crudTipo === "FISCAL_OBRA" ? "Registro profissional (opcional):" : "Registro profissional (CREA/CAU) (opcional):") || "").trim() || null;
-    const cpf = (prompt("CPF (opcional):") || "").trim() || null;
-    const email = (prompt("E-mail (opcional):") || "").trim() || null;
-    const telefone = (prompt("Telefone (opcional):") || "").trim() || null;
+    const idTecnicoRaw = (prompt("ID do técnico (deixe vazio para cadastrar um novo):") || "").trim();
+    let idTecnico: number | null = null;
+    if (idTecnicoRaw) {
+      const n = Number(idTecnicoRaw);
+      idTecnico = Number.isInteger(n) && n > 0 ? n : null;
+      if (!idTecnico) return;
+    } else {
+      const nome = (prompt(crudTipo === "FISCAL_OBRA" ? "Nome do fiscal:" : "Nome do responsável técnico:") || "").trim();
+      if (!nome) return;
+      const conselho = (prompt("Conselho (ex.: CREA, CAU) (opcional):") || "").trim();
+      const numeroRegistro = (prompt("Número do registro (opcional):") || "").trim();
+      const cpf = (prompt("CPF (opcional):") || "").trim();
+      const email = (prompt("E-mail (opcional):") || "").trim();
+      const telefone = (prompt("Telefone (opcional):") || "").trim();
+      const resTec = await api.post("/api/v1/engenharia/tecnicos", {
+        nome,
+        conselho: conselho || null,
+        numeroRegistro: numeroRegistro || null,
+        cpf: cpf || null,
+        email: email || null,
+        telefone: telefone || null,
+        ativo: true,
+      });
+      const outTec = unwrapApiData<any>(resTec?.data || null) as any;
+      const newId = Number(outTec?.idTecnico || 0);
+      if (!Number.isInteger(newId) || newId <= 0) return;
+      idTecnico = newId;
+    }
+
     const ativoPrompt = (prompt("Ativo? (S/N)", "S") || "S").trim().toUpperCase();
     const ativo = ativoPrompt !== "N";
     try {
       setCrudLoading(true);
       setCrudErr(null);
-      await api.post("/api/v1/engenharia/obras/responsaveis", {
-        idObra,
-        tipo: crudTipo,
-        nome,
-        registroProfissional,
-        cpf,
-        email,
-        telefone,
-        ativo,
-      });
+      await api.post("/api/v1/engenharia/obras/responsabilidades", { idObra, tipo: crudTipo, idTecnico, ativo });
       await carregarResponsaveis(crudTipo, crudApenasAtivos);
     } catch (e: any) {
       setCrudErr(e?.response?.data?.message || e?.message || "Erro ao cadastrar.");
@@ -200,26 +215,13 @@ export default function EngenhariaObraHomePage() {
   }
 
   async function editarResponsavel(r: ResponsavelObraRow) {
-    const nome = (prompt("Nome:", r.nome || "") || "").trim();
-    if (!nome) return;
-    const registroProfissional = (prompt("Registro profissional:", r.registroProfissional || "") || "").trim() || null;
-    const cpf = (prompt("CPF:", r.cpf || "") || "").trim() || null;
-    const email = (prompt("E-mail:", r.email || "") || "").trim() || null;
-    const telefone = (prompt("Telefone:", r.telefone || "") || "").trim() || null;
+    const tipo = (prompt("Tipo (RESPONSAVEL_TECNICO / FISCAL_OBRA):", r.tipo) || r.tipo).trim().toUpperCase();
     const ativoPrompt = (prompt("Ativo? (S/N)", r.ativo ? "S" : "N") || (r.ativo ? "S" : "N")).trim().toUpperCase();
     const ativo = ativoPrompt !== "N";
     try {
       setCrudLoading(true);
       setCrudErr(null);
-      await api.put(`/api/v1/engenharia/obras/responsaveis/${r.idResponsavelObra}`, {
-        tipo: crudTipo,
-        nome,
-        registroProfissional,
-        cpf,
-        email,
-        telefone,
-        ativo,
-      });
+      await api.put(`/api/v1/engenharia/obras/responsabilidades/${r.idObraResponsabilidade}`, { tipo, ativo });
       await carregarResponsaveis(crudTipo, crudApenasAtivos);
     } catch (e: any) {
       setCrudErr(e?.response?.data?.message || e?.message || "Erro ao atualizar.");
@@ -233,7 +235,7 @@ export default function EngenhariaObraHomePage() {
     try {
       setCrudLoading(true);
       setCrudErr(null);
-      await api.delete(`/api/v1/engenharia/obras/responsaveis/${r.idResponsavelObra}`);
+      await api.delete(`/api/v1/engenharia/obras/responsabilidades/${r.idObraResponsabilidade}`);
       await carregarResponsaveis(crudTipo, crudApenasAtivos);
     } catch (e: any) {
       setCrudErr(e?.response?.data?.message || e?.message || "Erro ao remover.");
@@ -627,9 +629,9 @@ export default function EngenhariaObraHomePage() {
             <div className="flex items-start justify-between gap-3 border-b p-4">
               <div>
                 <div className="text-lg font-semibold">
-                  {crudTipo === "FISCAL_OBRA" ? "Fiscais da obra" : "Responsáveis técnicos da obra"} — Obra #{idObra}
+                  Responsáveis técnicos / Fiscais — Obra #{idObra}
                 </div>
-                <div className="text-sm text-slate-600">Cadastro, edição e remoção de vínculos por obra.</div>
+                <div className="text-sm text-slate-600">Cadastro, edição e remoção de vínculos de profissionais por obra.</div>
               </div>
               <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setCrudOpen(false)}>
                 Fechar
@@ -672,7 +674,8 @@ export default function EngenhariaObraHomePage() {
                 <table className="min-w-full text-sm">
                   <thead className="bg-slate-50 text-left text-slate-700">
                     <tr>
-                      <th className="px-3 py-2">Nome</th>
+                      <th className="px-3 py-2">Técnico</th>
+                      <th className="px-3 py-2">Conselho</th>
                       <th className="px-3 py-2">Registro</th>
                       <th className="px-3 py-2">CPF</th>
                       <th className="px-3 py-2">E-mail</th>
@@ -684,15 +687,16 @@ export default function EngenhariaObraHomePage() {
                   <tbody>
                     {crudLoading ? (
                       <tr>
-                        <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
+                        <td className="px-3 py-6 text-center text-slate-500" colSpan={8}>
                           Carregando...
                         </td>
                       </tr>
                     ) : crudRows.length ? (
                       crudRows.map((r) => (
-                        <tr key={r.idResponsavelObra} className="border-t">
+                        <tr key={r.idObraResponsabilidade} className="border-t">
                           <td className="px-3 py-2 font-medium">{r.nome || "—"}</td>
-                          <td className="px-3 py-2">{r.registroProfissional || "—"}</td>
+                          <td className="px-3 py-2">{r.conselho || "—"}</td>
+                          <td className="px-3 py-2">{r.numeroRegistro || "—"}</td>
                           <td className="px-3 py-2">{r.cpf || "—"}</td>
                           <td className="px-3 py-2">{r.email || "—"}</td>
                           <td className="px-3 py-2">{r.telefone || "—"}</td>
@@ -709,7 +713,7 @@ export default function EngenhariaObraHomePage() {
                       ))
                     ) : (
                       <tr>
-                        <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
+                        <td className="px-3 py-6 text-center text-slate-500" colSpan={8}>
                           Nenhum registro.
                         </td>
                       </tr>

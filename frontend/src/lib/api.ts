@@ -2,7 +2,7 @@
 import axios, { AxiosHeaders } from 'axios';
 
 const api = axios.create({
-  baseURL: typeof window === 'undefined' ? process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333' : '',
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -36,6 +36,10 @@ function isAxiosHeaders(value: unknown): value is AxiosHeaders {
 
 // Intercept requests to add token
 api.interceptors.request.use((config) => {
+  const url = typeof config.url === 'string' ? config.url : '';
+  if (typeof window !== 'undefined' && (url.startsWith('/api/v1/') || url === '/api/v1')) {
+    config.baseURL = '';
+  }
   if (typeof window !== 'undefined') {
     const token = safeLocalStorage.getItem('token');
     if (token) {

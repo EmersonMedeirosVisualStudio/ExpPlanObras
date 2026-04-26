@@ -23,6 +23,19 @@ type ProjetoDTO = {
   dataAprovacao: string | null;
 };
 
+type ProjetoResponsavelRow = {
+  idProjetoResponsavel: number;
+  idProjeto: number;
+  idTecnico: number;
+  nome: string;
+  conselho: string | null;
+  numeroRegistro: string | null;
+  tipo: "RESPONSAVEL_TECNICO" | "FISCAL_OBRA";
+  abrangencia: string | null;
+  numeroDocumento: string | null;
+  observacao: string | null;
+};
+
 function safeInternalPath(v: string | null) {
   const s = String(v || "").trim();
   if (!s) return null;
@@ -72,6 +85,10 @@ export default function ProjetoFormClient() {
   const [dataAprovacao, setDataAprovacao] = useState("");
   const [descricao, setDescricao] = useState("");
 
+  const [respLoading, setRespLoading] = useState(false);
+  const [respErr, setRespErr] = useState<string | null>(null);
+  const [respRows, setRespRows] = useState<ProjetoResponsavelRow[]>([]);
+
   useEffect(() => {
     if (!idProjeto) return;
     let active = true;
@@ -114,6 +131,139 @@ export default function ProjetoFormClient() {
     };
   }, [idProjeto]);
 
+  async function carregarResponsaveisProjeto() {
+    if (!idProjeto) return;
+    try {
+      setRespLoading(true);
+      setRespErr(null);
+      const res = await api.get(`/api/v1/engenharia/projetos/responsaveis?idProjeto=${idProjeto}`);
+      const list = unwrapApiData<any[]>(res?.data || []);
+      const mapped: ProjetoResponsavelRow[] = Array.isArray(list)
+        ? list.map((r) => ({
+            idProjetoResponsavel: Number(r.idProjetoResponsavel),
+            idProjeto: Number(r.idProjeto),
+            idTecnico: Number(r.idTecnico),
+            nome: String(r.nome || ""),
+            conselho: r.conselho == null ? null : String(r.conselho),
+            numeroRegistro: r.numeroRegistro == null ? null : String(r.numeroRegistro),
+            tipo: (String(r.tipo || "").toUpperCase() === "FISCAL_OBRA" ? "FISCAL_OBRA" : "RESPONSAVEL_TECNICO") as any,
+            abrangencia: r.abrangencia == null ? null : String(r.abrangencia),
+            numeroDocumento: r.numeroDocumento == null ? null : String(r.numeroDocumento),
+            observacao: r.observacao == null ? null : String(r.observacao),
+          }))
+        : [];
+      setRespRows(mapped);
+    } catch (e: any) {
+      setRespErr(e?.response?.data?.message || e?.message || "Erro ao carregar responsáveis do projeto.");
+    } finally {
+      setRespLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!idProjeto) return;
+    carregarResponsaveisProjeto();
+  }, [idProjeto]);
+
+  async function adicionarResponsavelProjeto() {
+    if (!idProjeto) {
+      setErr("Salve o projeto antes de cadastrar responsáveis.");
+      return;
+    }
+    try {
+      setRespLoading(true);
+      setRespErr(null);
+
+      const idTecnicoRaw = (prompt("ID do técnico (deixe vazio para cadastrar um novo):") || "").trim();
+      let idTecnico: number | null = null;
+      if (idTecnicoRaw) {
+        const n = Number(idTecnicoRaw);
+        idTecnico = Number.isInteger(n) && n > 0 ? n : null;
+        if (!idTecnico) {
+          setRespErr("ID do técnico inválido.");
+          return;
+        }
+      } else {
+        const nome = (prompt("Nome do técnico:") || "").trim();
+        if (!nome) {
+          setRespErr("Nome é obrigatório.");
+          return;
+        }
+        const conselho = (prompt("Conselho (ex.: CREA, CAU) (opcional):") || "").trim();
+        const numeroRegistro = (prompt("Número do registro (opcional):") || "").trim();
+        const resTec = await api.post("/api/v1/engenharia/tecnicos", {
+          nome,
+          conselho: conselho || null,
+          numeroRegistro: numeroRegistro || null,
+        });
+        const outTec = unwrapApiData<any>(resTec?.data || null) as any;
+        const newId = Number(outTec?.idTecnico || 0);
+        if (!Number.isInteger(newId) || newId <= 0) {
+          setRespErr("Não foi possível cadastrar o técnico.");
+          return;
+        }
+        idTecnico = newId;
+      }
+
+      const tipo = (prompt("Tipo (RESPONSAVEL_TECNICO / FISCAL_OBRA):", "RESPONSAVEL_TECNICO") || "RESPONSAVEL_TECNICO")
+        .trim()
+        .toUpperCase();
+      const abrangencia = (prompt("Abrangência (opcional):") || "").trim();
+      const numeroDocumento = (prompt("Nº documento (opcional):") || "").trim();
+      const observacao = (prompt("Observação (opcional):") || "").trim();
+
+      await api.post("/api/v1/engenharia/projetos/responsaveis", {
+        idProjeto,
+        idTecnico,
+        tipo,
+        abrangencia: abrangencia || null,
+        numeroDocumento: numeroDocumento || null,
+        observacao: observacao || null,
+      });
+      await carregarResponsaveisProjeto();
+    } catch (e: any) {
+      setRespErr(e?.response?.data?.message || e?.message || "Erro ao adicionar responsável.");
+    } finally {
+      setRespLoading(false);
+    }
+  }
+
+  async function editarResponsavelProjeto(r: ProjetoResponsavelRow) {
+    try {
+      setRespLoading(true);
+      setRespErr(null);
+      const tipo = (prompt("Tipo (RESPONSAVEL_TECNICO / FISCAL_OBRA):", r.tipo) || r.tipo).trim().toUpperCase();
+      const abrangencia = (prompt("Abrangência:", r.abrangencia || "") || "").trim() || null;
+      const numeroDocumento = (prompt("Nº documento:", r.numeroDocumento || "") || "").trim() || null;
+      const observacao = (prompt("Observação:", r.observacao || "") || "").trim() || null;
+      await api.put(`/api/v1/engenharia/projetos/responsaveis/${r.idProjetoResponsavel}`, {
+        tipo,
+        abrangencia,
+        numeroDocumento,
+        observacao,
+      });
+      await carregarResponsaveisProjeto();
+    } catch (e: any) {
+      setRespErr(e?.response?.data?.message || e?.message || "Erro ao editar responsável.");
+    } finally {
+      setRespLoading(false);
+    }
+  }
+
+  async function removerResponsavelProjeto(r: ProjetoResponsavelRow) {
+    if (!confirm(`Remover "${r.nome}" do projeto?`)) return;
+    try {
+      setRespLoading(true);
+      setRespErr(null);
+      await api.delete(`/api/v1/engenharia/projetos/responsaveis/${r.idProjetoResponsavel}`);
+      await carregarResponsaveisProjeto();
+    } catch (e: any) {
+      setRespErr(e?.response?.data?.message || e?.message || "Erro ao remover responsável.");
+    } finally {
+      setRespLoading(false);
+    }
+  }
+
   async function salvar() {
     const t = titulo.trim();
     const e = endereco.trim();
@@ -152,6 +302,10 @@ export default function ProjetoFormClient() {
       const newId = Number(out?.idProjeto || 0);
       if (autoLink && obraIdToLink && Number.isInteger(newId) && newId > 0) {
         await api.post("/api/v1/engenharia/obras/projetos", { idObra: obraIdToLink, idProjeto: newId });
+        const importar = confirm("Deseja importar responsáveis do projeto para a obra agora?");
+        if (importar) {
+          await api.post("/api/v1/engenharia/obras/responsabilidades/importar", { idObra: obraIdToLink, idProjeto: newId });
+        }
         router.push(backHref);
         return;
       }
@@ -242,6 +396,92 @@ export default function ProjetoFormClient() {
               <div className="text-sm text-[#6B7280]">Descrição / Observações</div>
               <textarea className="input min-h-[110px]" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Observações, escopo, etc." />
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm">
+        <div className="border-b border-[#E5E7EB] px-4 py-3 font-medium">Responsáveis Técnicos / Fiscais do Projeto</div>
+        <div className="p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex gap-2 flex-wrap">
+              <button
+                className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]"
+                type="button"
+                onClick={carregarResponsaveisProjeto}
+                disabled={respLoading || !idProjeto}
+              >
+                Atualizar
+              </button>
+              <button className="rounded-lg bg-[#2563EB] px-3 py-2 text-sm text-white hover:bg-[#1D4ED8]" type="button" onClick={adicionarResponsavelProjeto} disabled={respLoading}>
+                Adicionar
+              </button>
+              <button
+                className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]"
+                type="button"
+                onClick={() => router.push(`/dashboard/engenharia/profissionais?returnTo=${encodeURIComponent(`/dashboard/engenharia/projetos/${idProjeto || "novo"}?returnTo=${encodeURIComponent(backHref)}`)}`)}
+              >
+                Abrir Profissionais
+              </button>
+            </div>
+            {!idProjeto ? <div className="text-sm text-[#6B7280]">Salve o projeto para habilitar.</div> : null}
+          </div>
+
+          {respErr ? <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{respErr}</div> : null}
+
+          <div className="overflow-auto rounded-lg border">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-left text-slate-700">
+                <tr>
+                  <th className="px-3 py-2">Técnico</th>
+                  <th className="px-3 py-2">Conselho</th>
+                  <th className="px-3 py-2">Registro</th>
+                  <th className="px-3 py-2">Tipo</th>
+                  <th className="px-3 py-2">Abrangência</th>
+                  <th className="px-3 py-2">Nº Doc</th>
+                  <th className="px-3 py-2 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {respLoading ? (
+                  <tr>
+                    <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
+                      Carregando...
+                    </td>
+                  </tr>
+                ) : respRows.length ? (
+                  respRows.map((r) => (
+                    <tr key={r.idProjetoResponsavel} className="border-t">
+                      <td className="px-3 py-2 font-medium">{r.nome || "—"}</td>
+                      <td className="px-3 py-2">{r.conselho || "—"}</td>
+                      <td className="px-3 py-2">{r.numeroRegistro || "—"}</td>
+                      <td className="px-3 py-2">{r.tipo === "FISCAL_OBRA" ? "Fiscal" : "Responsável Técnico"}</td>
+                      <td className="px-3 py-2">{r.abrangencia || "—"}</td>
+                      <td className="px-3 py-2">{r.numeroDocumento || "—"}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        <button className="rounded-lg border bg-white px-2 py-1 text-xs hover:bg-slate-50" type="button" onClick={() => editarResponsavelProjeto(r)} disabled={respLoading}>
+                          Editar
+                        </button>{" "}
+                        <button
+                          className="rounded-lg border border-red-200 bg-white px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                          type="button"
+                          onClick={() => removerResponsavelProjeto(r)}
+                          disabled={respLoading}
+                        >
+                          Remover
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
+                      Nenhum vínculo cadastrado.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

@@ -100,9 +100,28 @@ export default function ObraProjetosClient() {
       setLoading(true);
       setErr(null);
       await api.post("/api/v1/engenharia/obras/projetos", { idObra, idProjeto });
+      const importar = confirm("Deseja importar responsáveis do projeto para a obra?");
+      if (importar) {
+        await api.post("/api/v1/engenharia/obras/responsabilidades/importar", { idObra, idProjeto });
+      }
       await carregar();
     } catch (e: any) {
       setErr(e?.response?.data?.message || e?.message || "Erro ao vincular projeto.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function importarResponsaveis(idProjeto: number) {
+    if (!confirm("Importar responsáveis do projeto para a obra? (atualiza vínculos existentes)")) return;
+    try {
+      setLoading(true);
+      setErr(null);
+      await api.post("/api/v1/engenharia/obras/responsabilidades/importar", { idObra, idProjeto });
+      await carregar();
+      alert("Importação concluída.");
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Erro ao importar responsáveis.");
     } finally {
       setLoading(false);
     }
@@ -212,6 +231,14 @@ export default function ObraProjetosClient() {
                         >
                           Abrir
                           <ExternalLink className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-1.5 text-xs hover:bg-[#F9FAFB]"
+                          type="button"
+                          onClick={() => importarResponsaveis(r.idProjeto)}
+                          disabled={loading}
+                        >
+                          Importar responsáveis
                         </button>
                         <button
                           className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 inline-flex items-center gap-2"
