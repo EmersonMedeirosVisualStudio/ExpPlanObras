@@ -386,7 +386,7 @@ function AnexoViewerModal(props: {
       const pt = eventToPoint(ev);
       if (!pt) return;
       drawingRef.current = true;
-      draw.setPointerCapture(ev.pointerId);
+      (ev.currentTarget as HTMLCanvasElement).setPointerCapture(ev.pointerId);
       const stroke: AnotacaoStroke = {
         tool,
         color: tool === "ERASER" ? "#000000" : tool === "HIGHLIGHT" ? color : color,
@@ -419,7 +419,7 @@ function AnexoViewerModal(props: {
       if (!drawingRef.current) return;
       drawingRef.current = false;
       try {
-        draw.releasePointerCapture(ev.pointerId);
+        (ev.currentTarget as HTMLCanvasElement).releasePointerCapture(ev.pointerId);
       } catch {}
       const cur = currentStrokeRef.current;
       currentStrokeRef.current = null;

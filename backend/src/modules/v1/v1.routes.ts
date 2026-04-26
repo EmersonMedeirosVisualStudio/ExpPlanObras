@@ -2181,6 +2181,7 @@ export default async function v1Routes(server: FastifyInstance) {
     if (buffer.length > 10 * 1024 * 1024) return fail(reply, 413, 'Arquivo excede 10MB');
 
     const hashSha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+    const bytes = new Uint8Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
 
     const created = await prisma.engenhariaProjetoAnexo.create({
       data: {
@@ -2190,8 +2191,7 @@ export default async function v1Routes(server: FastifyInstance) {
         mimeType,
         tamanhoBytes: buffer.length,
         hashSha256,
-        data: buffer,
-        anotacoesJson: null,
+        data: bytes,
       },
     });
 
@@ -2256,7 +2256,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const updated = await prisma.engenhariaProjetoAnexo.update({
       where: { id },
-      data: { anotacoesJson: (body.anotacoes as any) ?? null },
+      data: { anotacoesJson: body.anotacoes == null ? undefined : (body.anotacoes as any) },
       select: { id: true },
     });
 
