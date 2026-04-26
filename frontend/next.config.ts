@@ -14,6 +14,9 @@ const nextConfig: NextConfig = {
       { source: "/api/v1/dashboard/engenharia/:path*", destination: "/api/v1/dashboard/engenharia/:path*" },
       { source: "/api/v1/dashboard/me/:path*", destination: "/api/v1/dashboard/me/:path*" },
       { source: "/api/v1/pes/:path*", destination: "/api/v1/pes/:path*" },
+      { source: "/api/v1/engenharia/obras/responsaveis/:path*", destination: "/api/v1/engenharia/obras/responsaveis/:path*" },
+      { source: "/api/v1/engenharia/obras/projetos/:path*", destination: "/api/v1/engenharia/obras/projetos/:path*" },
+      { source: "/api/v1/engenharia/projetos/:path*", destination: "/api/v1/engenharia/projetos/:path*" },
     ];
 
     const rules = [

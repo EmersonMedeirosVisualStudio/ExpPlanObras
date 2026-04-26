@@ -6,6 +6,12 @@ import { setActiveObra } from "@/lib/obra/active";
 import api from "@/lib/api";
 import { ExternalLink, LayoutDashboard } from "lucide-react";
 
+type ApiEnvelope<T> = { success: boolean; message?: string; data: T };
+function unwrapApiData<T>(json: any): T {
+  if (json && typeof json === "object" && "data" in json) return (json as ApiEnvelope<T>).data;
+  return json as T;
+}
+
 type Janela = { key: string; titulo: string; desc: string; href: (idObra: number) => string; nivel: "OPERACAO" | "GESTAO" | "CADASTRO" };
 type ObraBasica = {
   id: number;
@@ -113,7 +119,7 @@ export default function EngenhariaObraHomePage() {
       qp.set("tipo", tipo);
       qp.set("apenasAtivos", apenasAtivos ? "1" : "0");
       const res = await api.get(`/api/v1/engenharia/obras/responsaveis?${qp.toString()}`);
-      const list = (res?.data || []) as any[];
+      const list = unwrapApiData<any[]>(res?.data || []);
       const rows = Array.isArray(list)
         ? (list
             .map((r) => ({
@@ -439,9 +445,8 @@ export default function EngenhariaObraHomePage() {
       {
         key: "projetos",
         titulo: "Cadastro de Projetos",
-        desc: "Projetos da obra (documentos categorizados como OBRA:PROJETO).",
-        href: (id) =>
-          `/dashboard/obras/documentos?tipo=OBRA&id=${id}&categoriaPrefix=OBRA:PROJETO&returnTo=${encodeURIComponent(`/dashboard/engenharia/obras/${id}`)}`,
+        desc: "Cadastro e vínculo de projetos da obra.",
+        href: (id) => `/dashboard/engenharia/obras/${id}/projetos?returnTo=${encodeURIComponent(`/dashboard/engenharia/obras/${id}`)}`,
         nivel: "CADASTRO",
       },
       {
