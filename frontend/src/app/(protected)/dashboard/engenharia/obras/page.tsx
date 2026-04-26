@@ -671,8 +671,8 @@ export default function EngenhariaObrasPage() {
             <div className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">{filtradas.length} obra(s)</div>
           </div>
         </div>
-        <div className="text-xs text-slate-500 md:hidden">Toque na linha para abrir “Obra selecionada”. Use “Menu Diversos” para acessar o card alternativo.</div>
-        <div className="text-xs text-slate-500 hidden md:block">Clique na linha para abrir “Obra selecionada”. Use a coluna Ação para “Menu Diversos”.</div>
+        <div className="text-xs text-slate-500 md:hidden">Toque na linha para abrir “Obra - Menu Diversos”.</div>
+        <div className="text-xs text-slate-500 hidden md:block">Clique na linha para abrir “Obra - Menu Diversos”.</div>
 
         <div className="md:hidden space-y-2">
           {paged.map((o) => {
@@ -687,7 +687,7 @@ export default function EngenhariaObrasPage() {
                 key={o.id}
                 className={`rounded-xl border p-3 ${selected ? "border-blue-200 bg-blue-50" : "bg-white"}`}
                 onClick={() => {
-                  abrirObraSelecionada(o.id, o.name);
+                  abrirMenuDiversos(o.id, o.name, o.contratoId, contrato?.numeroContrato || null);
                 }}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -771,7 +771,7 @@ export default function EngenhariaObrasPage() {
                     key={o.id}
                     className={`border-t cursor-pointer hover:bg-slate-50 ${obraSelecionadaId === o.id ? "bg-blue-50" : ""}`}
                     onClick={() => {
-                      abrirObraSelecionada(o.id, o.name);
+                      abrirMenuDiversos(o.id, o.name, o.contratoId, contrato?.numeroContrato || null);
                     }}
                     onDoubleClick={() => {
                       abrirMenuDiversos(o.id, o.name, o.contratoId, contrato?.numeroContrato || null);

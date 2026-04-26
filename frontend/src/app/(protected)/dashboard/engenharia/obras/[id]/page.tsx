@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { setActiveObra } from "@/lib/obra/active";
 import api from "@/lib/api";
+import { ExternalLink, LayoutDashboard } from "lucide-react";
 
 type Janela = { key: string; titulo: string; desc: string; href: (idObra: number) => string; nivel: "OPERACAO" | "GESTAO" | "CADASTRO" };
 type ObraBasica = {
@@ -47,6 +48,18 @@ function formatEnderecoLinha(e?: ObraBasica["enderecoObra"] | null) {
   if (!e) return "-";
   const parts = [e.logradouro, e.numero, e.complemento, e.bairro, e.cidade, e.uf, e.cep].map((x) => String(x || "").trim()).filter(Boolean);
   return parts.length ? parts.join(" · ") : "-";
+}
+
+function badgeClassFor(value: string) {
+  const v = String(value || "").trim().toUpperCase();
+  if (!v || v === "-" || v === "NAO_INFORMADO") return "bg-slate-100 text-slate-700 border-slate-200";
+  if (["ATIVO", "EM_EXECUCAO", "EM_ANDAMENTO"].includes(v)) return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (["FINALIZADO", "CONCLUIDO", "ENCERRADO"].includes(v)) return "bg-blue-50 text-blue-700 border-blue-200";
+  if (["PARADO", "PARALISADO"].includes(v)) return "bg-amber-50 text-amber-800 border-amber-200";
+  if (v.includes("AGUARD")) return "bg-amber-50 text-amber-800 border-amber-200";
+  if (["PENDENTE"].includes(v)) return "bg-slate-50 text-slate-700 border-slate-200";
+  if (["CANCELADO", "RESCINDIDO"].includes(v)) return "bg-red-50 text-red-700 border-red-200";
+  return "bg-slate-100 text-slate-700 border-slate-200";
 }
 
 export default function EngenhariaObraHomePage() {
@@ -269,13 +282,6 @@ export default function EngenhariaObraHomePage() {
         nivel: "GESTAO",
       },
       {
-        key: "contrapartes",
-        titulo: "Contrapartes e Contratos",
-        desc: "Parceiros comerciais e contratos de locação/serviço.",
-        href: () => `/dashboard/engenharia/contrapartes`,
-        nivel: "CADASTRO",
-      },
-      {
         key: "responsaveis-tecnicos",
         titulo: "Responsáveis Técnicos",
         desc: "Cadastro de responsáveis técnicos por obra.",
@@ -321,9 +327,19 @@ export default function EngenhariaObraHomePage() {
             {`Obra #${idObra}${obraNomeParam ? ` — ${obraNomeParam}` : ""}${contrato?.numeroContrato?.trim() ? ` — Contrato: ${contrato.numeroContrato}` : ""} — janelas operacionais da obra selecionada.`}
           </div>
         </div>
-        <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={() => router.push("/dashboard/engenharia/obras")}>
-          Voltar
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
+            type="button"
+            onClick={() => router.push("/dashboard/engenharia/obras/ativa/dashboard")}
+          >
+            <LayoutDashboard className="h-4 w-4" />
+            Dashboard
+          </button>
+          <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={() => router.push("/dashboard/engenharia/obras")}>
+            Voltar
+          </button>
+        </div>
       </div>
 
       <div className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
@@ -336,46 +352,57 @@ export default function EngenhariaObraHomePage() {
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div className="rounded-lg border p-3">
-            <div className="text-sm font-semibold text-slate-700">Contrato</div>
+            <div className="flex items-start justify-between gap-3">
+              <div className="text-sm font-semibold text-slate-700">Contrato</div>
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60 inline-flex items-center gap-2"
+                type="button"
+                disabled={!contrato?.idContrato}
+                onClick={() => {
+                  if (!contrato?.idContrato) return;
+                  router.push(`/dashboard/contratos?id=${contrato.idContrato}`);
+                }}
+              >
+                Abrir contrato
+                <ExternalLink className="h-3.5 w-3.5" />
+              </button>
+            </div>
             {carregandoContrato ? (
               <div className="mt-2 text-sm text-slate-500">Carregando…</div>
             ) : contrato ? (
               <div className="mt-2 space-y-1 text-sm text-slate-700">
                 <div>
                   <span className="text-slate-500">Número:</span>{" "}
-                  <span className="font-medium">{contratoNumero ? contratoNumero : "Sem número"}</span>
+                  <span className="font-medium text-blue-700">{contratoNumero ? contratoNumero : "Sem número"}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500">Status:</span> <span className="font-medium">{contratoStatus || "—"}</span>
+                  <span className="text-slate-500">Status:</span>{" "}
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${badgeClassFor(contratoStatus)}`}>
+                    {contratoStatus || "—"}
+                  </span>
                 </div>
                 {contratoObjeto ? (
                   <div>
                     <span className="text-slate-500">Objeto:</span> <span className="font-medium">{contratoObjeto}</span>
                   </div>
                 ) : null}
-                <div className="pt-1 grid grid-cols-1 gap-1">
-                  <div>
-                    <span className="text-slate-500">Valor contratado:</span> <span className="font-medium">{moeda(contrato.valorContratado)}</span>
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="rounded-lg border bg-white p-2">
+                    <div className="text-xs text-slate-500">Valor contratado</div>
+                    <div className="text-sm font-semibold text-slate-900">{moeda(contrato.valorContratado)}</div>
                   </div>
-                  <div>
-                    <span className="text-slate-500">Valor executado:</span> <span className="font-medium">{moeda(contrato.valorExecutado)}</span>
+                  <div className="rounded-lg border bg-white p-2">
+                    <div className="text-xs text-slate-500">Valor executado</div>
+                    <div className="text-sm font-semibold text-slate-900">{moeda(contrato.valorExecutado)}</div>
                   </div>
-                  <div>
-                    <span className="text-slate-500">Valor pago:</span> <span className="font-medium">{moeda(contrato.valorPago)}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Saldo (contratado - executado):</span>{" "}
-                    <span className="font-medium">{moeda((contrato.valorContratado || 0) - (contrato.valorExecutado || 0))}</span>
+                  <div className="rounded-lg border bg-white p-2">
+                    <div className="text-xs font-semibold text-blue-700">Saldo (contratado - executado)</div>
+                    <div className="text-sm font-semibold text-blue-700">{moeda((contrato.valorContratado || 0) - (contrato.valorExecutado || 0))}</div>
                   </div>
                 </div>
-                <button
-                  className="mt-2 rounded-md border px-3 py-1.5 text-xs disabled:opacity-60"
-                  type="button"
-                  disabled={!contrato.idContrato}
-                  onClick={() => router.push(`/dashboard/contratos?id=${contrato.idContrato}`)}
-                >
-                  Abrir contrato
-                </button>
+                <div className="mt-2 text-xs text-slate-600">
+                  <span className="text-slate-500">Valor pago:</span> <span className="font-semibold text-slate-900">{moeda(contrato.valorPago)}</span>
+                </div>
               </div>
             ) : (
               <div className="mt-2 text-sm text-slate-500">Não vinculado.</div>
@@ -398,7 +425,10 @@ export default function EngenhariaObraHomePage() {
                   <span className="text-slate-500">Tipo:</span> <span className="font-medium">{obra.type === "PUBLICA" ? "Pública" : "Particular"}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500">Status:</span> <span className="font-medium">{String(obra.status || "-")}</span>
+                  <span className="text-slate-500">Status:</span>{" "}
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${badgeClassFor(String(obra.status || ""))}`}>
+                    {String(obra.status || "-")}
+                  </span>
                 </div>
                 <div>
                   <span className="text-slate-500">Endereço:</span> <span className="font-medium">{formatEnderecoLinha(obra.enderecoObra)}</span>
