@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
       { source: "/api/v1/realtime/:path*", destination: "/api/v1/realtime/:path*" },
       { source: "/api/v1/rh/:path*", destination: "/api/v1/rh/:path*" },
       { source: "/api/v1/dashboard/rh/:path*", destination: "/api/v1/dashboard/rh/:path*" },
+      { source: "/api/v1/dashboard/engenharia/:path*", destination: "/api/v1/dashboard/engenharia/:path*" },
       { source: "/api/v1/dashboard/me/:path*", destination: "/api/v1/dashboard/me/:path*" },
       { source: "/api/v1/pes/:path*", destination: "/api/v1/pes/:path*" },
     ];

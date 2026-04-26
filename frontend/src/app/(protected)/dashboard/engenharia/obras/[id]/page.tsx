@@ -39,6 +39,20 @@ type ContratoDaObra = {
   valorPago: number;
 };
 
+type ResponsavelObraRow = {
+  idResponsavelObra: number;
+  idObra: number;
+  tipo: "RESPONSAVEL_TECNICO" | "FISCAL_OBRA";
+  nome: string;
+  registroProfissional: string | null;
+  cpf: string | null;
+  email: string | null;
+  telefone: string | null;
+  ativo: boolean;
+  criadoEm?: string;
+  atualizadoEm?: string;
+};
+
 function moeda(v: number | undefined | null) {
   const n = Number(v || 0);
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number.isFinite(n) ? n : 0);
@@ -77,10 +91,150 @@ export default function EngenhariaObraHomePage() {
   const [contrato, setContrato] = useState<ContratoDaObra | null>(null);
   const [carregandoContrato, setCarregandoContrato] = useState(false);
 
+  const [crudOpen, setCrudOpen] = useState(false);
+  const [crudTipo, setCrudTipo] = useState<"RESPONSAVEL_TECNICO" | "FISCAL_OBRA">("RESPONSAVEL_TECNICO");
+  const [crudApenasAtivos, setCrudApenasAtivos] = useState(false);
+  const [crudRows, setCrudRows] = useState<ResponsavelObraRow[]>([]);
+  const [crudLoading, setCrudLoading] = useState(false);
+  const [crudErr, setCrudErr] = useState<string | null>(null);
+
   useEffect(() => {
     if (!idObra) return;
     setActiveObra({ id: idObra, nome: obraNomeParam || undefined });
   }, [idObra, obraNomeParam]);
+
+  async function carregarResponsaveis(tipo: "RESPONSAVEL_TECNICO" | "FISCAL_OBRA", apenasAtivos: boolean) {
+    if (!idObra) return;
+    try {
+      setCrudLoading(true);
+      setCrudErr(null);
+      const qp = new URLSearchParams();
+      qp.set("idObra", String(idObra));
+      qp.set("tipo", tipo);
+      qp.set("apenasAtivos", apenasAtivos ? "1" : "0");
+      const res = await api.get(`/api/v1/engenharia/obras/responsaveis?${qp.toString()}`);
+      const list = (res?.data || []) as any[];
+      const rows = Array.isArray(list)
+        ? (list
+            .map((r) => ({
+              ...r,
+              idResponsavelObra: Number(r.idResponsavelObra),
+              idObra: Number(r.idObra),
+              tipo: String(r.tipo || "").toUpperCase() === "FISCAL_OBRA" ? "FISCAL_OBRA" : "RESPONSAVEL_TECNICO",
+              nome: String(r.nome || ""),
+              registroProfissional: r.registroProfissional == null ? null : String(r.registroProfissional),
+              cpf: r.cpf == null ? null : String(r.cpf),
+              email: r.email == null ? null : String(r.email),
+              telefone: r.telefone == null ? null : String(r.telefone),
+              ativo: Boolean(r.ativo),
+              criadoEm: r.criadoEm ? String(r.criadoEm) : undefined,
+              atualizadoEm: r.atualizadoEm ? String(r.atualizadoEm) : undefined,
+            }))
+            .filter((x) => Number.isFinite(x.idResponsavelObra) && x.idResponsavelObra > 0 && Number(x.idObra) === idObra)) as ResponsavelObraRow[]
+        : [];
+      setCrudRows(rows);
+    } catch (e: any) {
+      setCrudRows([]);
+      setCrudErr(e?.response?.data?.message || e?.message || "Erro ao carregar responsáveis.");
+    } finally {
+      setCrudLoading(false);
+    }
+  }
+
+  function abrirCrud(tipo: "RESPONSAVEL_TECNICO" | "FISCAL_OBRA") {
+    setCrudTipo(tipo);
+    setCrudOpen(true);
+  }
+
+  useEffect(() => {
+    function syncFromHash() {
+      const h = String(window.location.hash || "").toLowerCase();
+      if (h === "#responsaveis-tecnicos") abrirCrud("RESPONSAVEL_TECNICO");
+      if (h === "#fiscais") abrirCrud("FISCAL_OBRA");
+    }
+    syncFromHash();
+    window.addEventListener("hashchange", syncFromHash);
+    return () => window.removeEventListener("hashchange", syncFromHash);
+  }, []);
+
+  useEffect(() => {
+    if (!crudOpen) return;
+    carregarResponsaveis(crudTipo, crudApenasAtivos);
+  }, [crudOpen, crudTipo, crudApenasAtivos]);
+
+  async function criarResponsavel() {
+    const nome = (prompt(crudTipo === "FISCAL_OBRA" ? "Nome do fiscal:" : "Nome do responsável técnico:") || "").trim();
+    if (!nome) return;
+    const registroProfissional =
+      (prompt(crudTipo === "FISCAL_OBRA" ? "Registro profissional (opcional):" : "Registro profissional (CREA/CAU) (opcional):") || "").trim() || null;
+    const cpf = (prompt("CPF (opcional):") || "").trim() || null;
+    const email = (prompt("E-mail (opcional):") || "").trim() || null;
+    const telefone = (prompt("Telefone (opcional):") || "").trim() || null;
+    const ativoPrompt = (prompt("Ativo? (S/N)", "S") || "S").trim().toUpperCase();
+    const ativo = ativoPrompt !== "N";
+    try {
+      setCrudLoading(true);
+      setCrudErr(null);
+      await api.post("/api/v1/engenharia/obras/responsaveis", {
+        idObra,
+        tipo: crudTipo,
+        nome,
+        registroProfissional,
+        cpf,
+        email,
+        telefone,
+        ativo,
+      });
+      await carregarResponsaveis(crudTipo, crudApenasAtivos);
+    } catch (e: any) {
+      setCrudErr(e?.response?.data?.message || e?.message || "Erro ao cadastrar.");
+    } finally {
+      setCrudLoading(false);
+    }
+  }
+
+  async function editarResponsavel(r: ResponsavelObraRow) {
+    const nome = (prompt("Nome:", r.nome || "") || "").trim();
+    if (!nome) return;
+    const registroProfissional = (prompt("Registro profissional:", r.registroProfissional || "") || "").trim() || null;
+    const cpf = (prompt("CPF:", r.cpf || "") || "").trim() || null;
+    const email = (prompt("E-mail:", r.email || "") || "").trim() || null;
+    const telefone = (prompt("Telefone:", r.telefone || "") || "").trim() || null;
+    const ativoPrompt = (prompt("Ativo? (S/N)", r.ativo ? "S" : "N") || (r.ativo ? "S" : "N")).trim().toUpperCase();
+    const ativo = ativoPrompt !== "N";
+    try {
+      setCrudLoading(true);
+      setCrudErr(null);
+      await api.put(`/api/v1/engenharia/obras/responsaveis/${r.idResponsavelObra}`, {
+        tipo: crudTipo,
+        nome,
+        registroProfissional,
+        cpf,
+        email,
+        telefone,
+        ativo,
+      });
+      await carregarResponsaveis(crudTipo, crudApenasAtivos);
+    } catch (e: any) {
+      setCrudErr(e?.response?.data?.message || e?.message || "Erro ao atualizar.");
+    } finally {
+      setCrudLoading(false);
+    }
+  }
+
+  async function removerResponsavel(r: ResponsavelObraRow) {
+    if (!confirm(`Remover "${r.nome}"?`)) return;
+    try {
+      setCrudLoading(true);
+      setCrudErr(null);
+      await api.delete(`/api/v1/engenharia/obras/responsaveis/${r.idResponsavelObra}`);
+      await carregarResponsaveis(crudTipo, crudApenasAtivos);
+    } catch (e: any) {
+      setCrudErr(e?.response?.data?.message || e?.message || "Erro ao remover.");
+    } finally {
+      setCrudLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!idObra) return;
@@ -282,17 +436,24 @@ export default function EngenhariaObraHomePage() {
         nivel: "GESTAO",
       },
       {
+        key: "projetos",
+        titulo: "Cadastro de Projetos",
+        desc: "Projetos da obra (documentos categorizados como OBRA:PROJETO).",
+        href: (id) => `/dashboard/obras/documentos?tipo=OBRA&id=${id}&categoriaPrefix=OBRA:PROJETO`,
+        nivel: "CADASTRO",
+      },
+      {
         key: "responsaveis-tecnicos",
         titulo: "Responsáveis Técnicos",
         desc: "Cadastro de responsáveis técnicos por obra.",
-        href: (id) => `/dashboard/engenharia/obras?obraId=${id}#cadastro-responsaveis`,
+        href: (id) => `/dashboard/engenharia/obras/${id}#responsaveis-tecnicos`,
         nivel: "CADASTRO",
       },
       {
         key: "fiscais",
         titulo: "Fiscais",
         desc: "Cadastro de fiscais por obra.",
-        href: (id) => `/dashboard/engenharia/obras?obraId=${id}#cadastro-responsaveis`,
+        href: (id) => `/dashboard/engenharia/obras/${id}#fiscais`,
         nivel: "CADASTRO",
       },
     ],
@@ -410,7 +571,17 @@ export default function EngenhariaObraHomePage() {
           </div>
 
           <div className="rounded-lg border p-3">
-            <div className="text-sm font-semibold text-slate-700">Dados básicos da obra</div>
+            <div className="flex items-start justify-between gap-3">
+              <div className="text-sm font-semibold text-slate-700">Dados básicos da obra</div>
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
+                type="button"
+                onClick={() => router.push(`/dashboard/engenharia/obras/cadastro?obraId=${idObra}`)}
+              >
+                Obra selecionada
+                <ExternalLink className="h-3.5 w-3.5" />
+              </button>
+            </div>
             {carregandoObra ? (
               <div className="mt-2 text-sm text-slate-500">Carregando…</div>
             ) : obra ? (
@@ -448,6 +619,108 @@ export default function EngenhariaObraHomePage() {
 
         {erroObra ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{erroObra}</div> : null}
       </div>
+
+      {crudOpen ? (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setCrudOpen(false)} />
+          <div className="absolute left-1/2 top-1/2 w-[min(900px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-white shadow-lg">
+            <div className="flex items-start justify-between gap-3 border-b p-4">
+              <div>
+                <div className="text-lg font-semibold">
+                  {crudTipo === "FISCAL_OBRA" ? "Fiscais da obra" : "Responsáveis técnicos da obra"} — Obra #{idObra}
+                </div>
+                <div className="text-sm text-slate-600">Cadastro, edição e remoção de vínculos por obra.</div>
+              </div>
+              <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setCrudOpen(false)}>
+                Fechar
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    className={`rounded-lg border px-3 py-2 text-sm hover:bg-slate-50 ${crudTipo === "RESPONSAVEL_TECNICO" ? "bg-slate-50" : "bg-white"}`}
+                    type="button"
+                    onClick={() => setCrudTipo("RESPONSAVEL_TECNICO")}
+                  >
+                    Responsáveis técnicos
+                  </button>
+                  <button
+                    className={`rounded-lg border px-3 py-2 text-sm hover:bg-slate-50 ${crudTipo === "FISCAL_OBRA" ? "bg-slate-50" : "bg-white"}`}
+                    type="button"
+                    onClick={() => setCrudTipo("FISCAL_OBRA")}
+                  >
+                    Fiscais
+                  </button>
+                  <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => carregarResponsaveis(crudTipo, crudApenasAtivos)} disabled={crudLoading}>
+                    Atualizar
+                  </button>
+                  <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60" type="button" onClick={criarResponsavel} disabled={crudLoading}>
+                    Novo
+                  </button>
+                </div>
+                <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={crudApenasAtivos} onChange={(e) => setCrudApenasAtivos(e.target.checked)} />
+                  Apenas ativos
+                </label>
+              </div>
+
+              {crudErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{crudErr}</div> : null}
+
+              <div className="overflow-auto rounded-lg border">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 text-left text-slate-700">
+                    <tr>
+                      <th className="px-3 py-2">Nome</th>
+                      <th className="px-3 py-2">Registro</th>
+                      <th className="px-3 py-2">CPF</th>
+                      <th className="px-3 py-2">E-mail</th>
+                      <th className="px-3 py-2">Telefone</th>
+                      <th className="px-3 py-2">Ativo</th>
+                      <th className="px-3 py-2 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {crudLoading ? (
+                      <tr>
+                        <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
+                          Carregando...
+                        </td>
+                      </tr>
+                    ) : crudRows.length ? (
+                      crudRows.map((r) => (
+                        <tr key={r.idResponsavelObra} className="border-t">
+                          <td className="px-3 py-2 font-medium">{r.nome || "—"}</td>
+                          <td className="px-3 py-2">{r.registroProfissional || "—"}</td>
+                          <td className="px-3 py-2">{r.cpf || "—"}</td>
+                          <td className="px-3 py-2">{r.email || "—"}</td>
+                          <td className="px-3 py-2">{r.telefone || "—"}</td>
+                          <td className="px-3 py-2">{r.ativo ? "Sim" : "Não"}</td>
+                          <td className="px-3 py-2 text-right whitespace-nowrap">
+                            <button className="rounded-lg border bg-white px-2 py-1 text-xs hover:bg-slate-50" type="button" onClick={() => editarResponsavel(r)} disabled={crudLoading}>
+                              Editar
+                            </button>{" "}
+                            <button className="rounded-lg border border-red-200 bg-white px-2 py-1 text-xs text-red-700 hover:bg-red-50" type="button" onClick={() => removerResponsavel(r)} disabled={crudLoading}>
+                              Remover
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
+                          Nenhum registro.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="space-y-4">
         <div className="text-lg font-semibold">Cadastro</div>

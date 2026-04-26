@@ -13,11 +13,15 @@ export default function ObrasDocumentosPage() {
   const sp = useSearchParams();
   const initialTipo = (sp.get('tipo') || 'OBRA').toUpperCase();
   const initialId = sp.get('id') || '';
+  const initialCategoria = (sp.get('categoriaPrefix') || '').trim().toUpperCase();
   const lockObraContext = initialTipo === 'OBRA' && Boolean(initialId);
 
   const [tipo, setTipo] = useState<'OBRA' | 'CONTRATO'>(initialTipo === 'CONTRATO' ? 'CONTRATO' : 'OBRA');
   const [idRef, setIdRef] = useState(initialId);
-  const [categoriaPrefix, setCategoriaPrefix] = useState(tipo === 'OBRA' ? 'OBRA:' : 'CONTRATO:');
+  const [categoriaPrefix, setCategoriaPrefix] = useState(() => {
+    const defaultPrefix = initialTipo === 'CONTRATO' ? 'CONTRATO:' : 'OBRA:';
+    return initialCategoria && initialCategoria.startsWith(defaultPrefix) ? initialCategoria : defaultPrefix;
+  });
   const [incluirObras, setIncluirObras] = useState(true);
   const [contratos, setContratos] = useState<ContratoOption[]>([]);
   const [contratoBusca, setContratoBusca] = useState('');
@@ -95,7 +99,11 @@ export default function ObrasDocumentosPage() {
     try {
       setLoading(true);
       setErro(null);
-      router.replace(`/dashboard/obras/documentos?tipo=${tipo}&id=${id}`);
+      const qp = new URLSearchParams();
+      qp.set('tipo', tipo);
+      qp.set('id', String(id));
+      if (categoriaPrefix) qp.set('categoriaPrefix', categoriaPrefix);
+      router.replace(`/dashboard/obras/documentos?${qp.toString()}`);
       const data = await DocumentosApi.listar({
         limit: 200,
         entidadeTipo: tipo,
