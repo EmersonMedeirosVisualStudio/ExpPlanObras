@@ -52,7 +52,6 @@ type ResponsavelObraRow = {
   nome: string;
   conselho: string | null;
   numeroRegistro: string | null;
-  cpf: string | null;
   email: string | null;
   telefone: string | null;
   ativo: boolean;
@@ -155,7 +154,6 @@ export default function EngenhariaObraHomePage() {
               nome: String(r.nome || ""),
               conselho: r.conselho == null ? null : String(r.conselho),
               numeroRegistro: r.numeroRegistro == null ? null : String(r.numeroRegistro),
-              cpf: r.cpf == null ? null : String(r.cpf),
               email: r.email == null ? null : String(r.email),
               telefone: r.telefone == null ? null : String(r.telefone),
               ativo: Boolean(r.ativo),
@@ -204,19 +202,24 @@ export default function EngenhariaObraHomePage() {
     } else {
       const nome = (prompt(crudTipo === "FISCAL_OBRA" ? "Nome do fiscal:" : "Nome do responsável técnico:") || "").trim();
       if (!nome) return;
-      const conselho = (prompt("Conselho (ex.: CREA, CAU) (opcional):") || "").trim();
-      const numeroRegistro = (prompt("Número do registro (opcional):") || "").trim();
-      const cpf = (prompt("CPF (opcional):") || "").trim();
+      const conselho = (prompt("Conselho (ex.: CREA, CAU):") || "").trim();
+      const numeroRegistro = (prompt("Número do registro:") || "").trim();
+      if (!conselho) {
+        setCrudErr("Conselho é obrigatório.");
+        return;
+      }
+      if (!numeroRegistro) {
+        setCrudErr("Registro é obrigatório.");
+        return;
+      }
       const email = (prompt("E-mail (opcional):") || "").trim();
       const telefone = (prompt("Telefone (opcional):") || "").trim();
       const resTec = await api.post("/api/v1/engenharia/tecnicos", {
         nome,
-        conselho: conselho || null,
-        numeroRegistro: numeroRegistro || null,
-        cpf: cpf || null,
+        conselho,
+        numeroRegistro,
         email: email || null,
         telefone: telefone || null,
-        ativo: true,
       });
       const outTec = unwrapApiData<any>(resTec?.data || null) as any;
       const newId = Number(outTec?.idTecnico || 0);
@@ -701,7 +704,6 @@ export default function EngenhariaObraHomePage() {
                       <th className="px-3 py-2">Técnico</th>
                       <th className="px-3 py-2">Conselho</th>
                       <th className="px-3 py-2">Registro</th>
-                      <th className="px-3 py-2">CPF</th>
                       <th className="px-3 py-2">E-mail</th>
                       <th className="px-3 py-2">Telefone</th>
                       <th className="px-3 py-2">Ativo</th>
@@ -711,7 +713,7 @@ export default function EngenhariaObraHomePage() {
                   <tbody>
                     {crudLoading ? (
                       <tr>
-                        <td className="px-3 py-6 text-center text-slate-500" colSpan={8}>
+                        <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
                           Carregando...
                         </td>
                       </tr>
@@ -721,7 +723,6 @@ export default function EngenhariaObraHomePage() {
                           <td className="px-3 py-2 font-medium">{r.nome || "—"}</td>
                           <td className="px-3 py-2">{r.conselho || "—"}</td>
                           <td className="px-3 py-2">{r.numeroRegistro || "—"}</td>
-                          <td className="px-3 py-2">{r.cpf || "—"}</td>
                           <td className="px-3 py-2">{r.email || "—"}</td>
                           <td className="px-3 py-2">{r.telefone || "—"}</td>
                           <td className="px-3 py-2">{r.ativo ? "Sim" : "Não"}</td>
@@ -737,7 +738,7 @@ export default function EngenhariaObraHomePage() {
                       ))
                     ) : (
                       <tr>
-                        <td className="px-3 py-6 text-center text-slate-500" colSpan={8}>
+                        <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
                           Nenhum registro.
                         </td>
                       </tr>

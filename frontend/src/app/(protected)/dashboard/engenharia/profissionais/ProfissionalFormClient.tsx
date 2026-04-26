@@ -23,10 +23,8 @@ type TecnicoDTO = {
   nome: string;
   conselho: string | null;
   numeroRegistro: string | null;
-  cpf: string | null;
   email: string | null;
   telefone: string | null;
-  ativo: boolean;
 };
 
 export default function ProfissionalFormClient() {
@@ -48,10 +46,8 @@ export default function ProfissionalFormClient() {
   const [nome, setNome] = useState("");
   const [conselho, setConselho] = useState("");
   const [numeroRegistro, setNumeroRegistro] = useState("");
-  const [cpf, setCpf] = useState("");
   const [email, setEmail] = useState("");
   const [telefone, setTelefone] = useState("");
-  const [ativo, setAtivo] = useState(true);
 
   useEffect(() => {
     if (!idTecnico) return;
@@ -68,18 +64,14 @@ export default function ProfissionalFormClient() {
           nome: String(d.nome || ""),
           conselho: d.conselho == null ? null : String(d.conselho),
           numeroRegistro: d.numeroRegistro == null ? null : String(d.numeroRegistro),
-          cpf: d.cpf == null ? null : String(d.cpf),
           email: d.email == null ? null : String(d.email),
           telefone: d.telefone == null ? null : String(d.telefone),
-          ativo: Boolean(d.ativo),
         };
         setNome(dto.nome);
         setConselho(dto.conselho || "");
         setNumeroRegistro(dto.numeroRegistro || "");
-        setCpf(dto.cpf || "");
         setEmail(dto.email || "");
         setTelefone(dto.telefone || "");
-        setAtivo(dto.ativo);
       } catch (e: any) {
         if (active) setErr(e?.response?.data?.message || e?.message || "Erro ao carregar profissional.");
       } finally {
@@ -93,8 +85,18 @@ export default function ProfissionalFormClient() {
 
   async function salvar() {
     const n = nome.trim();
+    const c = conselho.trim();
+    const r = numeroRegistro.trim();
     if (!n) {
       setErr("Nome é obrigatório.");
+      return;
+    }
+    if (!c) {
+      setErr("Conselho é obrigatório.");
+      return;
+    }
+    if (!r) {
+      setErr("Registro é obrigatório.");
       return;
     }
     try {
@@ -102,12 +104,10 @@ export default function ProfissionalFormClient() {
       setErr(null);
       const payload = {
         nome: n,
-        conselho: conselho.trim() || null,
-        numeroRegistro: numeroRegistro.trim() || null,
-        cpf: cpf.trim() || null,
+        conselho: c,
+        numeroRegistro: r,
         email: email.trim() || null,
         telefone: telefone.trim() || null,
-        ativo,
       };
       if (idTecnico) {
         await api.put(`/api/v1/engenharia/tecnicos/${idTecnico}`, payload);
@@ -129,7 +129,18 @@ export default function ProfissionalFormClient() {
     }
   }
 
-  const breadcrumb = idTecnico ? "Profissionais > Editar" : "Profissionais > Novo";
+  const breadcrumb = useMemo(() => {
+    const base = idTecnico ? "Cadastro de Profissional (editar)" : "Cadastro de Profissional (novo)";
+    if (!returnTo) return `Engenharia → Profissionais (Técnicos) → ${base}`;
+    const rt = returnTo.toLowerCase();
+    if (rt.includes("/dashboard/engenharia/projetos/novo") || /\/dashboard\/engenharia\/projetos\/\d+/.test(rt)) {
+      return `Engenharia → Projetos → Cadastro de projeto → Profissionais (Técnicos) → ${base}`;
+    }
+    if (/\/dashboard\/engenharia\/obras\/\d+/.test(rt)) return `Engenharia → Obras → Obra selecionada → Profissionais (Técnicos) → ${base}`;
+    if (rt.includes("/dashboard/engenharia/obras")) return `Engenharia → Obras → Profissionais (Técnicos) → ${base}`;
+    if (rt.includes("/dashboard/engenharia/profissionais")) return `Engenharia → Profissionais (Técnicos) → ${base}`;
+    return `Engenharia → Profissionais (Técnicos) → ${base}`;
+  }, [idTecnico, returnTo]);
 
   return (
     <div className="p-6 space-y-6 max-w-4xl text-[#111827]">
@@ -159,16 +170,12 @@ export default function ProfissionalFormClient() {
               <input className="input" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: João da Silva" />
             </div>
             <div>
-              <div className="text-sm text-[#6B7280]">Conselho</div>
+              <div className="text-sm text-[#6B7280]">Conselho *</div>
               <input className="input" value={conselho} onChange={(e) => setConselho(e.target.value)} placeholder="Ex.: CREA" />
             </div>
             <div>
-              <div className="text-sm text-[#6B7280]">Registro</div>
+              <div className="text-sm text-[#6B7280]">Registro *</div>
               <input className="input" value={numeroRegistro} onChange={(e) => setNumeroRegistro(e.target.value)} placeholder="Ex.: 123456/D" />
-            </div>
-            <div>
-              <div className="text-sm text-[#6B7280]">CPF</div>
-              <input className="input" value={cpf} onChange={(e) => setCpf(e.target.value)} placeholder="Opcional" />
             </div>
             <div>
               <div className="text-sm text-[#6B7280]">E-mail</div>
@@ -178,16 +185,9 @@ export default function ProfissionalFormClient() {
               <div className="text-sm text-[#6B7280]">Telefone</div>
               <input className="input" value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="Opcional" />
             </div>
-            <div className="flex items-end">
-              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} />
-                Ativo
-              </label>
-            </div>
           </div>
         </div>
       </div>
     </div>
   );
 }
-

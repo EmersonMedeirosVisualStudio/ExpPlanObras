@@ -16,10 +16,8 @@ type ProfissionalRow = {
   nome: string;
   conselho: string | null;
   numeroRegistro: string | null;
-  cpf: string | null;
   email: string | null;
   telefone: string | null;
-  ativo: boolean;
 };
 
 function safeInternalPath(v: string | null) {
@@ -36,9 +34,19 @@ export default function ProfissionaisClient() {
 
   const returnTo = useMemo(() => safeInternalPath(sp.get("returnTo") || null), [sp]);
   const backHref = returnTo || "/dashboard/engenharia/obras";
+  const listHref = useMemo(() => (returnTo ? `/dashboard/engenharia/profissionais?returnTo=${encodeURIComponent(returnTo)}` : "/dashboard/engenharia/profissionais"), [returnTo]);
+  const breadcrumb = useMemo(() => {
+    if (!returnTo) return "Engenharia → Profissionais (Técnicos)";
+    const rt = returnTo.toLowerCase();
+    if (rt.includes("/dashboard/engenharia/projetos/novo") || /\/dashboard\/engenharia\/projetos\/\d+/.test(rt)) {
+      return "Engenharia → Projetos → Cadastro de projeto → Profissionais (Técnicos)";
+    }
+    if (/\/dashboard\/engenharia\/obras\/\d+/.test(rt)) return "Engenharia → Obras → Obra selecionada → Profissionais (Técnicos)";
+    if (rt.includes("/dashboard/engenharia/obras")) return "Engenharia → Obras → Profissionais (Técnicos)";
+    return "Engenharia → Profissionais (Técnicos)";
+  }, [returnTo]);
 
   const [q, setQ] = useState("");
-  const [apenasAtivos, setApenasAtivos] = useState(true);
   const [rows, setRows] = useState<ProfissionalRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -49,7 +57,6 @@ export default function ProfissionaisClient() {
       setErr(null);
       const qp = new URLSearchParams();
       if (q.trim()) qp.set("q", q.trim());
-      qp.set("apenasAtivos", apenasAtivos ? "1" : "0");
       const res = await api.get(`/api/v1/engenharia/tecnicos?${qp.toString()}`);
       const list = unwrapApiData<any[]>(res?.data || []);
       const mapped: ProfissionalRow[] = Array.isArray(list)
@@ -59,10 +66,8 @@ export default function ProfissionaisClient() {
               nome: String(r.nome || ""),
               conselho: r.conselho == null ? null : String(r.conselho),
               numeroRegistro: r.numeroRegistro == null ? null : String(r.numeroRegistro),
-              cpf: r.cpf == null ? null : String(r.cpf),
               email: r.email == null ? null : String(r.email),
               telefone: r.telefone == null ? null : String(r.telefone),
-              ativo: Boolean(r.ativo),
             }))
             .filter((x) => Number.isFinite(x.idTecnico) && x.idTecnico > 0)
         : [];
@@ -97,7 +102,7 @@ export default function ProfissionaisClient() {
     <div className="p-6 space-y-6 max-w-6xl text-[#111827]">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <div className="text-xs text-[#6B7280]">Engenharia → Profissionais</div>
+          <div className="text-xs text-[#6B7280]">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Profissionais (Técnicos)</h1>
           <div className="mt-1 text-sm text-[#6B7280]">Cadastro único de profissionais (CREA/CAU) para reutilização em projetos e obras.</div>
         </div>
@@ -111,7 +116,7 @@ export default function ProfissionaisClient() {
           <button
             className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] inline-flex items-center gap-2"
             type="button"
-            onClick={() => router.push(`/dashboard/engenharia/profissionais/novo?returnTo=${encodeURIComponent("/dashboard/engenharia/profissionais")}`)}
+            onClick={() => router.push(`/dashboard/engenharia/profissionais/novo?returnTo=${encodeURIComponent(listHref)}`)}
             disabled={loading}
           >
             <Plus className="h-4 w-4" />
@@ -128,13 +133,7 @@ export default function ProfissionaisClient() {
             <div className="text-sm text-[#6B7280]">Busca</div>
             <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="nome, conselho, registro..." />
           </div>
-          <div className="md:col-span-1 flex items-end">
-            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={apenasAtivos} onChange={(e) => setApenasAtivos(e.target.checked)} />
-              Ativos
-            </label>
-          </div>
-          <div className="md:col-span-1 flex items-end">
+          <div className="md:col-span-2 flex items-end">
             <button className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm hover:bg-[#F9FAFB] w-full" type="button" onClick={carregar} disabled={loading}>
               Filtrar
             </button>
@@ -164,9 +163,7 @@ export default function ProfissionaisClient() {
                   <tr key={r.idTecnico} className="border-b last:border-b-0">
                     <td className="py-2 pr-4">
                       <div className="font-medium">{r.nome || "—"}</div>
-                      <div className="text-xs text-[#6B7280]">
-                        ID: {r.idTecnico} · {r.ativo ? "Ativo" : "Inativo"}
-                      </div>
+                      <div className="text-xs text-[#6B7280]">ID: {r.idTecnico}</div>
                     </td>
                     <td className="py-2 pr-4">{r.conselho || "—"}</td>
                     <td className="py-2 pr-4">{r.numeroRegistro || "—"}</td>
@@ -177,7 +174,7 @@ export default function ProfissionaisClient() {
                         <button
                           className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-1.5 text-xs hover:bg-[#F9FAFB] inline-flex items-center gap-2"
                           type="button"
-                          onClick={() => router.push(`/dashboard/engenharia/profissionais/${r.idTecnico}?returnTo=${encodeURIComponent("/dashboard/engenharia/profissionais")}`)}
+                          onClick={() => router.push(`/dashboard/engenharia/profissionais/${r.idTecnico}?returnTo=${encodeURIComponent(listHref)}`)}
                         >
                           Abrir
                           <ExternalLink className="h-3.5 w-3.5" />
@@ -202,4 +199,3 @@ export default function ProfissionaisClient() {
     </div>
   );
 }
-

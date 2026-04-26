@@ -1577,6 +1577,735 @@ export default async function v1Routes(server: FastifyInstance) {
     return ok(reply, {}, { message: 'Responsável removido' });
   });
 
+  function normalizeConselho(value: any) {
+    const s = String(value ?? '').trim().toUpperCase();
+    return s || null;
+  }
+
+  function normalizeRegistro(value: any) {
+    const s = String(value ?? '').trim();
+    return s || null;
+  }
+
+  server.get('/engenharia/tecnicos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const q = z
+      .object({
+        q: z.string().optional().nullable(),
+        apenasAtivos: z.string().optional().nullable(),
+      })
+      .parse(request.query || {});
+
+    const term = String(q.q || '').trim();
+    const where: any = { tenantId: ctx.tenantId };
+    if (term) {
+      where.OR = [
+        { name: { contains: term, mode: 'insensitive' } },
+        { conselho: { contains: term, mode: 'insensitive' } },
+        { numeroRegistro: { contains: term, mode: 'insensitive' } },
+        { email: { contains: term, mode: 'insensitive' } },
+        { phone: { contains: term, mode: 'insensitive' } },
+      ];
+    }
+
+    const rows = await prisma.responsavelTecnico.findMany({
+      where,
+      orderBy: { name: 'asc' },
+      take: 1000,
+    });
+
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idTecnico: r.id,
+        nome: r.name,
+        conselho: r.conselho ?? null,
+        numeroRegistro: r.numeroRegistro ?? r.crea ?? null,
+        cpf: null,
+        email: r.email ?? null,
+        telefone: r.phone ?? null,
+        ativo: true,
+      }))
+    );
+  });
+
+  server.post('/engenharia/tecnicos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const body = z
+      .object({
+        nome: z.string().min(2),
+        conselho: z.string().min(2),
+        numeroRegistro: z.string().min(1),
+        cpf: z.string().optional().nullable(),
+        email: z.string().optional().nullable(),
+        telefone: z.string().optional().nullable(),
+        ativo: z.boolean().optional(),
+      })
+      .parse(request.body || {});
+
+    const conselho = normalizeConselho(body.conselho);
+    const numeroRegistro = normalizeRegistro(body.numeroRegistro);
+    if (!conselho) return fail(reply, 400, 'Conselho é obrigatório');
+    if (!numeroRegistro) return fail(reply, 400, 'Registro é obrigatório');
+
+    const existing = await prisma.responsavelTecnico
+      .findFirst({
+        where: {
+          tenantId: ctx.tenantId,
+          conselho,
+          numeroRegistro,
+        },
+        select: { id: true },
+      })
+      .catch(() => null);
+    if (existing) return fail(reply, 409, 'Já existe um profissional com o mesmo conselho e registro');
+
+    const email = body.email ? normalizeEmail(String(body.email)) : null;
+    const phone = body.telefone ? String(body.telefone).trim() : null;
+
+    const created = await prisma.responsavelTecnico.create({
+      data: {
+        tenantId: ctx.tenantId,
+        name: String(body.nome).trim(),
+        conselho,
+        numeroRegistro,
+        crea: numeroRegistro,
+        cpf: null,
+        email: email || null,
+        phone: phone || null,
+      },
+    });
+
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_tecnicos', idRegistro: String(created.id), acao: 'CREATE', dadosNovos: created as any });
+    return ok(reply, { idTecnico: created.id }, { message: 'Profissional cadastrado' });
+  });
+
+  server.get('/engenharia/tecnicos/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const r = await prisma.responsavelTecnico.findFirst({ where: { id, tenantId: ctx.tenantId } }).catch(() => null);
+    if (!r) return fail(reply, 404, 'Profissional não encontrado');
+
+    return ok(reply, {
+      idTecnico: r.id,
+      nome: r.name,
+      conselho: r.conselho ?? null,
+      numeroRegistro: r.numeroRegistro ?? r.crea ?? null,
+      cpf: null,
+      email: r.email ?? null,
+      telefone: r.phone ?? null,
+      ativo: true,
+    });
+  });
+
+  server.put('/engenharia/tecnicos/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const body = z
+      .object({
+        nome: z.string().min(2),
+        conselho: z.string().min(2),
+        numeroRegistro: z.string().min(1),
+        cpf: z.string().optional().nullable(),
+        email: z.string().optional().nullable(),
+        telefone: z.string().optional().nullable(),
+        ativo: z.boolean().optional(),
+      })
+      .parse(request.body || {});
+
+    const current = await prisma.responsavelTecnico.findFirst({ where: { id, tenantId: ctx.tenantId } }).catch(() => null);
+    if (!current) return fail(reply, 404, 'Profissional não encontrado');
+
+    const conselho = normalizeConselho(body.conselho);
+    const numeroRegistro = normalizeRegistro(body.numeroRegistro);
+    if (!conselho) return fail(reply, 400, 'Conselho é obrigatório');
+    if (!numeroRegistro) return fail(reply, 400, 'Registro é obrigatório');
+
+    const dupe = await prisma.responsavelTecnico
+      .findFirst({
+        where: {
+          tenantId: ctx.tenantId,
+          conselho,
+          numeroRegistro,
+          NOT: { id },
+        },
+        select: { id: true },
+      })
+      .catch(() => null);
+    if (dupe) return fail(reply, 409, 'Já existe um profissional com o mesmo conselho e registro');
+
+    const email = body.email ? normalizeEmail(String(body.email)) : null;
+    const phone = body.telefone ? String(body.telefone).trim() : null;
+
+    const updated = await prisma.responsavelTecnico.update({
+      where: { id },
+      data: {
+        name: String(body.nome).trim(),
+        conselho,
+        numeroRegistro,
+        crea: numeroRegistro,
+        cpf: null,
+        email: email || null,
+        phone: phone || null,
+      },
+    });
+
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_tecnicos', idRegistro: String(id), acao: 'UPDATE', dadosAnteriores: current as any, dadosNovos: updated as any });
+    return ok(reply, {}, { message: 'Profissional atualizado' });
+  });
+
+  server.delete('/engenharia/tecnicos/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const current = await prisma.responsavelTecnico.findFirst({ where: { id, tenantId: ctx.tenantId } }).catch(() => null);
+    if (!current) return fail(reply, 404, 'Profissional não encontrado');
+
+    const linkedObra = await prisma.responsavelObra.findFirst({ where: { responsavelId: id }, select: { id: true } }).catch(() => null);
+    if (linkedObra) return fail(reply, 409, 'Não é possível excluir: profissional está vinculado a uma obra');
+
+    const linkedProj = await prisma.engenhariaProjetoResponsavel.findFirst({ where: { responsavelId: id, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
+    if (linkedProj) return fail(reply, 409, 'Não é possível excluir: profissional está vinculado a um projeto');
+
+    await prisma.responsavelTecnico.delete({ where: { id } });
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_tecnicos', idRegistro: String(id), acao: 'DELETE', dadosAnteriores: current as any });
+    return ok(reply, {}, { message: 'Profissional removido' });
+  });
+
+  server.get('/engenharia/obras/responsabilidades', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const q = z.object({ idObra: z.coerce.number().int().positive(), tipo: z.string().optional().nullable(), apenasAtivos: z.string().optional().nullable() }).parse(request.query || {});
+
+    const obra = await prisma.obra.findUnique({ where: { id: q.idObra }, select: { id: true, tenantId: true } }).catch(() => null);
+    if (!obra || obra.tenantId !== ctx.tenantId) return fail(reply, 404, 'Obra não encontrada');
+
+    const tipo = String(q.tipo || '').trim().toUpperCase();
+    const apenasAtivos = String(q.apenasAtivos || '').trim() === '1' || String(q.apenasAtivos || '').trim().toLowerCase() === 'true';
+
+    const rows = await prisma.responsavelObra.findMany({
+      where: {
+        obraId: obra.id,
+        ...(tipo === 'RESPONSAVEL_TECNICO' || tipo === 'FISCAL_OBRA' ? { role: tipo } : {}),
+        ...(apenasAtivos ? { endDate: null } : {}),
+      },
+      include: { responsavel: true },
+      orderBy: { id: 'desc' },
+    });
+
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idObraResponsabilidade: r.id,
+        idObra: r.obraId,
+        tipo: String(r.role || '').toUpperCase() === 'FISCAL_OBRA' ? 'FISCAL_OBRA' : 'RESPONSAVEL_TECNICO',
+        nome: r.responsavel?.name || '',
+        conselho: r.responsavel?.conselho ?? null,
+        numeroRegistro: r.responsavel?.numeroRegistro ?? r.responsavel?.crea ?? null,
+        email: r.responsavel?.email ?? null,
+        telefone: r.responsavel?.phone ?? null,
+        ativo: r.endDate == null,
+      }))
+    );
+  });
+
+  server.post('/engenharia/obras/responsabilidades', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const body = z
+      .object({
+        idObra: z.number().int().positive(),
+        tipo: z.enum(['RESPONSAVEL_TECNICO', 'FISCAL_OBRA']),
+        idTecnico: z.number().int().positive(),
+        ativo: z.boolean().default(true),
+      })
+      .parse(request.body || {});
+
+    const obra = await prisma.obra.findUnique({ where: { id: body.idObra }, select: { id: true, tenantId: true } }).catch(() => null);
+    if (!obra || obra.tenantId !== ctx.tenantId) return fail(reply, 404, 'Obra não encontrada');
+
+    const tecnico = await prisma.responsavelTecnico.findFirst({ where: { id: body.idTecnico, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
+    if (!tecnico) return fail(reply, 404, 'Profissional não encontrado');
+
+    const created = await prisma.responsavelObra.create({
+      data: {
+        obraId: obra.id,
+        responsavelId: tecnico.id,
+        role: body.tipo,
+        endDate: body.ativo ? null : new Date(),
+      },
+    });
+
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_obras_responsabilidades', idRegistro: String(created.id), acao: 'CREATE', dadosNovos: created as any });
+    return ok(reply, { idObraResponsabilidade: created.id }, { message: 'Vínculo cadastrado' });
+  });
+
+  server.put('/engenharia/obras/responsabilidades/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        tipo: z.enum(['RESPONSAVEL_TECNICO', 'FISCAL_OBRA']),
+        ativo: z.boolean().default(true),
+      })
+      .parse(request.body || {});
+
+    const current = await prisma.responsavelObra.findUnique({ where: { id }, include: { obra: { select: { tenantId: true } } } }).catch(() => null);
+    if (!current || current.obra?.tenantId !== ctx.tenantId) return fail(reply, 404, 'Registro não encontrado');
+
+    const updated = await prisma.responsavelObra.update({
+      where: { id },
+      data: {
+        role: body.tipo,
+        endDate: body.ativo ? null : new Date(),
+      },
+    });
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_obras_responsabilidades', idRegistro: String(id), acao: 'UPDATE', dadosAnteriores: current as any, dadosNovos: updated as any });
+    return ok(reply, {}, { message: 'Vínculo atualizado' });
+  });
+
+  server.delete('/engenharia/obras/responsabilidades/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const current = await prisma.responsavelObra.findUnique({ where: { id }, include: { obra: { select: { tenantId: true } } } }).catch(() => null);
+    if (!current || current.obra?.tenantId !== ctx.tenantId) return fail(reply, 404, 'Registro não encontrado');
+    await prisma.responsavelObra.delete({ where: { id } });
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_obras_responsabilidades', idRegistro: String(id), acao: 'DELETE', dadosAnteriores: current as any });
+    return ok(reply, {}, { message: 'Vínculo removido' });
+  });
+
+  server.post('/engenharia/obras/responsabilidades/importar', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const body = z
+      .object({
+        idObra: z.number().int().positive(),
+        idProjeto: z.number().int().positive(),
+      })
+      .parse(request.body || {});
+
+    const obra = await prisma.obra.findUnique({ where: { id: body.idObra }, select: { id: true, tenantId: true } }).catch(() => null);
+    if (!obra || obra.tenantId !== ctx.tenantId) return fail(reply, 404, 'Obra não encontrada');
+
+    const projeto = await prisma.engenhariaProjeto.findFirst({ where: { id: body.idProjeto, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
+    if (!projeto) return fail(reply, 404, 'Projeto não encontrado');
+
+    const pr = await prisma.engenhariaProjetoResponsavel.findMany({
+      where: { tenantId: ctx.tenantId, projetoId: projeto.id },
+      select: { responsavelId: true, tipo: true },
+      take: 500,
+    });
+
+    const existing = await prisma.responsavelObra.findMany({
+      where: {
+        obraId: obra.id,
+        responsavelId: { in: pr.map((x) => x.responsavelId) },
+      },
+      select: { id: true, responsavelId: true, role: true },
+    });
+
+    const existingKey = new Set(existing.map((e) => `${e.responsavelId}::${String(e.role || '').toUpperCase()}`));
+
+    let inseridos = 0;
+    let reativados = 0;
+
+    await prisma.$transaction(async (tx) => {
+      for (const row of pr) {
+        const role = String(row.tipo || '').toUpperCase() === 'FISCAL_OBRA' ? 'FISCAL_OBRA' : 'RESPONSAVEL_TECNICO';
+        const key = `${row.responsavelId}::${role}`;
+        if (existingKey.has(key)) {
+          const current = await tx.responsavelObra
+            .findFirst({ where: { obraId: obra.id, responsavelId: row.responsavelId, role }, select: { id: true, endDate: true } })
+            .catch(() => null);
+          if (current && current.endDate != null) {
+            await tx.responsavelObra.update({ where: { id: current.id }, data: { endDate: null } });
+            reativados++;
+          }
+          continue;
+        }
+        await tx.responsavelObra.create({
+          data: {
+            obraId: obra.id,
+            responsavelId: row.responsavelId,
+            role,
+            endDate: null,
+          },
+        });
+        inseridos++;
+      }
+    });
+
+    await audit({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      entidade: 'engenharia_obras_responsabilidades_importar',
+      idRegistro: `${body.idObra}:${body.idProjeto}`,
+      acao: 'CREATE',
+      dadosNovos: { inseridos, reativados } as any,
+    });
+
+    return ok(reply, { inseridos, reativados }, { message: 'Importação concluída' });
+  });
+
+  server.get('/engenharia/projetos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const q = z
+      .object({
+        q: z.string().optional().nullable(),
+        status: z.string().optional().nullable(),
+      })
+      .parse(request.query || {});
+
+    const term = String(q.q || '').trim();
+    const status = String(q.status || '').trim().toUpperCase();
+    const where: any = { tenantId: ctx.tenantId };
+    if (status) where.status = status;
+    if (term) {
+      where.OR = [
+        { titulo: { contains: term, mode: 'insensitive' } },
+        { numeroProjeto: { contains: term, mode: 'insensitive' } },
+        { tipo: { contains: term, mode: 'insensitive' } },
+        { endereco: { contains: term, mode: 'insensitive' } },
+      ];
+    }
+
+    const rows = await prisma.engenhariaProjeto.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+      take: 1000,
+    });
+
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idProjeto: r.id,
+        titulo: r.titulo,
+        endereco: r.endereco ?? null,
+        descricao: r.descricao ?? null,
+        tipo: r.tipo ?? null,
+        numeroProjeto: r.numeroProjeto ?? null,
+        revisao: r.revisao ?? null,
+        status: r.status ?? null,
+        dataProjeto: dateOnlyToIso(r.dataProjeto),
+        dataAprovacao: dateOnlyToIso(r.dataAprovacao),
+        atualizadoEm: r.updatedAt.toISOString(),
+      }))
+    );
+  });
+
+  server.post('/engenharia/projetos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const body = z
+      .object({
+        titulo: z.string().min(2),
+        endereco: z.string().optional().nullable(),
+        descricao: z.string().optional().nullable(),
+        tipo: z.string().optional().nullable(),
+        numeroProjeto: z.string().optional().nullable(),
+        revisao: z.string().optional().nullable(),
+        status: z.string().optional().nullable(),
+        dataProjeto: z.string().optional().nullable(),
+        dataAprovacao: z.string().optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    const created = await prisma.engenhariaProjeto.create({
+      data: {
+        tenantId: ctx.tenantId,
+        titulo: String(body.titulo).trim(),
+        endereco: body.endereco ? String(body.endereco).trim() : null,
+        descricao: body.descricao ? String(body.descricao).trim() : null,
+        tipo: body.tipo ? String(body.tipo).trim() : null,
+        numeroProjeto: body.numeroProjeto ? String(body.numeroProjeto).trim() : null,
+        revisao: body.revisao ? String(body.revisao).trim() : null,
+        status: body.status ? String(body.status).trim().toUpperCase() : null,
+        dataProjeto: body.dataProjeto ? parseDateOnly(body.dataProjeto) : null,
+        dataAprovacao: body.dataAprovacao ? parseDateOnly(body.dataAprovacao) : null,
+      },
+    });
+
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_projetos', idRegistro: String(created.id), acao: 'CREATE', dadosNovos: created as any });
+    return ok(reply, { idProjeto: created.id }, { message: 'Projeto cadastrado' });
+  });
+
+  server.get('/engenharia/projetos/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const r = await prisma.engenhariaProjeto.findFirst({ where: { id, tenantId: ctx.tenantId } }).catch(() => null);
+    if (!r) return fail(reply, 404, 'Projeto não encontrado');
+    return ok(reply, {
+      idProjeto: r.id,
+      titulo: r.titulo,
+      endereco: r.endereco ?? null,
+      descricao: r.descricao ?? null,
+      tipo: r.tipo ?? null,
+      numeroProjeto: r.numeroProjeto ?? null,
+      revisao: r.revisao ?? null,
+      status: r.status ?? null,
+      dataProjeto: dateOnlyToIso(r.dataProjeto),
+      dataAprovacao: dateOnlyToIso(r.dataAprovacao),
+    });
+  });
+
+  server.put('/engenharia/projetos/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        titulo: z.string().min(2),
+        endereco: z.string().optional().nullable(),
+        descricao: z.string().optional().nullable(),
+        tipo: z.string().optional().nullable(),
+        numeroProjeto: z.string().optional().nullable(),
+        revisao: z.string().optional().nullable(),
+        status: z.string().optional().nullable(),
+        dataProjeto: z.string().optional().nullable(),
+        dataAprovacao: z.string().optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    const current = await prisma.engenhariaProjeto.findFirst({ where: { id, tenantId: ctx.tenantId } }).catch(() => null);
+    if (!current) return fail(reply, 404, 'Projeto não encontrado');
+
+    const updated = await prisma.engenhariaProjeto.update({
+      where: { id },
+      data: {
+        titulo: String(body.titulo).trim(),
+        endereco: body.endereco ? String(body.endereco).trim() : null,
+        descricao: body.descricao ? String(body.descricao).trim() : null,
+        tipo: body.tipo ? String(body.tipo).trim() : null,
+        numeroProjeto: body.numeroProjeto ? String(body.numeroProjeto).trim() : null,
+        revisao: body.revisao ? String(body.revisao).trim() : null,
+        status: body.status ? String(body.status).trim().toUpperCase() : null,
+        dataProjeto: body.dataProjeto ? parseDateOnly(body.dataProjeto) : null,
+        dataAprovacao: body.dataAprovacao ? parseDateOnly(body.dataAprovacao) : null,
+      },
+    });
+
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_projetos', idRegistro: String(id), acao: 'UPDATE', dadosAnteriores: current as any, dadosNovos: updated as any });
+    return ok(reply, {}, { message: 'Projeto atualizado' });
+  });
+
+  server.delete('/engenharia/projetos/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const current = await prisma.engenhariaProjeto.findFirst({ where: { id, tenantId: ctx.tenantId } }).catch(() => null);
+    if (!current) return fail(reply, 404, 'Projeto não encontrado');
+    await prisma.engenhariaProjeto.delete({ where: { id } });
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_projetos', idRegistro: String(id), acao: 'DELETE', dadosAnteriores: current as any });
+    return ok(reply, {}, { message: 'Projeto removido' });
+  });
+
+  server.get('/engenharia/projetos/responsaveis', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const q = z.object({ idProjeto: z.coerce.number().int().positive() }).parse(request.query || {});
+
+    const projeto = await prisma.engenhariaProjeto.findFirst({ where: { id: q.idProjeto, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
+    if (!projeto) return fail(reply, 404, 'Projeto não encontrado');
+
+    const rows = await prisma.engenhariaProjetoResponsavel.findMany({
+      where: { tenantId: ctx.tenantId, projetoId: projeto.id },
+      include: { responsavel: true },
+      orderBy: { id: 'desc' },
+      take: 500,
+    });
+
+    return ok(
+      reply,
+      rows.map((r) => ({
+        idProjetoResponsavel: r.id,
+        idProjeto: r.projetoId,
+        idTecnico: r.responsavelId,
+        nome: r.responsavel?.name || '',
+        conselho: r.responsavel?.conselho ?? null,
+        numeroRegistro: r.responsavel?.numeroRegistro ?? r.responsavel?.crea ?? null,
+        tipo: String(r.tipo || '').toUpperCase() === 'FISCAL_OBRA' ? 'FISCAL_OBRA' : 'RESPONSAVEL_TECNICO',
+        abrangencia: r.abrangencia ?? null,
+        numeroDocumento: r.numeroDocumento ?? null,
+        observacao: r.observacao ?? null,
+      }))
+    );
+  });
+
+  server.post('/engenharia/projetos/responsaveis', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const body = z
+      .object({
+        idProjeto: z.number().int().positive(),
+        idTecnico: z.number().int().positive(),
+        tipo: z.enum(['RESPONSAVEL_TECNICO', 'FISCAL_OBRA']),
+        abrangencia: z.string().optional().nullable(),
+        numeroDocumento: z.string().optional().nullable(),
+        observacao: z.string().optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    const projeto = await prisma.engenhariaProjeto.findFirst({ where: { id: body.idProjeto, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
+    if (!projeto) return fail(reply, 404, 'Projeto não encontrado');
+
+    const tecnico = await prisma.responsavelTecnico.findFirst({ where: { id: body.idTecnico, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
+    if (!tecnico) return fail(reply, 404, 'Profissional não encontrado');
+
+    const created = await prisma.engenhariaProjetoResponsavel
+      .create({
+        data: {
+          tenantId: ctx.tenantId,
+          projetoId: projeto.id,
+          responsavelId: tecnico.id,
+          tipo: body.tipo,
+          abrangencia: body.abrangencia ? String(body.abrangencia).trim() : null,
+          numeroDocumento: body.numeroDocumento ? String(body.numeroDocumento).trim() : null,
+          observacao: body.observacao ? String(body.observacao).trim() : null,
+        },
+      })
+      .catch((e: any) => {
+        if (String(e?.code || '') === 'P2002') return null;
+        throw e;
+      });
+    if (!created) return fail(reply, 409, 'Responsável já vinculado ao projeto');
+
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_projetos_responsaveis', idRegistro: String(created.id), acao: 'CREATE', dadosNovos: created as any });
+    return ok(reply, { idProjetoResponsavel: created.id }, { message: 'Responsável vinculado' });
+  });
+
+  server.put('/engenharia/projetos/responsaveis/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        tipo: z.enum(['RESPONSAVEL_TECNICO', 'FISCAL_OBRA']),
+        abrangencia: z.string().optional().nullable(),
+        numeroDocumento: z.string().optional().nullable(),
+        observacao: z.string().optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    const current = await prisma.engenhariaProjetoResponsavel.findFirst({ where: { id, tenantId: ctx.tenantId } }).catch(() => null);
+    if (!current) return fail(reply, 404, 'Registro não encontrado');
+
+    const updated = await prisma.engenhariaProjetoResponsavel.update({
+      where: { id },
+      data: {
+        tipo: body.tipo,
+        abrangencia: body.abrangencia ? String(body.abrangencia).trim() : null,
+        numeroDocumento: body.numeroDocumento ? String(body.numeroDocumento).trim() : null,
+        observacao: body.observacao ? String(body.observacao).trim() : null,
+      },
+    });
+
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_projetos_responsaveis', idRegistro: String(id), acao: 'UPDATE', dadosAnteriores: current as any, dadosNovos: updated as any });
+    return ok(reply, {}, { message: 'Responsável atualizado' });
+  });
+
+  server.delete('/engenharia/projetos/responsaveis/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const current = await prisma.engenhariaProjetoResponsavel.findFirst({ where: { id, tenantId: ctx.tenantId } }).catch(() => null);
+    if (!current) return fail(reply, 404, 'Registro não encontrado');
+
+    await prisma.engenhariaProjetoResponsavel.delete({ where: { id } });
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_projetos_responsaveis', idRegistro: String(id), acao: 'DELETE', dadosAnteriores: current as any });
+    return ok(reply, {}, { message: 'Responsável removido' });
+  });
+
+  server.get('/engenharia/obras/projetos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const q = z.object({ idObra: z.coerce.number().int().positive() }).parse(request.query || {});
+
+    const obra = await prisma.obra.findUnique({ where: { id: q.idObra }, select: { id: true, tenantId: true } }).catch(() => null);
+    if (!obra || obra.tenantId !== ctx.tenantId) return fail(reply, 404, 'Obra não encontrada');
+
+    const links = await prisma.engenhariaObraProjeto.findMany({
+      where: { tenantId: ctx.tenantId, obraId: obra.id },
+      include: { projeto: true },
+      orderBy: { id: 'desc' },
+      take: 500,
+    });
+
+    return ok(
+      reply,
+      links.map((l) => ({
+        idObraProjeto: l.id,
+        idObra: l.obraId,
+        idProjeto: l.projetoId,
+        titulo: l.projeto?.titulo || '',
+        endereco: l.projeto?.endereco ?? null,
+        descricao: l.projeto?.descricao ?? null,
+        tipo: l.projeto?.tipo ?? null,
+        numeroProjeto: l.projeto?.numeroProjeto ?? null,
+        revisao: l.projeto?.revisao ?? null,
+        status: l.projeto?.status ?? null,
+        dataProjeto: dateOnlyToIso(l.projeto?.dataProjeto ?? null),
+        dataAprovacao: dateOnlyToIso(l.projeto?.dataAprovacao ?? null),
+        vinculadoEm: l.createdAt.toISOString(),
+      }))
+    );
+  });
+
+  server.post('/engenharia/obras/projetos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const body = z.object({ idObra: z.number().int().positive(), idProjeto: z.number().int().positive() }).parse(request.body || {});
+
+    const obra = await prisma.obra.findUnique({ where: { id: body.idObra }, select: { id: true, tenantId: true } }).catch(() => null);
+    if (!obra || obra.tenantId !== ctx.tenantId) return fail(reply, 404, 'Obra não encontrada');
+
+    const projeto = await prisma.engenhariaProjeto.findFirst({ where: { id: body.idProjeto, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
+    if (!projeto) return fail(reply, 404, 'Projeto não encontrado');
+
+    const created = await prisma.engenhariaObraProjeto
+      .create({
+        data: { tenantId: ctx.tenantId, obraId: obra.id, projetoId: projeto.id },
+      })
+      .catch((e: any) => {
+        if (String(e?.code || '') === 'P2002') return null;
+        throw e;
+      });
+    if (!created) return fail(reply, 409, 'Projeto já vinculado à obra');
+
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_obras_projetos', idRegistro: String(created.id), acao: 'CREATE', dadosNovos: created as any });
+    return ok(reply, { idObraProjeto: created.id }, { message: 'Projeto vinculado' });
+  });
+
+  server.delete('/engenharia/obras/projetos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const q = z.object({ idObra: z.coerce.number().int().positive(), idProjeto: z.coerce.number().int().positive() }).parse(request.query || {});
+
+    const obra = await prisma.obra.findUnique({ where: { id: q.idObra }, select: { id: true, tenantId: true } }).catch(() => null);
+    if (!obra || obra.tenantId !== ctx.tenantId) return fail(reply, 404, 'Obra não encontrada');
+
+    const link = await prisma.engenhariaObraProjeto.findFirst({ where: { tenantId: ctx.tenantId, obraId: obra.id, projetoId: q.idProjeto }, select: { id: true } }).catch(() => null);
+    if (!link) return fail(reply, 404, 'Vínculo não encontrado');
+
+    await prisma.engenhariaObraProjeto.delete({ where: { id: link.id } });
+    await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_obras_projetos', idRegistro: String(link.id), acao: 'DELETE', dadosAnteriores: link as any });
+    return ok(reply, {}, { message: 'Projeto desvinculado' });
+  });
+
   const LICITACAO_STATUS = ['PREVISTA', 'EM_ANALISE', 'EM_PREPARACAO', 'PARTICIPANDO', 'AGUARDANDO_RESULTADO', 'ENCERRADA', 'VENCIDA', 'DESISTIDA'] as const;
 
   function dateOnlyToIso(value: Date | null) {

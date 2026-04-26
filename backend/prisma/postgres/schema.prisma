@@ -56,6 +56,9 @@ model Tenant {
   documentoVersoes DocumentoVersao[]
   tarefas   Tarefa[]
   responsaveisTecnicos ResponsavelTecnico[]
+  engenhariaProjetos EngenhariaProjeto[]
+  engenhariaObrasProjetos EngenhariaObraProjeto[]
+  engenhariaProjetosResponsaveis EngenhariaProjetoResponsavel[]
   history   TenantHistoryEntry[]
   subscriptions Subscription[]
   unidades  Unidade[]
@@ -580,6 +583,7 @@ model Obra {
   medicoes  Medicao[]
   pagamentos Pagamento[]
   responsaveis ResponsavelObra[]
+  projetos EngenhariaObraProjeto[]
   usuarioAbrangencias UsuarioAbrangencia[]
   funcionarioLotacoes FuncionarioLotacao[]
   @@index([tenantId])
@@ -739,12 +743,16 @@ model ResponsavelTecnico {
   name      String
   professionalTitle String?
   crea      String?
+  conselho  String?
+  numeroRegistro String?
   cpf       String?
   email     String?
   phone     String?
   tenantId  Int
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
   obras     ResponsavelObra[]
+  projetos  EngenhariaProjetoResponsavel[]
+  @@unique([tenantId, conselho, numeroRegistro])
   @@index([tenantId])
 }
 
@@ -759,6 +767,67 @@ model ResponsavelObra {
   endDate   DateTime?
   notes     String?
   @@index([obraId])
+  @@index([responsavelId])
+}
+
+model EngenhariaProjeto {
+  id            Int      @id @default(autoincrement())
+  tenantId      Int
+  titulo        String
+  endereco      String?
+  descricao     String?
+  tipo          String?
+  numeroProjeto String?
+  revisao       String?
+  status        String?
+  dataProjeto   DateTime?
+  dataAprovacao DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  obras         EngenhariaObraProjeto[]
+  responsaveis  EngenhariaProjetoResponsavel[]
+
+  @@index([tenantId])
+  @@index([tenantId, titulo])
+}
+
+model EngenhariaObraProjeto {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int
+  obraId    Int
+  projetoId Int
+  createdAt DateTime @default(now())
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  obra      Obra     @relation(fields: [obraId], references: [id], onDelete: Cascade)
+  projeto   EngenhariaProjeto @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, obraId, projetoId])
+  @@index([tenantId])
+  @@index([obraId])
+  @@index([projetoId])
+}
+
+model EngenhariaProjetoResponsavel {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int
+  projetoId Int
+  responsavelId Int
+  tipo      String
+  abrangencia String?
+  numeroDocumento String?
+  observacao String?
+  createdAt DateTime @default(now())
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  projeto   EngenhariaProjeto @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  responsavel ResponsavelTecnico @relation(fields: [responsavelId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, projetoId, responsavelId, tipo])
+  @@index([tenantId])
+  @@index([projetoId])
   @@index([responsavelId])
 }
 

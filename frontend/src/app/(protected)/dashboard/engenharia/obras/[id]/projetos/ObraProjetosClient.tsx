@@ -57,6 +57,13 @@ export default function ObraProjetosClient() {
   const returnTo = useMemo(() => safeInternalPath(sp.get("returnTo") || null), [sp]);
   const backHref = returnTo || (idObra ? `/dashboard/engenharia/obras/${idObra}` : "/dashboard/engenharia/obras");
   const selfHref = idObra ? `/dashboard/engenharia/obras/${idObra}/projetos?returnTo=${encodeURIComponent(backHref)}` : "/dashboard/engenharia/obras";
+  const breadcrumb = useMemo(() => {
+    if (!returnTo) return "Engenharia → Obras → Obra selecionada → Projetos da Obra";
+    const rt = returnTo.toLowerCase();
+    if (rt.includes("/dashboard/engenharia/obras/ativa")) return "Engenharia → Obras → Obra ativa → Obra selecionada → Projetos da Obra";
+    if (rt.includes("/dashboard/engenharia/obras")) return "Engenharia → Obras → Obra selecionada → Projetos da Obra";
+    return "Engenharia → Obras → Projetos da Obra";
+  }, [returnTo]);
 
   const [rows, setRows] = useState<ProjetoRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -161,7 +168,7 @@ export default function ObraProjetosClient() {
     <div className="p-6 space-y-6 max-w-6xl text-[#111827]">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <div className="text-xs text-[#6B7280]">Engenharia → Obras → Obra selecionada → Cadastro de projetos da obra</div>
+          <div className="text-xs text-[#6B7280]">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Projetos da Obra</h1>
           <div className="mt-1 text-sm text-[#6B7280]">Cadastro e vínculo de projetos relacionados à obra selecionada.</div>
         </div>

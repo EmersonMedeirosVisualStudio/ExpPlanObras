@@ -189,12 +189,20 @@ export default function ProjetoFormClient() {
           setRespErr("Nome é obrigatório.");
           return;
         }
-        const conselho = (prompt("Conselho (ex.: CREA, CAU) (opcional):") || "").trim();
-        const numeroRegistro = (prompt("Número do registro (opcional):") || "").trim();
+        const conselho = (prompt("Conselho (ex.: CREA, CAU):") || "").trim();
+        const numeroRegistro = (prompt("Número do registro:") || "").trim();
+        if (!conselho) {
+          setRespErr("Conselho é obrigatório.");
+          return;
+        }
+        if (!numeroRegistro) {
+          setRespErr("Registro é obrigatório.");
+          return;
+        }
         const resTec = await api.post("/api/v1/engenharia/tecnicos", {
           nome,
-          conselho: conselho || null,
-          numeroRegistro: numeroRegistro || null,
+          conselho,
+          numeroRegistro,
         });
         const outTec = unwrapApiData<any>(resTec?.data || null) as any;
         const newId = Number(outTec?.idTecnico || 0);
@@ -323,7 +331,16 @@ export default function ProjetoFormClient() {
     }
   }
 
-  const breadcrumb = idProjeto ? "Projetos > Editar Projeto" : "Projetos > Cadastro de Projeto";
+  const breadcrumb = useMemo(() => {
+    const base = idProjeto ? "Cadastro de Projeto (editar)" : "Cadastro de Projeto (novo)";
+    if (!returnTo) return `Engenharia → Projetos → ${base}`;
+    const rt = returnTo.toLowerCase();
+    if (/\/dashboard\/engenharia\/obras\/\d+\/projetos/.test(rt)) return `Engenharia → Obras → Obra selecionada → Projetos da Obra → ${base}`;
+    if (/\/dashboard\/engenharia\/obras\/\d+/.test(rt)) return `Engenharia → Obras → Obra selecionada → ${base}`;
+    if (rt.includes("/dashboard/engenharia/obras")) return `Engenharia → Obras → ${base}`;
+    if (rt.includes("/dashboard/engenharia/projetos")) return `Engenharia → Projetos → ${base}`;
+    return `Engenharia → Projetos → ${base}`;
+  }, [idProjeto, returnTo]);
 
   return (
     <div className="p-6 space-y-6 max-w-5xl text-[#111827]">
