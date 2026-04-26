@@ -6,16 +6,26 @@ import { setActiveObra } from "@/lib/obra/active";
 import api from "@/lib/api";
 
 type Janela = { key: string; titulo: string; desc: string; href: (idObra: number) => string; nivel: "OPERACAO" | "GESTAO" | "CADASTRO" };
-type ResponsavelObraRef = {
-  idResponsavelObra: number;
-  idObra: number;
-  tipo: "RESPONSAVEL_TECNICO" | "FISCAL_OBRA";
-  nome: string;
-  registroProfissional: string | null;
-  cpf: string | null;
-  email: string | null;
-  telefone: string | null;
-  ativo: boolean;
+type ObraBasica = {
+  id: number;
+  contratoId: number;
+  name: string;
+  type: "PUBLICA" | "PARTICULAR";
+  status: string;
+  valorPrevisto: number | null;
+  contrato?: { id: number; numeroContrato: string | null; status: string | null; objeto: string | null } | null;
+  enderecoObra?: {
+    nomeEndereco?: string | null;
+    cep?: string | null;
+    logradouro?: string | null;
+    numero?: string | null;
+    complemento?: string | null;
+    bairro?: string | null;
+    cidade?: string | null;
+    uf?: string | null;
+    latitude?: string | null;
+    longitude?: string | null;
+  } | null;
 };
 type ContratoDaObra = {
   idObra: number;
@@ -28,6 +38,17 @@ type ContratoDaObra = {
   valorPago: number;
 };
 
+function moeda(v: number | undefined | null) {
+  const n = Number(v || 0);
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number.isFinite(n) ? n : 0);
+}
+
+function formatEnderecoLinha(e?: ObraBasica["enderecoObra"] | null) {
+  if (!e) return "-";
+  const parts = [e.logradouro, e.numero, e.complemento, e.bairro, e.cidade, e.uf, e.cep].map((x) => String(x || "").trim()).filter(Boolean);
+  return parts.length ? parts.join(" · ") : "-";
+}
+
 export default function EngenhariaObraHomePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -37,11 +58,9 @@ export default function EngenhariaObraHomePage() {
   const obraNomeParam = String(sp?.get("obraNome") || "").trim();
   const contratoIdParam = Number(sp?.get("contratoId") || 0);
   const contratoNumeroParam = String(sp?.get("contratoNumero") || "").trim();
-  const [responsaveis, setResponsaveis] = useState<ResponsavelObraRef[]>([]);
-  const [carregandoResponsaveis, setCarregandoResponsaveis] = useState(false);
-  const [erroResponsaveis, setErroResponsaveis] = useState<string | null>(null);
-  const hasResponsavelTecnico = responsaveis.some((r) => r.ativo && r.tipo === "RESPONSAVEL_TECNICO");
-  const hasFiscal = responsaveis.some((r) => r.ativo && r.tipo === "FISCAL_OBRA");
+  const [obra, setObra] = useState<ObraBasica | null>(null);
+  const [carregandoObra, setCarregandoObra] = useState(false);
+  const [erroObra, setErroObra] = useState<string | null>(null);
   const [contrato, setContrato] = useState<ContratoDaObra | null>(null);
   const [carregandoContrato, setCarregandoContrato] = useState(false);
 
@@ -73,6 +92,30 @@ export default function EngenhariaObraHomePage() {
     let active = true;
     (async () => {
       try {
+        setCarregandoObra(true);
+        setErroObra(null);
+        const res = await api.get(`/api/obras/${idObra}`);
+        const o: any = res?.data;
+        if (!o?.id) throw new Error("Obra não encontrada");
+        if (active) setObra(o as ObraBasica);
+      } catch (e: any) {
+        if (!active) return;
+        setErroObra(e?.response?.data?.message || e?.message || "Erro ao carregar obra.");
+        setObra(null);
+      } finally {
+        if (active) setCarregandoObra(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [idObra]);
+
+  useEffect(() => {
+    if (!idObra) return;
+    let active = true;
+    (async () => {
+      try {
         setCarregandoContrato(true);
         const res = await api.get(`/api/v1/engenharia/obras/${idObra}/contrato`);
         const json: any = res?.data;
@@ -89,31 +132,6 @@ export default function EngenhariaObraHomePage() {
       active = false;
     };
   }, [idObra, contratoIdParam, contratoNumeroParam]);
-
-  useEffect(() => {
-    if (!idObra) return;
-    let active = true;
-    (async () => {
-      try {
-        setCarregandoResponsaveis(true);
-        setErroResponsaveis(null);
-        const res = await api.get(`/api/v1/engenharia/obras/responsaveis?idObra=${idObra}`);
-        const json: any = res?.data;
-        if (!json?.success) throw new Error(json?.message || "Erro ao carregar responsáveis.");
-        const lista = Array.isArray(json?.data) ? json.data : [];
-        if (active) setResponsaveis(lista);
-      } catch (e: any) {
-        if (!active) return;
-        setErroResponsaveis(e?.response?.data?.message || e?.message || "Erro ao carregar responsáveis.");
-        setResponsaveis([]);
-      } finally {
-        if (active) setCarregandoResponsaveis(false);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [idObra]);
 
   const janelas = useMemo<Janela[]>(
     () => [
@@ -177,7 +195,7 @@ export default function EngenhariaObraHomePage() {
         key: "documentos",
         titulo: "Documentos da Obra",
         desc: "ART, projetos, revisões, laudos, pareceres, relatórios e evidências.",
-        href: (id) => `/dashboard/obras/documentos?tipo=OBRA&id=${id}`,
+        href: () => `/dashboard/engenharia/obras/ativa/documentos`,
         nivel: "GESTAO",
       },
       {
@@ -289,6 +307,10 @@ export default function EngenhariaObraHomePage() {
     CADASTRO: janelas.filter((j) => j.nivel === "CADASTRO"),
   };
 
+  const contratoNumero = String(contrato?.numeroContrato || obra?.contrato?.numeroContrato || "").trim();
+  const contratoStatus = String(contrato?.statusContrato || obra?.contrato?.status || "").trim();
+  const contratoObjeto = obra?.contrato?.objeto ? String(obra.contrato.objeto) : "";
+
   return (
     <div className="p-6 space-y-6 max-w-6xl">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -308,7 +330,7 @@ export default function EngenhariaObraHomePage() {
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <div className="text-lg font-semibold">Dados principais da obra</div>
-            <div className="text-sm text-slate-600">Responsável técnico e fiscal vinculados à obra.</div>
+            <div className="text-sm text-slate-600">Contrato e dados básicos da obra selecionada.</div>
           </div>
         </div>
 
@@ -321,10 +343,30 @@ export default function EngenhariaObraHomePage() {
               <div className="mt-2 space-y-1 text-sm text-slate-700">
                 <div>
                   <span className="text-slate-500">Número:</span>{" "}
-                  <span className="font-medium">{contrato.numeroContrato?.trim() ? contrato.numeroContrato : "Sem número"}</span>
+                  <span className="font-medium">{contratoNumero ? contratoNumero : "Sem número"}</span>
                 </div>
                 <div>
-                  <span className="text-slate-500">Status:</span> <span className="font-medium">{contrato.statusContrato || "—"}</span>
+                  <span className="text-slate-500">Status:</span> <span className="font-medium">{contratoStatus || "—"}</span>
+                </div>
+                {contratoObjeto ? (
+                  <div>
+                    <span className="text-slate-500">Objeto:</span> <span className="font-medium">{contratoObjeto}</span>
+                  </div>
+                ) : null}
+                <div className="pt-1 grid grid-cols-1 gap-1">
+                  <div>
+                    <span className="text-slate-500">Valor contratado:</span> <span className="font-medium">{moeda(contrato.valorContratado)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Valor executado:</span> <span className="font-medium">{moeda(contrato.valorExecutado)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Valor pago:</span> <span className="font-medium">{moeda(contrato.valorPago)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Saldo (contratado - executado):</span>{" "}
+                    <span className="font-medium">{moeda((contrato.valorContratado || 0) - (contrato.valorExecutado || 0))}</span>
+                  </div>
                 </div>
                 <button
                   className="mt-2 rounded-md border px-3 py-1.5 text-xs disabled:opacity-60"
@@ -341,36 +383,52 @@ export default function EngenhariaObraHomePage() {
           </div>
 
           <div className="rounded-lg border p-3">
-            <div className="text-sm font-semibold text-slate-700">Equipe responsável</div>
-            <div className="mt-2 space-y-1 text-sm text-slate-700">
-              {responsaveis
-                .filter((r) => r.ativo)
-                .slice(0, 4)
-                .map((r) => (
-                  <div key={r.idResponsavelObra} className="rounded-md bg-slate-50 px-3 py-2">
-                    <div className="text-xs font-semibold text-slate-600">{r.tipo === "RESPONSAVEL_TECNICO" ? "Responsável Técnico" : "Fiscal da Obra"}</div>
-                    <div className="font-medium">{r.nome}</div>
-                    <div className="text-xs text-slate-600">{[r.registroProfissional, r.email, r.telefone].filter(Boolean).join(" · ") || "Sem contato"}</div>
-                  </div>
-                ))}
-              {!responsaveis.some((r) => r.ativo) ? <div className="text-sm text-slate-500">Não cadastrado.</div> : null}
-            </div>
+            <div className="text-sm font-semibold text-slate-700">Dados básicos da obra</div>
+            {carregandoObra ? (
+              <div className="mt-2 text-sm text-slate-500">Carregando…</div>
+            ) : obra ? (
+              <div className="mt-2 space-y-1 text-sm text-slate-700">
+                <div>
+                  <span className="text-slate-500">ID:</span> <span className="font-medium">#{obra.id}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Nome:</span> <span className="font-medium">{String(obra.name || obraNomeParam || `Obra #${idObra}`)}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Tipo:</span> <span className="font-medium">{obra.type === "PUBLICA" ? "Pública" : "Particular"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Status:</span> <span className="font-medium">{String(obra.status || "-")}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Endereço:</span> <span className="font-medium">{formatEnderecoLinha(obra.enderecoObra)}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Coordenadas:</span>{" "}
+                  <span className="font-medium">
+                    {obra.enderecoObra?.latitude && obra.enderecoObra?.longitude ? `${obra.enderecoObra.latitude}, ${obra.enderecoObra.longitude}` : "-"}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-2 text-sm text-slate-500">Não carregado.</div>
+            )}
           </div>
         </div>
 
-        {carregandoResponsaveis ? <div className="text-sm text-slate-500">Carregando responsáveis...</div> : null}
-        {erroResponsaveis ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{erroResponsaveis}</div> : null}
+        {erroObra ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{erroObra}</div> : null}
       </div>
 
       <div className="space-y-4">
-        <div className="text-lg font-semibold">Operação</div>
+        <div className="text-lg font-semibold">Cadastro</div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {grupos.OPERACAO.map((j) => (
+          {grupos.CADASTRO.map((j) => (
             <button key={j.key} type="button" className="rounded-xl border bg-white p-4 shadow-sm text-left hover:bg-slate-50" onClick={() => router.push(j.href(idObra))}>
               <div className="font-semibold">{j.titulo}</div>
               <div className="text-sm text-slate-600">{j.desc}</div>
             </button>
           ))}
+          {!grupos.CADASTRO.length ? <div className="rounded-xl border bg-white p-6 text-sm text-slate-500">Sem cadastros.</div> : null}
         </div>
       </div>
 
@@ -387,15 +445,14 @@ export default function EngenhariaObraHomePage() {
       </div>
 
       <div className="space-y-4">
-        <div className="text-lg font-semibold">Cadastros</div>
+        <div className="text-lg font-semibold">Operação</div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {grupos.CADASTRO.map((j) => (
+          {grupos.OPERACAO.map((j) => (
             <button key={j.key} type="button" className="rounded-xl border bg-white p-4 shadow-sm text-left hover:bg-slate-50" onClick={() => router.push(j.href(idObra))}>
               <div className="font-semibold">{j.titulo}</div>
               <div className="text-sm text-slate-600">{j.desc}</div>
             </button>
           ))}
-          {!grupos.CADASTRO.length ? <div className="rounded-xl border bg-white p-6 text-sm text-slate-500">Sem cadastros.</div> : null}
         </div>
       </div>
     </div>
