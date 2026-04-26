@@ -346,6 +346,7 @@ export default function EngenhariaObrasPage() {
     if (nome) qp.set("obraNome", nome);
     if (contratoId && Number.isFinite(contratoId) && contratoId > 0) qp.set("contratoId", String(contratoId));
     if (contratoNumero) qp.set("contratoNumero", String(contratoNumero));
+    qp.set("returnTo", `${window.location.pathname}${window.location.search}`);
     const suffix = qp.toString() ? `?${qp.toString()}` : "";
     router.push(`/dashboard/engenharia/obras/${idObra}${suffix}`);
   }

@@ -33,6 +33,14 @@ function safeInternalPath(v: string | null) {
   return s;
 }
 
+function errorToMessage(e: any, fallback: string) {
+  const msg = e?.response?.data?.message;
+  if (typeof msg === "string" && msg.trim()) return msg;
+  const data = e?.response?.data;
+  if (typeof data === "string" && data.trim()) return data.slice(0, 400);
+  return e?.message || fallback;
+}
+
 function fmtDate(v: string | null | undefined) {
   if (!v) return "—";
   const d = new Date(String(v));
@@ -82,7 +90,7 @@ export default function ObraProjetosClient() {
       setRows(mapped);
     } catch (e: any) {
       setRows([]);
-      setErr(e?.response?.data?.message || e?.message || "Erro ao carregar projetos da obra.");
+      setErr(errorToMessage(e, "Erro ao carregar projetos da obra."));
     } finally {
       setLoading(false);
     }
@@ -106,7 +114,7 @@ export default function ObraProjetosClient() {
       }
       await carregar();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || "Erro ao vincular projeto.");
+      setErr(errorToMessage(e, "Erro ao vincular projeto."));
     } finally {
       setLoading(false);
     }
@@ -121,7 +129,7 @@ export default function ObraProjetosClient() {
       await carregar();
       alert("Importação concluída.");
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || "Erro ao importar responsáveis.");
+      setErr(errorToMessage(e, "Erro ao importar responsáveis."));
     } finally {
       setLoading(false);
     }
@@ -135,7 +143,7 @@ export default function ObraProjetosClient() {
       await api.delete(`/api/v1/engenharia/obras/projetos?idObra=${idObra}&idProjeto=${idProjeto}`);
       await carregar();
     } catch (e: any) {
-      setErr(e?.response?.data?.message || e?.message || "Erro ao desvincular.");
+      setErr(errorToMessage(e, "Erro ao desvincular."));
     } finally {
       setLoading(false);
     }
@@ -153,7 +161,7 @@ export default function ObraProjetosClient() {
     <div className="p-6 space-y-6 max-w-6xl text-[#111827]">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <div className="text-xs text-[#6B7280]">Engenharia → Obras → Projetos</div>
+          <div className="text-xs text-[#6B7280]">Engenharia → Obras → Obra selecionada → Cadastro de projetos da obra</div>
           <h1 className="text-2xl font-semibold">Projetos da Obra</h1>
           <div className="mt-1 text-sm text-[#6B7280]">Cadastro e vínculo de projetos relacionados à obra selecionada.</div>
         </div>

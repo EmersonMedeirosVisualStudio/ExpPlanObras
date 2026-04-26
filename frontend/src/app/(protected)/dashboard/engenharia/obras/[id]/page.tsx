@@ -83,6 +83,14 @@ function badgeClassFor(value: string) {
   return "bg-slate-100 text-slate-700 border-slate-200";
 }
 
+function safeInternalPath(v: string | null) {
+  const s = String(v || "").trim();
+  if (!s) return null;
+  if (!s.startsWith("/")) return null;
+  if (s.startsWith("//")) return null;
+  return s;
+}
+
 export default function EngenhariaObraHomePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -92,6 +100,22 @@ export default function EngenhariaObraHomePage() {
   const obraNomeParam = String(sp?.get("obraNome") || "").trim();
   const contratoIdParam = Number(sp?.get("contratoId") || 0);
   const contratoNumeroParam = String(sp?.get("contratoNumero") || "").trim();
+  const returnTo = useMemo(() => safeInternalPath(sp?.get("returnTo") || null), [sp]);
+  const backHref = returnTo || "/dashboard/engenharia/obras";
+  const selfQuery = useMemo(() => {
+    const qp = new URLSearchParams(sp?.toString() || "");
+    qp.delete("returnTo");
+    const qs = qp.toString();
+    return qs ? `?${qs}` : "";
+  }, [sp]);
+  const selfHref = idObra ? `/dashboard/engenharia/obras/${idObra}${selfQuery}` : "/dashboard/engenharia/obras";
+  const breadcrumb = useMemo(() => {
+    if (!returnTo) return "Engenharia → Obras → Obra selecionada";
+    const rt = returnTo.toLowerCase();
+    if (rt.includes("/dashboard/engenharia/obras/ativa")) return "Engenharia → Obras → Obra ativa → Obra selecionada";
+    if (rt.includes("/dashboard/engenharia/obras")) return "Engenharia → Obras → Obra selecionada";
+    return "Engenharia → Obra selecionada";
+  }, [returnTo]);
   const [obra, setObra] = useState<ObraBasica | null>(null);
   const [carregandoObra, setCarregandoObra] = useState(false);
   const [erroObra, setErroObra] = useState<string | null>(null);
@@ -371,7 +395,7 @@ export default function EngenhariaObraHomePage() {
         titulo: "Documentos da Obra",
         desc: "ART, projetos, revisões, laudos, pareceres, relatórios e evidências.",
         href: (id) =>
-          `/dashboard/obras/documentos?tipo=OBRA&id=${id}&returnTo=${encodeURIComponent(`/dashboard/engenharia/obras/${id}`)}`,
+          `/dashboard/obras/documentos?tipo=OBRA&id=${id}&returnTo=${encodeURIComponent(selfHref)}`,
         nivel: "GESTAO",
       },
       {
@@ -446,20 +470,20 @@ export default function EngenhariaObraHomePage() {
       },
       {
         key: "projetos",
-        titulo: "Cadastro de Projetos",
+        titulo: "Cadastro de projetos da obra",
         desc: "Cadastro e vínculo de projetos da obra.",
-        href: (id) => `/dashboard/engenharia/obras/${id}/projetos?returnTo=${encodeURIComponent(`/dashboard/engenharia/obras/${id}`)}`,
+        href: (id) => `/dashboard/engenharia/obras/${id}/projetos?returnTo=${encodeURIComponent(selfHref)}`,
         nivel: "CADASTRO",
       },
       {
         key: "responsaveis-tecnicos",
-        titulo: "Responsáveis técnicos / Fiscais",
+        titulo: "Responsáveis técnicos / Fiscais da obra",
         desc: "Cadastro de profissionais vinculados à obra (responsáveis técnicos e fiscais).",
-        href: (id) => `/dashboard/engenharia/obras/${id}#responsaveis-tecnicos`,
+        href: (id) => `${selfHref}#responsaveis-tecnicos`,
         nivel: "CADASTRO",
       },
     ],
-    []
+    [selfHref]
   );
 
   if (!idObra) {
@@ -484,7 +508,7 @@ export default function EngenhariaObraHomePage() {
     <div className="p-6 space-y-6 max-w-6xl">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <div className="text-xs text-slate-500">Engenharia → Obras → Obra - Menu Diversos</div>
+          <div className="text-xs text-slate-500">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Obra - Menu Diversos</h1>
           <div className="text-sm text-slate-600">
             {`Obra #${idObra}${obraNomeParam ? ` — ${obraNomeParam}` : ""}${contrato?.numeroContrato?.trim() ? ` — Contrato: ${contrato.numeroContrato}` : ""} — janelas operacionais da obra selecionada.`}
@@ -499,7 +523,7 @@ export default function EngenhariaObraHomePage() {
             <LayoutDashboard className="h-4 w-4" />
             Dashboard
           </button>
-          <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={() => router.push("/dashboard/engenharia/obras")}>
+          <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={() => router.push(backHref)}>
             Voltar
           </button>
         </div>
@@ -730,7 +754,16 @@ export default function EngenhariaObraHomePage() {
         <div className="text-lg font-semibold">Cadastro</div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {grupos.CADASTRO.map((j) => (
-            <button key={j.key} type="button" className="rounded-xl border bg-white p-4 shadow-sm text-left hover:bg-slate-50" onClick={() => router.push(j.href(idObra))}>
+            <button
+              key={j.key}
+              type="button"
+              className="rounded-xl border bg-white p-4 shadow-sm text-left hover:bg-slate-50"
+              onClick={() => {
+                const href = j.href(idObra);
+                router.push(href);
+                if (j.key === "responsaveis-tecnicos") abrirCrud("RESPONSAVEL_TECNICO");
+              }}
+            >
               <div className="font-semibold">{j.titulo}</div>
               <div className="text-sm text-slate-600">{j.desc}</div>
             </button>

@@ -3,9 +3,6 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   async rewrites() {
     const apiOrigin = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3333";
-    const apiMode = String(process.env.NEXT_PUBLIC_API_MODE || process.env.API_MODE || "").trim().toLowerCase();
-    const backendOnly = apiMode !== "next";
-
     const localRules = [
       { source: "/api/v1/me/:path*", destination: "/api/v1/me/:path*" },
       { source: "/api/v1/realtime/:path*", destination: "/api/v1/realtime/:path*" },
@@ -31,9 +28,9 @@ const nextConfig: NextConfig = {
       { source: "/api/maintenance/:path*", destination: `${apiOrigin}/api/maintenance/:path*` },
     ];
     return {
-      beforeFiles: backendOnly ? [...localRules, ...rules] : localRules,
+      beforeFiles: localRules,
       afterFiles: [],
-      fallback: backendOnly ? [] : rules,
+      fallback: rules,
     };
   },
 };
