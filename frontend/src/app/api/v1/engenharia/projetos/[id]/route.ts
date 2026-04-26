@@ -46,11 +46,6 @@ async function ensureTables() {
   );
 }
 
-function parseId(params: { id?: string }) {
-  const n = Number(params?.id || 0);
-  return Number.isInteger(n) && n > 0 ? n : null;
-}
-
 function parseDateOrNull(v: unknown) {
   const s = String(v ?? "").trim();
   if (!s) return null;
@@ -59,12 +54,18 @@ function parseDateOrNull(v: unknown) {
   return s.slice(0, 10);
 }
 
-export async function GET(_: NextRequest, ctx: { params: { id: string } }) {
+function parseId(v: string) {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const current = await requireApiPermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
     await ensureTables();
 
-    const idProjeto = parseId(ctx.params);
+    const { id } = await ctx.params;
+    const idProjeto = parseId(id);
     if (!idProjeto) return fail(400, "id inválido.");
 
     const [rows]: any = await db.query(
@@ -97,13 +98,14 @@ export async function GET(_: NextRequest, ctx: { params: { id: string } }) {
   }
 }
 
-export async function PUT(req: NextRequest, ctx: { params: { id: string } }) {
+export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const conn = await db.getConnection();
   try {
     const current = await requireApiPermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
     await ensureTables();
 
-    const idProjeto = parseId(ctx.params);
+    const { id } = await ctx.params;
+    const idProjeto = parseId(id);
     if (!idProjeto) return fail(400, "id inválido.");
 
     const body = await req.json().catch(() => null);
@@ -163,13 +165,14 @@ export async function PUT(req: NextRequest, ctx: { params: { id: string } }) {
   }
 }
 
-export async function DELETE(_: NextRequest, ctx: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const conn = await db.getConnection();
   try {
     const current = await requireApiPermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
     await ensureTables();
 
-    const idProjeto = parseId(ctx.params);
+    const { id } = await ctx.params;
+    const idProjeto = parseId(id);
     if (!idProjeto) return fail(400, "id inválido.");
 
     await conn.beginTransaction();
@@ -201,4 +204,3 @@ export async function DELETE(_: NextRequest, ctx: { params: { id: string } }) {
     conn.release();
   }
 }
-
