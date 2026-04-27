@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
+import { getActiveObra } from "@/lib/obra/active";
 import { ExternalLink, Link2, Plus, Trash2 } from "lucide-react";
 
 type ApiEnvelope<T> = { success: boolean; message?: string; data: T };
@@ -58,6 +59,13 @@ export default function ObraProjetosClient() {
   const returnTo = useMemo(() => safeInternalPath(sp.get("returnTo") || null), [sp]);
   const backHref = returnTo || (idObra ? `/dashboard/engenharia/obras/${idObra}` : "/dashboard/engenharia/obras");
   const selfHref = idObra ? `/dashboard/engenharia/obras/${idObra}/projetos?returnTo=${encodeURIComponent(backHref)}` : "/dashboard/engenharia/obras";
+  const obraAtualLabel = useMemo(() => {
+    if (!idObra) return null;
+    const active = getActiveObra();
+    if (active?.id !== idObra) return `Obra selecionada: #${idObra}`;
+    const nome = String(active?.nome || "").trim();
+    return `Obra atual: #${idObra}${nome ? ` — ${nome}` : ""}`;
+  }, [idObra]);
   const breadcrumb = useMemo(() => {
     if (!returnTo) return "Engenharia → Obras → Obra selecionada → Projetos da Obra";
     const rt = returnTo.toLowerCase();
@@ -172,7 +180,10 @@ export default function ObraProjetosClient() {
         <div>
           <div className="text-xs text-[#6B7280]">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Projetos da Obra</h1>
-          <div className="mt-1 text-sm text-[#6B7280]">Cadastro e vínculo de projetos relacionados à obra selecionada.</div>
+          <div className="mt-1 text-sm text-[#6B7280]">
+            {obraAtualLabel ? <span className="font-medium text-[#374151]">{obraAtualLabel}</span> : null}
+            <span className={obraAtualLabel ? "ml-2" : ""}>Cadastro e vínculo de projetos relacionados à obra selecionada.</span>
+          </div>
         </div>
         <div className="flex gap-2 flex-wrap">
           <button className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm hover:bg-[#F9FAFB]" type="button" onClick={() => router.push(backHref)}>

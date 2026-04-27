@@ -3,11 +3,15 @@ import { Prisma } from '@prisma/client';
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
-export async function addTenantHistoryEntry(db: Db, input: { tenantId: number; source: 'SYSTEM' | 'ADMIN'; message: string; actorUserId?: number | null; attachmentUrls?: string[] }) {
+export async function addTenantHistoryEntry(
+  db: Db,
+  input: { tenantId: number; source: 'SYSTEM' | 'ADMIN'; message: string; actorUserId?: number | null; action?: string | null; attachmentUrls?: string[] }
+) {
   const entry = await db.tenantHistoryEntry.create({
     data: {
       tenantId: input.tenantId,
       source: input.source,
+      action: input.action == null ? null : String(input.action),
       message: input.message,
       actorUserId: input.actorUserId ?? null,
     },
@@ -30,4 +34,3 @@ export async function listTenantHistory(tenantId: number) {
     include: { attachments: true, actorUser: { select: { id: true, name: true, email: true } } },
   });
 }
-

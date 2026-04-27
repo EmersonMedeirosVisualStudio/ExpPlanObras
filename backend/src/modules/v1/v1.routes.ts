@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { normalizeEmail, onlyDigits } from '../../utils/validators.js';
 import { loadSubjectContext } from '../security-fields/service.js';
 import { sanitizeResourceObject } from '../security-fields/sanitizer.js';
+import { addTenantHistoryEntry } from '../admin/tenantHistory.service.js';
 
 type ApiSuccess<T> = { success: true; message?: string; data: T; meta?: any };
 type ApiError = { success: false; message: string; errors?: Record<string, string[]> };
@@ -38,6 +39,69 @@ function getAuthContext(request: FastifyRequest) {
   const role = u?.role;
   if (typeof tenantId !== 'number' || typeof userId !== 'number') return null;
   return { tenantId, userId, role: typeof role === 'string' ? role : 'USER', email: typeof u?.email === 'string' ? u.email : '' };
+}
+
+function parseResponsavelObraNotes(notes: any): {
+  responsabilidade: string | null;
+  docInclusaoTipo: 'ART' | 'RRT' | 'PORTARIA' | 'CONTRATO' | null;
+  docInclusaoNumero: string | null;
+  docBaixaTipo: 'ART' | 'RRT' | 'PORTARIA' | 'CONTRATO' | null;
+  docBaixaNumero: string | null;
+} {
+  const raw = String(notes || '').trim();
+  if (!raw) {
+    return { responsabilidade: null, docInclusaoTipo: null, docInclusaoNumero: null, docBaixaTipo: null, docBaixaNumero: null };
+  }
+  try {
+    const parsed = JSON.parse(raw) as any;
+    const resp = parsed?.responsabilidade != null ? String(parsed.responsabilidade).trim() : '';
+    const inTipo = parsed?.docInclusaoTipo != null ? String(parsed.docInclusaoTipo).trim().toUpperCase() : '';
+    const inNum = parsed?.docInclusaoNumero != null ? String(parsed.docInclusaoNumero).trim() : '';
+    const bxTipo = parsed?.docBaixaTipo != null ? String(parsed.docBaixaTipo).trim().toUpperCase() : '';
+    const bxNum = parsed?.docBaixaNumero != null ? String(parsed.docBaixaNumero).trim() : '';
+    const validTipo = (v: string): any => (v === 'ART' || v === 'RRT' || v === 'PORTARIA' || v === 'CONTRATO' ? v : null);
+    return {
+      responsabilidade: resp || null,
+      docInclusaoTipo: validTipo(inTipo),
+      docInclusaoNumero: inNum || null,
+      docBaixaTipo: validTipo(bxTipo),
+      docBaixaNumero: bxNum || null,
+    };
+  } catch {
+    const legacy = raw.slice(0, 240);
+    return { responsabilidade: legacy || null, docInclusaoTipo: null, docInclusaoNumero: null, docBaixaTipo: null, docBaixaNumero: null };
+  }
+}
+
+function buildResponsavelObraNotes(input: {
+  responsabilidade?: string | null;
+  docInclusaoTipo?: 'ART' | 'RRT' | 'PORTARIA' | 'CONTRATO' | null;
+  docInclusaoNumero?: string | null;
+  docBaixaTipo?: 'ART' | 'RRT' | 'PORTARIA' | 'CONTRATO' | null;
+  docBaixaNumero?: string | null;
+}) {
+  const payload: any = {};
+  const responsabilidade = input.responsabilidade != null ? String(input.responsabilidade).trim() : '';
+  if (responsabilidade) payload.responsabilidade = responsabilidade;
+  const docInclusaoTipo = input.docInclusaoTipo != null ? String(input.docInclusaoTipo).trim().toUpperCase() : '';
+  if (docInclusaoTipo) payload.docInclusaoTipo = docInclusaoTipo;
+  const docInclusaoNumero = input.docInclusaoNumero != null ? String(input.docInclusaoNumero).trim() : '';
+  if (docInclusaoNumero) payload.docInclusaoNumero = docInclusaoNumero;
+  const docBaixaTipo = input.docBaixaTipo != null ? String(input.docBaixaTipo).trim().toUpperCase() : '';
+  if (docBaixaTipo) payload.docBaixaTipo = docBaixaTipo;
+  const docBaixaNumero = input.docBaixaNumero != null ? String(input.docBaixaNumero).trim() : '';
+  if (docBaixaNumero) payload.docBaixaNumero = docBaixaNumero;
+  const keys = Object.keys(payload);
+  if (!keys.length) return null;
+  return JSON.stringify(payload);
+}
+
+function inferDocTipoFromNumero(numero: string | null): 'ART' | 'RRT' | 'PORTARIA' | 'CONTRATO' {
+  const s = String(numero || '').trim().toUpperCase();
+  if (s.includes('RRT')) return 'RRT';
+  if (s.includes('ART')) return 'ART';
+  if (s.includes('PORTARIA')) return 'PORTARIA';
+  return 'CONTRATO';
 }
 
 async function requireRepresentative(request: FastifyRequest, reply: FastifyReply) {
@@ -1813,6 +1877,7 @@ export default async function v1Routes(server: FastifyInstance) {
     return ok(
       reply,
       rows.map((r) => ({
+        ...(parseResponsavelObraNotes((r as any).notes || null) as any),
         idObraResponsabilidade: r.id,
         idObra: r.obraId,
         tipo: String(r.role || '').toUpperCase() === 'FISCAL_OBRA' ? 'FISCAL_OBRA' : 'RESPONSAVEL_TECNICO',
@@ -1822,6 +1887,8 @@ export default async function v1Routes(server: FastifyInstance) {
         email: r.responsavel?.email ?? null,
         telefone: r.responsavel?.phone ?? null,
         ativo: r.endDate == null,
+        dataInicio: r.startDate ? r.startDate.toISOString() : null,
+        dataBaixa: r.endDate ? r.endDate.toISOString() : null,
       }))
     );
   });
@@ -1835,6 +1902,13 @@ export default async function v1Routes(server: FastifyInstance) {
         tipo: z.enum(['RESPONSAVEL_TECNICO', 'FISCAL_OBRA']),
         idTecnico: z.number().int().positive(),
         ativo: z.boolean().default(true),
+        responsabilidade: z.string().optional().nullable(),
+        docInclusaoTipo: z.enum(['ART', 'RRT', 'PORTARIA', 'CONTRATO']),
+        docInclusaoNumero: z.string().min(1),
+        startDate: z.string().optional().nullable(),
+        endDate: z.string().optional().nullable(),
+        docBaixaTipo: z.enum(['ART', 'RRT', 'PORTARIA', 'CONTRATO']).optional().nullable(),
+        docBaixaNumero: z.string().optional().nullable(),
       })
       .parse(request.body || {});
 
@@ -1844,16 +1918,56 @@ export default async function v1Routes(server: FastifyInstance) {
     const tecnico = await prisma.responsavelTecnico.findFirst({ where: { id: body.idTecnico, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
     if (!tecnico) return fail(reply, 404, 'Profissional não encontrado');
 
+    const startDate = body.startDate ? new Date(String(body.startDate)) : new Date();
+    if (body.startDate && Number.isNaN(startDate.getTime())) return fail(reply, 400, 'Data de início inválida');
+    const endDate = body.ativo ? null : body.endDate ? new Date(String(body.endDate)) : new Date();
+    if (!body.ativo && body.endDate && Number.isNaN(endDate?.getTime() || NaN)) return fail(reply, 400, 'Data de baixa inválida');
+
+    const responsabilidadeNorm = body.responsabilidade ? String(body.responsabilidade).trim().toLowerCase() : '';
+    const existingActive = await prisma.responsavelObra
+      .findFirst({
+        where: { obraId: obra.id, responsavelId: tecnico.id, role: body.tipo, endDate: null },
+        select: { id: true, notes: true },
+      })
+      .catch(() => null);
+    if (existingActive) {
+      const parsed = parseResponsavelObraNotes((existingActive as any).notes || null);
+      const existingResp = parsed.responsabilidade ? String(parsed.responsabilidade).trim().toLowerCase() : '';
+      if (!responsabilidadeNorm || existingResp === responsabilidadeNorm) return fail(reply, 409, 'Já existe um vínculo ativo com a mesma responsabilidade');
+    }
+
+    if (!body.ativo) {
+      const bxTipo = body.docBaixaTipo ? String(body.docBaixaTipo).trim().toUpperCase() : '';
+      const bxNumero = body.docBaixaNumero ? String(body.docBaixaNumero).trim() : '';
+      if (!bxTipo || !bxNumero) return fail(reply, 400, 'Documento de baixa é obrigatório para cadastrar como inativo');
+    }
+
     const created = await prisma.responsavelObra.create({
       data: {
         obraId: obra.id,
         responsavelId: tecnico.id,
         role: body.tipo,
-        endDate: body.ativo ? null : new Date(),
+        startDate,
+        endDate,
+        notes: buildResponsavelObraNotes({
+          responsabilidade: body.responsabilidade ? String(body.responsabilidade).trim() : null,
+          docInclusaoTipo: body.docInclusaoTipo,
+          docInclusaoNumero: String(body.docInclusaoNumero).trim(),
+          docBaixaTipo: body.ativo ? null : (body.docBaixaTipo as any),
+          docBaixaNumero: body.ativo ? null : (body.docBaixaNumero ? String(body.docBaixaNumero).trim() : null),
+        }),
       },
     });
 
     await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_obras_responsabilidades', idRegistro: String(created.id), acao: 'CREATE', dadosNovos: created as any });
+    const tecnicoFull = await prisma.responsavelTecnico.findFirst({ where: { id: tecnico.id, tenantId: ctx.tenantId }, select: { name: true } }).catch(() => null);
+    await addTenantHistoryEntry(prisma, {
+      tenantId: ctx.tenantId,
+      source: 'SYSTEM',
+      actorUserId: ctx.userId,
+      action: `OBRA:${obra.id}`,
+      message: `Obra #${obra.id}: vínculo criado (${body.tipo}) — ${tecnicoFull?.name ? String(tecnicoFull.name) : `Técnico #${tecnico.id}`}.`,
+    });
     return ok(reply, { idObraResponsabilidade: created.id }, { message: 'Vínculo cadastrado' });
   });
 
@@ -1865,20 +1979,65 @@ export default async function v1Routes(server: FastifyInstance) {
       .object({
         tipo: z.enum(['RESPONSAVEL_TECNICO', 'FISCAL_OBRA']),
         ativo: z.boolean().default(true),
+        responsabilidade: z.string().optional().nullable(),
+        docInclusaoTipo: z.enum(['ART', 'RRT', 'PORTARIA', 'CONTRATO']).optional().nullable(),
+        docInclusaoNumero: z.string().optional().nullable(),
+        startDate: z.string().optional().nullable(),
+        endDate: z.string().optional().nullable(),
+        docBaixaTipo: z.enum(['ART', 'RRT', 'PORTARIA', 'CONTRATO']).optional().nullable(),
+        docBaixaNumero: z.string().optional().nullable(),
       })
       .parse(request.body || {});
 
     const current = await prisma.responsavelObra.findUnique({ where: { id }, include: { obra: { select: { tenantId: true } } } }).catch(() => null);
     if (!current || current.obra?.tenantId !== ctx.tenantId) return fail(reply, 404, 'Registro não encontrado');
 
+    const prevNotes = parseResponsavelObraNotes((current as any).notes || null);
+    const startDate = body.startDate ? new Date(String(body.startDate)) : current.startDate;
+    if (body.startDate && Number.isNaN(startDate.getTime())) return fail(reply, 400, 'Data de início inválida');
+    const endDate = body.ativo
+      ? null
+      : body.endDate
+        ? new Date(String(body.endDate))
+        : new Date();
+    if (!body.ativo && body.endDate && Number.isNaN(endDate?.getTime() || NaN)) return fail(reply, 400, 'Data de baixa inválida');
+
+    const responsabilidade = body.responsabilidade != null ? String(body.responsabilidade).trim() : prevNotes.responsabilidade;
+    const docInclusaoTipo = body.docInclusaoTipo != null ? (String(body.docInclusaoTipo).trim().toUpperCase() as any) : prevNotes.docInclusaoTipo;
+    const docInclusaoNumero = body.docInclusaoNumero != null ? String(body.docInclusaoNumero).trim() : prevNotes.docInclusaoNumero;
+    if (!docInclusaoTipo || !docInclusaoNumero) return fail(reply, 400, 'Documento de inclusão é obrigatório');
+
+    const docBaixaTipo = body.ativo
+      ? null
+      : body.docBaixaTipo != null
+        ? (String(body.docBaixaTipo).trim().toUpperCase() as any)
+        : prevNotes.docBaixaTipo;
+    const docBaixaNumero = body.ativo ? null : body.docBaixaNumero != null ? String(body.docBaixaNumero).trim() : prevNotes.docBaixaNumero;
+    if (!body.ativo && (!docBaixaTipo || !docBaixaNumero)) return fail(reply, 400, 'Documento de baixa é obrigatório');
+
     const updated = await prisma.responsavelObra.update({
       where: { id },
       data: {
         role: body.tipo,
-        endDate: body.ativo ? null : new Date(),
+        startDate,
+        endDate,
+        notes: buildResponsavelObraNotes({
+          responsabilidade,
+          docInclusaoTipo,
+          docInclusaoNumero,
+          docBaixaTipo,
+          docBaixaNumero,
+        }),
       },
     });
     await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_obras_responsabilidades', idRegistro: String(id), acao: 'UPDATE', dadosAnteriores: current as any, dadosNovos: updated as any });
+    await addTenantHistoryEntry(prisma, {
+      tenantId: ctx.tenantId,
+      source: 'SYSTEM',
+      actorUserId: ctx.userId,
+      action: `OBRA:${(current as any).obraId}`,
+      message: `Obra #${(current as any).obraId}: vínculo atualizado (id ${id}).`,
+    });
     return ok(reply, {}, { message: 'Vínculo atualizado' });
   });
 
@@ -1891,6 +2050,13 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!current || current.obra?.tenantId !== ctx.tenantId) return fail(reply, 404, 'Registro não encontrado');
     await prisma.responsavelObra.delete({ where: { id } });
     await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_obras_responsabilidades', idRegistro: String(id), acao: 'DELETE', dadosAnteriores: current as any });
+    await addTenantHistoryEntry(prisma, {
+      tenantId: ctx.tenantId,
+      source: 'SYSTEM',
+      actorUserId: ctx.userId,
+      action: `OBRA:${(current as any).obraId}`,
+      message: `Obra #${(current as any).obraId}: vínculo removido (id ${id}).`,
+    });
     return ok(reply, {}, { message: 'Vínculo removido' });
   });
 
@@ -1913,7 +2079,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const pr = await prisma.engenhariaProjetoResponsavel.findMany({
       where: { tenantId: ctx.tenantId, projetoId: projeto.id },
-      select: { responsavelId: true, tipo: true },
+      select: { responsavelId: true, tipo: true, abrangencia: true, numeroDocumento: true },
       take: 500,
     });
 
@@ -1922,10 +2088,17 @@ export default async function v1Routes(server: FastifyInstance) {
         obraId: obra.id,
         responsavelId: { in: pr.map((x) => x.responsavelId) },
       },
-      select: { id: true, responsavelId: true, role: true },
+      select: { id: true, responsavelId: true, role: true, endDate: true, notes: true },
     });
 
-    const existingKey = new Set(existing.map((e) => `${e.responsavelId}::${String(e.role || '').toUpperCase()}`));
+    const existingKey = new Set(
+      existing.map((e) => {
+        const role = String(e.role || '').toUpperCase();
+        const parsed = parseResponsavelObraNotes((e as any).notes || null);
+        const resp = parsed.responsabilidade ? String(parsed.responsabilidade).trim().toLowerCase() : '';
+        return `${e.responsavelId}::${role}::${resp}`;
+      })
+    );
 
     let inseridos = 0;
     let reativados = 0;
@@ -1933,23 +2106,41 @@ export default async function v1Routes(server: FastifyInstance) {
     await prisma.$transaction(async (tx) => {
       for (const row of pr) {
         const role = String(row.tipo || '').toUpperCase() === 'FISCAL_OBRA' ? 'FISCAL_OBRA' : 'RESPONSAVEL_TECNICO';
-        const key = `${row.responsavelId}::${role}`;
+        const responsabilidade = row.abrangencia ? String(row.abrangencia).trim() : '';
+        const respKey = responsabilidade ? responsabilidade.toLowerCase() : '';
+        const key = `${row.responsavelId}::${role}::${respKey}`;
         if (existingKey.has(key)) {
           const current = await tx.responsavelObra
-            .findFirst({ where: { obraId: obra.id, responsavelId: row.responsavelId, role }, select: { id: true, endDate: true } })
+            .findFirst({
+              where: { obraId: obra.id, responsavelId: row.responsavelId, role },
+              select: { id: true, endDate: true, notes: true },
+              orderBy: { id: 'desc' },
+            })
             .catch(() => null);
-          if (current && current.endDate != null) {
+          const parsed = parseResponsavelObraNotes((current as any)?.notes || null);
+          const currentResp = parsed.responsabilidade ? String(parsed.responsabilidade).trim().toLowerCase() : '';
+          if (current && current.endDate != null && currentResp === respKey) {
             await tx.responsavelObra.update({ where: { id: current.id }, data: { endDate: null } });
             reativados++;
           }
           continue;
         }
+        const numeroDoc = row.numeroDocumento ? String(row.numeroDocumento).trim() : '';
+        const docInclusaoNumero = numeroDoc || `Vínculo via projeto #${projeto.id}`;
+        const docInclusaoTipo = inferDocTipoFromNumero(numeroDoc);
         await tx.responsavelObra.create({
           data: {
             obraId: obra.id,
             responsavelId: row.responsavelId,
             role,
             endDate: null,
+            notes: buildResponsavelObraNotes({
+              responsabilidade: responsabilidade || null,
+              docInclusaoTipo,
+              docInclusaoNumero,
+              docBaixaTipo: null,
+              docBaixaNumero: null,
+            }),
           },
         });
         inseridos++;
@@ -1965,7 +2156,44 @@ export default async function v1Routes(server: FastifyInstance) {
       dadosNovos: { inseridos, reativados } as any,
     });
 
+    await addTenantHistoryEntry(prisma, {
+      tenantId: ctx.tenantId,
+      source: 'SYSTEM',
+      actorUserId: ctx.userId,
+      action: `OBRA:${obra.id}`,
+      message: `Obra #${obra.id}: importação de responsáveis do projeto #${projeto.id}. Inseridos: ${inseridos}. Reativados: ${reativados}.`,
+    });
+
     return ok(reply, { inseridos, reativados }, { message: 'Importação concluída' });
+  });
+
+  server.get('/engenharia/obras/historico', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const q = z.object({ idObra: z.coerce.number().int().positive() }).parse(request.query || {});
+
+    const obra = await prisma.obra.findUnique({ where: { id: q.idObra }, select: { id: true, tenantId: true } }).catch(() => null);
+    if (!obra || obra.tenantId !== ctx.tenantId) return fail(reply, 404, 'Obra não encontrada');
+
+    const items = await prisma.tenantHistoryEntry.findMany({
+      where: { tenantId: ctx.tenantId, action: `OBRA:${obra.id}` },
+      orderBy: { createdAt: 'desc' },
+      include: { actorUser: { select: { id: true, name: true, email: true } }, attachments: { select: { id: true, entryId: true, url: true, filename: true, mimeType: true } } },
+      take: 500,
+    });
+
+    return ok(
+      reply,
+      items.map((i) => ({
+        idHistorico: i.id,
+        idObra: obra.id,
+        dataHora: i.createdAt.toISOString(),
+        usuario: i.actorUser ? { id: i.actorUser.id, nome: i.actorUser.name ?? null, email: i.actorUser.email ?? null } : null,
+        origem: i.source,
+        mensagem: i.message,
+        anexos: (i as any).attachments || [],
+      }))
+    );
   });
 
   server.get('/engenharia/projetos', async (request, reply) => {
@@ -2585,6 +2813,63 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!created) return fail(reply, 409, 'Responsável já vinculado ao projeto');
 
     await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_projetos_responsaveis', idRegistro: String(created.id), acao: 'CREATE', dadosNovos: created as any });
+
+    const links = await prisma.engenhariaObraProjeto.findMany({
+      where: { tenantId: ctx.tenantId, projetoId: projeto.id },
+      select: { obraId: true },
+      take: 1000,
+    });
+    const obraIds = Array.from(new Set(links.map((l) => l.obraId))).filter((x) => Number.isInteger(x) && x > 0);
+    if (obraIds.length) {
+      const responsabilidade = body.abrangencia ? String(body.abrangencia).trim() : '';
+      const respKey = responsabilidade ? responsabilidade.toLowerCase() : '';
+      const numeroDoc = body.numeroDocumento ? String(body.numeroDocumento).trim() : '';
+      const docInclusaoNumero = numeroDoc || `Vínculo via projeto #${projeto.id}`;
+      const docInclusaoTipo = inferDocTipoFromNumero(numeroDoc);
+
+      await prisma.$transaction(async (tx) => {
+        const existing = await tx.responsavelObra.findMany({
+          where: { obraId: { in: obraIds }, responsavelId: tecnico.id, role: body.tipo, endDate: null },
+          select: { id: true, obraId: true, notes: true },
+        });
+        const existingKey = new Set(
+          existing.map((e) => {
+            const parsed = parseResponsavelObraNotes((e as any).notes || null);
+            const resp = parsed.responsabilidade ? String(parsed.responsabilidade).trim().toLowerCase() : '';
+            return `${e.obraId}::${resp}`;
+          })
+        );
+
+        for (const obraId of obraIds) {
+          const key = `${obraId}::${respKey}`;
+          if (existingKey.has(key)) continue;
+          await tx.responsavelObra.create({
+            data: {
+              obraId,
+              responsavelId: tecnico.id,
+              role: body.tipo,
+              startDate: new Date(),
+              endDate: null,
+              notes: buildResponsavelObraNotes({
+                responsabilidade: responsabilidade || null,
+                docInclusaoTipo,
+                docInclusaoNumero,
+                docBaixaTipo: null,
+                docBaixaNumero: null,
+              }),
+            },
+          });
+          await addTenantHistoryEntry(tx, {
+            tenantId: ctx.tenantId,
+            source: 'SYSTEM',
+            actorUserId: ctx.userId,
+            action: `OBRA:${obraId}`,
+            message: `Obra #${obraId}: responsável incluído automaticamente via projeto #${projeto.id} (${body.tipo}).`,
+          });
+        }
+      });
+    }
+
     return ok(reply, { idProjetoResponsavel: created.id }, { message: 'Responsável vinculado' });
   });
 

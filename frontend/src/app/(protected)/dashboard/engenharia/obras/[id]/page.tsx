@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { setActiveObra } from "@/lib/obra/active";
 import api from "@/lib/api";
-import { ExternalLink, LayoutDashboard } from "lucide-react";
+import { Clock, ExternalLink, LayoutDashboard, Pencil, Plus, Trash2 } from "lucide-react";
 
 type ApiEnvelope<T> = { success: boolean; message?: string; data: T };
 function unwrapApiData<T>(json: any): T {
@@ -55,13 +55,45 @@ type ResponsavelObraRow = {
   email: string | null;
   telefone: string | null;
   ativo: boolean;
+  responsabilidade: string | null;
+  docInclusaoTipo: "ART" | "RRT" | "PORTARIA" | "CONTRATO" | null;
+  docInclusaoNumero: string | null;
+  docBaixaTipo: "ART" | "RRT" | "PORTARIA" | "CONTRATO" | null;
+  docBaixaNumero: string | null;
+  dataInicio: string | null;
+  dataBaixa: string | null;
   criadoEm?: string;
   atualizadoEm?: string;
+};
+
+type TecnicoRow = {
+  idTecnico: number;
+  nome: string;
+  tituloProfissional: string | null;
+  conselho: string | null;
+  numeroRegistro: string | null;
+};
+
+type HistoricoObraRow = {
+  idHistorico: number;
+  idObra: number;
+  dataHora: string;
+  usuario: { id: number; nome: string | null; email: string | null } | null;
+  origem: string;
+  mensagem: string;
+  anexos: { id: number; entryId: number; url: string; filename: string | null; mimeType: string | null }[];
 };
 
 function moeda(v: number | undefined | null) {
   const n = Number(v || 0);
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number.isFinite(n) ? n : 0);
+}
+
+function formatDateBR(iso: string | null | undefined) {
+  if (!iso) return "—";
+  const d = new Date(String(iso));
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("pt-BR");
 }
 
 function formatEnderecoLinha(e?: ObraBasica["enderecoObra"] | null) {
@@ -88,6 +120,482 @@ function safeInternalPath(v: string | null) {
   if (!s.startsWith("/")) return null;
   if (s.startsWith("//")) return null;
   return s;
+}
+
+function VincularResponsavelObraModal(props: {
+  open: boolean;
+  idObra: number;
+  defaultTipo: "RESPONSAVEL_TECNICO" | "FISCAL_OBRA";
+  returnTo: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { open, idObra, defaultTipo, returnTo, onClose, onSaved } = props;
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [rows, setRows] = useState<TecnicoRow[]>([]);
+  const [selectedIdTecnico, setSelectedIdTecnico] = useState<number | null>(null);
+  const [tipo, setTipo] = useState<"RESPONSAVEL_TECNICO" | "FISCAL_OBRA">(defaultTipo);
+  const [responsabilidade, setResponsabilidade] = useState("");
+  const [docInclusaoTipo, setDocInclusaoTipo] = useState<"ART" | "RRT" | "PORTARIA" | "CONTRATO">("ART");
+  const [docInclusaoNumero, setDocInclusaoNumero] = useState("");
+  const [dataInicio, setDataInicio] = useState("");
+  const [ativo, setAtivo] = useState(true);
+  const [docBaixaTipo, setDocBaixaTipo] = useState<"ART" | "RRT" | "PORTARIA" | "CONTRATO">("ART");
+  const [docBaixaNumero, setDocBaixaNumero] = useState("");
+  const [dataBaixa, setDataBaixa] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => {
+      const hay = `${r.nome} ${r.tituloProfissional || ""} ${r.conselho || ""} ${r.numeroRegistro || ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [rows, query]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    (async () => {
+      try {
+        setLoading(true);
+        setErr(null);
+        setQuery("");
+        setSelectedIdTecnico(null);
+        setTipo(defaultTipo);
+        setResponsabilidade("");
+        setDocInclusaoTipo("ART");
+        setDocInclusaoNumero("");
+        setDataInicio("");
+        setAtivo(true);
+        setDocBaixaTipo("ART");
+        setDocBaixaNumero("");
+        setDataBaixa("");
+        const res = await api.get("/api/v1/engenharia/tecnicos");
+        const list = unwrapApiData<any[]>(res?.data || []);
+        const mapped: TecnicoRow[] = Array.isArray(list)
+          ? list.map((r) => ({
+              idTecnico: Number(r.idTecnico),
+              nome: String(r.nome || ""),
+              tituloProfissional: r.tituloProfissional == null ? null : String(r.tituloProfissional),
+              conselho: r.conselho == null ? null : String(r.conselho),
+              numeroRegistro: r.numeroRegistro == null ? null : String(r.numeroRegistro),
+            }))
+          : [];
+        if (!active) return;
+        setRows(mapped.filter((r) => Number.isInteger(r.idTecnico) && r.idTecnico > 0));
+      } catch (e: any) {
+        if (active) setErr(e?.response?.data?.message || e?.message || "Erro ao carregar profissionais.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [open, defaultTipo]);
+
+  async function salvar() {
+    if (!idObra) {
+      setErr("Obra inválida.");
+      return;
+    }
+    if (!selectedIdTecnico) {
+      setErr("Selecione um profissional.");
+      return;
+    }
+    if (!docInclusaoNumero.trim()) {
+      setErr("Documento de inclusão é obrigatório.");
+      return;
+    }
+    if (!ativo) {
+      if (!docBaixaNumero.trim()) {
+        setErr("Documento de baixa é obrigatório quando o vínculo está inativo.");
+        return;
+      }
+    }
+    try {
+      setLoading(true);
+      setErr(null);
+      await api.post("/api/v1/engenharia/obras/responsabilidades", {
+        idObra,
+        tipo,
+        idTecnico: selectedIdTecnico,
+        ativo,
+        responsabilidade: responsabilidade.trim() || null,
+        docInclusaoTipo,
+        docInclusaoNumero: docInclusaoNumero.trim(),
+        startDate: dataInicio.trim() || null,
+        docBaixaTipo: ativo ? null : docBaixaTipo,
+        docBaixaNumero: ativo ? null : docBaixaNumero.trim(),
+        endDate: ativo ? null : dataBaixa.trim() || null,
+      });
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Erro ao cadastrar vínculo.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-5xl overflow-hidden rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] px-4 py-3">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold">Novo responsável da obra</div>
+            <div className="text-xs text-[#6B7280]">Selecione o profissional e preencha documentos e datas.</div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              className="inline-flex items-center gap-2 rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]"
+              type="button"
+              onClick={() => router.push(`/dashboard/engenharia/profissionais?returnTo=${encodeURIComponent(returnTo)}`)}
+              disabled={loading}
+              title="Abrir cadastro de profissionais"
+            >
+              <ExternalLink size={16} /> Profissionais
+            </button>
+            <button className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" type="button" onClick={onClose} disabled={loading}>
+              Fechar
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-0 lg:grid-cols-[1fr_360px]">
+          <div className="border-b border-[#E5E7EB] p-4 lg:border-b-0 lg:border-r">
+            {err ? <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
+            <input className="input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filtrar profissionais..." disabled={loading} />
+            <div className="mt-3 overflow-hidden rounded-lg border border-[#E5E7EB]">
+              <div className="max-h-[54vh] overflow-auto">
+                {!filtered.length ? (
+                  <div className="px-3 py-4 text-sm text-[#6B7280]">{loading ? "Carregando..." : "Nenhum profissional encontrado."}</div>
+                ) : (
+                  filtered.map((r) => {
+                    const selected = r.idTecnico === selectedIdTecnico;
+                    return (
+                      <button
+                        key={r.idTecnico}
+                        type="button"
+                        className={`block w-full px-3 py-2 text-left hover:bg-[#F9FAFB] ${selected ? "bg-[#EFF6FF]" : ""}`}
+                        onClick={() => setSelectedIdTecnico(r.idTecnico)}
+                        disabled={loading}
+                      >
+                        <div className="text-sm font-medium">{r.nome || "—"}</div>
+                        <div className="text-xs text-[#6B7280]">
+                          {r.tituloProfissional ? `${r.tituloProfissional} • ` : ""}
+                          {(r.conselho || "—") + " " + (r.numeroRegistro || "—")}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4">
+            <div className="grid gap-3">
+              <div>
+                <div className="text-sm text-[#6B7280]">Tipo</div>
+                <select className="input" value={tipo} onChange={(e) => setTipo((String(e.target.value).toUpperCase() === "FISCAL_OBRA" ? "FISCAL_OBRA" : "RESPONSAVEL_TECNICO") as any)} disabled={loading}>
+                  <option value="RESPONSAVEL_TECNICO">Responsável Técnico</option>
+                  <option value="FISCAL_OBRA">Fiscal da Obra</option>
+                </select>
+              </div>
+              <div>
+                <div className="text-sm text-[#6B7280]">Responsabilidade (opcional)</div>
+                <input className="input" value={responsabilidade} onChange={(e) => setResponsabilidade(e.target.value)} placeholder="Ex.: Estrutural / Hidrossanitário / Obra inteira" disabled={loading} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="text-sm text-[#6B7280]">Documento inclusão</div>
+                  <select className="input" value={docInclusaoTipo} onChange={(e) => setDocInclusaoTipo(String(e.target.value).toUpperCase() as any)} disabled={loading}>
+                    <option value="ART">ART</option>
+                    <option value="RRT">RRT</option>
+                    <option value="PORTARIA">Portaria</option>
+                    <option value="CONTRATO">Contrato</option>
+                  </select>
+                </div>
+                <div>
+                  <div className="text-sm text-[#6B7280]">Nº</div>
+                  <input className="input" value={docInclusaoNumero} onChange={(e) => setDocInclusaoNumero(e.target.value)} placeholder="Obrigatório" disabled={loading} />
+                </div>
+              </div>
+              <div>
+                <div className="text-sm text-[#6B7280]">Data de início (opcional)</div>
+                <input className="input" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} disabled={loading} />
+              </div>
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} disabled={loading} />
+                Vínculo ativo
+              </label>
+
+              {!ativo ? (
+                <div className="grid gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <div className="text-sm font-medium text-amber-900">Baixa do vínculo</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <div className="text-sm text-amber-800">Documento baixa</div>
+                      <select className="input" value={docBaixaTipo} onChange={(e) => setDocBaixaTipo(String(e.target.value).toUpperCase() as any)} disabled={loading}>
+                        <option value="ART">ART</option>
+                        <option value="RRT">RRT</option>
+                        <option value="PORTARIA">Portaria</option>
+                        <option value="CONTRATO">Contrato</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div className="text-sm text-amber-800">Nº</div>
+                      <input className="input" value={docBaixaNumero} onChange={(e) => setDocBaixaNumero(e.target.value)} placeholder="Obrigatório" disabled={loading} />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-amber-800">Data da baixa (opcional)</div>
+                    <input className="input" type="date" value={dataBaixa} onChange={(e) => setDataBaixa(e.target.value)} disabled={loading} />
+                  </div>
+                </div>
+              ) : null}
+
+              <button type="button" className="w-full rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50" onClick={salvar} disabled={loading || !selectedIdTecnico}>
+                Salvar vínculo
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditarResponsavelObraModal(props: { open: boolean; row: ResponsavelObraRow | null; onClose: () => void; onSaved: () => void }) {
+  const { open, row, onClose, onSaved } = props;
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [tipo, setTipo] = useState<"RESPONSAVEL_TECNICO" | "FISCAL_OBRA">("RESPONSAVEL_TECNICO");
+  const [responsabilidade, setResponsabilidade] = useState("");
+  const [docInclusaoTipo, setDocInclusaoTipo] = useState<"ART" | "RRT" | "PORTARIA" | "CONTRATO">("ART");
+  const [docInclusaoNumero, setDocInclusaoNumero] = useState("");
+  const [dataInicio, setDataInicio] = useState("");
+  const [ativo, setAtivo] = useState(true);
+  const [docBaixaTipo, setDocBaixaTipo] = useState<"ART" | "RRT" | "PORTARIA" | "CONTRATO">("ART");
+  const [docBaixaNumero, setDocBaixaNumero] = useState("");
+  const [dataBaixa, setDataBaixa] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setErr(null);
+    setTipo((String(row?.tipo || "").toUpperCase() === "FISCAL_OBRA" ? "FISCAL_OBRA" : "RESPONSAVEL_TECNICO") as any);
+    setResponsabilidade(row?.responsabilidade ? String(row.responsabilidade) : "");
+    setDocInclusaoTipo((String(row?.docInclusaoTipo || "ART").toUpperCase() as any) || "ART");
+    setDocInclusaoNumero(row?.docInclusaoNumero ? String(row.docInclusaoNumero) : "");
+    setDataInicio(row?.dataInicio ? String(row.dataInicio).slice(0, 10) : "");
+    setAtivo(Boolean(row?.ativo));
+    setDocBaixaTipo((String(row?.docBaixaTipo || "ART").toUpperCase() as any) || "ART");
+    setDocBaixaNumero(row?.docBaixaNumero ? String(row.docBaixaNumero) : "");
+    setDataBaixa(row?.dataBaixa ? String(row.dataBaixa).slice(0, 10) : "");
+  }, [open, row]);
+
+  async function salvar() {
+    if (!row) return;
+    if (!docInclusaoNumero.trim()) {
+      setErr("Documento de inclusão é obrigatório.");
+      return;
+    }
+    if (!ativo && !docBaixaNumero.trim()) {
+      setErr("Documento de baixa é obrigatório quando o vínculo está inativo.");
+      return;
+    }
+    try {
+      setLoading(true);
+      setErr(null);
+      await api.put(`/api/v1/engenharia/obras/responsabilidades/${row.idObraResponsabilidade}`, {
+        tipo,
+        ativo,
+        responsabilidade: responsabilidade.trim() || null,
+        docInclusaoTipo,
+        docInclusaoNumero: docInclusaoNumero.trim(),
+        startDate: dataInicio.trim() || null,
+        docBaixaTipo: ativo ? null : docBaixaTipo,
+        docBaixaNumero: ativo ? null : docBaixaNumero.trim(),
+        endDate: ativo ? null : dataBaixa.trim() || null,
+      });
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Erro ao atualizar vínculo.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!open || !row) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] px-4 py-3">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold">Editar responsável da obra</div>
+            <div className="text-xs text-[#6B7280]">{row.nome || "—"}</div>
+          </div>
+          <button className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" type="button" onClick={onClose} disabled={loading}>
+            Fechar
+          </button>
+        </div>
+
+        <div className="p-4">
+          {err ? <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
+          <div className="grid gap-3">
+            <div>
+              <div className="text-sm text-[#6B7280]">Tipo</div>
+              <select className="input" value={tipo} onChange={(e) => setTipo((String(e.target.value).toUpperCase() === "FISCAL_OBRA" ? "FISCAL_OBRA" : "RESPONSAVEL_TECNICO") as any)} disabled={loading}>
+                <option value="RESPONSAVEL_TECNICO">Responsável Técnico</option>
+                <option value="FISCAL_OBRA">Fiscal da Obra</option>
+              </select>
+            </div>
+            <div>
+              <div className="text-sm text-[#6B7280]">Responsabilidade (opcional)</div>
+              <input className="input" value={responsabilidade} onChange={(e) => setResponsabilidade(e.target.value)} disabled={loading} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <div className="text-sm text-[#6B7280]">Documento inclusão</div>
+                <select className="input" value={docInclusaoTipo} onChange={(e) => setDocInclusaoTipo(String(e.target.value).toUpperCase() as any)} disabled={loading}>
+                  <option value="ART">ART</option>
+                  <option value="RRT">RRT</option>
+                  <option value="PORTARIA">Portaria</option>
+                  <option value="CONTRATO">Contrato</option>
+                </select>
+              </div>
+              <div>
+                <div className="text-sm text-[#6B7280]">Nº</div>
+                <input className="input" value={docInclusaoNumero} onChange={(e) => setDocInclusaoNumero(e.target.value)} disabled={loading} />
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-[#6B7280]">Data de início (opcional)</div>
+              <input className="input" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} disabled={loading} />
+            </div>
+            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} disabled={loading} />
+              Vínculo ativo
+            </label>
+            {!ativo ? (
+              <div className="grid gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <div className="text-sm font-medium text-amber-900">Baixa do vínculo</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="text-sm text-amber-800">Documento baixa</div>
+                    <select className="input" value={docBaixaTipo} onChange={(e) => setDocBaixaTipo(String(e.target.value).toUpperCase() as any)} disabled={loading}>
+                      <option value="ART">ART</option>
+                      <option value="RRT">RRT</option>
+                      <option value="PORTARIA">Portaria</option>
+                      <option value="CONTRATO">Contrato</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div className="text-sm text-amber-800">Nº</div>
+                    <input className="input" value={docBaixaNumero} onChange={(e) => setDocBaixaNumero(e.target.value)} disabled={loading} />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm text-amber-800">Data da baixa (opcional)</div>
+                  <input className="input" type="date" value={dataBaixa} onChange={(e) => setDataBaixa(e.target.value)} disabled={loading} />
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-2 flex gap-2">
+              <button type="button" className="flex-1 rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm hover:bg-[#F9FAFB] disabled:opacity-50" onClick={onClose} disabled={loading}>
+                Cancelar
+              </button>
+              <button type="button" className="flex-1 rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50" onClick={salvar} disabled={loading}>
+                Salvar alterações
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HistoricoObraModal(props: {
+  open: boolean;
+  idObra: number;
+  rows: HistoricoObraRow[];
+  loading: boolean;
+  err: string | null;
+  onReload: () => void;
+  onClose: () => void;
+}) {
+  const { open, idObra, rows, loading, err, onReload, onClose } = props;
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] px-4 py-3">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold">Histórico da obra #{idObra}</div>
+            <div className="text-xs text-[#6B7280]">Ações registradas automaticamente pelo sistema.</div>
+          </div>
+          <div className="flex gap-2">
+            <button className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB] disabled:opacity-50" type="button" onClick={onReload} disabled={loading}>
+              Atualizar
+            </button>
+            <button className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" type="button" onClick={onClose}>
+              Fechar
+            </button>
+          </div>
+        </div>
+
+        <div className="p-4">
+          {err ? <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
+          <div className="overflow-hidden rounded-lg border border-[#E5E7EB]">
+            <div className="max-h-[60vh] overflow-auto">
+              {loading ? (
+                <div className="px-3 py-4 text-sm text-[#6B7280]">Carregando...</div>
+              ) : rows.length ? (
+                <div className="divide-y">
+                  {rows.map((r) => (
+                    <div key={r.idHistorico} className="p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium">{r.mensagem || "—"}</div>
+                          <div className="text-xs text-[#6B7280]">
+                            {formatDateBR(r.dataHora)} • {r.usuario?.nome || r.usuario?.email || "Sistema"} • {String(r.origem || "").toUpperCase()}
+                          </div>
+                        </div>
+                        <div className="text-xs text-[#6B7280]">#{r.idHistorico}</div>
+                      </div>
+                      {r.anexos?.length ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {r.anexos.map((a) => (
+                            <a key={a.id} href={a.url} target="_blank" rel="noreferrer" className="rounded-lg border bg-white px-2 py-1 text-xs hover:bg-slate-50">
+                              {a.filename || a.url}
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="px-3 py-4 text-sm text-[#6B7280]">Nenhum item de histórico.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function EngenhariaObraHomePage() {
@@ -127,6 +635,13 @@ export default function EngenhariaObraHomePage() {
   const [crudRows, setCrudRows] = useState<ResponsavelObraRow[]>([]);
   const [crudLoading, setCrudLoading] = useState(false);
   const [crudErr, setCrudErr] = useState<string | null>(null);
+  const [vincularRespOpen, setVincularRespOpen] = useState(false);
+  const [editarRespOpen, setEditarRespOpen] = useState(false);
+  const [editarRespRow, setEditarRespRow] = useState<ResponsavelObraRow | null>(null);
+  const [historicoOpen, setHistoricoOpen] = useState(false);
+  const [historicoLoading, setHistoricoLoading] = useState(false);
+  const [historicoErr, setHistoricoErr] = useState<string | null>(null);
+  const [historicoRows, setHistoricoRows] = useState<HistoricoObraRow[]>([]);
 
   useEffect(() => {
     if (!idObra) return;
@@ -157,6 +672,13 @@ export default function EngenhariaObraHomePage() {
               email: r.email == null ? null : String(r.email),
               telefone: r.telefone == null ? null : String(r.telefone),
               ativo: Boolean(r.ativo),
+              responsabilidade: r.responsabilidade == null ? null : String(r.responsabilidade),
+              docInclusaoTipo: r.docInclusaoTipo == null ? null : (String(r.docInclusaoTipo).toUpperCase() as any),
+              docInclusaoNumero: r.docInclusaoNumero == null ? null : String(r.docInclusaoNumero),
+              docBaixaTipo: r.docBaixaTipo == null ? null : (String(r.docBaixaTipo).toUpperCase() as any),
+              docBaixaNumero: r.docBaixaNumero == null ? null : String(r.docBaixaNumero),
+              dataInicio: r.dataInicio == null ? null : String(r.dataInicio),
+              dataBaixa: r.dataBaixa == null ? null : String(r.dataBaixa),
               criadoEm: r.criadoEm ? String(r.criadoEm) : undefined,
               atualizadoEm: r.atualizadoEm ? String(r.atualizadoEm) : undefined,
             }))
@@ -193,68 +715,14 @@ export default function EngenhariaObraHomePage() {
   }, [crudOpen, crudTipo, crudApenasAtivos]);
 
   async function criarResponsavel() {
-    const idTecnicoRaw = (prompt("ID do técnico (deixe vazio para cadastrar um novo):") || "").trim();
-    let idTecnico: number | null = null;
-    if (idTecnicoRaw) {
-      const n = Number(idTecnicoRaw);
-      idTecnico = Number.isInteger(n) && n > 0 ? n : null;
-      if (!idTecnico) return;
-    } else {
-      const nome = (prompt(crudTipo === "FISCAL_OBRA" ? "Nome do fiscal:" : "Nome do responsável técnico:") || "").trim();
-      if (!nome) return;
-      const conselho = (prompt("Conselho (ex.: CREA, CAU):") || "").trim();
-      const numeroRegistro = (prompt("Número do registro:") || "").trim();
-      if (!conselho) {
-        setCrudErr("Conselho é obrigatório.");
-        return;
-      }
-      if (!numeroRegistro) {
-        setCrudErr("Registro é obrigatório.");
-        return;
-      }
-      const email = (prompt("E-mail (opcional):") || "").trim();
-      const telefone = (prompt("Telefone (opcional):") || "").trim();
-      const resTec = await api.post("/api/v1/engenharia/tecnicos", {
-        nome,
-        conselho,
-        numeroRegistro,
-        email: email || null,
-        telefone: telefone || null,
-      });
-      const outTec = unwrapApiData<any>(resTec?.data || null) as any;
-      const newId = Number(outTec?.idTecnico || 0);
-      if (!Number.isInteger(newId) || newId <= 0) return;
-      idTecnico = newId;
-    }
-
-    const ativoPrompt = (prompt("Ativo? (S/N)", "S") || "S").trim().toUpperCase();
-    const ativo = ativoPrompt !== "N";
-    try {
-      setCrudLoading(true);
-      setCrudErr(null);
-      await api.post("/api/v1/engenharia/obras/responsabilidades", { idObra, tipo: crudTipo, idTecnico, ativo });
-      await carregarResponsaveis(crudTipo, crudApenasAtivos);
-    } catch (e: any) {
-      setCrudErr(e?.response?.data?.message || e?.message || "Erro ao cadastrar.");
-    } finally {
-      setCrudLoading(false);
-    }
+    setCrudErr(null);
+    setVincularRespOpen(true);
   }
 
   async function editarResponsavel(r: ResponsavelObraRow) {
-    const tipo = (prompt("Tipo (RESPONSAVEL_TECNICO / FISCAL_OBRA):", r.tipo) || r.tipo).trim().toUpperCase();
-    const ativoPrompt = (prompt("Ativo? (S/N)", r.ativo ? "S" : "N") || (r.ativo ? "S" : "N")).trim().toUpperCase();
-    const ativo = ativoPrompt !== "N";
-    try {
-      setCrudLoading(true);
-      setCrudErr(null);
-      await api.put(`/api/v1/engenharia/obras/responsabilidades/${r.idObraResponsabilidade}`, { tipo, ativo });
-      await carregarResponsaveis(crudTipo, crudApenasAtivos);
-    } catch (e: any) {
-      setCrudErr(e?.response?.data?.message || e?.message || "Erro ao atualizar.");
-    } finally {
-      setCrudLoading(false);
-    }
+    setCrudErr(null);
+    setEditarRespRow(r);
+    setEditarRespOpen(true);
   }
 
   async function removerResponsavel(r: ResponsavelObraRow) {
@@ -268,6 +736,39 @@ export default function EngenhariaObraHomePage() {
       setCrudErr(e?.response?.data?.message || e?.message || "Erro ao remover.");
     } finally {
       setCrudLoading(false);
+    }
+  }
+
+  async function carregarHistorico() {
+    if (!idObra) return;
+    try {
+      setHistoricoLoading(true);
+      setHistoricoErr(null);
+      const qp = new URLSearchParams();
+      qp.set("idObra", String(idObra));
+      const res = await api.get(`/api/v1/engenharia/obras/historico?${qp.toString()}`);
+      const list = unwrapApiData<any[]>(res?.data || []);
+      const mapped: HistoricoObraRow[] = Array.isArray(list)
+        ? list
+            .map((r) => ({
+              idHistorico: Number(r.idHistorico),
+              idObra: Number(r.idObra),
+              dataHora: String(r.dataHora || ""),
+              usuario: r.usuario && typeof r.usuario === "object" ? { id: Number(r.usuario.id), nome: r.usuario.nome == null ? null : String(r.usuario.nome), email: r.usuario.email == null ? null : String(r.usuario.email) } : null,
+              origem: String(r.origem || ""),
+              mensagem: String(r.mensagem || ""),
+              anexos: Array.isArray(r.anexos)
+                ? r.anexos.map((a: any) => ({ id: Number(a.id), entryId: Number(a.entryId || a.entry_id || 0), url: String(a.url || ""), filename: a.filename == null ? null : String(a.filename), mimeType: a.mimeType == null ? null : String(a.mimeType) }))
+                : [],
+            }))
+            .filter((x) => Number.isInteger(x.idHistorico) && x.idHistorico > 0 && x.idObra === idObra)
+        : [];
+      setHistoricoRows(mapped);
+    } catch (e: any) {
+      setHistoricoRows([]);
+      setHistoricoErr(e?.response?.data?.message || e?.message || "Erro ao carregar histórico.");
+    } finally {
+      setHistoricoLoading(false);
     }
   }
 
@@ -509,6 +1010,24 @@ export default function EngenhariaObraHomePage() {
 
   return (
     <div className="p-6 space-y-6 max-w-6xl">
+      <VincularResponsavelObraModal
+        open={vincularRespOpen}
+        idObra={idObra}
+        defaultTipo={crudTipo}
+        returnTo={selfHref}
+        onClose={() => setVincularRespOpen(false)}
+        onSaved={() => carregarResponsaveis(crudTipo, crudApenasAtivos)}
+      />
+      <EditarResponsavelObraModal
+        open={editarRespOpen}
+        row={editarRespRow}
+        onClose={() => {
+          setEditarRespOpen(false);
+          setEditarRespRow(null);
+        }}
+        onSaved={() => carregarResponsaveis(crudTipo, crudApenasAtivos)}
+      />
+      <HistoricoObraModal open={historicoOpen} idObra={idObra} rows={historicoRows} loading={historicoLoading} err={historicoErr} onReload={carregarHistorico} onClose={() => setHistoricoOpen(false)} />
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="text-xs text-slate-500">{breadcrumb}</div>
@@ -685,7 +1204,31 @@ export default function EngenhariaObraHomePage() {
                   <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => carregarResponsaveis(crudTipo, crudApenasAtivos)} disabled={crudLoading}>
                     Atualizar
                   </button>
-                  <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60" type="button" onClick={criarResponsavel} disabled={crudLoading}>
+                  <button
+                    className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2"
+                    type="button"
+                    onClick={async () => {
+                      setHistoricoOpen(true);
+                      await carregarHistorico();
+                    }}
+                    disabled={historicoLoading}
+                    title="Histórico da obra"
+                  >
+                    <Clock className="h-4 w-4" />
+                    Histórico
+                  </button>
+                  <button
+                    className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2"
+                    type="button"
+                    onClick={() => router.push(`/dashboard/engenharia/profissionais?returnTo=${encodeURIComponent(selfHref)}`)}
+                    disabled={crudLoading}
+                    title="Abrir cadastro de profissionais"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Profissionais
+                  </button>
+                  <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60 inline-flex items-center gap-2" type="button" onClick={criarResponsavel} disabled={crudLoading}>
+                    <Plus className="h-4 w-4" />
                     Novo
                   </button>
                 </div>
@@ -704,8 +1247,11 @@ export default function EngenhariaObraHomePage() {
                       <th className="px-3 py-2">Técnico</th>
                       <th className="px-3 py-2">Conselho</th>
                       <th className="px-3 py-2">Registro</th>
-                      <th className="px-3 py-2">E-mail</th>
-                      <th className="px-3 py-2">Telefone</th>
+                      <th className="px-3 py-2">Responsabilidade</th>
+                      <th className="px-3 py-2">Doc. inclusão</th>
+                      <th className="px-3 py-2">Início</th>
+                      <th className="px-3 py-2">Doc. baixa</th>
+                      <th className="px-3 py-2">Baixa</th>
                       <th className="px-3 py-2">Ativo</th>
                       <th className="px-3 py-2 text-right">Ações</th>
                     </tr>
@@ -713,7 +1259,7 @@ export default function EngenhariaObraHomePage() {
                   <tbody>
                     {crudLoading ? (
                       <tr>
-                        <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
+                        <td className="px-3 py-6 text-center text-slate-500" colSpan={10}>
                           Carregando...
                         </td>
                       </tr>
@@ -723,22 +1269,31 @@ export default function EngenhariaObraHomePage() {
                           <td className="px-3 py-2 font-medium">{r.nome || "—"}</td>
                           <td className="px-3 py-2">{r.conselho || "—"}</td>
                           <td className="px-3 py-2">{r.numeroRegistro || "—"}</td>
-                          <td className="px-3 py-2">{r.email || "—"}</td>
-                          <td className="px-3 py-2">{r.telefone || "—"}</td>
+                          <td className="px-3 py-2">{r.responsabilidade || "—"}</td>
+                          <td className="px-3 py-2">{r.docInclusaoTipo && r.docInclusaoNumero ? `${r.docInclusaoTipo} ${r.docInclusaoNumero}` : "—"}</td>
+                          <td className="px-3 py-2">{formatDateBR(r.dataInicio)}</td>
+                          <td className="px-3 py-2">{r.docBaixaTipo && r.docBaixaNumero ? `${r.docBaixaTipo} ${r.docBaixaNumero}` : "—"}</td>
+                          <td className="px-3 py-2">{formatDateBR(r.dataBaixa)}</td>
                           <td className="px-3 py-2">{r.ativo ? "Sim" : "Não"}</td>
                           <td className="px-3 py-2 text-right whitespace-nowrap">
-                            <button className="rounded-lg border bg-white px-2 py-1 text-xs hover:bg-slate-50" type="button" onClick={() => editarResponsavel(r)} disabled={crudLoading}>
-                              Editar
+                            <button className="inline-flex items-center justify-center rounded-lg border bg-white p-2 text-slate-700 hover:bg-slate-50" type="button" onClick={() => editarResponsavel(r)} disabled={crudLoading} title="Editar">
+                              <Pencil className="h-4 w-4" />
                             </button>{" "}
-                            <button className="rounded-lg border border-red-200 bg-white px-2 py-1 text-xs text-red-700 hover:bg-red-50" type="button" onClick={() => removerResponsavel(r)} disabled={crudLoading}>
-                              Remover
+                            <button
+                              className="inline-flex items-center justify-center rounded-lg border border-red-200 bg-white p-2 text-red-700 hover:bg-red-50"
+                              type="button"
+                              onClick={() => removerResponsavel(r)}
+                              disabled={crudLoading}
+                              title="Remover"
+                            >
+                              <Trash2 className="h-4 w-4" />
                             </button>
                           </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
+                        <td className="px-3 py-6 text-center text-slate-500" colSpan={10}>
                           Nenhum registro.
                         </td>
                       </tr>

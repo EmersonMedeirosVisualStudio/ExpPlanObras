@@ -1184,6 +1184,103 @@ function VincularProfissionalModal(props: {
   );
 }
 
+function EditarResponsavelProjetoModal(props: {
+  open: boolean;
+  row: ProjetoResponsavelRow | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { open, row, onClose, onSaved } = props;
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [tipo, setTipo] = useState<"RESPONSAVEL_TECNICO" | "FISCAL_OBRA">("RESPONSAVEL_TECNICO");
+  const [abrangencia, setAbrangencia] = useState("");
+  const [numeroDocumento, setNumeroDocumento] = useState("");
+  const [observacao, setObservacao] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setErr(null);
+    setTipo((String(row?.tipo || "").toUpperCase() === "FISCAL_OBRA" ? "FISCAL_OBRA" : "RESPONSAVEL_TECNICO") as any);
+    setAbrangencia(row?.abrangencia ? String(row.abrangencia) : "");
+    setNumeroDocumento(row?.numeroDocumento ? String(row.numeroDocumento) : "");
+    setObservacao(row?.observacao ? String(row.observacao) : "");
+  }, [open, row]);
+
+  async function salvar() {
+    if (!row) return;
+    try {
+      setLoading(true);
+      setErr(null);
+      await api.put(`/api/v1/engenharia/projetos/responsaveis/${row.idProjetoResponsavel}`, {
+        tipo,
+        abrangencia: abrangencia.trim() || null,
+        numeroDocumento: numeroDocumento.trim() || null,
+        observacao: observacao.trim() || null,
+      });
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Erro ao editar responsável.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!open || !row) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] px-4 py-3">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold">Editar responsável do projeto</div>
+            <div className="text-xs text-[#6B7280]">{row.nome || "—"}</div>
+          </div>
+          <button className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" type="button" onClick={onClose} disabled={loading}>
+            Fechar
+          </button>
+        </div>
+
+        <div className="p-4">
+          {err ? <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
+
+          <div className="grid gap-3">
+            <div>
+              <div className="text-sm text-[#6B7280]">Tipo</div>
+              <select className="input" value={tipo} onChange={(e) => setTipo((String(e.target.value).toUpperCase() === "FISCAL_OBRA" ? "FISCAL_OBRA" : "RESPONSAVEL_TECNICO") as any)} disabled={loading}>
+                <option value="RESPONSAVEL_TECNICO">Responsável Técnico</option>
+                <option value="FISCAL_OBRA">Fiscal da Obra</option>
+              </select>
+            </div>
+            <div>
+              <div className="text-sm text-[#6B7280]">Abrangência (opcional)</div>
+              <input className="input" value={abrangencia} onChange={(e) => setAbrangencia(e.target.value)} placeholder="Ex.: Estrutural / Hidrossanitário / Obra inteira" disabled={loading} />
+            </div>
+            <div>
+              <div className="text-sm text-[#6B7280]">Nº Documento (opcional)</div>
+              <input className="input" value={numeroDocumento} onChange={(e) => setNumeroDocumento(e.target.value)} placeholder="ART / RRT / etc." disabled={loading} />
+            </div>
+            <div>
+              <div className="text-sm text-[#6B7280]">Observação (opcional)</div>
+              <textarea className="input min-h-[90px]" value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="Observações sobre o vínculo" disabled={loading} />
+            </div>
+          </div>
+
+          <div className="mt-4 flex gap-2">
+            <button type="button" className="flex-1 rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm hover:bg-[#F9FAFB] disabled:opacity-50" onClick={onClose} disabled={loading}>
+              Cancelar
+            </button>
+            <button type="button" className="flex-1 rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50" onClick={salvar} disabled={loading}>
+              Salvar alterações
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ProjetoFormClient() {
   const params = useParams<{ id?: string }>();
   const router = useRouter();
@@ -1259,6 +1356,8 @@ export default function ProjetoFormClient() {
   const [respErr, setRespErr] = useState<string | null>(null);
   const [respRows, setRespRows] = useState<ProjetoResponsavelRow[]>([]);
   const [vincularOpen, setVincularOpen] = useState(false);
+  const [editarRespOpen, setEditarRespOpen] = useState(false);
+  const [editarRespRow, setEditarRespRow] = useState<ProjetoResponsavelRow | null>(null);
 
   const [anexosLoading, setAnexosLoading] = useState(false);
   const [anexosErr, setAnexosErr] = useState<string | null>(null);
@@ -1417,25 +1516,9 @@ export default function ProjetoFormClient() {
   }
 
   async function editarResponsavelProjeto(r: ProjetoResponsavelRow) {
-    try {
-      setRespLoading(true);
-      setRespErr(null);
-      const tipo = (prompt("Tipo (RESPONSAVEL_TECNICO / FISCAL_OBRA):", r.tipo) || r.tipo).trim().toUpperCase();
-      const abrangencia = (prompt("Abrangência:", r.abrangencia || "") || "").trim() || null;
-      const numeroDocumento = (prompt("Nº documento:", r.numeroDocumento || "") || "").trim() || null;
-      const observacao = (prompt("Observação:", r.observacao || "") || "").trim() || null;
-      await api.put(`/api/v1/engenharia/projetos/responsaveis/${r.idProjetoResponsavel}`, {
-        tipo,
-        abrangencia,
-        numeroDocumento,
-        observacao,
-      });
-      await carregarResponsaveisProjeto();
-    } catch (e: any) {
-      setRespErr(e?.response?.data?.message || e?.message || "Erro ao editar responsável.");
-    } finally {
-      setRespLoading(false);
-    }
+    setRespErr(null);
+    setEditarRespRow(r);
+    setEditarRespOpen(true);
   }
 
   async function removerResponsavelProjeto(r: ProjetoResponsavelRow) {
@@ -1553,6 +1636,15 @@ export default function ProjetoFormClient() {
         idProjeto={idProjeto}
         onClose={() => setVincularOpen(false)}
         onLinked={() => carregarResponsaveisProjeto()}
+      />
+      <EditarResponsavelProjetoModal
+        open={editarRespOpen}
+        row={editarRespRow}
+        onClose={() => {
+          setEditarRespOpen(false);
+          setEditarRespRow(null);
+        }}
+        onSaved={() => carregarResponsaveisProjeto()}
       />
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
