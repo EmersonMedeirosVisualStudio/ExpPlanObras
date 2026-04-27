@@ -1361,7 +1361,7 @@ export async function getContratoConsolidado(tenantId: number, contratoId: numbe
 export async function listContratoEventos(
   tenantId: number,
   contratoId: number,
-  input?: { tiposOrigem?: string[]; incluirObservacoes?: boolean; limit?: number }
+  input?: { tiposOrigem?: string[]; incluirObservacoes?: boolean; limit?: number; texto?: string; desde?: string; ate?: string }
 ) {
   return withRLS(tenantId, async (tx) => {
     const contrato = await tx.contrato.findFirst({ where: { tenantId, id: contratoId }, select: { id: true } }).catch(() => null);
@@ -1370,10 +1370,36 @@ export async function listContratoEventos(
     const tiposOrigem = (input?.tiposOrigem || []).map((s) => String(s).trim().toUpperCase()).filter(Boolean);
     const incluirObservacoes = input?.incluirObservacoes !== false;
     const limit = Math.min(200, Math.max(1, Number(input?.limit || 100)));
+    const texto = input?.texto != null ? String(input.texto).trim() : '';
+
+    function parseDateBound(value: string, endOfDay: boolean) {
+      const v = String(value || '').trim();
+      if (!v) return null;
+      const hasTime = v.includes('T') || v.includes(':');
+      if (hasTime) {
+        const d = new Date(v);
+        return Number.isNaN(d.getTime()) ? null : d;
+      }
+      const d = new Date(`${v}T00:00:00.000Z`);
+      if (Number.isNaN(d.getTime())) return null;
+      if (endOfDay) d.setUTCHours(23, 59, 59, 999);
+      return d;
+    }
+
+    const desde = input?.desde != null ? parseDateBound(String(input.desde), false) : null;
+    const ate = input?.ate != null ? parseDateBound(String(input.ate), true) : null;
+    const createdAtFilter: any = {};
+    if (desde) createdAtFilter.gte = desde;
+    if (ate) createdAtFilter.lte = ate;
+    const hasCreatedAtFilter = Object.keys(createdAtFilter).length > 0;
 
     const where: any = { tenantId, contratoId };
     if (tiposOrigem.length) where.tipoOrigem = { in: tiposOrigem };
     if (!incluirObservacoes) where.tipoEvento = { not: 'OBSERVACAO' };
+    if (hasCreatedAtFilter) where.createdAt = createdAtFilter;
+    if (texto) {
+      where.OR = [{ descricao: { contains: texto, mode: 'insensitive' } }, { observacaoTexto: { contains: texto, mode: 'insensitive' } }];
+    }
 
     const eventos = await tx.contratoEvento.findMany({
       where,
@@ -1404,7 +1430,7 @@ export async function listContratoEventos(
       anexosByEventoId.set(Number(a.eventoId), list);
     }
 
-    return eventos.map((e: any) => ({
+    const contratoEventos = eventos.map((e: any) => ({
       id: e.id,
       tipoOrigem: e.tipoOrigem,
       origemId: e.origemId,
@@ -1416,6 +1442,48 @@ export async function listContratoEventos(
       criadoEm: e.createdAt,
       anexos: anexosByEventoId.get(Number(e.id)) || [],
     }));
+
+    const includeObras = tiposOrigem.length ? tiposOrigem.includes('OBRA') : true;
+    if (!includeObras) return contratoEventos;
+
+    const obras = await tx.obra.findMany({ where: { tenantId, contratoId }, select: { id: true } });
+    const actions = obras.map((o: any) => `OBRA:${o.id}`);
+    if (!actions.length) return contratoEventos;
+
+    const obraByAction = new Map<string, number>();
+    for (const o of obras) obraByAction.set(`OBRA:${(o as any).id}`, Number((o as any).id));
+
+    const whereHist: any = { tenantId, action: { in: actions } };
+    if (hasCreatedAtFilter) whereHist.createdAt = createdAtFilter;
+    if (texto) whereHist.message = { contains: texto, mode: 'insensitive' };
+
+    const hist = await tx.tenantHistoryEntry.findMany({
+      where: whereHist,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: Math.min(500, limit * 10),
+    });
+
+    const obraEventos = hist.map((h: any) => ({
+      id: -Number(h.id),
+      tipoOrigem: 'OBRA',
+      origemId: obraByAction.get(String(h.action || '')) || null,
+      tipoEvento: 'INFO',
+      descricao: String(h.message || ''),
+      observacaoTexto: null,
+      nivelObservacao: null,
+      actorUserId: h.actorUserId ?? null,
+      criadoEm: h.createdAt,
+      anexos: [],
+    }));
+
+    return [...contratoEventos, ...obraEventos]
+      .sort((a: any, b: any) => {
+        const ta = a.criadoEm instanceof Date ? a.criadoEm.getTime() : new Date(a.criadoEm).getTime();
+        const tb = b.criadoEm instanceof Date ? b.criadoEm.getTime() : new Date(b.criadoEm).getTime();
+        if (tb !== ta) return tb - ta;
+        return Number(b.id) - Number(a.id);
+      })
+      .slice(0, limit);
   });
 }
 

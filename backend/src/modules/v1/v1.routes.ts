@@ -2190,16 +2190,55 @@ export default async function v1Routes(server: FastifyInstance) {
   server.get('/engenharia/obras/historico', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
-    const q = z.object({ idObra: z.coerce.number().int().positive() }).parse(request.query || {});
+    const q = z
+      .object({
+        idObra: z.coerce.number().int().positive(),
+        texto: z.string().optional().nullable(),
+        origem: z.string().optional().nullable(),
+        desde: z.string().optional().nullable(),
+        ate: z.string().optional().nullable(),
+        limit: z.coerce.number().int().positive().optional().nullable(),
+      })
+      .parse(request.query || {});
 
     const obra = await prisma.obra.findUnique({ where: { id: q.idObra }, select: { id: true, tenantId: true } }).catch(() => null);
     if (!obra || obra.tenantId !== ctx.tenantId) return fail(reply, 404, 'Obra não encontrada');
 
+    const texto = String(q.texto || '').trim();
+    const origem = String(q.origem || '').trim();
+
+    function parseDateBound(value: string, endOfDay: boolean) {
+      const v = String(value || '').trim();
+      if (!v) return null;
+      const hasTime = v.includes('T') || v.includes(':');
+      if (hasTime) {
+        const d = new Date(v);
+        return Number.isNaN(d.getTime()) ? null : d;
+      }
+      const d = new Date(`${v}T00:00:00.000Z`);
+      if (Number.isNaN(d.getTime())) return null;
+      if (endOfDay) d.setUTCHours(23, 59, 59, 999);
+      return d;
+    }
+
+    const desde = q.desde != null ? parseDateBound(String(q.desde), false) : null;
+    const ate = q.ate != null ? parseDateBound(String(q.ate), true) : null;
+
+    const where: any = { tenantId: ctx.tenantId, action: `OBRA:${obra.id}` };
+    if (texto) where.message = { contains: texto, mode: 'insensitive' };
+    if (origem) where.source = { contains: origem, mode: 'insensitive' };
+    if (desde || ate) {
+      where.createdAt = {};
+      if (desde) where.createdAt.gte = desde;
+      if (ate) where.createdAt.lte = ate;
+    }
+
+    const limit = Math.min(500, Math.max(1, Number(q.limit || 500)));
     const items = await prisma.tenantHistoryEntry.findMany({
-      where: { tenantId: ctx.tenantId, action: `OBRA:${obra.id}` },
+      where,
       orderBy: { createdAt: 'desc' },
       include: { actorUser: { select: { id: true, name: true, email: true } }, attachments: { select: { id: true, entryId: true, url: true, filename: true, mimeType: true } } },
-      take: 500,
+      take: limit,
     });
 
     return ok(

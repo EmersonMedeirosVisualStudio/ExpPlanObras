@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DocumentosApi } from '@/lib/modules/documentos/api';
 import type { DocumentoRegistroDTO } from '@/lib/modules/documentos/types';
@@ -39,6 +39,11 @@ export default function ObrasDocumentosPage() {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [rows, setRows] = useState<DocumentoRegistroDTO[]>([]);
+
+  const [novoCategoria, setNovoCategoria] = useState(() => (initialCategoria ? initialCategoria : initialTipo === 'CONTRATO' ? 'CONTRATO:' : 'OBRA:'));
+  const [novoTitulo, setNovoTitulo] = useState('');
+  const [novoDescricao, setNovoDescricao] = useState('');
+  const [novoArquivo, setNovoArquivo] = useState<File | null>(null);
 
   const categoriasSugeridas = useMemo(() => {
     if (tipo === 'OBRA') {
@@ -83,6 +88,13 @@ export default function ObrasDocumentosPage() {
   }, [tipo]);
 
   useEffect(() => {
+    if (!lockObraContext) return;
+    const id = Number(idRef || 0);
+    if (!id) return;
+    carregar();
+  }, [carregar, idRef, lockObraContext]);
+
+  useEffect(() => {
     if (tipo !== 'CONTRATO') return;
     const id = Number(idRef || 0);
     if (!id) return;
@@ -102,7 +114,7 @@ export default function ObrasDocumentosPage() {
       .slice(0, 10);
   }, [contratos, contratoBusca]);
 
-  async function carregar() {
+  const carregar = useCallback(async () => {
     const id = Number(idRef || 0);
     if (!id) return;
     try {
@@ -128,24 +140,34 @@ export default function ObrasDocumentosPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [categoriaPrefix, idRef, incluirObras, returnTo, router, tipo]);
 
   async function criarDocumento() {
     const id = Number(idRef || 0);
     if (!id) return;
-    const cat = (prompt('Categoria (use padrão TIPO:SUBTIPO, ex.: OBRA:ART):', categoriaPrefix || '') || '').trim().toUpperCase();
-    if (!cat) return;
-    const titulo = (prompt('Título:') || '').trim();
-    if (!titulo) return;
     try {
       setLoading(true);
       setErro(null);
+      const categoriaDocumento = String(novoCategoria || categoriaPrefix || '').trim().toUpperCase();
+      const tituloDocumento = String(novoTitulo || '').trim();
+      const descricaoDocumento = String(novoDescricao || '').trim();
+      if (!categoriaDocumento) throw new Error('Categoria obrigatória.');
+      if (!tituloDocumento) throw new Error('Título obrigatório.');
+
       const res = await DocumentosApi.criar({
-        categoriaDocumento: cat,
-        tituloDocumento: titulo,
+        categoriaDocumento,
+        tituloDocumento,
+        descricaoDocumento: descricaoDocumento ? descricaoDocumento : null,
         entidadeTipo: tipo,
         entidadeId: id,
       });
+      if (novoArquivo) {
+        await DocumentosApi.criarVersaoUpload(res.id, novoArquivo);
+      }
+      setNovoTitulo('');
+      setNovoDescricao('');
+      setNovoArquivo(null);
+      await carregar();
       router.push(`/dashboard/documentos/${res.id}`);
     } catch (e: any) {
       setErro(e?.message || 'Erro ao criar documento.');
@@ -199,6 +221,54 @@ export default function ObrasDocumentosPage() {
       {erro ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{erro}</div> : null}
 
       <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm space-y-3">
+        <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
+          <div className="text-sm font-semibold text-[#111827]">Inserir documento</div>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-6">
+            <div className="md:col-span-2">
+              <div className="text-sm text-[#6B7280]">Categoria</div>
+              <input className="input" value={novoCategoria} onChange={(e) => setNovoCategoria(e.target.value.toUpperCase())} placeholder="Ex.: OBRA:ART" disabled={loading} />
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-sm text-[#6B7280]">Título</div>
+              <input className="input" value={novoTitulo} onChange={(e) => setNovoTitulo(e.target.value)} placeholder="Ex.: ART do responsável técnico" disabled={loading} />
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-sm text-[#6B7280]">Arquivo (opcional)</div>
+              <input
+                type="file"
+                accept="application/pdf,image/*"
+                disabled={loading}
+                onChange={(e) => {
+                  const f = e.target.files?.[0] || null;
+                  setNovoArquivo(f);
+                }}
+              />
+            </div>
+            <div className="md:col-span-4">
+              <div className="text-sm text-[#6B7280]">Descrição (opcional)</div>
+              <input className="input" value={novoDescricao} onChange={(e) => setNovoDescricao(e.target.value)} placeholder="Ex.: Nº, detalhes, observações" disabled={loading} />
+            </div>
+            <div className="md:col-span-2 flex items-end">
+              <button className="w-full rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50" type="button" onClick={criarDocumento} disabled={loading}>
+                Inserir
+              </button>
+            </div>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {categoriasSugeridas.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className="rounded-full border border-[#D1D5DB] bg-white px-3 py-1 text-xs text-[#111827] hover:bg-[#F9FAFB]"
+                onClick={() => setNovoCategoria(c)}
+                disabled={loading}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
           <div>
             <div className="text-sm text-[#6B7280]">Contexto</div>
@@ -287,7 +357,13 @@ export default function ObrasDocumentosPage() {
 
         <div className="flex flex-wrap gap-2">
           {categoriasSugeridas.map((c) => (
-            <button key={c} type="button" className="rounded-full border border-[#D1D5DB] bg-white px-3 py-1 text-xs text-[#111827] hover:bg-[#F9FAFB]" onClick={() => setCategoriaPrefix(`${c.split(':')[0]}:${c.split(':')[1]}:`.replace('::', ':'))}>
+            <button
+              key={c}
+              type="button"
+              className="rounded-full border border-[#D1D5DB] bg-white px-3 py-1 text-xs text-[#111827] hover:bg-[#F9FAFB]"
+              onClick={() => setCategoriaPrefix(`${c.split(':')[0]}:${c.split(':')[1]}:`.replace('::', ':'))}
+              disabled={loading}
+            >
               {c}
             </button>
           ))}

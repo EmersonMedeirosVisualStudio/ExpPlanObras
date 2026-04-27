@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
     const localRulesAlways = [
       { source: "/api/v1/engenharia/obras/:id/planilha/:path*", destination: "/api/v1/engenharia/obras/:id/planilha/:path*" },
       { source: "/api/v1/engenharia/obras/:id/planilha", destination: "/api/v1/engenharia/obras/:id/planilha" },
+      { source: "/api/v1/documentos/:path*", destination: "/api/v1/documentos/:path*" },
+      { source: "/api/v1/documentos", destination: "/api/v1/documentos" },
     ];
     const localRules = [
       { source: "/api/v1/me/:path*", destination: "/api/v1/me/:path*" },

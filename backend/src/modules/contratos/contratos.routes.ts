@@ -499,6 +499,9 @@ export default async function contratosRoutes(server: FastifyInstance) {
             origens: z.string().optional(),
             incluirObservacoes: z.coerce.boolean().optional(),
             limit: z.coerce.number().int().positive().optional(),
+            texto: z.string().optional(),
+            desde: z.string().optional(),
+            ate: z.string().optional(),
           })
           .optional(),
       },
@@ -513,8 +516,11 @@ export default async function contratosRoutes(server: FastifyInstance) {
         .filter(Boolean);
       const incluirObservacoes = q.incluirObservacoes !== undefined ? Boolean(q.incluirObservacoes) : true;
       const limit = q.limit != null ? Number(q.limit) : 100;
+      const texto = q.texto != null ? String(q.texto) : undefined;
+      const desde = q.desde != null ? String(q.desde) : undefined;
+      const ate = q.ate != null ? String(q.ate) : undefined;
       try {
-        const data = await listContratoEventos(tenantId, id, { tiposOrigem, incluirObservacoes, limit });
+        const data = await listContratoEventos(tenantId, id, { tiposOrigem, incluirObservacoes, limit, texto, desde, ate });
         return reply.send(data);
       } catch (e: any) {
         return reply.code(400).send({ message: e?.message || 'Erro ao listar eventos' });

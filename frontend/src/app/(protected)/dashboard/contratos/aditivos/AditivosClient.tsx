@@ -189,9 +189,15 @@ export default function AditivosClient() {
 
   const [filtroContrato, setFiltroContrato] = useState(true);
   const [filtroAditivos, setFiltroAditivos] = useState(true);
-  const [filtroObras, setFiltroObras] = useState(false);
+  const [filtroObras, setFiltroObras] = useState(true);
   const [filtroDocumentos, setFiltroDocumentos] = useState(false);
   const [filtroObservacoes, setFiltroObservacoes] = useState(true);
+  const [filtroTextoDraft, setFiltroTextoDraft] = useState("");
+  const [filtroDesdeDraft, setFiltroDesdeDraft] = useState("");
+  const [filtroAteDraft, setFiltroAteDraft] = useState("");
+  const [filtroTexto, setFiltroTexto] = useState("");
+  const [filtroDesde, setFiltroDesde] = useState("");
+  const [filtroAte, setFiltroAte] = useState("");
 
   const [obsTexto, setObsTexto] = useState("");
   const [obsNivel, setObsNivel] = useState<"NORMAL" | "ALERTA" | "CRITICO">("NORMAL");
@@ -260,6 +266,9 @@ export default function AditivosClient() {
           origens: origens.join(","),
           incluirObservacoes: filtroObservacoes ? "true" : "false",
           limit: 200,
+          texto: filtroTexto ? filtroTexto : undefined,
+          desde: filtroDesde ? filtroDesde : undefined,
+          ate: filtroAte ? filtroAte : undefined,
         },
       });
       setEventos((res.data as any[]) ?? []);
@@ -278,7 +287,7 @@ export default function AditivosClient() {
   useEffect(() => {
     if (tab !== "eventos") return;
     carregarEventos();
-  }, [tab, contratoId, filtroContrato, filtroAditivos, filtroObras, filtroDocumentos, filtroObservacoes]);
+  }, [tab, contratoId, filtroContrato, filtroAditivos, filtroObras, filtroDocumentos, filtroObservacoes, filtroTexto, filtroDesde, filtroAte]);
 
   useEffect(() => {
     if (!contratoId) return;
@@ -298,7 +307,7 @@ export default function AditivosClient() {
     return () => {
       for (const u of unsubs) u();
     };
-  }, [contratoId, tab, filtroContrato, filtroAditivos, filtroObras, filtroDocumentos, filtroObservacoes]);
+  }, [contratoId, tab, filtroContrato, filtroAditivos, filtroObras, filtroDocumentos, filtroObservacoes, filtroTexto, filtroDesde, filtroAte]);
 
   useEffect(() => {
     if (!aditivos.length) return;
@@ -749,10 +758,44 @@ export default function AditivosClient() {
                       setFiltroObras(false);
                       setFiltroDocumentos(false);
                       setFiltroObservacoes(false);
+                      setFiltroTextoDraft("");
+                      setFiltroDesdeDraft("");
+                      setFiltroAteDraft("");
+                      setFiltroTexto("");
+                      setFiltroDesde("");
+                      setFiltroAte("");
                     }}
                   >
                     Limpar
                   </button>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-12">
+                  <div className="md:col-span-6">
+                    <div className="text-xs text-slate-600">Buscar</div>
+                    <input className="input bg-white text-slate-900" value={filtroTextoDraft} onChange={(e) => setFiltroTextoDraft(e.target.value)} placeholder="Pesquisar por texto" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <div className="text-xs text-slate-600">Desde</div>
+                    <input className="input bg-white text-slate-900" type="date" value={filtroDesdeDraft} onChange={(e) => setFiltroDesdeDraft(e.target.value)} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <div className="text-xs text-slate-600">Até</div>
+                    <input className="input bg-white text-slate-900" type="date" value={filtroAteDraft} onChange={(e) => setFiltroAteDraft(e.target.value)} />
+                  </div>
+                  <div className="md:col-span-2 flex items-end gap-2 justify-end">
+                    <button
+                      className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-50"
+                      type="button"
+                      disabled={loading}
+                      onClick={() => {
+                        setFiltroTexto(String(filtroTextoDraft || "").trim());
+                        setFiltroDesde(String(filtroDesdeDraft || "").trim());
+                        setFiltroAte(String(filtroAteDraft || "").trim());
+                      }}
+                    >
+                      Aplicar
+                    </button>
+                  </div>
                 </div>
               </div>
 

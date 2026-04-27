@@ -585,8 +585,36 @@ function HistoricoObraModal(props: {
   err: string | null;
   onReload: () => void;
   onClose: () => void;
+  filtroTexto: string;
+  setFiltroTexto: (v: string) => void;
+  filtroOrigem: string;
+  setFiltroOrigem: (v: string) => void;
+  filtroDesde: string;
+  setFiltroDesde: (v: string) => void;
+  filtroAte: string;
+  setFiltroAte: (v: string) => void;
+  filtroLimit: number;
+  setFiltroLimit: (v: number) => void;
 }) {
-  const { open, idObra, rows, loading, err, onReload, onClose } = props;
+  const {
+    open,
+    idObra,
+    rows,
+    loading,
+    err,
+    onReload,
+    onClose,
+    filtroTexto,
+    setFiltroTexto,
+    filtroOrigem,
+    setFiltroOrigem,
+    filtroDesde,
+    setFiltroDesde,
+    filtroAte,
+    setFiltroAte,
+    filtroLimit,
+    setFiltroLimit,
+  } = props;
   if (!open) return null;
 
   return (
@@ -608,6 +636,72 @@ function HistoricoObraModal(props: {
         </div>
 
         <div className="p-4">
+          <div className="mb-3 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+              <div className="md:col-span-5">
+                <div className="text-xs text-[#6B7280]">Buscar no histórico</div>
+                <input
+                  className="input bg-white"
+                  value={filtroTexto}
+                  onChange={(e) => setFiltroTexto(e.target.value)}
+                  placeholder="Digite parte da mensagem"
+                  disabled={loading}
+                />
+              </div>
+              <div className="md:col-span-3">
+                <div className="text-xs text-[#6B7280]">Origem</div>
+                <input
+                  className="input bg-white"
+                  value={filtroOrigem}
+                  onChange={(e) => setFiltroOrigem(e.target.value)}
+                  placeholder="Ex.: SYSTEM"
+                  disabled={loading}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <div className="text-xs text-[#6B7280]">Desde</div>
+                <input className="input bg-white" type="date" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} disabled={loading} />
+              </div>
+              <div className="md:col-span-2">
+                <div className="text-xs text-[#6B7280]">Até</div>
+                <input className="input bg-white" type="date" value={filtroAte} onChange={(e) => setFiltroAte(e.target.value)} disabled={loading} />
+              </div>
+              <div className="md:col-span-4">
+                <div className="text-xs text-[#6B7280]">Limite</div>
+                <select className="input bg-white" value={String(filtroLimit)} onChange={(e) => setFiltroLimit(Number(e.target.value) || 200)} disabled={loading}>
+                  {[50, 100, 200, 500].map((n) => (
+                    <option key={n} value={n}>
+                      {n} itens
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="md:col-span-8 flex items-end gap-2 justify-end flex-wrap">
+                <button
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB] disabled:opacity-50"
+                  type="button"
+                  onClick={() => {
+                    setFiltroTexto("");
+                    setFiltroOrigem("");
+                    setFiltroDesde("");
+                    setFiltroAte("");
+                    setFiltroLimit(200);
+                  }}
+                  disabled={loading}
+                >
+                  Limpar filtros
+                </button>
+                <button
+                  className="rounded-lg bg-[#2563EB] px-3 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50"
+                  type="button"
+                  onClick={onReload}
+                  disabled={loading}
+                >
+                  Aplicar
+                </button>
+              </div>
+            </div>
+          </div>
           {err ? <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
           <div className="overflow-hidden rounded-lg border border-[#E5E7EB]">
             <div className="max-h-[60vh] overflow-auto">
@@ -693,6 +787,11 @@ export default function EngenhariaObraHomePage() {
   const [historicoLoading, setHistoricoLoading] = useState(false);
   const [historicoErr, setHistoricoErr] = useState<string | null>(null);
   const [historicoRows, setHistoricoRows] = useState<HistoricoObraRow[]>([]);
+  const [historicoFiltroTexto, setHistoricoFiltroTexto] = useState("");
+  const [historicoFiltroOrigem, setHistoricoFiltroOrigem] = useState("");
+  const [historicoFiltroDesde, setHistoricoFiltroDesde] = useState("");
+  const [historicoFiltroAte, setHistoricoFiltroAte] = useState("");
+  const [historicoFiltroLimit, setHistoricoFiltroLimit] = useState(200);
 
   useEffect(() => {
     if (!idObra) return;
@@ -804,6 +903,15 @@ export default function EngenhariaObraHomePage() {
       setHistoricoErr(null);
       const qp = new URLSearchParams();
       qp.set("idObra", String(idObra));
+      const texto = String(historicoFiltroTexto || "").trim();
+      const origem = String(historicoFiltroOrigem || "").trim();
+      const desde = String(historicoFiltroDesde || "").trim();
+      const ate = String(historicoFiltroAte || "").trim();
+      if (texto) qp.set("texto", texto);
+      if (origem) qp.set("origem", origem);
+      if (desde) qp.set("desde", desde);
+      if (ate) qp.set("ate", ate);
+      qp.set("limit", String(Math.min(500, Math.max(1, Number(historicoFiltroLimit || 200)))));
       const res = await api.get(`/api/v1/engenharia/obras/historico?${qp.toString()}`);
       const list = unwrapApiData<any[]>(res?.data || []);
       const mapped: HistoricoObraRow[] = Array.isArray(list)
@@ -957,7 +1065,7 @@ export default function EngenhariaObraHomePage() {
         titulo: "Documentos da Obra",
         desc: "ART, projetos, revisões, laudos, pareceres, relatórios e evidências.",
         href: (id) =>
-          `/dashboard/obras/documentos?tipo=OBRA&id=${id}&returnTo=${encodeURIComponent(selfHref)}`,
+          `/dashboard/obras/documentos?tipo=OBRA&id=${id}&categoriaPrefix=${encodeURIComponent("OBRA:")}&returnTo=${encodeURIComponent(selfHref)}`,
         nivel: "CADASTRO",
       },
       {
@@ -1085,7 +1193,25 @@ export default function EngenhariaObraHomePage() {
         }}
         onSaved={() => carregarResponsaveis(crudTipo, crudApenasAtivos)}
       />
-      <HistoricoObraModal open={historicoOpen} idObra={idObra} rows={historicoRows} loading={historicoLoading} err={historicoErr} onReload={carregarHistorico} onClose={() => setHistoricoOpen(false)} />
+      <HistoricoObraModal
+        open={historicoOpen}
+        idObra={idObra}
+        rows={historicoRows}
+        loading={historicoLoading}
+        err={historicoErr}
+        onReload={carregarHistorico}
+        onClose={() => setHistoricoOpen(false)}
+        filtroTexto={historicoFiltroTexto}
+        setFiltroTexto={setHistoricoFiltroTexto}
+        filtroOrigem={historicoFiltroOrigem}
+        setFiltroOrigem={setHistoricoFiltroOrigem}
+        filtroDesde={historicoFiltroDesde}
+        setFiltroDesde={setHistoricoFiltroDesde}
+        filtroAte={historicoFiltroAte}
+        setFiltroAte={setHistoricoFiltroAte}
+        filtroLimit={historicoFiltroLimit}
+        setFiltroLimit={setHistoricoFiltroLimit}
+      />
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="text-xs text-slate-500">{breadcrumb}</div>
