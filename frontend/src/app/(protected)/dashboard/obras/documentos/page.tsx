@@ -28,9 +28,10 @@ export default function ObrasDocumentosPage() {
 
   const [tipo, setTipo] = useState<'OBRA' | 'CONTRATO'>(initialTipo === 'CONTRATO' ? 'CONTRATO' : 'OBRA');
   const [idRef, setIdRef] = useState(initialId);
+  const fixedCategoriaPrefix = useMemo(() => (tipo === 'CONTRATO' ? 'CONTRATO:' : 'OBRA:'), [tipo]);
   const [categoriaPrefix, setCategoriaPrefix] = useState(() => {
     const defaultPrefix = initialTipo === 'CONTRATO' ? 'CONTRATO:' : 'OBRA:';
-    return initialCategoria && initialCategoria.startsWith(defaultPrefix) ? initialCategoria : defaultPrefix;
+    return initialCategoria && initialCategoria.startsWith(defaultPrefix) ? defaultPrefix : defaultPrefix;
   });
   const [incluirObras, setIncluirObras] = useState(true);
   const [contratos, setContratos] = useState<ContratoOption[]>([]);
@@ -41,7 +42,12 @@ export default function ObrasDocumentosPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [rows, setRows] = useState<DocumentoRegistroDTO[]>([]);
 
-  const [novoCategoria, setNovoCategoria] = useState(() => (initialCategoria ? initialCategoria : initialTipo === 'CONTRATO' ? 'CONTRATO:' : 'OBRA:'));
+  const [novoCategoria, setNovoCategoria] = useState(() => {
+    const prefix = initialTipo === 'CONTRATO' ? 'CONTRATO:' : 'OBRA:';
+    if (!initialCategoria) return `${prefix}OUTROS`;
+    const v = initialCategoria.startsWith(prefix) ? initialCategoria : `${prefix}${initialCategoria.replace(/^.*?:/, '')}`;
+    return v === prefix ? `${prefix}OUTROS` : v;
+  });
   const [novoTitulo, setNovoTitulo] = useState('');
   const [novoDescricao, setNovoDescricao] = useState('');
   const [novoArquivo, setNovoArquivo] = useState<File | null>(null);
@@ -51,9 +57,9 @@ export default function ObrasDocumentosPage() {
 
   const categoriasSugeridas = useMemo(() => {
     if (tipo === 'OBRA') {
-      return ['OBRA:ART', 'OBRA:PROJETO', 'OBRA:REVISAO_PROJETO', 'OBRA:LAUDO', 'OBRA:PARECER', 'OBRA:RELATORIO', 'OBRA:OUTROS'];
+      return ['ART', 'PROJETO', 'REVISAO_PROJETO', 'LAUDO', 'PARECER', 'RELATORIO', 'OUTROS'];
     }
-    return ['CONTRATO:CONTRATO', 'CONTRATO:OS', 'CONTRATO:ADITIVO', 'CONTRATO:MEDICAO', 'CONTRATO:COMUNICACAO', 'CONTRATO:OUTROS'];
+    return ['CONTRATO', 'OS', 'ADITIVO', 'MEDICAO', 'COMUNICACAO', 'OUTROS'];
   }, [tipo]);
 
   const displayedRows = useMemo(() => {
@@ -68,9 +74,22 @@ export default function ObrasDocumentosPage() {
 
   const pageTitle = useMemo(() => (tipo === 'OBRA' ? 'Documentos da Obra' : 'Documentos do Contrato'), [tipo]);
 
+  function normalizeCategoriaForTipo(rawSuffixOrFull: string, nextTipo?: 'OBRA' | 'CONTRATO') {
+    const t = nextTipo || tipo;
+    const prefix = t === 'CONTRATO' ? 'CONTRATO:' : 'OBRA:';
+    const raw = String(rawSuffixOrFull || '').toUpperCase().trim();
+    if (!raw) return `${prefix}OUTROS`;
+    if (raw.startsWith(prefix)) {
+      const s = raw.slice(prefix.length).trim();
+      return s ? `${prefix}${s}` : `${prefix}OUTROS`;
+    }
+    const suffix = raw.includes(':') ? raw.split(':').pop() || '' : raw;
+    return `${prefix}${String(suffix).trim() || 'OUTROS'}`;
+  }
+
   function limparCampos(nextTipo?: 'OBRA' | 'CONTRATO') {
     const t = nextTipo || tipo;
-    setNovoCategoria(t === 'CONTRATO' ? 'CONTRATO:' : 'OBRA:');
+    setNovoCategoria(t === 'CONTRATO' ? 'CONTRATO:OUTROS' : 'OBRA:OUTROS');
     setNovoTitulo('');
     setNovoDescricao('');
     setNovoArquivo(null);
@@ -109,6 +128,11 @@ export default function ObrasDocumentosPage() {
       active = false;
     };
   }, [tipo]);
+
+  useEffect(() => {
+    setCategoriaPrefix(fixedCategoriaPrefix);
+    setNovoCategoria((prev) => normalizeCategoriaForTipo(prev, tipo));
+  }, [fixedCategoriaPrefix, tipo]);
 
   const carregar = useCallback(async () => {
     const id = Number(idRef || 0);
@@ -171,10 +195,10 @@ export default function ObrasDocumentosPage() {
     try {
       setLoading(true);
       setErro(null);
-      const categoriaDocumento = String(novoCategoria || categoriaPrefix || '').trim().toUpperCase();
+      const categoriaDocumento = normalizeCategoriaForTipo(novoCategoria || categoriaPrefix || '');
       const tituloDocumento = String(novoTitulo || '').trim();
       const descricaoDocumento = String(novoDescricao || '').trim();
-      if (!categoriaDocumento) throw new Error('Categoria obrigatória.');
+      if (!categoriaDocumento || categoriaDocumento.endsWith(':')) throw new Error('Categoria obrigatória.');
       if (!tituloDocumento) throw new Error('Título obrigatório.');
 
       const res = await DocumentosApi.criar({
@@ -413,14 +437,23 @@ export default function ObrasDocumentosPage() {
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-xs text-slate-600">Categoria *</div>
                     </div>
-                    <input className="input bg-white" value={novoCategoria} onChange={(e) => setNovoCategoria(e.target.value.toUpperCase())} placeholder="Ex.: OBRA:ART" disabled={loading} />
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{fixedCategoriaPrefix}</span>
+                      <input
+                        className="input bg-white"
+                        value={novoCategoria.startsWith(fixedCategoriaPrefix) ? novoCategoria.slice(fixedCategoriaPrefix.length) : novoCategoria}
+                        onChange={(e) => setNovoCategoria(normalizeCategoriaForTipo(e.target.value))}
+                        placeholder="Ex.: ART"
+                        disabled={loading}
+                      />
+                    </div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {categoriasSugeridas.map((c) => (
                         <button
                           key={c}
                           type="button"
                           className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"
-                          onClick={() => setNovoCategoria(c)}
+                          onClick={() => setNovoCategoria(normalizeCategoriaForTipo(c))}
                           disabled={loading}
                         >
                           {c}
@@ -436,7 +469,13 @@ export default function ObrasDocumentosPage() {
 
                   <div>
                     <div className="text-xs text-slate-600">Descrição (opcional)</div>
-                    <input className="input bg-white" value={novoDescricao} onChange={(e) => setNovoDescricao(e.target.value)} placeholder="Ex.: ART nº 123456 — emitida em 10/04" disabled={loading} />
+                    <textarea
+                      className="input bg-white min-h-20 py-2"
+                      value={novoDescricao}
+                      onChange={(e) => setNovoDescricao(e.target.value)}
+                      placeholder="Ex.: ART nº 123456 — emitida em 10/04"
+                      disabled={loading}
+                    />
                   </div>
 
                   <div className="flex items-center justify-end gap-2 flex-wrap pt-1">
@@ -518,7 +557,7 @@ export default function ObrasDocumentosPage() {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
               <div className="md:col-span-2">
                 <div className="text-xs text-slate-600">Categoria prefixo</div>
-                <input className="input bg-white" value={categoriaPrefix} onChange={(e) => setCategoriaPrefix(e.target.value.toUpperCase())} placeholder="Ex.: OBRA:" />
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{fixedCategoriaPrefix}</div>
               </div>
               <div className="md:col-span-6">
                 <div className="text-xs text-slate-600">Buscar documento</div>

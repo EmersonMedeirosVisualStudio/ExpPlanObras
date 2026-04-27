@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { getActiveObra } from "@/lib/obra/active";
+import { DocumentosApi } from "@/lib/modules/documentos/api";
 import { ExternalLink, Link2, Plus, Trash2 } from "lucide-react";
 
 type ApiEnvelope<T> = { success: boolean; message?: string; data: T };
@@ -117,6 +118,28 @@ export default function ObraProjetosClient() {
     carregar();
   }, [idObra]);
 
+  async function registrarDocumentoProjetoVinculado(input: { idProjeto: number; titulo?: string | null; numeroProjeto?: string | null; revisao?: string | null }) {
+    const idProjeto = Number(input.idProjeto || 0);
+    if (!Number.isInteger(idProjeto) || idProjeto <= 0) return;
+
+    const tituloBase = String(input.titulo || "").trim();
+    const titulo = tituloBase ? `Projeto vinculado — ${tituloBase}` : `Projeto vinculado — #${idProjeto}`;
+
+    const parts: string[] = [];
+    if (input.numeroProjeto) parts.push(`Nº ${String(input.numeroProjeto).trim()}`);
+    if (input.revisao) parts.push(`Rev. ${String(input.revisao).trim()}`);
+    parts.push(`ID ${idProjeto}`);
+    const descricao = parts.filter(Boolean).join(" • ");
+
+    await DocumentosApi.criar({
+      entidadeTipo: "OBRA",
+      entidadeId: idObra,
+      categoriaDocumento: "OBRA:PROJETO",
+      tituloDocumento: titulo,
+      descricaoDocumento: descricao || null,
+    });
+  }
+
   async function vincularExistente() {
     const raw = (prompt("Informe o ID do projeto que deseja vincular à obra:") || "").trim();
     const idProjeto = Number(raw || 0);
@@ -125,6 +148,18 @@ export default function ObraProjetosClient() {
       setLoading(true);
       setErr(null);
       await api.post("/api/v1/engenharia/obras/projetos", { idObra, idProjeto });
+      try {
+        const pRes = await api.get(`/api/v1/engenharia/projetos/${idProjeto}`);
+        const p = unwrapApiData<any>(pRes?.data || null) as any;
+        await registrarDocumentoProjetoVinculado({
+          idProjeto,
+          titulo: p?.titulo ?? null,
+          numeroProjeto: p?.numeroProjeto ?? null,
+          revisao: p?.revisao ?? null,
+        });
+      } catch {
+        await registrarDocumentoProjetoVinculado({ idProjeto });
+      }
       const importar = confirm("Deseja importar responsáveis do projeto para a obra?");
       if (importar) {
         await api.post("/api/v1/engenharia/obras/responsabilidades/importar", { idObra, idProjeto });

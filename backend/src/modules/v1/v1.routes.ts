@@ -2255,6 +2255,30 @@ export default async function v1Routes(server: FastifyInstance) {
     );
   });
 
+  server.post('/engenharia/obras/historico', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const body = z
+      .object({
+        idObra: z.coerce.number().int().positive(),
+        mensagem: z.string().min(1),
+      })
+      .parse((request.body as any) || {});
+
+    const obra = await prisma.obra.findUnique({ where: { id: body.idObra }, select: { id: true, tenantId: true } }).catch(() => null);
+    if (!obra || obra.tenantId !== ctx.tenantId) return fail(reply, 404, 'Obra não encontrada');
+
+    await addTenantHistoryEntry(prisma, {
+      tenantId: ctx.tenantId,
+      source: 'SYSTEM',
+      actorUserId: ctx.userId,
+      action: `OBRA:${obra.id}`,
+      message: String(body.mensagem || '').trim(),
+    });
+
+    return ok(reply, { ok: true }, { message: 'Histórico registrado' });
+  });
+
   server.get('/engenharia/projetos', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
@@ -3039,6 +3063,13 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!created) return fail(reply, 409, 'Projeto já vinculado à obra');
 
     await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_obras_projetos', idRegistro: String(created.id), acao: 'CREATE', dadosNovos: created as any });
+    await addTenantHistoryEntry(prisma, {
+      tenantId: ctx.tenantId,
+      source: 'SYSTEM',
+      actorUserId: ctx.userId,
+      action: `OBRA:${obra.id}`,
+      message: `Obra #${obra.id}: projeto #${projeto.id} vinculado.`,
+    });
     return ok(reply, { idObraProjeto: created.id }, { message: 'Projeto vinculado' });
   });
 

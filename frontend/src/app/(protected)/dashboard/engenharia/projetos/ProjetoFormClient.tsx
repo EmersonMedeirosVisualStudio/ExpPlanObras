@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
+import { DocumentosApi } from "@/lib/modules/documentos/api";
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
 import { Eraser, ExternalLink, Highlighter, Minus, PanelLeft, PanelRight, Pencil, Plus, RotateCcw, Ruler, Save, Scan, Share2, Square, Trash2, Undo2, Upload, X } from "lucide-react";
 
@@ -1587,6 +1588,19 @@ export default function ProjetoFormClient() {
       }
       if (autoLink && obraIdToLink && Number.isInteger(newId) && newId > 0) {
         await api.post("/api/v1/engenharia/obras/projetos", { idObra: obraIdToLink, idProjeto: newId });
+        try {
+          const parts: string[] = [];
+          if (payload.numeroProjeto) parts.push(`Nº ${String(payload.numeroProjeto).trim()}`);
+          if (payload.revisao) parts.push(`Rev. ${String(payload.revisao).trim()}`);
+          parts.push(`ID ${newId}`);
+          await DocumentosApi.criar({
+            entidadeTipo: "OBRA",
+            entidadeId: obraIdToLink,
+            categoriaDocumento: "OBRA:PROJETO",
+            tituloDocumento: `Projeto vinculado — ${String(payload.titulo || "").trim() || `#${newId}`}`,
+            descricaoDocumento: parts.filter(Boolean).join(" • ") || null,
+          });
+        } catch {}
         const importar = confirm("Deseja importar responsáveis do projeto para a obra agora?");
         if (importar) {
           await api.post("/api/v1/engenharia/obras/responsabilidades/importar", { idObra: obraIdToLink, idProjeto: newId });

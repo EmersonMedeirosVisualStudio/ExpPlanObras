@@ -36,9 +36,9 @@ const nextConfig: NextConfig = {
       { source: "/api/maintenance/:path*", destination: `${apiOrigin}/api/maintenance/:path*` },
     ];
     return {
-      beforeFiles: useNextApi ? [...localRulesAlways, ...localRules] : [...localRulesAlways, ...rules],
+      beforeFiles: useNextApi ? [...localRulesAlways, ...localRules] : [...localRulesAlways],
       afterFiles: [],
-      fallback: useNextApi ? rules : [],
+      fallback: useNextApi ? rules : rules,
     };
   },
 };
