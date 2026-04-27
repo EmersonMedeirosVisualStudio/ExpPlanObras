@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
+import { Eraser, ExternalLink, Highlighter, Minus, PanelLeft, PanelRight, Pencil, Plus, RotateCcw, Ruler, Save, Scan, Share2, Square, Trash2, Undo2, Upload, X } from "lucide-react";
 
 type ApiEnvelope<T> = { success: boolean; message?: string; data: T };
 function unwrapApiData<T>(json: any): T {
@@ -201,6 +202,8 @@ function AnexoViewerModal(props: {
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [dock, setDock] = useState<"CENTER" | "LEFT" | "RIGHT">("CENTER");
+  const [viewerSize, setViewerSize] = useState<"MD" | "LG" | "XL">("LG");
 
   function getPageKey(p: number) {
     return String(p);
@@ -752,10 +755,17 @@ function AnexoViewerModal(props: {
 
   const canPrev = isPdf && page > 1;
   const canNext = isPdf && page < pageCount;
+  const overlayJustify = dock === "LEFT" ? "justify-start" : dock === "RIGHT" ? "justify-end" : "justify-center";
+  const sizeClass = viewerSize === "MD" ? "max-w-5xl" : viewerSize === "LG" ? "max-w-6xl" : "max-w-7xl";
+  const modalHeightClass = dock === "CENTER" ? "" : "h-[calc(100vh-2rem)]";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
-      <div ref={modalRef} className="w-full max-w-6xl overflow-hidden rounded-xl bg-white shadow-xl">
+    <div className={`fixed inset-0 z-50 flex items-center ${overlayJustify} bg-black/50 p-4`} role="dialog" aria-modal="true">
+      <div
+        ref={modalRef}
+        className={`w-full ${sizeClass} ${modalHeightClass} overflow-hidden rounded-xl bg-white shadow-xl flex flex-col`}
+        style={dock === "CENTER" ? ({ resize: "both", overflow: "hidden" } as any) : undefined}
+      >
         <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] px-4 py-3">
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold">{anexo.nomeArquivo}</div>
@@ -764,52 +774,109 @@ function AnexoViewerModal(props: {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            <button className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" type="button" onClick={() => void fitToWindow()} disabled={loading}>
-              Ajustar
+            <button
+              className="rounded-lg border border-[#D1D5DB] bg-white p-2 hover:bg-[#F9FAFB]"
+              type="button"
+              onClick={() => void fitToWindow()}
+              disabled={loading}
+              title="Ajustar"
+              aria-label="Ajustar"
+            >
+              <Scan className="h-4 w-4" />
             </button>
             <button
-              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]"
+              className="rounded-lg border border-[#D1D5DB] bg-white p-2 hover:bg-[#F9FAFB]"
               type="button"
-              onClick={() => {
-                resetView();
-              }}
+              onClick={() => resetView()}
               disabled={loading}
+              title="100%"
+              aria-label="100%"
             >
-              100%
+              <RotateCcw className="h-4 w-4" />
             </button>
-            <div className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827]">
-              Zoom {Math.round(zoom * 100)}%
+            <div className="rounded-lg border border-[#D1D5DB] bg-white px-2 py-2 text-xs text-[#111827] whitespace-nowrap">
+              {Math.round(zoom * 100)}%
             </div>
-            <button className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" type="button" onClick={() => void toggleFullscreen()} disabled={loading}>
-              {isFullscreen ? "Sair Tela Cheia" : "Tela Cheia"}
+            <button
+              className="rounded-lg border border-[#D1D5DB] bg-white p-2 hover:bg-[#F9FAFB] disabled:opacity-50"
+              type="button"
+              onClick={() => setViewerSize((s) => (s === "XL" ? "XL" : s === "LG" ? "XL" : "LG"))}
+              disabled={loading}
+              title="Aumentar"
+              aria-label="Aumentar"
+            >
+              <Plus className="h-4 w-4" />
             </button>
-            <a className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" href={`/api/v1/engenharia/projetos/anexos/${anexo.idAnexo}/download`} target="_blank" rel="noreferrer">
-              Abrir
+            <button
+              className="rounded-lg border border-[#D1D5DB] bg-white p-2 hover:bg-[#F9FAFB] disabled:opacity-50"
+              type="button"
+              onClick={() => setViewerSize((s) => (s === "MD" ? "MD" : s === "LG" ? "MD" : "LG"))}
+              disabled={loading}
+              title="Diminuir"
+              aria-label="Diminuir"
+            >
+              <Minus className="h-4 w-4" />
+            </button>
+            <button
+              className={`rounded-lg border ${dock === "LEFT" ? "border-[#2563EB]" : "border-[#D1D5DB]"} bg-white p-2 hover:bg-[#F9FAFB]`}
+              type="button"
+              onClick={() => setDock("LEFT")}
+              disabled={loading}
+              title="Anexar à esquerda"
+              aria-label="Anexar à esquerda"
+            >
+              <PanelLeft className="h-4 w-4" />
+            </button>
+            <button
+              className={`rounded-lg border ${dock === "CENTER" ? "border-[#2563EB]" : "border-[#D1D5DB]"} bg-white p-2 hover:bg-[#F9FAFB]`}
+              type="button"
+              onClick={() => setDock("CENTER")}
+              disabled={loading}
+              title="Centralizar"
+              aria-label="Centralizar"
+            >
+              <Square className="h-4 w-4" />
+            </button>
+            <button
+              className={`rounded-lg border ${dock === "RIGHT" ? "border-[#2563EB]" : "border-[#D1D5DB]"} bg-white p-2 hover:bg-[#F9FAFB]`}
+              type="button"
+              onClick={() => setDock("RIGHT")}
+              disabled={loading}
+              title="Anexar à direita"
+              aria-label="Anexar à direita"
+            >
+              <PanelRight className="h-4 w-4" />
+            </button>
+            <button className="rounded-lg border border-[#D1D5DB] bg-white p-2 hover:bg-[#F9FAFB]" type="button" onClick={() => void toggleFullscreen()} disabled={loading} title={isFullscreen ? "Sair tela cheia" : "Tela cheia"} aria-label={isFullscreen ? "Sair tela cheia" : "Tela cheia"}>
+              <Square className="h-4 w-4" />
+            </button>
+            <a className="rounded-lg border border-[#D1D5DB] bg-white p-2 hover:bg-[#F9FAFB]" href={`/api/v1/engenharia/projetos/anexos/${anexo.idAnexo}/download`} target="_blank" rel="noreferrer" title="Abrir" aria-label="Abrir">
+              <ExternalLink className="h-4 w-4" />
             </a>
-            <button className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" type="button" onClick={onClose} disabled={loading}>
-              Fechar
+            <button className="rounded-lg border border-[#D1D5DB] bg-white p-2 hover:bg-[#F9FAFB]" type="button" onClick={onClose} disabled={loading} title="Fechar" aria-label="Fechar">
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        <div className="grid gap-0 lg:grid-cols-[320px_1fr]">
-          <div className="border-b border-[#E5E7EB] p-4 lg:border-b-0 lg:border-r">
+        <div className="flex-1 min-h-0 grid gap-0 lg:grid-cols-[240px_1fr]">
+          <div className="border-b border-[#E5E7EB] p-4 lg:border-b-0 lg:border-r min-h-0 overflow-y-auto">
             {err ? <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
 
             <div className="space-y-3">
               <div className="text-sm font-semibold">Ferramentas</div>
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" className={`rounded-lg border px-3 py-2 text-sm ${tool === "PEN" ? "border-[#2563EB]" : "border-[#D1D5DB]"} hover:bg-[#F9FAFB]`} onClick={() => setTool("PEN")} disabled={loading}>
-                  Lápis
+              <div className="grid grid-cols-4 gap-2">
+                <button type="button" className={`rounded-lg border p-2 ${tool === "PEN" ? "border-[#2563EB]" : "border-[#D1D5DB]"} hover:bg-[#F9FAFB]`} onClick={() => setTool("PEN")} disabled={loading} title="Lápis" aria-label="Lápis">
+                  <Pencil className="h-4 w-4" />
                 </button>
-                <button type="button" className={`rounded-lg border px-3 py-2 text-sm ${tool === "LINE" ? "border-[#2563EB]" : "border-[#D1D5DB]"} hover:bg-[#F9FAFB]`} onClick={() => setTool("LINE")} disabled={loading}>
-                  Régua
+                <button type="button" className={`rounded-lg border p-2 ${tool === "LINE" ? "border-[#2563EB]" : "border-[#D1D5DB]"} hover:bg-[#F9FAFB]`} onClick={() => setTool("LINE")} disabled={loading} title="Régua" aria-label="Régua">
+                  <Ruler className="h-4 w-4" />
                 </button>
-                <button type="button" className={`rounded-lg border px-3 py-2 text-sm ${tool === "HIGHLIGHT" ? "border-[#2563EB]" : "border-[#D1D5DB]"} hover:bg-[#F9FAFB]`} onClick={() => setTool("HIGHLIGHT")} disabled={loading}>
-                  Tinta
+                <button type="button" className={`rounded-lg border p-2 ${tool === "HIGHLIGHT" ? "border-[#2563EB]" : "border-[#D1D5DB]"} hover:bg-[#F9FAFB]`} onClick={() => setTool("HIGHLIGHT")} disabled={loading} title="Tinta" aria-label="Tinta">
+                  <Highlighter className="h-4 w-4" />
                 </button>
-                <button type="button" className={`rounded-lg border px-3 py-2 text-sm ${tool === "ERASER" ? "border-[#2563EB]" : "border-[#D1D5DB]"} hover:bg-[#F9FAFB]`} onClick={() => setTool("ERASER")} disabled={loading}>
-                  Borracha
+                <button type="button" className={`rounded-lg border p-2 ${tool === "ERASER" ? "border-[#2563EB]" : "border-[#D1D5DB]"} hover:bg-[#F9FAFB]`} onClick={() => setTool("ERASER")} disabled={loading} title="Borracha" aria-label="Borracha">
+                  <Eraser className="h-4 w-4" />
                 </button>
               </div>
 
@@ -832,26 +899,30 @@ function AnexoViewerModal(props: {
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]"
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 hover:bg-[#F9FAFB] inline-flex items-center justify-center"
                   onClick={() => {
                     const strokes = ensurePageStrokes(page);
                     strokes.pop();
                     redrawOverlay();
                   }}
                   disabled={loading}
+                  title="Desfazer"
+                  aria-label="Desfazer"
                 >
-                  Desfazer
+                  <Undo2 className="h-4 w-4" />
                 </button>
                 <button
                   type="button"
-                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]"
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 hover:bg-[#F9FAFB] inline-flex items-center justify-center"
                   onClick={() => {
                     annotRef.current.pages[getPageKey(page)] = [];
                     clearOverlay();
                   }}
                   disabled={loading}
+                  title="Limpar"
+                  aria-label="Limpar"
                 >
-                  Limpar
+                  <Trash2 className="h-4 w-4" />
                 </button>
               </div>
 
@@ -898,25 +969,26 @@ function AnexoViewerModal(props: {
                 </div>
               ) : null}
 
-              <button type="button" className="w-full rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50" onClick={salvarAnotacoes} disabled={loading}>
-                Salvar rabiscos
+              <button type="button" className="w-full rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50 inline-flex items-center justify-center gap-2" onClick={salvarAnotacoes} disabled={loading}>
+                <Save className="h-4 w-4" />
+                Salvar
               </button>
 
               {isPdf ? (
                 <div className="grid grid-cols-2 gap-2">
-                  <button type="button" className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB] disabled:opacity-50" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={loading || !canPrev}>
-                    Página -
+                  <button type="button" className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB] disabled:opacity-50" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={loading || !canPrev} title="Página anterior">
+                    -
                   </button>
-                  <button type="button" className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB] disabled:opacity-50" onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={loading || !canNext}>
-                    Página +
+                  <button type="button" className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB] disabled:opacity-50" onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={loading || !canNext} title="Próxima página">
+                    +
                   </button>
                 </div>
               ) : null}
             </div>
           </div>
 
-          <div className="p-4">
-            <div ref={containerRef} className="relative h-[70vh] w-full overflow-hidden rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-2">
+          <div className="p-4 min-h-0">
+            <div ref={containerRef} className="relative h-full min-h-[60vh] w-full overflow-hidden rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-2">
               <div
                 ref={contentRef}
                 className="relative inline-block"
@@ -1191,6 +1263,7 @@ export default function ProjetoFormClient() {
   const [anexosErr, setAnexosErr] = useState<string | null>(null);
   const [anexosRows, setAnexosRows] = useState<ProjetoAnexoRow[]>([]);
   const [anexosUpload, setAnexosUpload] = useState<File[]>([]);
+  const anexosInputRef = useRef<HTMLInputElement | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerAnexo, setViewerAnexo] = useState<ProjetoAnexoRow | null>(null);
 
@@ -1616,19 +1689,32 @@ export default function ProjetoFormClient() {
             </button>
           </div>
 
-          <div className="grid gap-2 md:grid-cols-[1fr_auto]">
-            <input
-              type="file"
-              accept="application/pdf,image/*"
-              multiple
-              className="block w-full text-sm"
+          <input
+            ref={anexosInputRef}
+            type="file"
+            accept="application/pdf,image/*"
+            multiple
+            className="hidden"
+            disabled={!idProjeto || anexosLoading || loading}
+            onChange={(e) => {
+              const list = e.target.files ? Array.from(e.target.files) : [];
+              setAnexosUpload(list);
+              e.currentTarget.value = "";
+            }}
+          />
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm hover:bg-[#F9FAFB] inline-flex items-center gap-2 disabled:opacity-50"
+              type="button"
+              onClick={() => anexosInputRef.current?.click()}
               disabled={!idProjeto || anexosLoading || loading}
-              onChange={(e) => {
-                const list = e.target.files ? Array.from(e.target.files) : [];
-                setAnexosUpload(list);
-              }}
-            />
-            <button className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50" type="button" onClick={enviarAnexosAgora} disabled={!idProjeto || anexosLoading || !anexosUpload.length}>
+            >
+              <Upload className="h-4 w-4" />
+              Escolher arquivos
+            </button>
+            <button className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50 inline-flex items-center gap-2" type="button" onClick={enviarAnexosAgora} disabled={!idProjeto || anexosLoading || !anexosUpload.length}>
+              <Upload className="h-4 w-4" />
               Enviar
             </button>
           </div>
@@ -1637,6 +1723,8 @@ export default function ProjetoFormClient() {
             <div className="text-xs text-[#6B7280]">
               Selecionados: {anexosUpload.map((f) => `${f.name} (${fmtBytes(f.size)})`).join(" • ")}
             </div>
+          ) : anexosRows.length ? (
+            <div className="text-xs text-[#6B7280]">{anexosRows.length} arquivo(s) já anexado(s) neste projeto.</div>
           ) : null}
 
           <div className="overflow-hidden rounded-lg border border-[#E5E7EB]">

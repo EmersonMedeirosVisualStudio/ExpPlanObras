@@ -2641,7 +2641,13 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const links = await prisma.engenhariaObraProjeto.findMany({
       where: { tenantId: ctx.tenantId, obraId: obra.id },
-      include: { projeto: true },
+      include: {
+        projeto: {
+          include: {
+            _count: { select: { anexos: true } },
+          },
+        },
+      },
       orderBy: { id: 'desc' },
       take: 500,
     });
@@ -2661,6 +2667,7 @@ export default async function v1Routes(server: FastifyInstance) {
         status: l.projeto?.status ?? null,
         dataProjeto: dateOnlyToIso(l.projeto?.dataProjeto ?? null),
         dataAprovacao: dateOnlyToIso(l.projeto?.dataAprovacao ?? null),
+        qtdAnexos: (l.projeto as any)?._count?.anexos ? Number((l.projeto as any)._count.anexos) : 0,
         vinculadoEm: l.createdAt.toISOString(),
       }))
     );

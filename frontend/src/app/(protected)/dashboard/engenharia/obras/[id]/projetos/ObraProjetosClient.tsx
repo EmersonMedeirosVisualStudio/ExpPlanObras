@@ -22,6 +22,7 @@ type ProjetoRow = {
   status: string | null;
   dataProjeto: string | null;
   dataAprovacao: string | null;
+  qtdAnexos?: number;
   vinculadoEm?: string;
 };
 
@@ -90,6 +91,7 @@ export default function ObraProjetosClient() {
               status: r.status == null ? null : String(r.status),
               dataProjeto: r.dataProjeto == null ? null : String(r.dataProjeto),
               dataAprovacao: r.dataAprovacao == null ? null : String(r.dataAprovacao),
+              qtdAnexos: Number(r.qtdAnexos || 0),
               vinculadoEm: r.vinculadoEm == null ? undefined : String(r.vinculadoEm),
             }))
             .filter((x) => Number.isFinite(x.idProjeto) && x.idProjeto > 0)
@@ -219,6 +221,7 @@ export default function ObraProjetosClient() {
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-4">Data</th>
                   <th className="py-2 pr-4">Aprovação</th>
+                  <th className="py-2 pr-4">Arquivos</th>
                   <th className="py-2 pr-0 text-right">Ações</th>
                 </tr>
               </thead>
@@ -235,6 +238,7 @@ export default function ObraProjetosClient() {
                     <td className="py-2 pr-4">{r.status || "—"}</td>
                     <td className="py-2 pr-4">{fmtDate(r.dataProjeto)}</td>
                     <td className="py-2 pr-4">{fmtDate(r.dataAprovacao)}</td>
+                    <td className="py-2 pr-4">{r.qtdAnexos ? `${r.qtdAnexos} arquivo(s)` : "Nenhum"}</td>
                     <td className="py-2 pl-4 text-right">
                       <div className="inline-flex items-center gap-2">
                         <button
