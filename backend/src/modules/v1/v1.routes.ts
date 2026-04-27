@@ -2275,6 +2275,245 @@ export default async function v1Routes(server: FastifyInstance) {
     return ok(reply, {}, { message: 'Anotações salvas' });
   });
 
+  server.get('/engenharia/projetos/:id/rascunhos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const projeto = await prisma.engenhariaProjeto.findFirst({ where: { id, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
+    if (!projeto) return fail(reply, 404, 'Projeto não encontrado');
+
+    const rows = await prisma.engenhariaProjetoRascunho.findMany({
+      where: {
+        tenantId: ctx.tenantId,
+        projetoId: projeto.id,
+        OR: [{ ownerUserId: ctx.userId }, { shares: { some: { tenantId: ctx.tenantId, userId: ctx.userId } } }],
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 200,
+      include: {
+        ownerUser: { select: { id: true, email: true, name: true } },
+        shares: { where: { tenantId: ctx.tenantId, userId: ctx.userId }, select: { permissao: true } },
+      },
+    });
+
+    return ok(
+      reply,
+      rows.map((r) => {
+        const sharedPerm = r.shares?.[0]?.permissao ? String(r.shares[0].permissao).toUpperCase() : null;
+        const permissao = r.ownerUserId === ctx.userId ? 'OWNER' : sharedPerm === 'EDIT' ? 'EDIT' : 'VIEW';
+        return {
+          idRascunho: r.id,
+          idProjeto: r.projetoId,
+          idUsuarioOwner: r.ownerUserId,
+          titulo: r.titulo,
+          permissao,
+          ownerNome: r.ownerUser?.name ?? null,
+          ownerEmail: r.ownerUser?.email ?? null,
+          criadoEm: r.createdAt.toISOString(),
+          atualizadoEm: r.updatedAt.toISOString(),
+        };
+      })
+    );
+  });
+
+  server.post('/engenharia/projetos/:id/rascunhos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        titulo: z.string().optional().nullable(),
+        payload: z.any(),
+      })
+      .parse(request.body || {});
+
+    const projeto = await prisma.engenhariaProjeto.findFirst({ where: { id, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
+    if (!projeto) return fail(reply, 404, 'Projeto não encontrado');
+
+    const titulo = String(body.titulo || '').trim() || 'Rascunho';
+    const created = await prisma.engenhariaProjetoRascunho.create({
+      data: {
+        tenantId: ctx.tenantId,
+        projetoId: projeto.id,
+        ownerUserId: ctx.userId,
+        titulo,
+        payload: body.payload as any,
+      },
+      select: { id: true },
+    });
+
+    await audit({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      entidade: 'engenharia_projetos_rascunhos',
+      idRegistro: String(created.id),
+      acao: 'CREATE',
+      dadosNovos: { id: created.id, projetoId: projeto.id, ownerUserId: ctx.userId, titulo } as any,
+    });
+
+    return ok(reply, { idRascunho: created.id }, { message: 'Rascunho criado' });
+  });
+
+  server.get('/engenharia/projetos/rascunhos/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const rascunho = await prisma.engenhariaProjetoRascunho
+      .findFirst({
+        where: {
+          id,
+          tenantId: ctx.tenantId,
+          OR: [{ ownerUserId: ctx.userId }, { shares: { some: { tenantId: ctx.tenantId, userId: ctx.userId } } }],
+        },
+        include: {
+          ownerUser: { select: { id: true, email: true, name: true } },
+          shares: { where: { tenantId: ctx.tenantId, userId: ctx.userId }, select: { permissao: true } },
+        },
+      })
+      .catch(() => null);
+    if (!rascunho) return fail(reply, 404, 'Rascunho não encontrado');
+
+    const sharedPerm = rascunho.shares?.[0]?.permissao ? String(rascunho.shares[0].permissao).toUpperCase() : null;
+    const permissao = rascunho.ownerUserId === ctx.userId ? 'OWNER' : sharedPerm === 'EDIT' ? 'EDIT' : 'VIEW';
+
+    return ok(reply, {
+      idRascunho: rascunho.id,
+      idProjeto: rascunho.projetoId,
+      idUsuarioOwner: rascunho.ownerUserId,
+      titulo: rascunho.titulo,
+      permissao,
+      ownerNome: rascunho.ownerUser?.name ?? null,
+      ownerEmail: rascunho.ownerUser?.email ?? null,
+      criadoEm: rascunho.createdAt.toISOString(),
+      atualizadoEm: rascunho.updatedAt.toISOString(),
+      payload: (rascunho.payload as any) ?? null,
+    });
+  });
+
+  server.put('/engenharia/projetos/rascunhos/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        titulo: z.string().optional().nullable(),
+        payload: z.any().optional(),
+      })
+      .parse(request.body || {});
+
+    const current = await prisma.engenhariaProjetoRascunho
+      .findFirst({
+        where: { id, tenantId: ctx.tenantId },
+        include: { shares: { where: { tenantId: ctx.tenantId, userId: ctx.userId }, select: { permissao: true } } },
+      })
+      .catch(() => null);
+    if (!current) return fail(reply, 404, 'Rascunho não encontrado');
+
+    const sharedPerm = current.shares?.[0]?.permissao ? String(current.shares[0].permissao).toUpperCase() : null;
+    const canEdit = current.ownerUserId === ctx.userId || sharedPerm === 'EDIT';
+    if (!canEdit) return fail(reply, 403, 'Sem permissão para editar este rascunho');
+
+    const titulo = body.titulo == null ? undefined : String(body.titulo).trim();
+    const updated = await prisma.engenhariaProjetoRascunho.update({
+      where: { id },
+      data: {
+        titulo: titulo && titulo.length ? titulo : undefined,
+        payload: body.payload === undefined ? undefined : (body.payload as any),
+      },
+      select: { id: true, titulo: true },
+    });
+
+    await audit({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      entidade: 'engenharia_projetos_rascunhos',
+      idRegistro: String(updated.id),
+      acao: 'UPDATE',
+      dadosAnteriores: { id: current.id, titulo: current.titulo } as any,
+      dadosNovos: { id: updated.id, titulo: updated.titulo } as any,
+    });
+
+    return ok(reply, {}, { message: 'Rascunho atualizado' });
+  });
+
+  server.post('/engenharia/projetos/rascunhos/:id/compartilhar', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        email: z.string().email().optional().nullable(),
+        userId: z.number().int().positive().optional().nullable(),
+        permissao: z.enum(['VIEW', 'EDIT']).optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    const rascunho = await prisma.engenhariaProjetoRascunho.findFirst({ where: { id, tenantId: ctx.tenantId }, select: { id: true, ownerUserId: true } }).catch(() => null);
+    if (!rascunho) return fail(reply, 404, 'Rascunho não encontrado');
+    if (rascunho.ownerUserId !== ctx.userId) return fail(reply, 403, 'Apenas o dono pode compartilhar este rascunho');
+
+    let targetUserId: number | null = null;
+    if (body.userId) targetUserId = Number(body.userId);
+    else if (body.email) {
+      const u = await prisma.user.findFirst({ where: { email: String(body.email).trim().toLowerCase() }, select: { id: true } }).catch(() => null);
+      if (!u) return fail(reply, 404, 'Usuário não encontrado');
+      targetUserId = u.id;
+    }
+    if (!targetUserId) return fail(reply, 400, 'Informe userId ou email');
+    if (targetUserId === ctx.userId) return fail(reply, 400, 'Você já é o dono do rascunho');
+
+    const membership = await prisma.tenantUser.findFirst({ where: { tenantId: ctx.tenantId, userId: targetUserId, ativo: true }, select: { id: true } }).catch(() => null);
+    if (!membership) return fail(reply, 400, 'Usuário não pertence a este tenant (ou está inativo)');
+
+    const permissao = String(body.permissao || 'VIEW').toUpperCase() === 'EDIT' ? 'EDIT' : 'VIEW';
+    const up = await prisma.engenhariaProjetoRascunhoShare.upsert({
+      where: { tenantId_rascunhoId_userId: { tenantId: ctx.tenantId, rascunhoId: rascunho.id, userId: targetUserId } },
+      create: { tenantId: ctx.tenantId, rascunhoId: rascunho.id, userId: targetUserId, permissao },
+      update: { permissao },
+      select: { id: true },
+    });
+
+    await audit({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      entidade: 'engenharia_projetos_rascunhos_compartilhar',
+      idRegistro: String(rascunho.id),
+      acao: 'UPDATE',
+      dadosNovos: { rascunhoId: rascunho.id, userId: targetUserId, permissao, shareId: up.id } as any,
+    });
+
+    return ok(reply, {}, { message: 'Compartilhamento atualizado' });
+  });
+
+  server.delete('/engenharia/projetos/rascunhos/:id/compartilhar/:userId', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id, userId } = z.object({ id: z.coerce.number().int().positive(), userId: z.coerce.number().int().positive() }).parse(request.params || {});
+
+    const rascunho = await prisma.engenhariaProjetoRascunho.findFirst({ where: { id, tenantId: ctx.tenantId }, select: { id: true, ownerUserId: true } }).catch(() => null);
+    if (!rascunho) return fail(reply, 404, 'Rascunho não encontrado');
+    if (rascunho.ownerUserId !== ctx.userId) return fail(reply, 403, 'Apenas o dono pode remover compartilhamentos');
+
+    await prisma.engenhariaProjetoRascunhoShare
+      .delete({
+        where: { tenantId_rascunhoId_userId: { tenantId: ctx.tenantId, rascunhoId: rascunho.id, userId } },
+      })
+      .catch(() => null);
+
+    await audit({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      entidade: 'engenharia_projetos_rascunhos_compartilhar',
+      idRegistro: String(rascunho.id),
+      acao: 'UPDATE',
+      dadosNovos: { rascunhoId: rascunho.id, userId, removido: true } as any,
+    });
+
+    return ok(reply, {}, { message: 'Compartilhamento removido' });
+  });
+
   server.get('/engenharia/projetos/responsaveis', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;

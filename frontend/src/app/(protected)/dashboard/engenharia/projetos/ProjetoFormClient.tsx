@@ -55,6 +55,18 @@ type ProjetoAnexoRow = {
   possuiAnotacoes: boolean;
 };
 
+type ProjetoRascunhoRow = {
+  idRascunho: number;
+  idProjeto: number;
+  idUsuarioOwner: number;
+  titulo: string;
+  permissao: "OWNER" | "EDIT" | "VIEW";
+  ownerNome: string | null;
+  ownerEmail: string | null;
+  criadoEm: string;
+  atualizadoEm: string;
+};
+
 type AnotacaoPoint = { x: number; y: number };
 type AnotacaoTool = "PEN" | "HIGHLIGHT" | "LINE" | "ERASER";
 type AnotacaoStroke = {
@@ -152,10 +164,11 @@ function createEmptyAnotacoes(): AnotacoesDoc {
 function AnexoViewerModal(props: {
   open: boolean;
   onClose: () => void;
+  idProjeto: number | null;
   anexo: ProjetoAnexoRow | null;
   onSaved: () => void;
 }) {
-  const { open, onClose, anexo, onSaved } = props;
+  const { open, onClose, idProjeto, anexo, onSaved } = props;
   const modalRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -170,6 +183,10 @@ function AnexoViewerModal(props: {
   const [color, setColor] = useState("#ef4444");
   const [width, setWidth] = useState(3);
   const [opacity, setOpacity] = useState(1);
+  const [rascunhos, setRascunhos] = useState<ProjetoRascunhoRow[]>([]);
+  const [rascunhoId, setRascunhoId] = useState<number | null>(null);
+  const rascunhoPermRef = useRef<"OWNER" | "EDIT" | "VIEW">("OWNER");
+  const rascunhoPayloadRef = useRef<any>(null);
 
   const pdfRef = useRef<any>(null);
   const fileBufferRef = useRef<ArrayBuffer | null>(null);
@@ -287,7 +304,49 @@ function AnexoViewerModal(props: {
     else await renderImage();
   }
 
-  async function carregarAnotacoes() {
+  async function carregarRascunhosProjeto() {
+    if (!idProjeto) {
+      setRascunhos([]);
+      setRascunhoId(null);
+      rascunhoPermRef.current = "OWNER";
+      rascunhoPayloadRef.current = null;
+      return;
+    }
+    const res = await api.get(`/api/v1/engenharia/projetos/${idProjeto}/rascunhos`);
+    const list = unwrapApiData<any[]>(res?.data || []) as any[];
+    const mapped: ProjetoRascunhoRow[] = Array.isArray(list)
+      ? list
+          .map((r) => ({
+            idRascunho: Number(r.idRascunho),
+            idProjeto: Number(r.idProjeto),
+            idUsuarioOwner: Number(r.idUsuarioOwner),
+            titulo: String(r.titulo || "Rascunho"),
+            permissao:
+              String(r.permissao || "VIEW").toUpperCase() === "OWNER"
+                ? "OWNER"
+                : String(r.permissao || "VIEW").toUpperCase() === "EDIT"
+                  ? "EDIT"
+                  : "VIEW",
+            ownerNome: r.ownerNome == null ? null : String(r.ownerNome),
+            ownerEmail: r.ownerEmail == null ? null : String(r.ownerEmail),
+            criadoEm: String(r.criadoEm || ""),
+            atualizadoEm: String(r.atualizadoEm || ""),
+          }))
+          .filter((x) => Number.isInteger(x.idRascunho) && x.idRascunho > 0)
+      : [];
+    setRascunhos(mapped);
+    if (!mapped.length) {
+      setRascunhoId(null);
+      rascunhoPermRef.current = "OWNER";
+      rascunhoPayloadRef.current = null;
+      return;
+    }
+    if (rascunhoId && mapped.some((x) => x.idRascunho === rascunhoId)) return;
+    const owned = mapped.find((x) => x.permissao === "OWNER") || mapped[0];
+    setRascunhoId(owned.idRascunho);
+  }
+
+  async function carregarAnotacoesLegacy() {
     if (!anexo?.idAnexo) return;
     const res = await api.get(`/api/v1/engenharia/projetos/anexos/${anexo.idAnexo}/anotacoes`);
     const d = unwrapApiData<any>(res?.data || null) as any;
@@ -300,16 +359,118 @@ function AnexoViewerModal(props: {
     annotRef.current = { v: 1, pages: pages as any };
   }
 
+  async function carregarAnotacoesDoRascunho(id: number) {
+    const res = await api.get(`/api/v1/engenharia/projetos/rascunhos/${id}`);
+    const d = unwrapApiData<any>(res?.data || null) as any;
+    const payload = d?.payload ?? null;
+    const permissaoRaw = String(d?.permissao || "VIEW").toUpperCase();
+    rascunhoPermRef.current = permissaoRaw === "OWNER" ? "OWNER" : permissaoRaw === "EDIT" ? "EDIT" : "VIEW";
+    rascunhoPayloadRef.current = payload && typeof payload === "object" ? payload : { v: 1, anexos: {} };
+
+    const key = String(anexo?.idAnexo || "");
+    const perAnexo =
+      rascunhoPayloadRef.current?.anexos && typeof rascunhoPayloadRef.current.anexos === "object"
+        ? rascunhoPayloadRef.current.anexos[key]
+        : null;
+    const pages = perAnexo?.pages && typeof perAnexo.pages === "object" ? perAnexo.pages : {};
+    annotRef.current = { v: 1, pages: pages as any };
+  }
+
+  async function carregarAnotacoes() {
+    if (!anexo?.idAnexo) return;
+    if (!rascunhoId) {
+      await carregarAnotacoesLegacy();
+      return;
+    }
+    await carregarAnotacoesDoRascunho(rascunhoId);
+  }
+
   async function salvarAnotacoes() {
     if (!anexo?.idAnexo) return;
     try {
       setLoading(true);
       setErr(null);
-      await api.put(`/api/v1/engenharia/projetos/anexos/${anexo.idAnexo}/anotacoes`, { anotacoes: annotRef.current });
+      if (!idProjeto) {
+        await api.put(`/api/v1/engenharia/projetos/anexos/${anexo.idAnexo}/anotacoes`, { anotacoes: annotRef.current });
+        onSaved();
+        alert("Rabiscos salvos.");
+        return;
+      }
+
+      const canEdit = rascunhoPermRef.current === "OWNER" || rascunhoPermRef.current === "EDIT";
+      if (rascunhoId && !canEdit) {
+        setErr("Você tem acesso somente de visualização neste rascunho.");
+        return;
+      }
+
+      if (!rascunhoId) {
+        const titulo = `Rascunho - ${new Date().toLocaleString()}`;
+        const payload = { v: 1, anexos: { [String(anexo.idAnexo)]: annotRef.current } };
+        const res = await api.post(`/api/v1/engenharia/projetos/${idProjeto}/rascunhos`, { titulo, payload });
+        const out = unwrapApiData<any>(res?.data || null) as any;
+        const newId = Number(out?.idRascunho || 0);
+        if (Number.isInteger(newId) && newId > 0) {
+          setRascunhoId(newId);
+          await carregarRascunhosProjeto();
+          alert("Rascunho criado e salvo.");
+        } else {
+          alert("Rabiscos salvos.");
+        }
+        onSaved();
+        return;
+      }
+
+      const base = rascunhoPayloadRef.current && typeof rascunhoPayloadRef.current === "object" ? rascunhoPayloadRef.current : { v: 1, anexos: {} };
+      if (!base.anexos || typeof base.anexos !== "object") base.anexos = {};
+      base.anexos[String(anexo.idAnexo)] = annotRef.current;
+      rascunhoPayloadRef.current = base;
+      await api.put(`/api/v1/engenharia/projetos/rascunhos/${rascunhoId}`, { payload: base });
       onSaved();
-      alert("Rabiscos salvos.");
+      alert("Rascunho salvo.");
     } catch (e: any) {
       setErr(e?.response?.data?.message || e?.message || "Erro ao salvar rabiscos.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function novoRascunho() {
+    if (!idProjeto) return;
+    const titulo = (prompt("Nome do rascunho:", `Rascunho - ${new Date().toLocaleString()}`) || "").trim();
+    if (!titulo) return;
+    try {
+      setLoading(true);
+      setErr(null);
+      const payload = { v: 1, anexos: { [String(anexo?.idAnexo || "")]: annotRef.current } };
+      const res = await api.post(`/api/v1/engenharia/projetos/${idProjeto}/rascunhos`, { titulo, payload });
+      const out = unwrapApiData<any>(res?.data || null) as any;
+      const newId = Number(out?.idRascunho || 0);
+      await carregarRascunhosProjeto();
+      if (Number.isInteger(newId) && newId > 0) setRascunhoId(newId);
+      alert("Rascunho criado.");
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Erro ao criar rascunho.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function compartilharRascunho() {
+    if (!rascunhoId) return;
+    if (rascunhoPermRef.current !== "OWNER") {
+      setErr("Apenas o dono do rascunho pode compartilhar.");
+      return;
+    }
+    const email = (prompt("E-mail do usuário para compartilhar:") || "").trim();
+    if (!email) return;
+    const perm = (prompt("Permissão (VIEW ou EDIT):", "VIEW") || "VIEW").trim().toUpperCase();
+    try {
+      setLoading(true);
+      setErr(null);
+      await api.post(`/api/v1/engenharia/projetos/rascunhos/${rascunhoId}/compartilhar`, { email, permissao: perm === "EDIT" ? "EDIT" : "VIEW" });
+      alert("Rascunho compartilhado.");
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Erro ao compartilhar rascunho.");
     } finally {
       setLoading(false);
     }
@@ -378,6 +539,7 @@ function AnexoViewerModal(props: {
       resetView();
       const buf = await fetchAnexoArrayBuffer(anexo.idAnexo);
       fileBufferRef.current = buf;
+      await carregarRascunhosProjeto();
       await carregarAnotacoes();
       setPage(1);
       previewStrokeRef.current = null;
@@ -404,6 +566,19 @@ function AnexoViewerModal(props: {
     if (!open) return;
     carregarArquivoEPreparar();
   }, [open, anexo?.idAnexo]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!anexo?.idAnexo) return;
+    if (!idProjeto) return;
+    (async () => {
+      try {
+        await carregarAnotacoes();
+        previewStrokeRef.current = null;
+        redrawOverlay();
+      } catch {}
+    })();
+  }, [rascunhoId]);
 
   useEffect(() => {
     if (!open) return;
@@ -679,6 +854,49 @@ function AnexoViewerModal(props: {
                   Limpar
                 </button>
               </div>
+
+              {idProjeto ? (
+                <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
+                  <div className="text-xs text-[#6B7280]">Rascunho</div>
+                  <select
+                    className="input mt-1"
+                    value={rascunhoId == null ? "" : String(rascunhoId)}
+                    onChange={(e) => {
+                      const v = String(e.target.value || "").trim();
+                      if (!v) {
+                        setRascunhoId(null);
+                        rascunhoPermRef.current = "OWNER";
+                        rascunhoPayloadRef.current = null;
+                        return;
+                      }
+                      const id = Number(v);
+                      if (Number.isInteger(id) && id > 0) setRascunhoId(id);
+                    }}
+                    disabled={loading}
+                  >
+                    <option value="">Criar/usar novo rascunho</option>
+                    {rascunhos.map((r) => (
+                      <option key={r.idRascunho} value={String(r.idRascunho)}>
+                        {r.titulo} ({r.permissao})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <button type="button" className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" onClick={novoRascunho} disabled={loading}>
+                      Novo
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB] disabled:opacity-50"
+                      onClick={compartilharRascunho}
+                      disabled={loading || !rascunhoId || rascunhoPermRef.current !== "OWNER"}
+                      title={rascunhoPermRef.current !== "OWNER" ? "Apenas o dono pode compartilhar" : undefined}
+                    >
+                      Compartilhar
+                    </button>
+                  </div>
+                </div>
+              ) : null}
 
               <button type="button" className="w-full rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50" onClick={salvarAnotacoes} disabled={loading}>
                 Salvar rabiscos
@@ -1248,6 +1466,7 @@ export default function ProjetoFormClient() {
     <div className="p-6 space-y-6 max-w-5xl text-[#111827]">
       <AnexoViewerModal
         open={viewerOpen}
+        idProjeto={idProjeto}
         anexo={viewerAnexo}
         onClose={() => {
           setViewerOpen(false);

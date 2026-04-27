@@ -60,6 +60,8 @@ model Tenant {
   engenhariaObrasProjetos EngenhariaObraProjeto[]
   engenhariaProjetosResponsaveis EngenhariaProjetoResponsavel[]
   engenhariaProjetosAnexos EngenhariaProjetoAnexo[]
+  engenhariaProjetosRascunhos EngenhariaProjetoRascunho[]
+  engenhariaProjetosRascunhosShares EngenhariaProjetoRascunhoShare[]
   history   TenantHistoryEntry[]
   subscriptions Subscription[]
   unidades  Unidade[]
@@ -229,6 +231,8 @@ model User {
   governancaDescarteLotesExecutor GovernancaDescarteLote[] @relation("GovernancaDescarteLoteExecutor")
   governancaPiiScansExecutadoPor GovernancaPiiScan[] @relation("GovernancaPiiScanExecutadoPor")
   governancaClassificacoesAvaliadoPor GovernancaClassificacaoSugestao[] @relation("GovernancaClassificacaoAvaliadoPor")
+  engenhariaProjetosRascunhosOwned EngenhariaProjetoRascunho[] @relation("EngenhariaProjetoRascunhoOwner")
+  engenhariaProjetosRascunhosShares EngenhariaProjetoRascunhoShare[]
 }
 
 model TenantHistoryEntry {
@@ -790,6 +794,7 @@ model EngenhariaProjeto {
   obras         EngenhariaObraProjeto[]
   responsaveis  EngenhariaProjetoResponsavel[]
   anexos        EngenhariaProjetoAnexo[]
+  rascunhos     EngenhariaProjetoRascunho[]
 
   @@index([tenantId])
   @@index([tenantId, titulo])
@@ -813,6 +818,44 @@ model EngenhariaProjetoAnexo {
 
   @@index([tenantId])
   @@index([projetoId])
+}
+
+model EngenhariaProjetoRascunho {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int
+  projetoId   Int
+  ownerUserId Int
+  titulo      String
+  payload     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  projeto     EngenhariaProjeto  @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  ownerUser   User              @relation("EngenhariaProjetoRascunhoOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  shares      EngenhariaProjetoRascunhoShare[]
+
+  @@index([tenantId])
+  @@index([tenantId, projetoId])
+  @@index([tenantId, ownerUserId])
+}
+
+model EngenhariaProjetoRascunhoShare {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int
+  rascunhoId Int
+  userId     Int
+  permissao  String   @default("VIEW")
+  createdAt  DateTime @default(now())
+
+  tenant     Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rascunho   EngenhariaProjetoRascunho @relation(fields: [rascunhoId], references: [id], onDelete: Cascade)
+  user       User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, rascunhoId, userId])
+  @@index([tenantId])
+  @@index([rascunhoId])
+  @@index([userId])
 }
 
 model EngenhariaObraProjeto {
