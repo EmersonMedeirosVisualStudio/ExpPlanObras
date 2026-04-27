@@ -37,6 +37,14 @@ type ProjetoResponsavelRow = {
   observacao: string | null;
 };
 
+type TecnicoRow = {
+  idTecnico: number;
+  nome: string;
+  tituloProfissional: string | null;
+  conselho: string | null;
+  numeroRegistro: string | null;
+};
+
 type ProjetoAnexoRow = {
   idAnexo: number;
   nomeArquivo: string;
@@ -74,14 +82,17 @@ const STATUS_OPTIONS = [
 ];
 
 const TIPO_OPTIONS_BASE = [
-  "Arquitetônico",
+  "Arquitetura",
   "Estrutural",
   "Fundações",
   "Geotécnico",
-  "Topográfico",
+  "Topografia / Levantamento",
   "Terraplenagem",
   "Pavimentação",
-  "Drenagem / Pluvial",
+  "Drenagem Pluvial",
+  "Drenagem Predial",
+  "Hidráulico",
+  "Sanitário",
   "Hidrossanitário",
   "Elétrico (BT/MT)",
   "Iluminação",
@@ -90,9 +101,12 @@ const TIPO_OPTIONS_BASE = [
   "Climatização (HVAC)",
   "Gás (GN/GLP)",
   "Telecom / Cabeamento",
+  "CFTV / Segurança",
   "Automação / BMS",
+  "Estradas / Acessos",
+  "Contenção / Muros",
   "Acessibilidade",
-  "Paisagístico",
+  "Paisagismo",
   "As Built",
   "Compatibilização",
   "Outros",
@@ -142,7 +156,9 @@ function AnexoViewerModal(props: {
   onSaved: () => void;
 }) {
   const { open, onClose, anexo, onSaved } = props;
+  const modalRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -161,8 +177,13 @@ function AnexoViewerModal(props: {
   const drawingRef = useRef(false);
   const currentStrokeRef = useRef<AnotacaoStroke | null>(null);
   const previewStrokeRef = useRef<AnotacaoStroke | null>(null);
+  const panningRef = useRef<null | { startX: number; startY: number; panX: number; panY: number }>(null);
 
   const isPdf = (anexo?.mimeType || "").toLowerCase() === "application/pdf" || getFileExt(anexo?.nomeArquivo || "") === "pdf";
+  const [zoom, setZoom] = useState(1);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   function getPageKey(p: number) {
     return String(p);
@@ -245,6 +266,27 @@ function AnexoViewerModal(props: {
     return { x: nx, y: ny };
   }
 
+  async function toggleFullscreen() {
+    const el = modalRef.current;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await el.requestFullscreen();
+    } catch {}
+  }
+
+  function resetView() {
+    setZoom(1);
+    setPanX(0);
+    setPanY(0);
+  }
+
+  async function fitToWindow() {
+    resetView();
+    if (isPdf) await renderPdfPage(page);
+    else await renderImage();
+  }
+
   async function carregarAnotacoes() {
     if (!anexo?.idAnexo) return;
     const res = await api.get(`/api/v1/engenharia/projetos/anexos/${anexo.idAnexo}/anotacoes`);
@@ -279,8 +321,10 @@ function AnexoViewerModal(props: {
     if (!pdf || !container) return;
     const pageObj = await pdf.getPage(p);
     const v1 = pageObj.getViewport({ scale: 1 });
-    const maxW = Math.max(320, container.clientWidth - 2);
-    const scale = Math.min(2, Math.max(0.5, maxW / v1.width));
+    const maxW = Math.max(320, container.clientWidth - 16);
+    const maxH = Math.max(320, container.clientHeight - 16);
+    const scaleFit = Math.min(maxW / v1.width, maxH / v1.height);
+    const scale = Math.min(2, Math.max(0.25, scaleFit));
     const viewport = pageObj.getViewport({ scale });
     setCanvasSize(viewport.width, viewport.height);
     const base = baseCanvasRef.current;
@@ -308,8 +352,10 @@ function AnexoViewerModal(props: {
         img.src = url;
       });
       void loaded;
-      const maxW = Math.max(320, container.clientWidth - 2);
-      const scale = Math.min(2, Math.max(0.2, maxW / img.naturalWidth));
+      const maxW = Math.max(320, container.clientWidth - 16);
+      const maxH = Math.max(320, container.clientHeight - 16);
+      const scaleFit = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight);
+      const scale = Math.min(2, Math.max(0.1, scaleFit));
       const cssW = img.naturalWidth * scale;
       const cssH = img.naturalHeight * scale;
       setCanvasSize(cssW, cssH);
@@ -329,6 +375,7 @@ function AnexoViewerModal(props: {
     setLoading(true);
     setErr(null);
     try {
+      resetView();
       const buf = await fetchAnexoArrayBuffer(anexo.idAnexo);
       fileBufferRef.current = buf;
       await carregarAnotacoes();
@@ -360,6 +407,16 @@ function AnexoViewerModal(props: {
 
   useEffect(() => {
     if (!open) return;
+    function onFsChange() {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    }
+    document.addEventListener("fullscreenchange", onFsChange);
+    onFsChange();
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     if (!anexo?.idAnexo) return;
     (async () => {
       try {
@@ -382,6 +439,7 @@ function AnexoViewerModal(props: {
     if (!draw) return;
 
     function onPointerDown(ev: PointerEvent) {
+      if (ev.button !== 0) return;
       if (loading) return;
       const pt = eventToPoint(ev);
       if (!pt) return;
@@ -446,6 +504,74 @@ function AnexoViewerModal(props: {
     };
   }, [open, tool, color, width, opacity, page, loading]);
 
+  useEffect(() => {
+    if (!open) return;
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content) return;
+
+    function onContextMenu(ev: MouseEvent) {
+      ev.preventDefault();
+    }
+
+    function onWheel(ev: WheelEvent) {
+      if (!containerRef.current) return;
+      ev.preventDefault();
+      const rect = container.getBoundingClientRect();
+      const cx = ev.clientX - rect.left;
+      const cy = ev.clientY - rect.top;
+      const z0 = zoom;
+      const delta = ev.deltaY;
+      const step = delta > 0 ? 0.9 : 1.1;
+      const z1 = Math.max(0.2, Math.min(5, z0 * step));
+      if (z1 === z0) return;
+      const ratio = z1 / z0;
+      setZoom(z1);
+      setPanX((p) => cx - (cx - p) * ratio);
+      setPanY((p) => cy - (cy - p) * ratio);
+    }
+
+    function onPointerDown(ev: PointerEvent) {
+      if (ev.button !== 2) return;
+      ev.preventDefault();
+      panningRef.current = { startX: ev.clientX, startY: ev.clientY, panX, panY };
+      (ev.currentTarget as HTMLDivElement).setPointerCapture(ev.pointerId);
+    }
+
+    function onPointerMove(ev: PointerEvent) {
+      if (!panningRef.current) return;
+      ev.preventDefault();
+      const dx = ev.clientX - panningRef.current.startX;
+      const dy = ev.clientY - panningRef.current.startY;
+      setPanX(panningRef.current.panX + dx);
+      setPanY(panningRef.current.panY + dy);
+    }
+
+    function onPointerUp(ev: PointerEvent) {
+      if (!panningRef.current) return;
+      ev.preventDefault();
+      panningRef.current = null;
+      try {
+        (ev.currentTarget as HTMLDivElement).releasePointerCapture(ev.pointerId);
+      } catch {}
+    }
+
+    container.addEventListener("contextmenu", onContextMenu);
+    container.addEventListener("wheel", onWheel, { passive: false });
+    container.addEventListener("pointerdown", onPointerDown);
+    container.addEventListener("pointermove", onPointerMove);
+    container.addEventListener("pointerup", onPointerUp);
+    container.addEventListener("pointercancel", onPointerUp);
+    return () => {
+      container.removeEventListener("contextmenu", onContextMenu);
+      container.removeEventListener("wheel", onWheel as any);
+      container.removeEventListener("pointerdown", onPointerDown);
+      container.removeEventListener("pointermove", onPointerMove);
+      container.removeEventListener("pointerup", onPointerUp);
+      container.removeEventListener("pointercancel", onPointerUp);
+    };
+  }, [open, zoom, panX, panY]);
+
   if (!open || !anexo) return null;
 
   const canPrev = isPdf && page > 1;
@@ -453,7 +579,7 @@ function AnexoViewerModal(props: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
-      <div className="w-full max-w-6xl overflow-hidden rounded-xl bg-white shadow-xl">
+      <div ref={modalRef} className="w-full max-w-6xl overflow-hidden rounded-xl bg-white shadow-xl">
         <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] px-4 py-3">
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold">{anexo.nomeArquivo}</div>
@@ -462,6 +588,25 @@ function AnexoViewerModal(props: {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            <button className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" type="button" onClick={() => void fitToWindow()} disabled={loading}>
+              Ajustar
+            </button>
+            <button
+              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]"
+              type="button"
+              onClick={() => {
+                resetView();
+              }}
+              disabled={loading}
+            >
+              100%
+            </button>
+            <div className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827]">
+              Zoom {Math.round(zoom * 100)}%
+            </div>
+            <button className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" type="button" onClick={() => void toggleFullscreen()} disabled={loading}>
+              {isFullscreen ? "Sair Tela Cheia" : "Tela Cheia"}
+            </button>
             <a className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" href={`/api/v1/engenharia/projetos/anexos/${anexo.idAnexo}/download`} target="_blank" rel="noreferrer">
               Abrir
             </a>
@@ -552,12 +697,193 @@ function AnexoViewerModal(props: {
           </div>
 
           <div className="p-4">
-            <div ref={containerRef} className="relative w-full overflow-auto rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-2">
-              <div className="relative inline-block">
+            <div ref={containerRef} className="relative h-[70vh] w-full overflow-hidden rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-2">
+              <div
+                ref={contentRef}
+                className="relative inline-block"
+                style={{
+                  transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+                  transformOrigin: "0 0",
+                }}
+              >
                 <canvas ref={baseCanvasRef} className="block rounded" />
                 <canvas ref={drawCanvasRef} className="absolute left-0 top-0 cursor-crosshair rounded" />
               </div>
               {loading ? <div className="absolute inset-0 flex items-center justify-center text-sm text-[#6B7280]">Carregando...</div> : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VincularProfissionalModal(props: {
+  open: boolean;
+  onClose: () => void;
+  idProjeto: number | null;
+  onLinked: () => void;
+}) {
+  const { open, onClose, idProjeto, onLinked } = props;
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [rows, setRows] = useState<TecnicoRow[]>([]);
+  const [selectedIdTecnico, setSelectedIdTecnico] = useState<number | null>(null);
+  const [tipo, setTipo] = useState<"RESPONSAVEL_TECNICO" | "FISCAL_OBRA">("RESPONSAVEL_TECNICO");
+  const [abrangencia, setAbrangencia] = useState("");
+  const [numeroDocumento, setNumeroDocumento] = useState("");
+  const [observacao, setObservacao] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => {
+      const hay = `${r.nome} ${r.tituloProfissional || ""} ${r.conselho || ""} ${r.numeroRegistro || ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [rows, query]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    (async () => {
+      try {
+        setLoading(true);
+        setErr(null);
+        setQuery("");
+        setSelectedIdTecnico(null);
+        setTipo("RESPONSAVEL_TECNICO");
+        setAbrangencia("");
+        setNumeroDocumento("");
+        setObservacao("");
+        const res = await api.get("/api/v1/engenharia/tecnicos");
+        const list = unwrapApiData<any[]>(res?.data || []);
+        const mapped: TecnicoRow[] = Array.isArray(list)
+          ? list.map((r) => ({
+              idTecnico: Number(r.idTecnico),
+              nome: String(r.nome || ""),
+              tituloProfissional: r.tituloProfissional == null ? null : String(r.tituloProfissional),
+              conselho: r.conselho == null ? null : String(r.conselho),
+              numeroRegistro: r.numeroRegistro == null ? null : String(r.numeroRegistro),
+            }))
+          : [];
+        if (!active) return;
+        setRows(mapped.filter((r) => Number.isInteger(r.idTecnico) && r.idTecnico > 0));
+      } catch (e: any) {
+        if (active) setErr(e?.response?.data?.message || e?.message || "Erro ao carregar profissionais.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [open]);
+
+  async function vincular() {
+    if (!idProjeto) {
+      setErr("Salve o projeto antes de vincular profissionais.");
+      return;
+    }
+    if (!selectedIdTecnico) {
+      setErr("Selecione um profissional.");
+      return;
+    }
+    try {
+      setLoading(true);
+      setErr(null);
+      await api.post("/api/v1/engenharia/projetos/responsaveis", {
+        idProjeto,
+        idTecnico: selectedIdTecnico,
+        tipo,
+        abrangencia: abrangencia.trim() || null,
+        numeroDocumento: numeroDocumento.trim() || null,
+        observacao: observacao.trim() || null,
+      });
+      onLinked();
+      onClose();
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || e?.message || "Erro ao vincular profissional.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-4xl overflow-hidden rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] px-4 py-3">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold">Vincular profissional ao projeto</div>
+            <div className="text-xs text-[#6B7280]">Selecione na lista e defina o tipo do vínculo.</div>
+          </div>
+          <button className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]" type="button" onClick={onClose} disabled={loading}>
+            Fechar
+          </button>
+        </div>
+
+        <div className="grid gap-0 lg:grid-cols-[1fr_320px]">
+          <div className="border-b border-[#E5E7EB] p-4 lg:border-b-0 lg:border-r">
+            {err ? <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
+
+            <input className="input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Digite para filtrar profissionais..." disabled={loading} />
+
+            <div className="mt-3 overflow-hidden rounded-lg border border-[#E5E7EB]">
+              <div className="max-h-[52vh] overflow-auto">
+                {!filtered.length ? (
+                  <div className="px-3 py-4 text-sm text-[#6B7280]">{loading ? "Carregando..." : "Nenhum profissional encontrado."}</div>
+                ) : (
+                  filtered.map((r) => {
+                    const selected = r.idTecnico === selectedIdTecnico;
+                    return (
+                      <button
+                        key={r.idTecnico}
+                        type="button"
+                        className={`block w-full px-3 py-2 text-left hover:bg-[#F9FAFB] ${selected ? "bg-[#EFF6FF]" : ""}`}
+                        onClick={() => setSelectedIdTecnico(r.idTecnico)}
+                        disabled={loading}
+                      >
+                        <div className="text-sm font-medium">{r.nome || "—"}</div>
+                        <div className="text-xs text-[#6B7280]">
+                          {r.tituloProfissional ? `${r.tituloProfissional} • ` : ""}
+                          {(r.conselho || "—") + " " + (r.numeroRegistro || "—")}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4">
+            <div className="space-y-3">
+              <div>
+                <div className="text-sm text-[#6B7280]">Tipo do vínculo</div>
+                <select className="input" value={tipo} onChange={(e) => setTipo((String(e.target.value).toUpperCase() === "FISCAL_OBRA" ? "FISCAL_OBRA" : "RESPONSAVEL_TECNICO") as any)} disabled={loading}>
+                  <option value="RESPONSAVEL_TECNICO">Responsável Técnico</option>
+                  <option value="FISCAL_OBRA">Fiscal da Obra</option>
+                </select>
+              </div>
+              <div>
+                <div className="text-sm text-[#6B7280]">Abrangência (opcional)</div>
+                <input className="input" value={abrangencia} onChange={(e) => setAbrangencia(e.target.value)} placeholder="Ex.: Estrutural / Hidrossanitário / Obra inteira" disabled={loading} />
+              </div>
+              <div>
+                <div className="text-sm text-[#6B7280]">Nº Documento (opcional)</div>
+                <input className="input" value={numeroDocumento} onChange={(e) => setNumeroDocumento(e.target.value)} placeholder="ART / RRT / etc." disabled={loading} />
+              </div>
+              <div>
+                <div className="text-sm text-[#6B7280]">Observação (opcional)</div>
+                <textarea className="input min-h-[90px]" value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="Observações sobre o vínculo" disabled={loading} />
+              </div>
+
+              <button type="button" className="w-full rounded-lg bg-[#2563EB] px-4 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50" onClick={vincular} disabled={loading || !selectedIdTecnico}>
+                Vincular ao projeto
+              </button>
             </div>
           </div>
         </div>
@@ -640,6 +966,7 @@ export default function ProjetoFormClient() {
   const [respLoading, setRespLoading] = useState(false);
   const [respErr, setRespErr] = useState<string | null>(null);
   const [respRows, setRespRows] = useState<ProjetoResponsavelRow[]>([]);
+  const [vincularOpen, setVincularOpen] = useState(false);
 
   const [anexosLoading, setAnexosLoading] = useState(false);
   const [anexosErr, setAnexosErr] = useState<string | null>(null);
@@ -792,70 +1119,8 @@ export default function ProjetoFormClient() {
       setErr("Salve o projeto antes de cadastrar responsáveis.");
       return;
     }
-    try {
-      setRespLoading(true);
-      setRespErr(null);
-
-      const idTecnicoRaw = (prompt("ID do técnico (deixe vazio para cadastrar um novo):") || "").trim();
-      let idTecnico: number | null = null;
-      if (idTecnicoRaw) {
-        const n = Number(idTecnicoRaw);
-        idTecnico = Number.isInteger(n) && n > 0 ? n : null;
-        if (!idTecnico) {
-          setRespErr("ID do técnico inválido.");
-          return;
-        }
-      } else {
-        const nome = (prompt("Nome do técnico:") || "").trim();
-        if (!nome) {
-          setRespErr("Nome é obrigatório.");
-          return;
-        }
-        const conselho = (prompt("Conselho (ex.: CREA, CAU):") || "").trim();
-        const numeroRegistro = (prompt("Número do registro:") || "").trim();
-        if (!conselho) {
-          setRespErr("Conselho é obrigatório.");
-          return;
-        }
-        if (!numeroRegistro) {
-          setRespErr("Registro é obrigatório.");
-          return;
-        }
-        const resTec = await api.post("/api/v1/engenharia/tecnicos", {
-          nome,
-          conselho,
-          numeroRegistro,
-        });
-        const outTec = unwrapApiData<any>(resTec?.data || null) as any;
-        const newId = Number(outTec?.idTecnico || 0);
-        if (!Number.isInteger(newId) || newId <= 0) {
-          setRespErr("Não foi possível cadastrar o técnico.");
-          return;
-        }
-        idTecnico = newId;
-      }
-
-      const tipo = (prompt("Tipo (RESPONSAVEL_TECNICO / FISCAL_OBRA):", "RESPONSAVEL_TECNICO") || "RESPONSAVEL_TECNICO")
-        .trim()
-        .toUpperCase();
-      const abrangencia = (prompt("Abrangência (opcional):") || "").trim();
-      const numeroDocumento = (prompt("Nº documento (opcional):") || "").trim();
-      const observacao = (prompt("Observação (opcional):") || "").trim();
-
-      await api.post("/api/v1/engenharia/projetos/responsaveis", {
-        idProjeto,
-        idTecnico,
-        tipo,
-        abrangencia: abrangencia || null,
-        numeroDocumento: numeroDocumento || null,
-        observacao: observacao || null,
-      });
-      await carregarResponsaveisProjeto();
-    } catch (e: any) {
-      setRespErr(e?.response?.data?.message || e?.message || "Erro ao adicionar responsável.");
-    } finally {
-      setRespLoading(false);
-    }
+    setRespErr(null);
+    setVincularOpen(true);
   }
 
   async function editarResponsavelProjeto(r: ProjetoResponsavelRow) {
@@ -988,6 +1253,12 @@ export default function ProjetoFormClient() {
           setViewerAnexo(null);
         }}
         onSaved={() => carregarAnexosProjeto(idProjeto)}
+      />
+      <VincularProfissionalModal
+        open={vincularOpen}
+        idProjeto={idProjeto}
+        onClose={() => setVincularOpen(false)}
+        onLinked={() => carregarResponsaveisProjeto()}
       />
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
@@ -1198,8 +1469,8 @@ export default function ProjetoFormClient() {
               >
                 Atualizar
               </button>
-              <button className="rounded-lg bg-[#2563EB] px-3 py-2 text-sm text-white hover:bg-[#1D4ED8]" type="button" onClick={adicionarResponsavelProjeto} disabled={respLoading}>
-                Adicionar
+              <button className="rounded-lg bg-[#2563EB] px-3 py-2 text-sm text-white hover:bg-[#1D4ED8] disabled:opacity-50" type="button" onClick={adicionarResponsavelProjeto} disabled={respLoading || !idProjeto}>
+                Adicionar profissional ao projeto
               </button>
               <button
                 className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm hover:bg-[#F9FAFB]"
