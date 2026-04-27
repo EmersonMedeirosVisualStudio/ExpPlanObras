@@ -207,6 +207,87 @@ export async function criarDocumento(tenantId: number, userId: number, body: Doc
   return { id };
 }
 
+export async function atualizarDocumentoRegistro(
+  tenantId: number,
+  userId: number,
+  args: { documentoId: number; tituloDocumento?: string; descricaoDocumento?: string | null }
+) {
+  const documentoId = Number(args.documentoId);
+  if (!Number.isFinite(documentoId) || documentoId <= 0) throw new ApiError(400, 'ID inválido');
+
+  const titulo = args.tituloDocumento !== undefined ? String(args.tituloDocumento || '').trim() : undefined;
+  const descricao = args.descricaoDocumento !== undefined ? (args.descricaoDocumento == null ? null : String(args.descricaoDocumento)) : undefined;
+  if (titulo !== undefined && !titulo) throw new ApiError(422, 'tituloDocumento inválido');
+
+  const [[row]]: any = await db.query(
+    `
+    SELECT id_documento_registro AS id, status_documento AS status
+    FROM documentos_registros
+    WHERE tenant_id = ? AND id_documento_registro = ?
+    LIMIT 1
+    `,
+    [tenantId, documentoId]
+  );
+  if (!row) throw new ApiError(404, 'Documento não encontrado.');
+  if (String(row.status) === 'ASSINADO') throw new ApiError(422, 'Documento assinado não pode ser editado.');
+  if (String(row.status) === 'CANCELADO') throw new ApiError(422, 'Documento cancelado não pode ser editado.');
+
+  const sets: string[] = [];
+  const params: any[] = [];
+  if (titulo !== undefined) {
+    sets.push('titulo_documento = ?');
+    params.push(titulo.slice(0, 180));
+  }
+  if (descricao !== undefined) {
+    sets.push('descricao_documento = ?');
+    params.push(descricao);
+  }
+  if (!sets.length) return { ok: true };
+
+  await db.execute(
+    `
+    UPDATE documentos_registros
+    SET ${sets.join(', ')}, atualizado_em = CURRENT_TIMESTAMP
+    WHERE tenant_id = ? AND id_documento_registro = ?
+    LIMIT 1
+    `,
+    [...params, tenantId, documentoId]
+  );
+
+  await addHistorico({ tenantId, documentoId, versaoId: null, tipo: 'EDITADO', descricao: 'Documento editado.', userId });
+  return { ok: true };
+}
+
+export async function cancelarDocumentoRegistro(tenantId: number, userId: number, documentoId: number) {
+  const id = Number(documentoId);
+  if (!Number.isFinite(id) || id <= 0) throw new ApiError(400, 'ID inválido');
+
+  const [[row]]: any = await db.query(
+    `
+    SELECT id_documento_registro AS id, status_documento AS status
+    FROM documentos_registros
+    WHERE tenant_id = ? AND id_documento_registro = ?
+    LIMIT 1
+    `,
+    [tenantId, id]
+  );
+  if (!row) throw new ApiError(404, 'Documento não encontrado.');
+  if (String(row.status) === 'ASSINADO') throw new ApiError(422, 'Documento assinado não pode ser cancelado.');
+
+  await db.execute(
+    `
+    UPDATE documentos_registros
+    SET status_documento = 'CANCELADO', atualizado_em = CURRENT_TIMESTAMP
+    WHERE tenant_id = ? AND id_documento_registro = ?
+    LIMIT 1
+    `,
+    [tenantId, id]
+  );
+
+  await addHistorico({ tenantId, documentoId: id, versaoId: null, tipo: 'CANCELADO', descricao: 'Documento cancelado.', userId });
+  return { ok: true };
+}
+
 export async function obterDocumentoDetalhe(tenantId: number, documentoId: number): Promise<DocumentoDetalheDTO> {
   const [[d]]: any = await db.query(
     `

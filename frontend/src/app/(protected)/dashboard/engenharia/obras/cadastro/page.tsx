@@ -49,6 +49,14 @@ type EnderecoRow = {
   origemCoordenada: string;
 };
 
+function safeInternalPath(v: string | null) {
+  const s = String(v || "").trim();
+  if (!s) return null;
+  if (!s.startsWith("/")) return null;
+  if (s.startsWith("//")) return null;
+  return s;
+}
+
 function moeda(v: number) {
   const n = Number(v || 0);
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number.isFinite(n) ? n : 0);
@@ -214,6 +222,44 @@ export default function EngenhariaCadastroObraPage() {
     description: "",
     valorPrevisto: "",
   });
+
+  const returnTo = useMemo(() => safeInternalPath(sp?.get("returnTo") || sp?.get("from") || null), [sp]);
+  const returnToStorageKey = "exp:returnTo:engenharia-obra-cadastro";
+  const [returnToStored, setReturnToStored] = useState<string | null>(null);
+  const effectiveReturnTo = returnTo || returnToStored;
+  const backHref = effectiveReturnTo || "/dashboard/engenharia/obras";
+  const selfQuery = useMemo(() => {
+    const qp = new URLSearchParams(sp?.toString() || "");
+    qp.delete("returnTo");
+    const qs = qp.toString();
+    return qs ? `?${qs}` : "";
+  }, [sp]);
+  const selfHref = `/dashboard/engenharia/obras/cadastro${selfQuery}`;
+  const breadcrumb = useMemo(() => {
+    const rt = String(effectiveReturnTo || "").toLowerCase();
+    if (!rt) return "Engenharia → Obras → Obra selecionada";
+    if (rt.includes("/dashboard/engenharia/obras/ativa")) return "Engenharia → Obras → Obra ativa → Obra selecionada";
+    if (rt.includes("/dashboard/engenharia/obras")) return "Engenharia → Obras → Obra selecionada";
+    if (rt.includes("/dashboard/contratos")) return "Contratos → Obra selecionada";
+    return "Engenharia → Obra selecionada";
+  }, [effectiveReturnTo]);
+
+  useEffect(() => {
+    try {
+      const current = safeInternalPath(sessionStorage.getItem(returnToStorageKey));
+      setReturnToStored(current);
+    } catch {
+      setReturnToStored(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!returnTo) return;
+    try {
+      sessionStorage.setItem(returnToStorageKey, returnTo);
+      setReturnToStored(returnTo);
+    } catch {}
+  }, [returnTo]);
 
   async function carregarContratos() {
     try {
@@ -902,7 +948,7 @@ export default function EngenhariaCadastroObraPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Obra selecionada</h1>
-          <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada</div>
+          <div className="text-xs text-slate-500">{breadcrumb}</div>
           <div className="text-sm text-slate-600">Cadastre/edite a obra selecionada.</div>
         </div>
         <div className="flex items-center gap-2">
@@ -910,11 +956,15 @@ export default function EngenhariaCadastroObraPage() {
             type="button"
             className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             disabled={!obraId}
-            onClick={() => router.push(`/dashboard/engenharia/obras/ativa/documentos`)}
+            onClick={() =>
+              router.push(
+                `/dashboard/obras/documentos?tipo=OBRA&id=${Number(obraId || 0)}&categoriaPrefix=${encodeURIComponent("OBRA:")}&returnTo=${encodeURIComponent(selfHref)}`
+              )
+            }
           >
             Documentos
           </button>
-          <button type="button" className="rounded-lg border px-4 py-2 text-sm" onClick={() => router.push("/dashboard/engenharia/obras")}>
+          <button type="button" className="rounded-lg border px-4 py-2 text-sm" onClick={() => router.push(backHref)}>
             Voltar
           </button>
         </div>

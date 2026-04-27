@@ -58,7 +58,10 @@ export default function ObraProjetosClient() {
   const idObra = Number(params?.id || 0);
 
   const returnTo = useMemo(() => safeInternalPath(sp.get("returnTo") || null), [sp]);
-  const backHref = returnTo || (idObra ? `/dashboard/engenharia/obras/${idObra}` : "/dashboard/engenharia/obras");
+  const returnToStorageKey = "exp:returnTo:obra-projetos";
+  const [returnToStored, setReturnToStored] = useState<string | null>(null);
+  const effectiveReturnTo = returnTo || returnToStored;
+  const backHref = effectiveReturnTo || (idObra ? `/dashboard/engenharia/obras/${idObra}` : "/dashboard/engenharia/obras");
   const selfHref = idObra ? `/dashboard/engenharia/obras/${idObra}/projetos?returnTo=${encodeURIComponent(backHref)}` : "/dashboard/engenharia/obras";
   const obraAtualLabel = useMemo(() => {
     if (!idObra) return null;
@@ -68,11 +71,28 @@ export default function ObraProjetosClient() {
     return `Obra atual: #${idObra}${nome ? ` — ${nome}` : ""}`;
   }, [idObra]);
   const breadcrumb = useMemo(() => {
-    if (!returnTo) return "Engenharia → Obras → Obra selecionada → Projetos da Obra";
-    const rt = returnTo.toLowerCase();
+    if (!effectiveReturnTo) return "Engenharia → Obras → Obra selecionada → Projetos da Obra";
+    const rt = effectiveReturnTo.toLowerCase();
     if (rt.includes("/dashboard/engenharia/obras/ativa")) return "Engenharia → Obras → Obra ativa → Obra selecionada → Projetos da Obra";
     if (rt.includes("/dashboard/engenharia/obras")) return "Engenharia → Obras → Obra selecionada → Projetos da Obra";
     return "Engenharia → Obras → Projetos da Obra";
+  }, [effectiveReturnTo]);
+
+  useEffect(() => {
+    try {
+      const current = safeInternalPath(sessionStorage.getItem(returnToStorageKey));
+      setReturnToStored(current);
+    } catch {
+      setReturnToStored(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!returnTo) return;
+    try {
+      sessionStorage.setItem(returnToStorageKey, returnTo);
+      setReturnToStored(returnTo);
+    } catch {}
   }, [returnTo]);
 
   const [rows, setRows] = useState<ProjetoRow[]>([]);
@@ -131,13 +151,15 @@ export default function ObraProjetosClient() {
     parts.push(`ID ${idProjeto}`);
     const descricao = parts.filter(Boolean).join(" • ");
 
-    await DocumentosApi.criar({
-      entidadeTipo: "OBRA",
-      entidadeId: idObra,
-      categoriaDocumento: "OBRA:PROJETO",
-      tituloDocumento: titulo,
-      descricaoDocumento: descricao || null,
-    });
+    try {
+      await DocumentosApi.criar({
+        entidadeTipo: "OBRA",
+        entidadeId: idObra,
+        categoriaDocumento: "OBRA:PROJETO",
+        tituloDocumento: titulo,
+        descricaoDocumento: descricao || null,
+      });
+    } catch {}
   }
 
   async function vincularExistente() {

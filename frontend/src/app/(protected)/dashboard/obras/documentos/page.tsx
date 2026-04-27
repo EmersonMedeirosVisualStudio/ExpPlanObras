@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { DocumentosApi } from '@/lib/modules/documentos/api';
 import type { DocumentoRegistroDTO } from '@/lib/modules/documentos/types';
 import api from '@/lib/api';
-import { ArrowLeft, ExternalLink, FileText, Info, RefreshCcw, Search, Upload, X } from 'lucide-react';
+import { ArrowLeft, ExternalLink, FileText, Info, Pencil, RefreshCcw, Search, Trash2, Upload, X } from 'lucide-react';
 
 type ContratoOption = { id: number; numeroContrato: string; objeto: string | null };
 
@@ -24,6 +24,9 @@ export default function ObrasDocumentosPage() {
   const initialId = sp.get('id') || '';
   const initialCategoria = (sp.get('categoriaPrefix') || '').trim().toUpperCase();
   const returnTo = safeInternalPath(sp.get('returnTo') || sp.get('from'));
+  const returnToStorageKey = 'exp:returnTo:obras-documentos';
+  const [returnToStored, setReturnToStored] = useState<string | null>(null);
+  const effectiveReturnTo = returnTo || returnToStored;
   const lockObraContext = initialTipo === 'OBRA' && Boolean(initialId);
 
   const [tipo, setTipo] = useState<'OBRA' | 'CONTRATO'>(initialTipo === 'CONTRATO' ? 'CONTRATO' : 'OBRA');
@@ -52,6 +55,9 @@ export default function ObrasDocumentosPage() {
   const [novoDescricao, setNovoDescricao] = useState('');
   const [novoArquivo, setNovoArquivo] = useState<File | null>(null);
   const [busca, setBusca] = useState('');
+  const [categoriaFiltro, setCategoriaFiltro] = useState<string>('');
+
+  const [obraNome, setObraNome] = useState<string>('');
 
   const novoArquivoInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -62,15 +68,38 @@ export default function ObrasDocumentosPage() {
     return ['CONTRATO', 'OS', 'ADITIVO', 'MEDICAO', 'COMUNICACAO', 'OUTROS'];
   }, [tipo]);
 
+  function getCategoriaSuffix(cat: string) {
+    const up = String(cat || '').toUpperCase().trim();
+    if (!up) return '';
+    if (up.startsWith(fixedCategoriaPrefix)) return up.slice(fixedCategoriaPrefix.length).trim();
+    if (up.includes(':')) return (up.split(':').pop() || '').trim();
+    return up.trim();
+  }
+
+  const categoriasFiltroOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of categoriasSugeridas) set.add(String(c || '').toUpperCase().trim());
+    for (const r of rows) {
+      const suffix = getCategoriaSuffix(r.categoriaDocumento);
+      if (suffix) set.add(suffix);
+    }
+    return Array.from(set)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [categoriasSugeridas, rows, fixedCategoriaPrefix]);
+
   const displayedRows = useMemo(() => {
     const term = String(busca || '').trim().toLowerCase();
+    const filterSuffix = String(categoriaFiltro || '').trim().toUpperCase();
     const list = rows.slice().sort((a, b) => String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')));
-    if (!term) return list;
+    if (!term && !filterSuffix) return list;
     return list.filter((r) => {
       const hay = `${r.id} ${r.categoriaDocumento} ${r.tituloDocumento} ${r.descricaoDocumento || ''}`.toLowerCase();
-      return hay.includes(term);
+      const okTerm = term ? hay.includes(term) : true;
+      const okCat = filterSuffix ? getCategoriaSuffix(r.categoriaDocumento) === filterSuffix : true;
+      return okTerm && okCat;
     });
-  }, [rows, busca]);
+  }, [rows, busca, categoriaFiltro, fixedCategoriaPrefix]);
 
   const pageTitle = useMemo(() => (tipo === 'OBRA' ? 'Documentos da Obra' : 'Documentos do Contrato'), [tipo]);
 
@@ -132,6 +161,7 @@ export default function ObrasDocumentosPage() {
   useEffect(() => {
     setCategoriaPrefix(fixedCategoriaPrefix);
     setNovoCategoria((prev) => normalizeCategoriaForTipo(prev, tipo));
+    setCategoriaFiltro('');
   }, [fixedCategoriaPrefix, tipo]);
 
   const carregar = useCallback(async () => {
@@ -168,6 +198,45 @@ export default function ObrasDocumentosPage() {
     if (!id) return;
     carregar();
   }, [carregar, idRef, lockObraContext]);
+
+  useEffect(() => {
+    try {
+      const current = safeInternalPath(sessionStorage.getItem(returnToStorageKey));
+      setReturnToStored(current);
+    } catch {
+      setReturnToStored(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!returnTo) return;
+    try {
+      sessionStorage.setItem(returnToStorageKey, returnTo);
+      setReturnToStored(returnTo);
+    } catch {}
+  }, [returnTo]);
+
+  useEffect(() => {
+    let active = true;
+    async function carregarNomeObra() {
+      const id = Number(idRef || 0);
+      if (tipo !== 'OBRA' || !Number.isFinite(id) || id <= 0) {
+        if (active) setObraNome('');
+        return;
+      }
+      try {
+        const res = await api.get(`/api/obras/${id}`);
+        const name = String((res.data as any)?.name || '').trim();
+        if (active) setObraNome(name);
+      } catch {
+        if (active) setObraNome('');
+      }
+    }
+    carregarNomeObra();
+    return () => {
+      active = false;
+    };
+  }, [tipo, idRef]);
 
   useEffect(() => {
     if (tipo !== 'CONTRATO') return;
@@ -224,9 +293,59 @@ export default function ObrasDocumentosPage() {
   }
 
   const breadcrumb = useMemo(() => {
-    if (tipo === 'OBRA') return 'Engenharia → Obras → Obra selecionada → Documentos';
-    return 'Contratos → Documentos';
-  }, [tipo]);
+    if (tipo === 'CONTRATO') return 'Contratos → Documentos';
+    const rt = String(effectiveReturnTo || '').toLowerCase();
+    if (!rt) return 'Engenharia → Obras → Obra selecionada → Documentos';
+    if (rt.includes('/dashboard/engenharia/obras/ativa')) return 'Engenharia → Obras → Obra ativa → Obra selecionada → Documentos';
+    if (rt.includes('/dashboard/engenharia/obras')) return 'Engenharia → Obras → Obra selecionada → Documentos';
+    if (rt.includes('/dashboard/contratos')) return 'Contratos → Obra selecionada → Documentos';
+    return 'Engenharia → Obra selecionada → Documentos';
+  }, [tipo, effectiveReturnTo]);
+
+  function voltar() {
+    if (effectiveReturnTo) return router.push(effectiveReturnTo);
+    router.back();
+  }
+
+  async function editarDocumentoQuick(r: DocumentoRegistroDTO) {
+    const novoTituloPrompt = prompt('Editar título:', r.tituloDocumento || '');
+    if (novoTituloPrompt === null) return;
+    const tituloDocumento = String(novoTituloPrompt || '').trim();
+    if (!tituloDocumento) return;
+
+    const novaDescricaoPrompt = prompt('Editar descrição (opcional):', r.descricaoDocumento || '');
+    if (novaDescricaoPrompt === null) return;
+    const descricaoDocumento = String(novaDescricaoPrompt || '').trim();
+
+    try {
+      setLoading(true);
+      setErro(null);
+      await api.put(`/api/v1/documentos/${r.id}`, {
+        tituloDocumento,
+        descricaoDocumento: descricaoDocumento ? descricaoDocumento : null,
+      });
+      await carregar();
+    } catch (e: any) {
+      setErro(e?.response?.data?.message || e?.message || 'Erro ao editar documento.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function excluirDocumentoQuick(r: DocumentoRegistroDTO) {
+    const ok = confirm(`Excluir (cancelar) o documento #${r.id}?`);
+    if (!ok) return;
+    try {
+      setLoading(true);
+      setErro(null);
+      await api.delete(`/api/v1/documentos/${r.id}`);
+      await carregar();
+    } catch (e: any) {
+      setErro(e?.response?.data?.message || e?.message || 'Erro ao excluir documento.');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="p-6 space-y-6 bg-[#f7f8fa] text-slate-900">
@@ -245,10 +364,13 @@ export default function ObrasDocumentosPage() {
             </span>
           </div>
           <div className="mt-1 text-sm text-slate-600">Gerencie e organize os documentos de forma rápida e segura.</div>
+          {tipo === 'OBRA' && Number(idRef || 0) > 0 ? (
+            <div className="mt-1 text-sm text-slate-600">{`Obra: #${Number(idRef || 0)} - ${obraNome || '—'}`}</div>
+          ) : null}
         </div>
         <div className="flex gap-2 flex-wrap">
-          {returnTo ? (
-            <button className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2" type="button" onClick={() => router.push(returnTo)}>
+          {effectiveReturnTo ? (
+            <button className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2" type="button" onClick={voltar}>
               <ArrowLeft className="h-4 w-4" />
               Voltar
             </button>
@@ -470,7 +592,7 @@ export default function ObrasDocumentosPage() {
                   <div>
                     <div className="text-xs text-slate-600">Descrição (opcional)</div>
                     <textarea
-                      className="input bg-white min-h-20 py-2"
+                      className="input bg-white min-h-32 py-2"
                       value={novoDescricao}
                       onChange={(e) => setNovoDescricao(e.target.value)}
                       placeholder="Ex.: ART nº 123456 — emitida em 10/04"
@@ -559,14 +681,25 @@ export default function ObrasDocumentosPage() {
                 <div className="text-xs text-slate-600">Categoria prefixo</div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{fixedCategoriaPrefix}</div>
               </div>
-              <div className="md:col-span-6">
+              <div className="md:col-span-3">
+                <div className="text-xs text-slate-600">Filtrar categoria</div>
+                <select className="input bg-white" value={categoriaFiltro} onChange={(e) => setCategoriaFiltro(e.target.value)} disabled={loading}>
+                  <option value="">Todas</option>
+                  {categoriasFiltroOptions.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="md:col-span-5">
                 <div className="text-xs text-slate-600">Buscar documento</div>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input className="input bg-white pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por título, descrição, categoria ou número" />
                 </div>
               </div>
-              <div className="md:col-span-4 flex items-end">
+              <div className="md:col-span-2 flex items-end">
                 {tipo === 'CONTRATO' ? (
                   <label className="flex items-center gap-2 text-sm text-slate-700">
                     <input type="checkbox" checked={incluirObras} onChange={(e) => setIncluirObras(e.target.checked)} />
@@ -611,13 +744,33 @@ export default function ObrasDocumentosPage() {
                         <td className="px-3 py-2 text-slate-600">{r.idVersaoAtual ? `#${r.idVersaoAtual}` : '—'}</td>
                         <td className="px-3 py-2 text-slate-600">{r.criadoEm ? new Date(r.criadoEm).toLocaleDateString('pt-BR') : '—'}</td>
                         <td className="px-3 py-2 text-right">
-                          <button
-                            type="button"
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-                            onClick={() => router.push(`/dashboard/documentos/${r.id}`)}
-                          >
-                            Abrir
-                          </button>
+                          <div className="inline-flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                              onClick={() => router.push(`/dashboard/documentos/${r.id}`)}
+                            >
+                              Abrir
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
+                              onClick={() => editarDocumentoQuick(r)}
+                              disabled={loading}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 inline-flex items-center gap-2"
+                              onClick={() => excluirDocumentoQuick(r)}
+                              disabled={loading}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Excluir
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))

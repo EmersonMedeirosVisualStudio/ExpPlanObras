@@ -753,7 +753,10 @@ export default function EngenhariaObraHomePage() {
   const contratoIdParam = Number(sp?.get("contratoId") || 0);
   const contratoNumeroParam = String(sp?.get("contratoNumero") || "").trim();
   const returnTo = useMemo(() => safeInternalPath(sp?.get("returnTo") || null), [sp]);
-  const backHref = returnTo || "/dashboard/engenharia/obras";
+  const returnToStorageKey = "exp:returnTo:engenharia-obra-home";
+  const [returnToStored, setReturnToStored] = useState<string | null>(null);
+  const effectiveReturnTo = returnTo || returnToStored;
+  const backHref = effectiveReturnTo || "/dashboard/engenharia/obras";
   const selfQuery = useMemo(() => {
     const qp = new URLSearchParams(sp?.toString() || "");
     qp.delete("returnTo");
@@ -762,12 +765,12 @@ export default function EngenhariaObraHomePage() {
   }, [sp]);
   const selfHref = idObra ? `/dashboard/engenharia/obras/${idObra}${selfQuery}` : "/dashboard/engenharia/obras";
   const breadcrumb = useMemo(() => {
-    if (!returnTo) return "Engenharia → Obras → Obra selecionada";
-    const rt = returnTo.toLowerCase();
+    if (!effectiveReturnTo) return "Engenharia → Obras → Obra selecionada";
+    const rt = effectiveReturnTo.toLowerCase();
     if (rt.includes("/dashboard/engenharia/obras/ativa")) return "Engenharia → Obras → Obra ativa → Obra selecionada";
     if (rt.includes("/dashboard/engenharia/obras")) return "Engenharia → Obras → Obra selecionada";
     return "Engenharia → Obra selecionada";
-  }, [returnTo]);
+  }, [effectiveReturnTo]);
   const [obra, setObra] = useState<ObraBasica | null>(null);
   const [carregandoObra, setCarregandoObra] = useState(false);
   const [erroObra, setErroObra] = useState<string | null>(null);
@@ -797,6 +800,23 @@ export default function EngenhariaObraHomePage() {
     if (!idObra) return;
     setActiveObra({ id: idObra, nome: obraNomeParam || undefined });
   }, [idObra, obraNomeParam]);
+
+  useEffect(() => {
+    try {
+      const current = safeInternalPath(sessionStorage.getItem(returnToStorageKey));
+      setReturnToStored(current);
+    } catch {
+      setReturnToStored(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!returnTo) return;
+    try {
+      sessionStorage.setItem(returnToStorageKey, returnTo);
+      setReturnToStored(returnTo);
+    } catch {}
+  }, [returnTo]);
 
   async function carregarResponsaveis(tipo: "RESPONSAVEL_TECNICO" | "FISCAL_OBRA", apenasAtivos: boolean) {
     if (!idObra) return;
