@@ -87,33 +87,6 @@ export default function ObrasDocumentosPage() {
     };
   }, [tipo]);
 
-  useEffect(() => {
-    if (!lockObraContext) return;
-    const id = Number(idRef || 0);
-    if (!id) return;
-    carregar();
-  }, [carregar, idRef, lockObraContext]);
-
-  useEffect(() => {
-    if (tipo !== 'CONTRATO') return;
-    const id = Number(idRef || 0);
-    if (!id) return;
-    const found = contratos.find((c) => c.id === id);
-    if (!found) return;
-    setContratoBusca(`#${found.id} - ${found.numeroContrato || '—'} - ${found.objeto || '—'}`);
-  }, [tipo, idRef, contratos]);
-
-  const contratosFiltrados = useMemo(() => {
-    const q = contratoBusca.trim().toLowerCase();
-    if (!q) return contratos.slice(0, 10);
-    return contratos
-      .filter((c) => {
-        const label = `#${c.id} ${c.numeroContrato || ''} ${c.objeto || ''}`.toLowerCase();
-        return label.includes(q);
-      })
-      .slice(0, 10);
-  }, [contratos, contratoBusca]);
-
   const carregar = useCallback(async () => {
     const id = Number(idRef || 0);
     if (!id) return;
@@ -141,6 +114,33 @@ export default function ObrasDocumentosPage() {
       setLoading(false);
     }
   }, [categoriaPrefix, idRef, incluirObras, returnTo, router, tipo]);
+
+  useEffect(() => {
+    if (!lockObraContext) return;
+    const id = Number(idRef || 0);
+    if (!id) return;
+    carregar();
+  }, [carregar, idRef, lockObraContext]);
+
+  useEffect(() => {
+    if (tipo !== 'CONTRATO') return;
+    const id = Number(idRef || 0);
+    if (!id) return;
+    const found = contratos.find((c) => c.id === id);
+    if (!found) return;
+    setContratoBusca(`#${found.id} - ${found.numeroContrato || '—'} - ${found.objeto || '—'}`);
+  }, [tipo, idRef, contratos]);
+
+  const contratosFiltrados = useMemo(() => {
+    const q = contratoBusca.trim().toLowerCase();
+    if (!q) return contratos.slice(0, 10);
+    return contratos
+      .filter((c) => {
+        const label = `#${c.id} ${c.numeroContrato || ''} ${c.objeto || ''}`.toLowerCase();
+        return label.includes(q);
+      })
+      .slice(0, 10);
+  }, [contratos, contratoBusca]);
 
   async function criarDocumento() {
     const id = Number(idRef || 0);
