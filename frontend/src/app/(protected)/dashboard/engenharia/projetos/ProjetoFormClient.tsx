@@ -317,6 +317,12 @@ function AnexoViewerModal(props: {
     }
     const res = await api.get(`/api/v1/engenharia/projetos/${idProjeto}/rascunhos`);
     const list = unwrapApiData<any[]>(res?.data || []) as any[];
+    function parsePermissao(raw: any): ProjetoRascunhoRow["permissao"] {
+      const v = String(raw || "VIEW").trim().toUpperCase();
+      if (v === "OWNER") return "OWNER";
+      if (v === "EDIT") return "EDIT";
+      return "VIEW";
+    }
     const mapped: ProjetoRascunhoRow[] = Array.isArray(list)
       ? list
           .map((r) => ({
@@ -324,12 +330,7 @@ function AnexoViewerModal(props: {
             idProjeto: Number(r.idProjeto),
             idUsuarioOwner: Number(r.idUsuarioOwner),
             titulo: String(r.titulo || "Rascunho"),
-            permissao:
-              String(r.permissao || "VIEW").toUpperCase() === "OWNER"
-                ? "OWNER"
-                : String(r.permissao || "VIEW").toUpperCase() === "EDIT"
-                  ? "EDIT"
-                  : "VIEW",
+            permissao: parsePermissao(r.permissao),
             ownerNome: r.ownerNome == null ? null : String(r.ownerNome),
             ownerEmail: r.ownerEmail == null ? null : String(r.ownerEmail),
             criadoEm: String(r.criadoEm || ""),
