@@ -515,9 +515,10 @@ function AnexoViewerModal(props: {
     }
 
     function onWheel(ev: WheelEvent) {
-      if (!containerRef.current) return;
+      const containerEl = containerRef.current;
+      if (!containerEl) return;
       ev.preventDefault();
-      const rect = container.getBoundingClientRect();
+      const rect = containerEl.getBoundingClientRect();
       const cx = ev.clientX - rect.left;
       const cy = ev.clientY - rect.top;
       const z0 = zoom;
