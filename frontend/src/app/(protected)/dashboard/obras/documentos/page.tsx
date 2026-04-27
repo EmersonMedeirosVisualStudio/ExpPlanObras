@@ -440,7 +440,12 @@ export default function ObrasDocumentosPage() {
                   </div>
 
                   <div className="flex items-center justify-end gap-2 flex-wrap pt-1">
-                    <button className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2" type="button" onClick={limparCampos} disabled={loading}>
+                    <button
+                      className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2"
+                      type="button"
+                      onClick={() => limparCampos()}
+                      disabled={loading}
+                    >
                       <X className="h-4 w-4" />
                       Limpar campos
                     </button>
