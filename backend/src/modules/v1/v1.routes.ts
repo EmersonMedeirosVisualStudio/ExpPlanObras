@@ -45,18 +45,20 @@ function parseResponsavelObraNotes(notes: any): {
   responsabilidade: string | null;
   docInclusaoTipo: 'ART' | 'RRT' | 'PORTARIA' | 'CONTRATO' | null;
   docInclusaoNumero: string | null;
+  docInclusaoDescricao: string | null;
   docBaixaTipo: 'ART' | 'RRT' | 'PORTARIA' | 'CONTRATO' | null;
   docBaixaNumero: string | null;
 } {
   const raw = String(notes || '').trim();
   if (!raw) {
-    return { responsabilidade: null, docInclusaoTipo: null, docInclusaoNumero: null, docBaixaTipo: null, docBaixaNumero: null };
+    return { responsabilidade: null, docInclusaoTipo: null, docInclusaoNumero: null, docInclusaoDescricao: null, docBaixaTipo: null, docBaixaNumero: null };
   }
   try {
     const parsed = JSON.parse(raw) as any;
     const resp = parsed?.responsabilidade != null ? String(parsed.responsabilidade).trim() : '';
     const inTipo = parsed?.docInclusaoTipo != null ? String(parsed.docInclusaoTipo).trim().toUpperCase() : '';
     const inNum = parsed?.docInclusaoNumero != null ? String(parsed.docInclusaoNumero).trim() : '';
+    const inDesc = parsed?.docInclusaoDescricao != null ? String(parsed.docInclusaoDescricao).trim() : '';
     const bxTipo = parsed?.docBaixaTipo != null ? String(parsed.docBaixaTipo).trim().toUpperCase() : '';
     const bxNum = parsed?.docBaixaNumero != null ? String(parsed.docBaixaNumero).trim() : '';
     const validTipo = (v: string): any => (v === 'ART' || v === 'RRT' || v === 'PORTARIA' || v === 'CONTRATO' ? v : null);
@@ -64,12 +66,13 @@ function parseResponsavelObraNotes(notes: any): {
       responsabilidade: resp || null,
       docInclusaoTipo: validTipo(inTipo),
       docInclusaoNumero: inNum || null,
+      docInclusaoDescricao: inDesc || null,
       docBaixaTipo: validTipo(bxTipo),
       docBaixaNumero: bxNum || null,
     };
   } catch {
     const legacy = raw.slice(0, 240);
-    return { responsabilidade: legacy || null, docInclusaoTipo: null, docInclusaoNumero: null, docBaixaTipo: null, docBaixaNumero: null };
+    return { responsabilidade: legacy || null, docInclusaoTipo: null, docInclusaoNumero: null, docInclusaoDescricao: null, docBaixaTipo: null, docBaixaNumero: null };
   }
 }
 
@@ -77,6 +80,7 @@ function buildResponsavelObraNotes(input: {
   responsabilidade?: string | null;
   docInclusaoTipo?: 'ART' | 'RRT' | 'PORTARIA' | 'CONTRATO' | null;
   docInclusaoNumero?: string | null;
+  docInclusaoDescricao?: string | null;
   docBaixaTipo?: 'ART' | 'RRT' | 'PORTARIA' | 'CONTRATO' | null;
   docBaixaNumero?: string | null;
 }) {
@@ -87,6 +91,8 @@ function buildResponsavelObraNotes(input: {
   if (docInclusaoTipo) payload.docInclusaoTipo = docInclusaoTipo;
   const docInclusaoNumero = input.docInclusaoNumero != null ? String(input.docInclusaoNumero).trim() : '';
   if (docInclusaoNumero) payload.docInclusaoNumero = docInclusaoNumero;
+  const docInclusaoDescricao = input.docInclusaoDescricao != null ? String(input.docInclusaoDescricao).trim() : '';
+  if (docInclusaoDescricao) payload.docInclusaoDescricao = docInclusaoDescricao.slice(0, 400);
   const docBaixaTipo = input.docBaixaTipo != null ? String(input.docBaixaTipo).trim().toUpperCase() : '';
   if (docBaixaTipo) payload.docBaixaTipo = docBaixaTipo;
   const docBaixaNumero = input.docBaixaNumero != null ? String(input.docBaixaNumero).trim() : '';
@@ -1905,6 +1911,7 @@ export default async function v1Routes(server: FastifyInstance) {
         responsabilidade: z.string().optional().nullable(),
         docInclusaoTipo: z.enum(['ART', 'RRT', 'PORTARIA', 'CONTRATO']),
         docInclusaoNumero: z.string().min(1),
+        docInclusaoDescricao: z.string().min(1),
         startDate: z.string().optional().nullable(),
         endDate: z.string().optional().nullable(),
         docBaixaTipo: z.enum(['ART', 'RRT', 'PORTARIA', 'CONTRATO']).optional().nullable(),
@@ -1953,6 +1960,7 @@ export default async function v1Routes(server: FastifyInstance) {
           responsabilidade: body.responsabilidade ? String(body.responsabilidade).trim() : null,
           docInclusaoTipo: body.docInclusaoTipo,
           docInclusaoNumero: String(body.docInclusaoNumero).trim(),
+          docInclusaoDescricao: String(body.docInclusaoDescricao).trim(),
           docBaixaTipo: body.ativo ? null : (body.docBaixaTipo as any),
           docBaixaNumero: body.ativo ? null : (body.docBaixaNumero ? String(body.docBaixaNumero).trim() : null),
         }),
@@ -1961,12 +1969,13 @@ export default async function v1Routes(server: FastifyInstance) {
 
     await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_obras_responsabilidades', idRegistro: String(created.id), acao: 'CREATE', dadosNovos: created as any });
     const tecnicoFull = await prisma.responsavelTecnico.findFirst({ where: { id: tecnico.id, tenantId: ctx.tenantId }, select: { name: true } }).catch(() => null);
+    const tipoLabel = body.tipo === 'FISCAL_OBRA' ? 'FISCAL DA OBRA' : 'RESPONSÁVEL TÉCNICO';
     await addTenantHistoryEntry(prisma, {
       tenantId: ctx.tenantId,
       source: 'SYSTEM',
       actorUserId: ctx.userId,
       action: `OBRA:${obra.id}`,
-      message: `Obra #${obra.id}: vínculo criado (${body.tipo}) — ${tecnicoFull?.name ? String(tecnicoFull.name) : `Técnico #${tecnico.id}`}.`,
+      message: `Obra #${obra.id}: vínculo criado (${tipoLabel}) — ${tecnicoFull?.name ? String(tecnicoFull.name) : `Técnico #${tecnico.id}`}. Documento: ${String(body.docInclusaoTipo)} ${String(body.docInclusaoNumero).trim()} — ${String(body.docInclusaoDescricao).trim()}.`,
     });
     return ok(reply, { idObraResponsabilidade: created.id }, { message: 'Vínculo cadastrado' });
   });
@@ -1982,6 +1991,7 @@ export default async function v1Routes(server: FastifyInstance) {
         responsabilidade: z.string().optional().nullable(),
         docInclusaoTipo: z.enum(['ART', 'RRT', 'PORTARIA', 'CONTRATO']).optional().nullable(),
         docInclusaoNumero: z.string().optional().nullable(),
+        docInclusaoDescricao: z.string().optional().nullable(),
         startDate: z.string().optional().nullable(),
         endDate: z.string().optional().nullable(),
         docBaixaTipo: z.enum(['ART', 'RRT', 'PORTARIA', 'CONTRATO']).optional().nullable(),
@@ -2005,7 +2015,8 @@ export default async function v1Routes(server: FastifyInstance) {
     const responsabilidade = body.responsabilidade != null ? String(body.responsabilidade).trim() : prevNotes.responsabilidade;
     const docInclusaoTipo = body.docInclusaoTipo != null ? (String(body.docInclusaoTipo).trim().toUpperCase() as any) : prevNotes.docInclusaoTipo;
     const docInclusaoNumero = body.docInclusaoNumero != null ? String(body.docInclusaoNumero).trim() : prevNotes.docInclusaoNumero;
-    if (!docInclusaoTipo || !docInclusaoNumero) return fail(reply, 400, 'Documento de inclusão é obrigatório');
+    const docInclusaoDescricao = body.docInclusaoDescricao != null ? String(body.docInclusaoDescricao).trim() : prevNotes.docInclusaoDescricao;
+    if (!docInclusaoTipo || !docInclusaoNumero || !docInclusaoDescricao) return fail(reply, 400, 'Documento de inclusão e descrição são obrigatórios');
 
     const docBaixaTipo = body.ativo
       ? null
@@ -2025,18 +2036,27 @@ export default async function v1Routes(server: FastifyInstance) {
           responsabilidade,
           docInclusaoTipo,
           docInclusaoNumero,
+          docInclusaoDescricao,
           docBaixaTipo,
           docBaixaNumero,
         }),
       },
     });
     await audit({ tenantId: ctx.tenantId, userId: ctx.userId, entidade: 'engenharia_obras_responsabilidades', idRegistro: String(id), acao: 'UPDATE', dadosAnteriores: current as any, dadosNovos: updated as any });
+    const prevAtivo = current.endDate == null;
+    const newAtivo = updated.endDate == null;
+    const tipoLabel = body.tipo === 'FISCAL_OBRA' ? 'FISCAL DA OBRA' : 'RESPONSÁVEL TÉCNICO';
+    const msg = !prevAtivo && newAtivo
+      ? `Obra #${(current as any).obraId}: vínculo reativado (${tipoLabel}) (id ${id}).`
+      : prevAtivo && !newAtivo
+        ? `Obra #${(current as any).obraId}: vínculo baixado (${tipoLabel}) (id ${id}). Documento baixa: ${docBaixaTipo} ${docBaixaNumero}${endDate ? ` • ${endDate.toISOString().slice(0, 10)}` : ''}.`
+        : `Obra #${(current as any).obraId}: vínculo atualizado (${tipoLabel}) (id ${id}).`;
     await addTenantHistoryEntry(prisma, {
       tenantId: ctx.tenantId,
       source: 'SYSTEM',
       actorUserId: ctx.userId,
       action: `OBRA:${(current as any).obraId}`,
-      message: `Obra #${(current as any).obraId}: vínculo atualizado (id ${id}).`,
+      message: msg,
     });
     return ok(reply, {}, { message: 'Vínculo atualizado' });
   });

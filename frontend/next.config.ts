@@ -5,6 +5,10 @@ const nextConfig: NextConfig = {
     const apiOrigin = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3333";
     const apiMode = String(process.env.NEXT_PUBLIC_API_MODE || process.env.API_MODE || "").trim().toLowerCase();
     const useNextApi = apiMode === "next";
+    const localRulesAlways = [
+      { source: "/api/v1/engenharia/obras/:id/planilha/:path*", destination: "/api/v1/engenharia/obras/:id/planilha/:path*" },
+      { source: "/api/v1/engenharia/obras/:id/planilha", destination: "/api/v1/engenharia/obras/:id/planilha" },
+    ];
     const localRules = [
       { source: "/api/v1/me/:path*", destination: "/api/v1/me/:path*" },
       { source: "/api/v1/realtime/:path*", destination: "/api/v1/realtime/:path*" },
@@ -30,7 +34,7 @@ const nextConfig: NextConfig = {
       { source: "/api/maintenance/:path*", destination: `${apiOrigin}/api/maintenance/:path*` },
     ];
     return {
-      beforeFiles: useNextApi ? localRules : rules,
+      beforeFiles: useNextApi ? [...localRulesAlways, ...localRules] : [...localRulesAlways, ...rules],
       afterFiles: [],
       fallback: useNextApi ? rules : [],
     };

@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { setActiveObra } from "@/lib/obra/active";
 import api from "@/lib/api";
-import { Clock, ExternalLink, LayoutDashboard, Pencil, Plus, Trash2 } from "lucide-react";
+import { DocumentosApi } from "@/lib/modules/documentos/api";
+import { ArrowDownCircle, Clock, ExternalLink, LayoutDashboard, Pencil, Plus, Trash2 } from "lucide-react";
 
 type ApiEnvelope<T> = { success: boolean; message?: string; data: T };
 function unwrapApiData<T>(json: any): T {
@@ -58,6 +59,7 @@ type ResponsavelObraRow = {
   responsabilidade: string | null;
   docInclusaoTipo: "ART" | "RRT" | "PORTARIA" | "CONTRATO" | null;
   docInclusaoNumero: string | null;
+  docInclusaoDescricao: string | null;
   docBaixaTipo: "ART" | "RRT" | "PORTARIA" | "CONTRATO" | null;
   docBaixaNumero: string | null;
   dataInicio: string | null;
@@ -141,6 +143,7 @@ function VincularResponsavelObraModal(props: {
   const [responsabilidade, setResponsabilidade] = useState("");
   const [docInclusaoTipo, setDocInclusaoTipo] = useState<"ART" | "RRT" | "PORTARIA" | "CONTRATO">("ART");
   const [docInclusaoNumero, setDocInclusaoNumero] = useState("");
+  const [docInclusaoDescricao, setDocInclusaoDescricao] = useState("");
   const [dataInicio, setDataInicio] = useState("");
   const [ativo, setAtivo] = useState(true);
   const [docBaixaTipo, setDocBaixaTipo] = useState<"ART" | "RRT" | "PORTARIA" | "CONTRATO">("ART");
@@ -169,6 +172,7 @@ function VincularResponsavelObraModal(props: {
         setResponsabilidade("");
         setDocInclusaoTipo("ART");
         setDocInclusaoNumero("");
+        setDocInclusaoDescricao("");
         setDataInicio("");
         setAtivo(true);
         setDocBaixaTipo("ART");
@@ -211,6 +215,10 @@ function VincularResponsavelObraModal(props: {
       setErr("Documento de inclusão é obrigatório.");
       return;
     }
+    if (!docInclusaoDescricao.trim()) {
+      setErr("Descrição do documento de inclusão é obrigatória.");
+      return;
+    }
     if (!ativo) {
       if (!docBaixaNumero.trim()) {
         setErr("Documento de baixa é obrigatório quando o vínculo está inativo.");
@@ -220,7 +228,7 @@ function VincularResponsavelObraModal(props: {
     try {
       setLoading(true);
       setErr(null);
-      await api.post("/api/v1/engenharia/obras/responsabilidades", {
+      const res = await api.post("/api/v1/engenharia/obras/responsabilidades", {
         idObra,
         tipo,
         idTecnico: selectedIdTecnico,
@@ -228,11 +236,33 @@ function VincularResponsavelObraModal(props: {
         responsabilidade: responsabilidade.trim() || null,
         docInclusaoTipo,
         docInclusaoNumero: docInclusaoNumero.trim(),
+        docInclusaoDescricao: docInclusaoDescricao.trim(),
         startDate: dataInicio.trim() || null,
         docBaixaTipo: ativo ? null : docBaixaTipo,
         docBaixaNumero: ativo ? null : docBaixaNumero.trim(),
         endDate: ativo ? null : dataBaixa.trim() || null,
       });
+      const tec = rows.find((r) => r.idTecnico === selectedIdTecnico) || null;
+      const tipoLabel = tipo === "FISCAL_OBRA" ? "FISCAL DA OBRA" : "RESPONSÁVEL TÉCNICO";
+      const nomeProf = (tec?.nome || "").trim() || `Técnico #${selectedIdTecnico}`;
+      const tituloProf = (tec?.tituloProfissional || "").trim();
+      const nomeCompleto = `${tituloProf ? `${tituloProf} ` : ""}${nomeProf}`.trim();
+      const numeroCarteira = (tec?.numeroRegistro || "").trim() || "—";
+      const descricaoDocumento = `OBRA: ${tipoLabel} - ${nomeCompleto} - Nº da carteira: ${numeroCarteira} - ${docInclusaoTipo} ${docInclusaoNumero.trim()} - ${docInclusaoDescricao.trim()}`.slice(
+        0,
+        400
+      );
+      try {
+        await DocumentosApi.criar({
+          entidadeTipo: "OBRA",
+          entidadeId: idObra,
+          categoriaDocumento: "OBRA:RESPONSAVEIS_TECNICOS_FISCAIS",
+          tituloDocumento: `${tipoLabel} - ${nomeProf}`.slice(0, 180),
+          descricaoDocumento,
+        });
+      } catch (e: any) {
+        window.alert(`Vínculo cadastrado, mas não foi possível criar o documento da obra.\n\nMotivo: ${e?.message || "Erro desconhecido"}`);
+      }
       onSaved();
       onClose();
     } catch (e: any) {
@@ -329,6 +359,16 @@ function VincularResponsavelObraModal(props: {
                 </div>
               </div>
               <div>
+                <div className="text-sm text-[#6B7280]">Descrição do documento (obrigatório)</div>
+                <input
+                  className="input"
+                  value={docInclusaoDescricao}
+                  onChange={(e) => setDocInclusaoDescricao(e.target.value)}
+                  placeholder="Ex.: ART de execução - assinatura do engenheiro..."
+                  disabled={loading}
+                />
+              </div>
+              <div>
                 <div className="text-sm text-[#6B7280]">Data de início (opcional)</div>
                 <input className="input" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} disabled={loading} />
               </div>
@@ -381,6 +421,7 @@ function EditarResponsavelObraModal(props: { open: boolean; row: ResponsavelObra
   const [responsabilidade, setResponsabilidade] = useState("");
   const [docInclusaoTipo, setDocInclusaoTipo] = useState<"ART" | "RRT" | "PORTARIA" | "CONTRATO">("ART");
   const [docInclusaoNumero, setDocInclusaoNumero] = useState("");
+  const [docInclusaoDescricao, setDocInclusaoDescricao] = useState("");
   const [dataInicio, setDataInicio] = useState("");
   const [ativo, setAtivo] = useState(true);
   const [docBaixaTipo, setDocBaixaTipo] = useState<"ART" | "RRT" | "PORTARIA" | "CONTRATO">("ART");
@@ -394,6 +435,7 @@ function EditarResponsavelObraModal(props: { open: boolean; row: ResponsavelObra
     setResponsabilidade(row?.responsabilidade ? String(row.responsabilidade) : "");
     setDocInclusaoTipo((String(row?.docInclusaoTipo || "ART").toUpperCase() as any) || "ART");
     setDocInclusaoNumero(row?.docInclusaoNumero ? String(row.docInclusaoNumero) : "");
+    setDocInclusaoDescricao(row?.docInclusaoDescricao ? String(row.docInclusaoDescricao) : "");
     setDataInicio(row?.dataInicio ? String(row.dataInicio).slice(0, 10) : "");
     setAtivo(Boolean(row?.ativo));
     setDocBaixaTipo((String(row?.docBaixaTipo || "ART").toUpperCase() as any) || "ART");
@@ -405,6 +447,10 @@ function EditarResponsavelObraModal(props: { open: boolean; row: ResponsavelObra
     if (!row) return;
     if (!docInclusaoNumero.trim()) {
       setErr("Documento de inclusão é obrigatório.");
+      return;
+    }
+    if (!docInclusaoDescricao.trim()) {
+      setErr("Descrição do documento de inclusão é obrigatória.");
       return;
     }
     if (!ativo && !docBaixaNumero.trim()) {
@@ -420,6 +466,7 @@ function EditarResponsavelObraModal(props: { open: boolean; row: ResponsavelObra
         responsabilidade: responsabilidade.trim() || null,
         docInclusaoTipo,
         docInclusaoNumero: docInclusaoNumero.trim(),
+        docInclusaoDescricao: docInclusaoDescricao.trim(),
         startDate: dataInicio.trim() || null,
         docBaixaTipo: ativo ? null : docBaixaTipo,
         docBaixaNumero: ativo ? null : docBaixaNumero.trim(),
@@ -477,6 +524,10 @@ function EditarResponsavelObraModal(props: { open: boolean; row: ResponsavelObra
                 <div className="text-sm text-[#6B7280]">Nº</div>
                 <input className="input" value={docInclusaoNumero} onChange={(e) => setDocInclusaoNumero(e.target.value)} disabled={loading} />
               </div>
+            </div>
+            <div>
+              <div className="text-sm text-[#6B7280]">Descrição do documento (obrigatório)</div>
+              <input className="input" value={docInclusaoDescricao} onChange={(e) => setDocInclusaoDescricao(e.target.value)} disabled={loading} />
             </div>
             <div>
               <div className="text-sm text-[#6B7280]">Data de início (opcional)</div>
@@ -675,6 +726,7 @@ export default function EngenhariaObraHomePage() {
               responsabilidade: r.responsabilidade == null ? null : String(r.responsabilidade),
               docInclusaoTipo: r.docInclusaoTipo == null ? null : (String(r.docInclusaoTipo).toUpperCase() as any),
               docInclusaoNumero: r.docInclusaoNumero == null ? null : String(r.docInclusaoNumero),
+              docInclusaoDescricao: r.docInclusaoDescricao == null ? null : String(r.docInclusaoDescricao),
               docBaixaTipo: r.docBaixaTipo == null ? null : (String(r.docBaixaTipo).toUpperCase() as any),
               docBaixaNumero: r.docBaixaNumero == null ? null : String(r.docBaixaNumero),
               dataInicio: r.dataInicio == null ? null : String(r.dataInicio),
@@ -722,6 +774,12 @@ export default function EngenhariaObraHomePage() {
   async function editarResponsavel(r: ResponsavelObraRow) {
     setCrudErr(null);
     setEditarRespRow(r);
+    setEditarRespOpen(true);
+  }
+
+  async function baixarResponsavel(r: ResponsavelObraRow) {
+    setCrudErr(null);
+    setEditarRespRow({ ...r, ativo: false });
     setEditarRespOpen(true);
   }
 
@@ -842,7 +900,7 @@ export default function EngenhariaObraHomePage() {
         key: "planilha-orcamentaria",
         titulo: "Planilha orçamentária",
         desc: "Versões do orçamento da obra (itens, subitens e serviços). Base para cronograma e custos.",
-        href: (id) => `/dashboard/engenharia/obras/${id}/planilha`,
+        href: (id) => `/dashboard/engenharia/obras/${id}/planilha?returnTo=${encodeURIComponent(selfHref)}`,
         nivel: "GESTAO",
       },
       {
@@ -900,7 +958,7 @@ export default function EngenhariaObraHomePage() {
         desc: "ART, projetos, revisões, laudos, pareceres, relatórios e evidências.",
         href: (id) =>
           `/dashboard/obras/documentos?tipo=OBRA&id=${id}&returnTo=${encodeURIComponent(selfHref)}`,
-        nivel: "GESTAO",
+        nivel: "CADASTRO",
       },
       {
         key: "medicoes",
@@ -1044,6 +1102,19 @@ export default function EngenhariaObraHomePage() {
           >
             <LayoutDashboard className="h-4 w-4" />
             Dashboard
+          </button>
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2 disabled:opacity-60"
+            type="button"
+            onClick={async () => {
+              setHistoricoOpen(true);
+              await carregarHistorico();
+            }}
+            disabled={historicoLoading}
+            title="Histórico da obra"
+          >
+            <Clock className="h-4 w-4" />
+            Histórico
           </button>
           <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={() => router.push(backHref)}>
             Voltar
@@ -1207,19 +1278,6 @@ export default function EngenhariaObraHomePage() {
                   <button
                     className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2"
                     type="button"
-                    onClick={async () => {
-                      setHistoricoOpen(true);
-                      await carregarHistorico();
-                    }}
-                    disabled={historicoLoading}
-                    title="Histórico da obra"
-                  >
-                    <Clock className="h-4 w-4" />
-                    Histórico
-                  </button>
-                  <button
-                    className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2"
-                    type="button"
                     onClick={() => router.push(`/dashboard/engenharia/profissionais?returnTo=${encodeURIComponent(selfHref)}`)}
                     disabled={crudLoading}
                     title="Abrir cadastro de profissionais"
@@ -1274,8 +1332,24 @@ export default function EngenhariaObraHomePage() {
                           <td className="px-3 py-2">{formatDateBR(r.dataInicio)}</td>
                           <td className="px-3 py-2">{r.docBaixaTipo && r.docBaixaNumero ? `${r.docBaixaTipo} ${r.docBaixaNumero}` : "—"}</td>
                           <td className="px-3 py-2">{formatDateBR(r.dataBaixa)}</td>
-                          <td className="px-3 py-2">{r.ativo ? "Sim" : "Não"}</td>
+                          <td className="px-3 py-2">
+                            <span className="inline-flex items-center gap-2">
+                              <span className={`h-2 w-2 rounded-full ${r.ativo ? "bg-green-500" : "bg-slate-400"}`} />
+                              {r.ativo ? "Ativo" : "Inativo"}
+                            </span>
+                          </td>
                           <td className="px-3 py-2 text-right whitespace-nowrap">
+                            {r.ativo ? (
+                              <button
+                                className="inline-flex items-center justify-center rounded-lg border bg-white p-2 text-slate-700 hover:bg-slate-50"
+                                type="button"
+                                onClick={() => baixarResponsavel(r)}
+                                disabled={crudLoading}
+                                title="Dar baixa"
+                              >
+                                <ArrowDownCircle className="h-4 w-4" />
+                              </button>
+                            ) : null}{" "}
                             <button className="inline-flex items-center justify-center rounded-lg border bg-white p-2 text-slate-700 hover:bg-slate-50" type="button" onClick={() => editarResponsavel(r)} disabled={crudLoading} title="Editar">
                               <Pencil className="h-4 w-4" />
                             </button>{" "}

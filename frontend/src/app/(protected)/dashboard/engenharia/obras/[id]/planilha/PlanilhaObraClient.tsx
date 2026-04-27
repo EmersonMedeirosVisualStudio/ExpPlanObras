@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Download, Check } from "lucide-react";
 
 type ComposicaoItem = {
   idItemBase: number;
@@ -68,7 +69,7 @@ function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export default function PlanilhaObraClient({ idObra }: { idObra: number }) {
+export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: number; returnTo: string | null }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -113,6 +114,35 @@ export default function PlanilhaObraClient({ idObra }: { idObra: number }) {
     if (!planilha?.atual) return false;
     return String(obraStatus || "").toUpperCase() === "NAO_INICIADA";
   }, [planilha, obraStatus]);
+
+  const breadcrumb = useMemo(() => {
+    const base = "Engenharia";
+    const rt = String(returnTo || "").toLowerCase();
+    if (!rt) return `${base} → Obras → Obra selecionada → Planilha orçamentária`;
+    if (rt.includes("/dashboard/engenharia/obras/ativa")) return `${base} → Obras → Obra ativa → Obra selecionada → Planilha orçamentária`;
+    if (rt.includes("/dashboard/engenharia/obras")) return `${base} → Obras → Obra selecionada → Planilha orçamentária`;
+    return `${base} → Obra selecionada → Planilha orçamentária`;
+  }, [returnTo]);
+
+  function baixarModeloCsv() {
+    const sep = ";";
+    const lines = [
+      ["item", "codigo", "fonte", "servicos", "und", "quant", "valor_unitario", "valor_parcial"].join(sep),
+      ["1", "", "", "SERVIÇOS PRELIMINARES", "", "", "", ""].join(sep),
+      ["1.1", "", "", "Terraplenagem", "", "", "", ""].join(sep),
+      ["1.1.1", "SER-0001", "SINAPI", "Escavação manual", "m³", "10", "100,00", "1000,00"].join(sep),
+    ];
+    const csv = `${lines.join("\n")}\n`;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `planilha_obra_${idObra}_modelo.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
 
   async function carregarVersoes() {
     try {
@@ -395,11 +425,12 @@ export default function PlanilhaObraClient({ idObra }: { idObra: number }) {
     <div className="p-6 space-y-6 max-w-7xl text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
+          <div className="text-xs text-slate-500">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Planilha orçamentária — Obra #{idObra}</h1>
           <div className="text-sm text-slate-600">Versões do orçamento por obra (itens, subitens e serviços). A programação e apropriação usam os serviços da versão atual.</div>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
-          <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}`)}>
+          <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push(returnTo || `/dashboard/engenharia/obras/${idObra}`)}>
             Voltar
           </button>
           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={carregarVersoes} disabled={loading}>
@@ -423,6 +454,10 @@ export default function PlanilhaObraClient({ idObra }: { idObra: number }) {
             title={!podeEditar ? 'Importar somente quando a obra estiver "Não iniciada" e na versão atual' : "Importar CSV"}
           >
             Importar CSV
+          </button>
+          <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2" type="button" onClick={baixarModeloCsv} disabled={loading}>
+            <Download className="h-4 w-4" />
+            Modelo CSV
           </button>
           <button
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
@@ -468,7 +503,16 @@ export default function PlanilhaObraClient({ idObra }: { idObra: number }) {
                   <td className="px-3 py-2">{v.origem}</td>
                   <td className="px-3 py-2 text-right">{v.totalServicos}</td>
                   <td className="px-3 py-2 text-right">{moeda(Number(v.valorTotal || 0))}</td>
-                  <td className="px-3 py-2">{v.atual ? "SIM" : "NÃO"}</td>
+                  <td className="px-3 py-2">
+                    {v.atual ? (
+                      <span className="inline-flex items-center gap-2 text-green-700">
+                        <Check className="h-4 w-4" />
+                        Atual
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="px-3 py-2">{v.criadoEm ? new Date(v.criadoEm).toLocaleString("pt-BR") : "-"}</td>
                 </tr>
               ))}
