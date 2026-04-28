@@ -12,6 +12,24 @@ function formatTerceirizadoRef(id: number, nome: string) {
   return `#T${id} - ${nome}`;
 }
 
+function onlyDigits(value: string) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function formatCpf(value: string) {
+  const d = onlyDigits(value).slice(0, 11);
+  if (!d) return '';
+  const p1 = d.slice(0, 3);
+  const p2 = d.slice(3, 6);
+  const p3 = d.slice(6, 9);
+  const p4 = d.slice(9, 11);
+  let out = p1;
+  if (p2) out += `.${p2}`;
+  if (p3) out += `.${p3}`;
+  if (p4) out += `-${p4}`;
+  return out;
+}
+
 function alerta(terc: TerceirizadoResumoDTO) {
   const missingRequired: string[] = [];
   if (!String(terc.nomeCompleto || '').trim()) missingRequired.push('Nome');
@@ -64,7 +82,7 @@ export default function TerceirizadosClient() {
   const [lista, setLista] = useState<TerceirizadoResumoDTO[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [salvando, setSalvando] = useState(false);
-  const [form, setForm] = useState({ nomeCompleto: '', funcao: '' });
+  const [form, setForm] = useState({ nomeCompleto: '', cpf: '', dataNascimento: '', funcao: '' });
 
   const totalAtivos = useMemo(() => lista.filter((x) => x.ativo).length, [lista]);
 
@@ -145,6 +163,19 @@ export default function TerceirizadosClient() {
       >
         <div className="space-y-4">
           <input className="input" placeholder="Nome completo" value={form.nomeCompleto} onChange={(e) => setForm((p) => ({ ...p, nomeCompleto: e.target.value }))} />
+          <input
+            className="input"
+            placeholder="CPF"
+            value={form.cpf}
+            onChange={(e) => setForm((p) => ({ ...p, cpf: e.target.value }))}
+            onBlur={() => setForm((p) => ({ ...p, cpf: formatCpf(p.cpf) }))}
+          />
+          <input
+            className="input"
+            type="date"
+            value={form.dataNascimento}
+            onChange={(e) => setForm((p) => ({ ...p, dataNascimento: e.target.value }))}
+          />
           <input className="input" placeholder="Função (opcional)" value={form.funcao} onChange={(e) => setForm((p) => ({ ...p, funcao: e.target.value }))} />
 
           <div className="flex justify-end gap-2">
@@ -163,8 +194,19 @@ export default function TerceirizadosClient() {
               onClick={async () => {
                 try {
                   setSalvando(true);
-                  await TerceirizadosApi.criar({ nomeCompleto: form.nomeCompleto, funcao: form.funcao || null, ativo: true });
-                  setForm({ nomeCompleto: '', funcao: '' });
+                  const cpfDigits = onlyDigits(form.cpf || '');
+                  if (cpfDigits.length !== 11) throw new Error('CPF inválido: deve ter 11 dígitos.');
+                  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(form.dataNascimento || '').slice(0, 10))) {
+                    throw new Error('Data de nascimento inválida.');
+                  }
+                  await TerceirizadosApi.criar({
+                    nomeCompleto: form.nomeCompleto,
+                    cpf: cpfDigits,
+                    dataNascimento: String(form.dataNascimento || '').slice(0, 10),
+                    funcao: form.funcao || null,
+                    ativo: true,
+                  });
+                  setForm({ nomeCompleto: '', cpf: '', dataNascimento: '', funcao: '' });
                   setModalOpen(false);
                   await carregar();
                 } catch (e: any) {
