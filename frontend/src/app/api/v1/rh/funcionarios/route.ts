@@ -97,22 +97,42 @@ export async function POST(req: Request) {
     const dataAdmissao = body?.dataAdmissao ? String(body.dataAdmissao).slice(0, 10) : hoje;
     const dataNascimento = String(body.dataNascimento).slice(0, 10);
 
-    let matricula = body?.matricula ? String(body.matricula).trim() : '';
-    if (!matricula) {
-      const base = `F-${hoje.replace(/-/g, '')}`;
-      for (let i = 0; i < 10; i++) {
-        const sufixo = String(Math.floor(Math.random() * 9000) + 1000);
-        const candidate = `${base}-${sufixo}`;
-        const [[exists]]: any = await conn.query(
-          `SELECT 1 ok FROM funcionarios WHERE tenant_id = ? AND matricula = ? LIMIT 1`,
-          [user.tenantId, candidate]
-        );
-        if (!exists) {
-          matricula = candidate;
-          break;
-        }
+    const matricula = body?.matricula ? String(body.matricula).trim() : '';
+    if (!matricula) throw new ApiError(422, 'Matrícula obrigatória');
+
+    const rg = body?.rg ? String(body.rg).trim() : '';
+
+    let cols: Set<string> | null = null;
+    try {
+      const [colRows]: any = await conn.query(
+        `SELECT COLUMN_NAME columnName FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'funcionarios'`
+      );
+      cols = new Set<string>((Array.isArray(colRows) ? colRows : []).map((r: any) => String(r.columnName || r.COLUMN_NAME || '')));
+    } catch {
+      cols = null;
+    }
+
+    try {
+      const [[m]]: any = await conn.query(`SELECT 1 ok FROM funcionarios WHERE tenant_id = ? AND matricula = ? LIMIT 1`, [user.tenantId, matricula]);
+      if (m) throw new ApiError(409, 'Matrícula já cadastrada para este tenant');
+    } catch (e) {
+      if (e instanceof ApiError) throw e;
+    }
+
+    try {
+      const [[c]]: any = await conn.query(`SELECT 1 ok FROM funcionarios WHERE tenant_id = ? AND cpf = ? LIMIT 1`, [user.tenantId, cpf]);
+      if (c) throw new ApiError(409, 'CPF já cadastrado para este tenant');
+    } catch (e) {
+      if (e instanceof ApiError) throw e;
+    }
+
+    if (rg && (cols == null || cols.has('rg'))) {
+      try {
+        const [[r]]: any = await conn.query(`SELECT 1 ok FROM funcionarios WHERE tenant_id = ? AND rg = ? LIMIT 1`, [user.tenantId, rg]);
+        if (r) throw new ApiError(409, 'Identidade (RG) já cadastrada para este tenant');
+      } catch (e) {
+        if (e instanceof ApiError) throw e;
       }
-      if (!matricula) matricula = `${base}-${String(Date.now()).slice(-4)}`;
     }
 
     await conn.beginTransaction();
@@ -187,10 +207,13 @@ export async function POST(req: Request) {
     }
 
     try {
-      const [colRows]: any = await conn.query(
-        `SELECT COLUMN_NAME columnName FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'funcionarios'`
-      );
-      const cols = new Set<string>((Array.isArray(colRows) ? colRows : []).map((r: any) => String(r.columnName || r.COLUMN_NAME || '')));
+      let colsResolved = cols;
+      if (!colsResolved) {
+        const [colRows]: any = await conn.query(
+          `SELECT COLUMN_NAME columnName FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'funcionarios'`
+        );
+        colsResolved = new Set<string>((Array.isArray(colRows) ? colRows : []).map((r: any) => String(r.columnName || r.COLUMN_NAME || '')));
+      }
       const setParts: string[] = [];
       const setParams: any[] = [];
 
@@ -200,27 +223,27 @@ export async function POST(req: Request) {
       const telefoneWhatsapp = body?.telefoneWhatsapp ? String(body.telefoneWhatsapp).trim() : null;
       const idEmpresa = body?.idEmpresa != null && body?.idEmpresa !== '' ? Number(body.idEmpresa) : null;
 
-      if (cols.has('titulo')) {
+      if (colsResolved.has('titulo')) {
         setParts.push(`titulo = ?`);
         setParams.push(titulo);
       }
-      if (cols.has('nome_mae')) {
+      if (colsResolved.has('nome_mae')) {
         setParts.push(`nome_mae = ?`);
         setParams.push(nomeMae);
       }
-      if (cols.has('nome_pai')) {
+      if (colsResolved.has('nome_pai')) {
         setParts.push(`nome_pai = ?`);
         setParams.push(nomePai);
       }
-      if (cols.has('telefone_whatsapp')) {
+      if (colsResolved.has('telefone_whatsapp')) {
         setParts.push(`telefone_whatsapp = ?`);
         setParams.push(telefoneWhatsapp);
       }
-      if (cols.has('id_empresa')) {
+      if (colsResolved.has('id_empresa')) {
         setParts.push(`id_empresa = ?`);
         setParams.push(Number.isFinite(idEmpresa as any) ? idEmpresa : null);
       }
-      if (!cols.has('id_empresa') && cols.has('id_contraparte')) {
+      if (!colsResolved.has('id_empresa') && colsResolved.has('id_contraparte')) {
         setParts.push(`id_contraparte = ?`);
         setParams.push(Number.isFinite(idEmpresa as any) ? idEmpresa : null);
       }

@@ -33,10 +33,10 @@ async function api<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> 
 }
 
 export type FuncionarioCriarPayload = {
-  matricula?: string | null;
+  matricula: string;
   nomeCompleto: string;
   cpf: string;
-  dataNascimento?: string | null;
+  dataNascimento: string;
   rg?: string | null;
   titulo?: string | null;
   nomeMae?: string | null;

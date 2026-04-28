@@ -52,6 +52,64 @@ function formatCpf(value: string) {
   return out;
 }
 
+function formatCnpjCpf(value: string | null) {
+  const d = onlyDigits(value || '');
+  if (!d) return null;
+  if (d.length === 11) return formatCpf(d);
+  if (d.length !== 14) return value;
+  const p1 = d.slice(0, 2);
+  const p2 = d.slice(2, 5);
+  const p3 = d.slice(5, 8);
+  const p4 = d.slice(8, 12);
+  const p5 = d.slice(12, 14);
+  return `${p1}.${p2}.${p3}/${p4}-${p5}`;
+}
+
+function formatPhoneBr(value: string) {
+  const d = onlyDigits(value).slice(0, 11);
+  if (!d) return '';
+  if (d.length <= 2) return `(${d}`;
+  const ddd = d.slice(0, 2);
+  const rest = d.slice(2);
+  if (rest.length <= 4) return `(${ddd}) ${rest}`;
+  if (rest.length <= 8) return `(${ddd}) ${rest.slice(0, 4)}-${rest.slice(4)}`;
+  return `(${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`;
+}
+
+const CARGOS_CONSTRUCAO_CIVIL = [
+  'Servente',
+  'Pedreiro',
+  'Pedreiro de Acabamento',
+  'Carpinteiro',
+  'Armador',
+  'Eletricista',
+  'Eletricista Industrial',
+  'Encanador',
+  'Pintor',
+  'Gesseiro',
+  'Azulejista',
+  'Serralheiro',
+  'Soldador',
+  'Topógrafo',
+  'Auxiliar de Topografia',
+  'Mestre de Obras',
+  'Encarregado',
+  'Engenheiro Civil',
+  'Engenheiro de Segurança',
+  'Técnico em Edificações',
+  'Técnico de Segurança do Trabalho',
+  'Apontador',
+  'Almoxarife',
+  'Operador de Máquinas',
+  'Operador de Betoneira',
+  'Operador de Retroescavadeira',
+  'Operador de Escavadeira',
+  'Motorista',
+  'Vigia',
+  'Auxiliar Administrativo',
+  'Comprador',
+] as const;
+
 export default function FuncionariosClient() {
   const [busca, setBusca] = useState('');
   const [lista, setLista] = useState<FuncionarioResumoDTO[]>([]);
@@ -74,6 +132,49 @@ export default function FuncionariosClient() {
   const [empresasSugestoes, setEmpresasSugestoes] = useState<Array<{ id: number; nome: string; documento: string | null }>>([]);
   const [empresasSugestoesOpen, setEmpresasSugestoesOpen] = useState(false);
   const [empresasSugestoesLoading, setEmpresasSugestoesLoading] = useState(false);
+  const [cargoSugestoesOpen, setCargoSugestoesOpen] = useState(false);
+  const [cargoOutroOpen, setCargoOutroOpen] = useState(false);
+  const [cargoOutroNome, setCargoOutroNome] = useState('');
+  const [cargosExtras, setCargosExtras] = useState<string[]>([]);
+  const cargosDisponiveis = useMemo(() => [...CARGOS_CONSTRUCAO_CIVIL, ...cargosExtras], [cargosExtras]);
+
+  useEffect(() => {
+    if (!modalNovo) return;
+    const q = String(form.empresaNome || '').trim();
+    const qKey = q.length >= 2 ? q : '';
+    if (!qKey && empresasSugestoes.length) return;
+
+    let cancelled = false;
+    setEmpresasSugestoesLoading(true);
+    const t = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams();
+        if (qKey) params.set('q', qKey);
+        params.set('status', 'ATIVO');
+        const res = await api.get(`/api/v1/engenharia/contrapartes?${params.toString()}`);
+        const payload = res.data;
+        const rows = payload && typeof payload === 'object' && 'data' in payload ? (payload as any).data : payload;
+        if (cancelled) return;
+        const list = Array.isArray(rows) ? rows : [];
+        setEmpresasSugestoes(
+          list
+            .map((r: any) => ({ id: Number(r.idContraparte), nome: String(r.nomeRazao || ''), documento: r.documento ? String(r.documento) : null }))
+            .filter((r: any) => Number.isFinite(r.id) && r.id > 0 && r.nome)
+        );
+      } catch {
+        if (cancelled) return;
+        setEmpresasSugestoes([]);
+      } finally {
+        if (cancelled) return;
+        setEmpresasSugestoesLoading(false);
+      }
+    }, qKey ? 250 : 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [modalNovo, form.empresaNome, empresasSugestoes.length]);
 
   async function carregar() {
     try {
@@ -125,6 +226,11 @@ export default function FuncionariosClient() {
       alert('Data de nascimento inválida.');
       return;
     }
+    const telDigits = onlyDigits(form.telefoneWhatsapp || '');
+    if (telDigits && telDigits.length !== 10 && telDigits.length !== 11) {
+      alert('Telefone / WhatsApp inválido: deve ter 10 ou 11 dígitos (com DDD).');
+      return;
+    }
 
     if (form.tipoCadastro === 'TERCEIRIZADO') {
       await TerceirizadosApi.criar({
@@ -132,7 +238,7 @@ export default function FuncionariosClient() {
         funcao: String(form.funcaoPrincipal || '').trim() ? String(form.funcaoPrincipal || '').trim() : null,
         ativo: form.ativo !== false,
         cpf: cpfDigits,
-        telefoneWhatsapp: String(form.telefoneWhatsapp || '').trim() ? String(form.telefoneWhatsapp || '').trim() : null,
+        telefoneWhatsapp: telDigits ? telDigits : null,
         dataNascimento,
         identidade: String(form.rg || '').trim() ? String(form.rg || '').trim() : null,
         titulo: String(form.titulo || '').trim() ? String(form.titulo || '').trim() : null,
@@ -141,8 +247,13 @@ export default function FuncionariosClient() {
         idContraparteEmpresa: typeof form.idContraparteEmpresa === 'number' ? form.idContraparteEmpresa : null,
       } as any);
     } else {
+      const matricula = String(form.matricula || '').trim();
+      if (!matricula) {
+        alert('Matrícula obrigatória.');
+        return;
+      }
       await FuncionariosApi.criar({
-        matricula: String(form.matricula || '').trim() ? String(form.matricula || '').trim() : null,
+        matricula,
         nomeCompleto: String(form.nomeCompleto || '').trim(),
         cpf: cpfDigits,
         dataNascimento,
@@ -151,9 +262,9 @@ export default function FuncionariosClient() {
         nomeMae: String(form.nomeMae || '').trim() ? String(form.nomeMae || '').trim() : null,
         nomePai: String(form.nomePai || '').trim() ? String(form.nomePai || '').trim() : null,
         cargoContratual: String(form.cargoContratual || '').trim() ? String(form.cargoContratual || '').trim() : null,
-        funcaoPrincipal: String(form.funcaoPrincipal || '').trim() ? String(form.funcaoPrincipal || '').trim() : null,
         tipoVinculo: String(form.tipoVinculo || '').trim() ? String(form.tipoVinculo || '').trim() : null,
-        telefoneWhatsapp: String(form.telefoneWhatsapp || '').trim() ? String(form.telefoneWhatsapp || '').trim() : null,
+        telefoneWhatsapp: telDigits ? telDigits : null,
+        idEmpresa: typeof form.idContraparteEmpresa === 'number' ? form.idContraparteEmpresa : null,
         dataAdmissao: String(form.dataAdmissao || '').slice(0, 10) ? String(form.dataAdmissao || '').slice(0, 10) : null,
         ativo: form.ativo !== false,
       });
@@ -453,7 +564,6 @@ export default function FuncionariosClient() {
                 <div className="text-xs text-slate-500">Matrícula</div>
                 <input
                   className="input"
-                  placeholder="Gerada automaticamente se ficar em branco"
                   value={form.matricula}
                   onChange={(e) => setForm((o: any) => ({ ...o, matricula: e.target.value }))}
                   disabled={form.tipoCadastro !== 'FUNCIONARIO'}
@@ -482,7 +592,7 @@ export default function FuncionariosClient() {
                   className="input"
                   placeholder="(00) 00000-0000"
                   value={form.telefoneWhatsapp}
-                  onChange={(e) => setForm((o: any) => ({ ...o, telefoneWhatsapp: e.target.value }))}
+                  onChange={(e) => setForm((o: any) => ({ ...o, telefoneWhatsapp: formatPhoneBr(e.target.value) }))}
                 />
               </div>
 
@@ -513,15 +623,138 @@ export default function FuncionariosClient() {
 
               {form.tipoCadastro === 'FUNCIONARIO' ? (
                 <>
+                  <div className="md:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-slate-500">Empresa (contraparte) (opcional)</div>
+                    </div>
+                    <div className="relative">
+                      <input
+                        className="input"
+                        value={form.empresaNome}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setForm((o: any) => ({ ...o, empresaNome: v, idContraparteEmpresa: null }));
+                          setEmpresasSugestoesOpen(true);
+                        }}
+                        onFocus={() => setEmpresasSugestoesOpen(true)}
+                        onBlur={() => window.setTimeout(() => setEmpresasSugestoesOpen(false), 150)}
+                        placeholder="Digite nome ou CNPJ/CPF"
+                      />
+                      {empresasSugestoesOpen ? (
+                        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                          {empresasSugestoesLoading ? (
+                            <div className="px-3 py-2 text-sm text-slate-600">Buscando…</div>
+                          ) : empresasSugestoes.length ? (
+                            <div className="max-h-64 overflow-auto">
+                              {empresasSugestoes.slice(0, 30).map((r) => (
+                                <button
+                                  key={r.id}
+                                  type="button"
+                                  className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => {
+                                    setForm((o: any) => ({ ...o, empresaNome: r.nome, idContraparteEmpresa: r.id }));
+                                    setEmpresasSugestoesOpen(false);
+                                  }}
+                                >
+                                  <div className="text-slate-900">{`#${r.id} - ${r.nome} - ${formatCnpjCpf(r.documento) || '-'}`}</div>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="px-3 py-2 text-sm text-slate-600">Nenhuma empresa encontrada.</div>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
                   <div>
                     <div className="text-xs text-slate-500">Cargo</div>
-                    <input className="input" value={form.cargoContratual} onChange={(e) => setForm((o: any) => ({ ...o, cargoContratual: e.target.value }))} />
+                    <div className="relative">
+                      <input
+                        className="input"
+                        value={form.cargoContratual}
+                        placeholder="Selecione ou digite para filtrar"
+                        onFocus={() => setCargoSugestoesOpen(true)}
+                        onBlur={() => window.setTimeout(() => setCargoSugestoesOpen(false), 150)}
+                        onChange={(e) => {
+                          setForm((o: any) => ({ ...o, cargoContratual: e.target.value }));
+                          setCargoSugestoesOpen(true);
+                        }}
+                      />
+                      {cargoSugestoesOpen ? (
+                        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                          <div className="max-h-64 overflow-auto">
+                            {cargosDisponiveis
+                              .filter((c) => c.toLowerCase().includes(String(form.cargoContratual || '').trim().toLowerCase()))
+                              .slice(0, 30)
+                              .map((c) => (
+                                <button
+                                  key={c}
+                                  type="button"
+                                  className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+                                  onMouseDown={(ev) => ev.preventDefault()}
+                                  onClick={() => {
+                                    setForm((o: any) => ({ ...o, cargoContratual: c }));
+                                    setCargoSugestoesOpen(false);
+                                    setCargoOutroOpen(false);
+                                  }}
+                                >
+                                  {c}
+                                </button>
+                              ))}
+                            <button
+                              type="button"
+                              className="w-full px-3 py-2 text-left text-sm font-semibold text-blue-700 hover:bg-slate-50"
+                              onMouseDown={(ev) => ev.preventDefault()}
+                              onClick={() => {
+                                setCargoSugestoesOpen(false);
+                                setCargoOutroOpen(true);
+                                setCargoOutroNome('');
+                              }}
+                            >
+                              Outro…
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
-
-                  <div>
-                    <div className="text-xs text-slate-500">Função</div>
-                    <input className="input" value={form.funcaoPrincipal} onChange={(e) => setForm((o: any) => ({ ...o, funcaoPrincipal: e.target.value }))} />
-                  </div>
+                  {cargoOutroOpen ? (
+                    <div className="md:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-xs text-slate-600 mb-2">Adicionar outro cargo</div>
+                      <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                        <input className="input flex-1" value={cargoOutroNome} onChange={(e) => setCargoOutroNome(e.target.value)} placeholder="Digite o nome do cargo" />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                            onClick={() => {
+                              setCargoOutroOpen(false);
+                              setCargoOutroNome('');
+                            }}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-60"
+                            disabled={!String(cargoOutroNome || '').trim()}
+                            onClick={() => {
+                              const novo = String(cargoOutroNome || '').trim();
+                              if (!novo) return;
+                              setCargosExtras((prev) => (prev.some((x) => x.toLowerCase() === novo.toLowerCase()) ? prev : [...prev, novo]));
+                              setForm((o: any) => ({ ...o, cargoContratual: novo }));
+                              setCargoOutroOpen(false);
+                              setCargoOutroNome('');
+                            }}
+                          >
+                            Adicionar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div>
                     <div className="text-xs text-slate-500">Tipo de vínculo</div>
@@ -575,8 +808,7 @@ export default function FuncionariosClient() {
                                     setEmpresasSugestoesOpen(false);
                                   }}
                                 >
-                                  <div className="font-semibold text-slate-900">{r.nome}</div>
-                                  <div className="text-xs text-slate-600">{r.documento ? r.documento : '-'}</div>
+                            <div className="text-slate-900">{`#${r.id} - ${r.nome} - ${formatCnpjCpf(r.documento) || '-'}`}</div>
                                 </button>
                               ))}
                             </div>
