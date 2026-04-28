@@ -1582,6 +1582,74 @@ export default async function v1Routes(server: FastifyInstance) {
     );
   });
 
+  server.post('/rh/funcionarios', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const body = z
+      .object({
+        matricula: z.string().min(1),
+        nomeCompleto: z.string().min(2),
+        cpf: z.string().min(1),
+        telefoneWhatsapp: z.string().optional().nullable(),
+        cargoContratual: z.string().optional().nullable(),
+        dataAdmissao: z.string().optional().nullable(),
+        ativo: z.boolean().optional().default(true),
+      })
+      .passthrough()
+      .parse(request.body || {});
+
+    const matricula = String(body.matricula || '').trim();
+    const nomeCompleto = String(body.nomeCompleto || '').trim();
+    const cpfDigits = onlyDigits(String(body.cpf || ''));
+    if (!matricula) return fail(reply, 400, 'Campo Matrícula: obrigatório');
+    if (!nomeCompleto) return fail(reply, 400, 'Campo Nome completo: obrigatório');
+    if (cpfDigits.length !== 11) return fail(reply, 400, 'Campo CPF: deve ter 11 dígitos');
+
+    const telefoneDigits = body.telefoneWhatsapp ? onlyDigits(String(body.telefoneWhatsapp || '')) : '';
+    const telefone = telefoneDigits && (telefoneDigits.length === 10 || telefoneDigits.length === 11) ? telefoneDigits : null;
+    const cargo = body.cargoContratual ? String(body.cargoContratual || '').trim() : '';
+
+    let dataAdmissao: Date | null = null;
+    if (body.dataAdmissao) {
+      const d = String(body.dataAdmissao || '').slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d)) dataAdmissao = new Date(`${d}T00:00:00.000Z`);
+    }
+
+    const created = await prisma.funcionario
+      .create({
+        data: {
+          tenantId: ctx.tenantId,
+          matricula,
+          nomeCompleto,
+          cpf: cpfDigits,
+          telefone,
+          cargo: cargo ? cargo : null,
+          statusFuncional: 'ATIVO',
+          dataAdmissao,
+          ativo: body.ativo !== false,
+        },
+        select: { id: true, matricula: true, nomeCompleto: true, cpf: true },
+      })
+      .catch((e: any) => {
+        if (String(e?.code || '') === 'P2002') return null;
+        throw e;
+      });
+
+    if (!created) return fail(reply, 409, 'CPF ou matrícula já cadastrados');
+
+    await audit({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      entidade: 'funcionarios',
+      idRegistro: String(created.id),
+      acao: 'CREATE',
+      dadosNovos: created as any,
+    });
+
+    return ok(reply, { id: created.id }, { message: 'Funcionário cadastrado com sucesso.' });
+  });
+
   server.get('/rh/terceirizados', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;

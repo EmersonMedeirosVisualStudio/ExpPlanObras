@@ -18,10 +18,16 @@ type ApiResponse<T> = {
 };
 
 async function api<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  let token: string | null = null;
+  try {
+    if (typeof window !== 'undefined') token = localStorage.getItem('token');
+  } catch {}
+
   const res = await fetch(input, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers || {}),
     },
     cache: 'no-store',

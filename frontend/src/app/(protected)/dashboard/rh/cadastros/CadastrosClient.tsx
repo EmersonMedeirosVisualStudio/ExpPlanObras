@@ -349,8 +349,12 @@ export default function CadastrosClient() {
 
   async function carregarListasBase() {
     try {
-      const r1 = await fetch('/api/v1/dashboard/me/filtros', { cache: 'no-store' }).then((r) => r.json().catch(() => null));
-      const data = r1?.data || r1;
+      const res = await api.get('/api/v1/dashboard/me/filtros');
+      const payload = res.data;
+      if (!payload || typeof payload !== 'object' || !('success' in payload) || !(payload as any).success) {
+        throw new Error((payload as any)?.message || 'Erro ao carregar filtros');
+      }
+      const data = (payload as any).data;
       const obrasRaw = Array.isArray(data?.obras) ? data.obras : [];
       setObras(
         obrasRaw
@@ -362,8 +366,12 @@ export default function CadastrosClient() {
     }
 
     try {
-      const r2 = await fetch('/api/v1/rh/contratos-select', { cache: 'no-store' }).then((r) => r.json().catch(() => null));
-      const data = r2?.data || r2;
+      const res = await api.get('/api/v1/rh/contratos-select');
+      const payload = res.data;
+      if (!payload || typeof payload !== 'object' || !('success' in payload) || !(payload as any).success) {
+        throw new Error((payload as any)?.message || 'Erro ao carregar contratos');
+      }
+      const data = (payload as any).data;
       const list = Array.isArray(data) ? data : [];
       setContratos(
         list
