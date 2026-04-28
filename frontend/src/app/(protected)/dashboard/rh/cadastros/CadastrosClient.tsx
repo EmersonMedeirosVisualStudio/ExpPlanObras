@@ -9,6 +9,7 @@ import { TerceirizadosApi } from '@/lib/modules/terceirizados/api';
 import type { FuncionarioResumoDTO } from '@/lib/modules/funcionarios/types';
 import type { TerceirizadoResumoDTO } from '@/lib/modules/terceirizados/types';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import api from '@/lib/api';
 
 type TipoPessoa = 'FUNCIONARIO' | 'TERCEIRIZADO';
 type StatusFiltro = 'TODOS' | 'ATIVO' | 'INATIVO';
@@ -76,6 +77,24 @@ function safeCsv(value: string) {
   return s;
 }
 
+function onlyDigits(value: string) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function formatCpf(value: string) {
+  const d = onlyDigits(value).slice(0, 11);
+  if (!d) return '';
+  const p1 = d.slice(0, 3);
+  const p2 = d.slice(3, 6);
+  const p3 = d.slice(6, 9);
+  const p4 = d.slice(9, 11);
+  let out = p1;
+  if (p2) out += `.${p2}`;
+  if (p3) out += `.${p3}`;
+  if (p4) out += `-${p4}`;
+  return out;
+}
+
 function currentPath() {
   try {
     if (typeof window === 'undefined') return '/dashboard/rh/cadastros';
@@ -134,8 +153,78 @@ export default function CadastrosClient() {
   const [modalFuncionario, setModalFuncionario] = useState(false);
   const [modalTerceirizado, setModalTerceirizado] = useState(false);
   const [salvando, setSalvando] = useState(false);
-  const [formFuncionario, setFormFuncionario] = useState({ matricula: '', nomeCompleto: '', cpf: '', dataAdmissao: '' });
-  const [formTerceirizado, setFormTerceirizado] = useState({ nomeCompleto: '', funcao: '' });
+  const [formFuncionario, setFormFuncionario] = useState({
+    matricula: '',
+    nomeCompleto: '',
+    cpf: '',
+    telefoneWhatsapp: '',
+    dataNascimento: '',
+    rg: '',
+    titulo: '',
+    nomeMae: '',
+    nomePai: '',
+    cargoContratual: '',
+    funcaoPrincipal: '',
+    tipoVinculo: 'CLT',
+    dataAdmissao: '',
+  });
+  const [formTerceirizado, setFormTerceirizado] = useState({
+    nomeCompleto: '',
+    cpf: '',
+    telefoneWhatsapp: '',
+    dataNascimento: '',
+    identidade: '',
+    titulo: '',
+    nomeMae: '',
+    nomePai: '',
+    funcao: '',
+    empresaNome: '',
+    idContraparteEmpresa: null as number | null,
+  });
+  const [empresasSugestoes, setEmpresasSugestoes] = useState<Array<{ id: number; nome: string; documento: string | null }>>([]);
+  const [empresasSugestoesOpen, setEmpresasSugestoesOpen] = useState(false);
+  const [empresasSugestoesLoading, setEmpresasSugestoesLoading] = useState(false);
+
+  useEffect(() => {
+    if (!modalTerceirizado) return;
+    const q = String(formTerceirizado.empresaNome || '').trim();
+    if (q.length < 2) {
+      setEmpresasSugestoes([]);
+      setEmpresasSugestoesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setEmpresasSugestoesLoading(true);
+    const t = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set('q', q);
+        params.set('status', 'ATIVO');
+        const res = await api.get(`/api/v1/engenharia/contrapartes?${params.toString()}`);
+        const payload = res.data;
+        const rows = payload && typeof payload === 'object' && 'data' in payload ? (payload as any).data : payload;
+        if (cancelled) return;
+        const list = Array.isArray(rows) ? rows : [];
+        setEmpresasSugestoes(
+          list
+            .map((r: any) => ({ id: Number(r.idContraparte), nome: String(r.nomeRazao || ''), documento: r.documento ? String(r.documento) : null }))
+            .filter((r: any) => Number.isFinite(r.id) && r.id > 0 && r.nome)
+        );
+      } catch {
+        if (cancelled) return;
+        setEmpresasSugestoes([]);
+      } finally {
+        if (cancelled) return;
+        setEmpresasSugestoesLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [modalTerceirizado, formTerceirizado.empresaNome]);
 
   async function carregarListasBase() {
     try {
@@ -706,30 +795,80 @@ export default function CadastrosClient() {
       >
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <input
-              className="input"
-              placeholder="Matrícula"
-              value={formFuncionario.matricula}
-              onChange={(e) => setFormFuncionario((p) => ({ ...p, matricula: e.target.value }))}
-            />
-            <input
-              className="input"
-              placeholder="CPF"
-              value={formFuncionario.cpf}
-              onChange={(e) => setFormFuncionario((p) => ({ ...p, cpf: e.target.value }))}
-            />
-            <input
-              className="input md:col-span-2"
-              placeholder="Nome completo"
-              value={formFuncionario.nomeCompleto}
-              onChange={(e) => setFormFuncionario((p) => ({ ...p, nomeCompleto: e.target.value }))}
-            />
-            <input
-              className="input"
-              type="date"
-              value={formFuncionario.dataAdmissao}
-              onChange={(e) => setFormFuncionario((p) => ({ ...p, dataAdmissao: e.target.value }))}
-            />
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Matrícula</div>
+              <input
+                className="input"
+                placeholder="Gerada automaticamente se ficar em branco"
+                value={formFuncionario.matricula}
+                onChange={(e) => setFormFuncionario((p) => ({ ...p, matricula: e.target.value }))}
+              />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">CPF</div>
+              <input
+                className="input"
+                placeholder="000.000.000-00"
+                value={formFuncionario.cpf}
+                onChange={(e) => setFormFuncionario((p) => ({ ...p, cpf: e.target.value }))}
+                onBlur={() => setFormFuncionario((p) => ({ ...p, cpf: formatCpf(p.cpf) }))}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-xs text-slate-600 mb-1">Nome completo</div>
+              <input className="input" value={formFuncionario.nomeCompleto} onChange={(e) => setFormFuncionario((p) => ({ ...p, nomeCompleto: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Telefone / WhatsApp</div>
+              <input
+                className="input"
+                placeholder="(00) 00000-0000"
+                value={formFuncionario.telefoneWhatsapp}
+                onChange={(e) => setFormFuncionario((p) => ({ ...p, telefoneWhatsapp: e.target.value }))}
+              />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Data de nascimento</div>
+              <input className="input" type="date" value={formFuncionario.dataNascimento} onChange={(e) => setFormFuncionario((p) => ({ ...p, dataNascimento: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Identidade (RG)</div>
+              <input className="input" value={formFuncionario.rg} onChange={(e) => setFormFuncionario((p) => ({ ...p, rg: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Título</div>
+              <input className="input" value={formFuncionario.titulo} onChange={(e) => setFormFuncionario((p) => ({ ...p, titulo: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Nome da mãe</div>
+              <input className="input" value={formFuncionario.nomeMae} onChange={(e) => setFormFuncionario((p) => ({ ...p, nomeMae: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Nome do pai</div>
+              <input className="input" value={formFuncionario.nomePai} onChange={(e) => setFormFuncionario((p) => ({ ...p, nomePai: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Cargo</div>
+              <input className="input" value={formFuncionario.cargoContratual} onChange={(e) => setFormFuncionario((p) => ({ ...p, cargoContratual: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Função</div>
+              <input className="input" value={formFuncionario.funcaoPrincipal} onChange={(e) => setFormFuncionario((p) => ({ ...p, funcaoPrincipal: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Tipo de vínculo</div>
+              <select className="input" value={formFuncionario.tipoVinculo} onChange={(e) => setFormFuncionario((p) => ({ ...p, tipoVinculo: e.target.value }))}>
+                <option value="CLT">CLT</option>
+                <option value="PJ">PJ</option>
+                <option value="ESTAGIO">Estágio</option>
+                <option value="TEMPORARIO">Temporário</option>
+                <option value="OUTRO">Outro</option>
+              </select>
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Data de admissão</div>
+              <input className="input" type="date" value={formFuncionario.dataAdmissao} onChange={(e) => setFormFuncionario((p) => ({ ...p, dataAdmissao: e.target.value }))} />
+            </div>
           </div>
 
           <div className="flex justify-end gap-2">
@@ -748,13 +887,42 @@ export default function CadastrosClient() {
               onClick={async () => {
                 try {
                   setSalvando(true);
+                  const cpfDigits = onlyDigits(formFuncionario.cpf || '');
+                  if (cpfDigits.length !== 11) throw new Error('CPF inválido: deve ter 11 dígitos.');
+                  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(formFuncionario.dataNascimento || '').slice(0, 10))) {
+                    throw new Error('Data de nascimento inválida.');
+                  }
                   await FuncionariosApi.criar({
-                    matricula: formFuncionario.matricula,
+                    matricula: String(formFuncionario.matricula || '').trim() ? String(formFuncionario.matricula || '').trim() : null,
                     nomeCompleto: formFuncionario.nomeCompleto,
-                    cpf: formFuncionario.cpf,
-                    dataAdmissao: formFuncionario.dataAdmissao,
+                    cpf: cpfDigits,
+                    telefoneWhatsapp: String(formFuncionario.telefoneWhatsapp || '').trim() ? String(formFuncionario.telefoneWhatsapp || '').trim() : null,
+                    dataNascimento: String(formFuncionario.dataNascimento || '').slice(0, 10),
+                    rg: String(formFuncionario.rg || '').trim() ? String(formFuncionario.rg || '').trim() : null,
+                    titulo: String(formFuncionario.titulo || '').trim() ? String(formFuncionario.titulo || '').trim() : null,
+                    nomeMae: String(formFuncionario.nomeMae || '').trim() ? String(formFuncionario.nomeMae || '').trim() : null,
+                    nomePai: String(formFuncionario.nomePai || '').trim() ? String(formFuncionario.nomePai || '').trim() : null,
+                    cargoContratual: String(formFuncionario.cargoContratual || '').trim() ? String(formFuncionario.cargoContratual || '').trim() : null,
+                    funcaoPrincipal: String(formFuncionario.funcaoPrincipal || '').trim() ? String(formFuncionario.funcaoPrincipal || '').trim() : null,
+                    tipoVinculo: String(formFuncionario.tipoVinculo || '').trim() ? String(formFuncionario.tipoVinculo || '').trim() : null,
+                    dataAdmissao: String(formFuncionario.dataAdmissao || '').slice(0, 10) ? String(formFuncionario.dataAdmissao || '').slice(0, 10) : null,
+                    ativo: true,
+                  } as any);
+                  setFormFuncionario({
+                    matricula: '',
+                    nomeCompleto: '',
+                    cpf: '',
+                    telefoneWhatsapp: '',
+                    dataNascimento: '',
+                    rg: '',
+                    titulo: '',
+                    nomeMae: '',
+                    nomePai: '',
+                    cargoContratual: '',
+                    funcaoPrincipal: '',
+                    tipoVinculo: 'CLT',
+                    dataAdmissao: '',
                   });
-                  setFormFuncionario({ matricula: '', nomeCompleto: '', cpf: '', dataAdmissao: '' });
                   setModalFuncionario(false);
                   await carregar();
                 } catch (e: any) {
@@ -778,18 +946,99 @@ export default function CadastrosClient() {
         }}
       >
         <div className="space-y-4">
-          <input
-            className="input"
-            placeholder="Nome completo"
-            value={formTerceirizado.nomeCompleto}
-            onChange={(e) => setFormTerceirizado((p) => ({ ...p, nomeCompleto: e.target.value }))}
-          />
-          <input
-            className="input"
-            placeholder="Função (opcional)"
-            value={formTerceirizado.funcao}
-            onChange={(e) => setFormTerceirizado((p) => ({ ...p, funcao: e.target.value }))}
-          />
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <div className="text-xs text-slate-600 mb-1">Nome completo</div>
+              <input className="input" value={formTerceirizado.nomeCompleto} onChange={(e) => setFormTerceirizado((p) => ({ ...p, nomeCompleto: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">CPF</div>
+              <input
+                className="input"
+                placeholder="000.000.000-00"
+                value={formTerceirizado.cpf}
+                onChange={(e) => setFormTerceirizado((p) => ({ ...p, cpf: e.target.value }))}
+                onBlur={() => setFormTerceirizado((p) => ({ ...p, cpf: formatCpf(p.cpf) }))}
+              />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Telefone / WhatsApp</div>
+              <input
+                className="input"
+                placeholder="(00) 00000-0000"
+                value={formTerceirizado.telefoneWhatsapp}
+                onChange={(e) => setFormTerceirizado((p) => ({ ...p, telefoneWhatsapp: e.target.value }))}
+              />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Data de nascimento</div>
+              <input className="input" type="date" value={formTerceirizado.dataNascimento} onChange={(e) => setFormTerceirizado((p) => ({ ...p, dataNascimento: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Identidade</div>
+              <input className="input" value={formTerceirizado.identidade} onChange={(e) => setFormTerceirizado((p) => ({ ...p, identidade: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Título</div>
+              <input className="input" value={formTerceirizado.titulo} onChange={(e) => setFormTerceirizado((p) => ({ ...p, titulo: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Nome da mãe</div>
+              <input className="input" value={formTerceirizado.nomeMae} onChange={(e) => setFormTerceirizado((p) => ({ ...p, nomeMae: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Nome do pai</div>
+              <input className="input" value={formTerceirizado.nomePai} onChange={(e) => setFormTerceirizado((p) => ({ ...p, nomePai: e.target.value }))} />
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-xs text-slate-600 mb-1">Empresa (contraparte)</div>
+              <div className="relative">
+                <input
+                  className="input"
+                  value={formTerceirizado.empresaNome}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setFormTerceirizado((p) => ({ ...p, empresaNome: v, idContraparteEmpresa: null }));
+                    setEmpresasSugestoesOpen(true);
+                  }}
+                  onFocus={() => setEmpresasSugestoesOpen(true)}
+                  onBlur={() => window.setTimeout(() => setEmpresasSugestoesOpen(false), 150)}
+                  placeholder="Digite nome ou CNPJ/CPF"
+                />
+                {empresasSugestoesOpen ? (
+                  <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                    {empresasSugestoesLoading ? (
+                      <div className="px-3 py-2 text-sm text-slate-600">Buscando…</div>
+                    ) : empresasSugestoes.length ? (
+                      <div className="max-h-64 overflow-auto">
+                        {empresasSugestoes.slice(0, 30).map((r) => (
+                          <button
+                            key={r.id}
+                            type="button"
+                            className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setFormTerceirizado((p) => ({ ...p, empresaNome: r.nome, idContraparteEmpresa: r.id }));
+                              setEmpresasSugestoesOpen(false);
+                            }}
+                          >
+                            <div className="font-semibold text-slate-900">{r.nome}</div>
+                            <div className="text-xs text-slate-600">{r.documento ? r.documento : '-'}</div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="px-3 py-2 text-sm text-slate-600">Nenhuma empresa encontrada.</div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-xs text-slate-600 mb-1">Função</div>
+              <input className="input" value={formTerceirizado.funcao} onChange={(e) => setFormTerceirizado((p) => ({ ...p, funcao: e.target.value }))} />
+            </div>
+          </div>
 
           <div className="flex justify-end gap-2">
             <button
@@ -807,8 +1056,37 @@ export default function CadastrosClient() {
               onClick={async () => {
                 try {
                   setSalvando(true);
-                  await TerceirizadosApi.criar({ nomeCompleto: formTerceirizado.nomeCompleto, funcao: formTerceirizado.funcao || null, ativo: true });
-                  setFormTerceirizado({ nomeCompleto: '', funcao: '' });
+                  const cpfDigits = onlyDigits(formTerceirizado.cpf || '');
+                  if (cpfDigits.length !== 11) throw new Error('CPF inválido: deve ter 11 dígitos.');
+                  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(formTerceirizado.dataNascimento || '').slice(0, 10))) {
+                    throw new Error('Data de nascimento inválida.');
+                  }
+                  await TerceirizadosApi.criar({
+                    nomeCompleto: formTerceirizado.nomeCompleto,
+                    cpf: cpfDigits,
+                    dataNascimento: String(formTerceirizado.dataNascimento || '').slice(0, 10),
+                    funcao: formTerceirizado.funcao || null,
+                    telefoneWhatsapp: String(formTerceirizado.telefoneWhatsapp || '').trim() ? String(formTerceirizado.telefoneWhatsapp || '').trim() : null,
+                    identidade: String(formTerceirizado.identidade || '').trim() ? String(formTerceirizado.identidade || '').trim() : null,
+                    titulo: String(formTerceirizado.titulo || '').trim() ? String(formTerceirizado.titulo || '').trim() : null,
+                    nomeMae: String(formTerceirizado.nomeMae || '').trim() ? String(formTerceirizado.nomeMae || '').trim() : null,
+                    nomePai: String(formTerceirizado.nomePai || '').trim() ? String(formTerceirizado.nomePai || '').trim() : null,
+                    idContraparteEmpresa: typeof formTerceirizado.idContraparteEmpresa === 'number' ? formTerceirizado.idContraparteEmpresa : null,
+                    ativo: true,
+                  } as any);
+                  setFormTerceirizado({
+                    nomeCompleto: '',
+                    cpf: '',
+                    telefoneWhatsapp: '',
+                    dataNascimento: '',
+                    identidade: '',
+                    titulo: '',
+                    nomeMae: '',
+                    nomePai: '',
+                    funcao: '',
+                    empresaNome: '',
+                    idContraparteEmpresa: null,
+                  });
                   setModalTerceirizado(false);
                   await carregar();
                 } catch (e: any) {

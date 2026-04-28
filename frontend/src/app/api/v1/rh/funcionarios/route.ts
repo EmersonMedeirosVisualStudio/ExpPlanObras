@@ -84,14 +84,36 @@ export async function POST(req: Request) {
     const user = await requireApiPermission(PERMISSIONS.RH_FUNCIONARIOS_CRUD);
     const body = await req.json();
 
-    if (!body?.matricula?.trim()) throw new ApiError(422, 'Matrícula obrigatória');
     if (!body?.nomeCompleto?.trim()) throw new ApiError(422, 'Nome obrigatório');
     if (!body?.cpf?.trim()) throw new ApiError(422, 'CPF obrigatório');
-    if (!body?.dataAdmissao) throw new ApiError(422, 'Data de admissão obrigatória');
+    if (!body?.dataNascimento) throw new ApiError(422, 'Data de nascimento obrigatória');
 
-    const matricula = String(body.matricula).trim();
     const nomeCompleto = String(body.nomeCompleto).trim();
-    const cpf = String(body.cpf).trim();
+    const cpfDigits = String(body.cpf).replace(/\D/g, '');
+    if (cpfDigits.length !== 11) throw new ApiError(422, 'CPF inválido: deve ter 11 dígitos');
+    const cpf = cpfDigits;
+
+    const hoje = new Date().toISOString().slice(0, 10);
+    const dataAdmissao = body?.dataAdmissao ? String(body.dataAdmissao).slice(0, 10) : hoje;
+    const dataNascimento = String(body.dataNascimento).slice(0, 10);
+
+    let matricula = body?.matricula ? String(body.matricula).trim() : '';
+    if (!matricula) {
+      const base = `F-${hoje.replace(/-/g, '')}`;
+      for (let i = 0; i < 10; i++) {
+        const sufixo = String(Math.floor(Math.random() * 9000) + 1000);
+        const candidate = `${base}-${sufixo}`;
+        const [[exists]]: any = await conn.query(
+          `SELECT 1 ok FROM funcionarios WHERE tenant_id = ? AND matricula = ? LIMIT 1`,
+          [user.tenantId, candidate]
+        );
+        if (!exists) {
+          matricula = candidate;
+          break;
+        }
+      }
+      if (!matricula) matricula = `${base}-${String(Date.now()).slice(-4)}`;
+    }
 
     await conn.beginTransaction();
 
@@ -116,7 +138,7 @@ export async function POST(req: Request) {
           cpf,
           body.rg || null,
           body.orgaoEmissorRg || null,
-          body.dataNascimento || null,
+          dataNascimento,
           body.sexo || null,
           body.estadoCivil || null,
           body.pisPasep || null,
@@ -129,12 +151,12 @@ export async function POST(req: Request) {
           body.cargoContratual || null,
           body.funcaoPrincipal || null,
           body.tipoVinculo || 'CLT',
-          body.dataAdmissao,
+          dataAdmissao,
           body.dataDesligamento || null,
           body.salarioBase || null,
           body.statusFuncional || 'ATIVO',
           body.emailPessoal || null,
-          body.telefonePrincipal || null,
+          body.telefonePrincipal || body.telefoneWhatsapp || null,
           body.contatoEmergenciaNome || null,
           body.contatoEmergenciaTelefone || null,
           body.ativo ? 1 : 0,
@@ -154,15 +176,53 @@ export async function POST(req: Request) {
           nomeCompleto,
           cpf,
           body.emailPessoal || body.email || null,
-          body.telefonePrincipal || body.telefone || null,
+          body.telefonePrincipal || body.telefoneWhatsapp || body.telefone || null,
           body.cargoContratual || body.cargo || null,
           body.funcaoPrincipal || null,
           body.statusFuncional || 'ATIVO',
-          body.dataAdmissao,
+          dataAdmissao,
           body.ativo ? 1 : 0,
         ]
       );
     }
+
+    try {
+      const [colRows]: any = await conn.query(
+        `SELECT COLUMN_NAME columnName FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'funcionarios'`
+      );
+      const cols = new Set<string>((Array.isArray(colRows) ? colRows : []).map((r: any) => String(r.columnName || r.COLUMN_NAME || '')));
+      const setParts: string[] = [];
+      const setParams: any[] = [];
+
+      const titulo = body?.titulo ? String(body.titulo).trim() : null;
+      const nomeMae = body?.nomeMae ? String(body.nomeMae).trim() : null;
+      const nomePai = body?.nomePai ? String(body.nomePai).trim() : null;
+      const telefoneWhatsapp = body?.telefoneWhatsapp ? String(body.telefoneWhatsapp).trim() : null;
+
+      if (cols.has('titulo')) {
+        setParts.push(`titulo = ?`);
+        setParams.push(titulo);
+      }
+      if (cols.has('nome_mae')) {
+        setParts.push(`nome_mae = ?`);
+        setParams.push(nomeMae);
+      }
+      if (cols.has('nome_pai')) {
+        setParts.push(`nome_pai = ?`);
+        setParams.push(nomePai);
+      }
+      if (cols.has('telefone_whatsapp')) {
+        setParts.push(`telefone_whatsapp = ?`);
+        setParams.push(telefoneWhatsapp);
+      }
+
+      if (setParts.length) {
+        await conn.execute(
+          `UPDATE funcionarios SET ${setParts.join(', ')} WHERE tenant_id = ? AND id_funcionario = ?`,
+          [...setParams, user.tenantId, Number(result.insertId)]
+        );
+      }
+    } catch {}
 
     await audit({
       tenantId: user.tenantId,

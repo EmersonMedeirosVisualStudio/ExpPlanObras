@@ -116,3 +116,19 @@ export type FuncionarioEventoDTO = {
   idUsuarioCriador: number | null;
   createdAt: string;
 };
+
+export type FuncionarioEnderecoDTO = {
+  id: number;
+  idFuncionario: number;
+  cep: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  uf: string | null;
+  observacao: string | null;
+  principal: boolean;
+  criadoEm: string;
+  atualizadoEm: string;
+};

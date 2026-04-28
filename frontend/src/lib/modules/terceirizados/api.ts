@@ -33,6 +33,19 @@ export const TerceirizadosApi = {
 
   obter: (id: number) => api<TerceirizadoResumoDTO>(`/api/v1/rh/terceirizados/${encodeURIComponent(String(id))}`),
 
-  criar: (payload: { nomeCompleto: string; funcao?: string | null; ativo?: boolean; idEmpresaParceira?: number | null }) =>
+  criar: (payload: {
+    nomeCompleto: string;
+    cpf: string;
+    dataNascimento: string;
+    funcao?: string | null;
+    telefoneWhatsapp?: string | null;
+    identidade?: string | null;
+    titulo?: string | null;
+    nomeMae?: string | null;
+    nomePai?: string | null;
+    idContraparteEmpresa?: number | null;
+    ativo?: boolean;
+    idEmpresaParceira?: number | null;
+  }) =>
     api<{ id: number }>(`/api/v1/rh/terceirizados`, { method: 'POST', body: JSON.stringify(payload) }),
 };

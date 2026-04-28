@@ -6,21 +6,50 @@ import { FuncionariosApi } from '@/lib/modules/funcionarios/api';
 import type { FuncionarioDetalheDTO, FuncionarioEventoDTO, FuncionarioHistoricoEventoDTO, FuncionarioResumoDTO } from '@/lib/modules/funcionarios/types';
 import { DocumentosApi } from '@/lib/modules/documentos/api';
 import type { DocumentoRegistroDTO } from '@/lib/modules/documentos/types';
+import { TerceirizadosApi } from '@/lib/modules/terceirizados/api';
+import api from '@/lib/api';
 
 const vazio = {
+  tipoCadastro: 'FUNCIONARIO' as 'FUNCIONARIO' | 'TERCEIRIZADO',
   matricula: '',
   nomeCompleto: '',
   cpf: '',
+  telefoneWhatsapp: '',
+  dataNascimento: '',
+  rg: '',
+  titulo: '',
+  nomeMae: '',
+  nomePai: '',
   cargoContratual: '',
   funcaoPrincipal: '',
   tipoVinculo: 'CLT',
   dataAdmissao: '',
   statusFuncional: 'ATIVO',
   ativo: true,
+  idContraparteEmpresa: null as number | null,
+  empresaNome: '',
 };
 
 function formatFuncionarioRef(id: number | string, nome: string) {
   return `#${id} - ${nome}`;
+}
+
+function onlyDigits(value: string) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function formatCpf(value: string) {
+  const d = onlyDigits(value).slice(0, 11);
+  if (!d) return '';
+  const p1 = d.slice(0, 3);
+  const p2 = d.slice(3, 6);
+  const p3 = d.slice(6, 9);
+  const p4 = d.slice(9, 11);
+  let out = p1;
+  if (p2) out += `.${p2}`;
+  if (p3) out += `.${p3}`;
+  if (p4) out += `-${p4}`;
+  return out;
 }
 
 export default function FuncionariosClient() {
@@ -42,6 +71,9 @@ export default function FuncionariosClient() {
   const [error, setError] = useState<string | null>(null);
   const [modalNovo, setModalNovo] = useState(false);
   const [form, setForm] = useState<any>(vazio);
+  const [empresasSugestoes, setEmpresasSugestoes] = useState<Array<{ id: number; nome: string; documento: string | null }>>([]);
+  const [empresasSugestoesOpen, setEmpresasSugestoesOpen] = useState(false);
+  const [empresasSugestoesLoading, setEmpresasSugestoesLoading] = useState(false);
 
   async function carregar() {
     try {
@@ -83,10 +115,53 @@ export default function FuncionariosClient() {
 
   async function salvarNovo(e: React.FormEvent) {
     e.preventDefault();
-    await FuncionariosApi.criar(form);
+    const cpfDigits = onlyDigits(form.cpf || '');
+    if (cpfDigits.length !== 11) {
+      alert('CPF inválido: deve ter 11 dígitos.');
+      return;
+    }
+    const dataNascimento = String(form.dataNascimento || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataNascimento)) {
+      alert('Data de nascimento inválida.');
+      return;
+    }
+
+    if (form.tipoCadastro === 'TERCEIRIZADO') {
+      await TerceirizadosApi.criar({
+        nomeCompleto: String(form.nomeCompleto || '').trim(),
+        funcao: String(form.funcaoPrincipal || '').trim() ? String(form.funcaoPrincipal || '').trim() : null,
+        ativo: form.ativo !== false,
+        cpf: cpfDigits,
+        telefoneWhatsapp: String(form.telefoneWhatsapp || '').trim() ? String(form.telefoneWhatsapp || '').trim() : null,
+        dataNascimento,
+        identidade: String(form.rg || '').trim() ? String(form.rg || '').trim() : null,
+        titulo: String(form.titulo || '').trim() ? String(form.titulo || '').trim() : null,
+        nomeMae: String(form.nomeMae || '').trim() ? String(form.nomeMae || '').trim() : null,
+        nomePai: String(form.nomePai || '').trim() ? String(form.nomePai || '').trim() : null,
+        idContraparteEmpresa: typeof form.idContraparteEmpresa === 'number' ? form.idContraparteEmpresa : null,
+      } as any);
+    } else {
+      await FuncionariosApi.criar({
+        matricula: String(form.matricula || '').trim() ? String(form.matricula || '').trim() : null,
+        nomeCompleto: String(form.nomeCompleto || '').trim(),
+        cpf: cpfDigits,
+        dataNascimento,
+        rg: String(form.rg || '').trim() ? String(form.rg || '').trim() : null,
+        titulo: String(form.titulo || '').trim() ? String(form.titulo || '').trim() : null,
+        nomeMae: String(form.nomeMae || '').trim() ? String(form.nomeMae || '').trim() : null,
+        nomePai: String(form.nomePai || '').trim() ? String(form.nomePai || '').trim() : null,
+        cargoContratual: String(form.cargoContratual || '').trim() ? String(form.cargoContratual || '').trim() : null,
+        funcaoPrincipal: String(form.funcaoPrincipal || '').trim() ? String(form.funcaoPrincipal || '').trim() : null,
+        tipoVinculo: String(form.tipoVinculo || '').trim() ? String(form.tipoVinculo || '').trim() : null,
+        telefoneWhatsapp: String(form.telefoneWhatsapp || '').trim() ? String(form.telefoneWhatsapp || '').trim() : null,
+        dataAdmissao: String(form.dataAdmissao || '').slice(0, 10) ? String(form.dataAdmissao || '').slice(0, 10) : null,
+        ativo: form.ativo !== false,
+      });
+      await carregar();
+    }
+
     setModalNovo(false);
     setForm(vazio);
-    await carregar();
   }
 
   async function endossar(acao: 'APROVAR' | 'REJEITAR') {
@@ -362,27 +437,163 @@ export default function FuncionariosClient() {
             </div>
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <input className="input" placeholder="Matrícula" value={form.matricula} onChange={(e) => setForm((o: any) => ({ ...o, matricula: e.target.value }))} />
-              <input
-                className="input"
-                placeholder="Nome completo"
-                value={form.nomeCompleto}
-                onChange={(e) => setForm((o: any) => ({ ...o, nomeCompleto: e.target.value }))}
-              />
-              <input className="input" placeholder="CPF" value={form.cpf} onChange={(e) => setForm((o: any) => ({ ...o, cpf: e.target.value }))} />
-              <input
-                className="input"
-                placeholder="Cargo contratual"
-                value={form.cargoContratual}
-                onChange={(e) => setForm((o: any) => ({ ...o, cargoContratual: e.target.value }))}
-              />
-              <input
-                className="input"
-                placeholder="Função principal"
-                value={form.funcaoPrincipal}
-                onChange={(e) => setForm((o: any) => ({ ...o, funcaoPrincipal: e.target.value }))}
-              />
-              <input className="input" type="date" value={form.dataAdmissao} onChange={(e) => setForm((o: any) => ({ ...o, dataAdmissao: e.target.value }))} />
+              <div>
+                <div className="text-xs text-slate-500">Tipo</div>
+                <select
+                  className="input"
+                  value={form.tipoCadastro}
+                  onChange={(e) => setForm((o: any) => ({ ...o, tipoCadastro: e.target.value }))}
+                >
+                  <option value="FUNCIONARIO">Funcionário</option>
+                  <option value="TERCEIRIZADO">Terceirizado</option>
+                </select>
+              </div>
+
+              <div>
+                <div className="text-xs text-slate-500">Matrícula</div>
+                <input
+                  className="input"
+                  placeholder="Gerada automaticamente se ficar em branco"
+                  value={form.matricula}
+                  onChange={(e) => setForm((o: any) => ({ ...o, matricula: e.target.value }))}
+                  disabled={form.tipoCadastro !== 'FUNCIONARIO'}
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <div className="text-xs text-slate-500">Nome completo</div>
+                <input className="input" value={form.nomeCompleto} onChange={(e) => setForm((o: any) => ({ ...o, nomeCompleto: e.target.value }))} />
+              </div>
+
+              <div>
+                <div className="text-xs text-slate-500">CPF</div>
+                <input
+                  className="input"
+                  placeholder="000.000.000-00"
+                  value={form.cpf}
+                  onChange={(e) => setForm((o: any) => ({ ...o, cpf: e.target.value }))}
+                  onBlur={() => setForm((o: any) => ({ ...o, cpf: formatCpf(o.cpf) }))}
+                />
+              </div>
+
+              <div>
+                <div className="text-xs text-slate-500">Telefone / WhatsApp</div>
+                <input
+                  className="input"
+                  placeholder="(00) 00000-0000"
+                  value={form.telefoneWhatsapp}
+                  onChange={(e) => setForm((o: any) => ({ ...o, telefoneWhatsapp: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <div className="text-xs text-slate-500">Data de nascimento</div>
+                <input className="input" type="date" value={form.dataNascimento} onChange={(e) => setForm((o: any) => ({ ...o, dataNascimento: e.target.value }))} />
+              </div>
+
+              <div>
+                <div className="text-xs text-slate-500">Identidade (RG)</div>
+                <input className="input" value={form.rg} onChange={(e) => setForm((o: any) => ({ ...o, rg: e.target.value }))} />
+              </div>
+
+              <div>
+                <div className="text-xs text-slate-500">Título</div>
+                <input className="input" value={form.titulo} onChange={(e) => setForm((o: any) => ({ ...o, titulo: e.target.value }))} />
+              </div>
+
+              <div>
+                <div className="text-xs text-slate-500">Nome da mãe</div>
+                <input className="input" value={form.nomeMae} onChange={(e) => setForm((o: any) => ({ ...o, nomeMae: e.target.value }))} />
+              </div>
+
+              <div>
+                <div className="text-xs text-slate-500">Nome do pai</div>
+                <input className="input" value={form.nomePai} onChange={(e) => setForm((o: any) => ({ ...o, nomePai: e.target.value }))} />
+              </div>
+
+              {form.tipoCadastro === 'FUNCIONARIO' ? (
+                <>
+                  <div>
+                    <div className="text-xs text-slate-500">Cargo</div>
+                    <input className="input" value={form.cargoContratual} onChange={(e) => setForm((o: any) => ({ ...o, cargoContratual: e.target.value }))} />
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-slate-500">Função</div>
+                    <input className="input" value={form.funcaoPrincipal} onChange={(e) => setForm((o: any) => ({ ...o, funcaoPrincipal: e.target.value }))} />
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-slate-500">Tipo de vínculo</div>
+                    <select className="input" value={form.tipoVinculo} onChange={(e) => setForm((o: any) => ({ ...o, tipoVinculo: e.target.value }))}>
+                      <option value="CLT">CLT</option>
+                      <option value="PJ">PJ</option>
+                      <option value="ESTAGIO">Estágio</option>
+                      <option value="TEMPORARIO">Temporário</option>
+                      <option value="OUTRO">Outro</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-slate-500">Data de admissão</div>
+                    <input className="input" type="date" value={form.dataAdmissao} onChange={(e) => setForm((o: any) => ({ ...o, dataAdmissao: e.target.value }))} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="md:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-slate-500">Empresa (contraparte)</div>
+                    </div>
+                    <div className="relative">
+                      <input
+                        className="input"
+                        value={form.empresaNome}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setForm((o: any) => ({ ...o, empresaNome: v, idContraparteEmpresa: null }));
+                          setEmpresasSugestoesOpen(true);
+                        }}
+                        onFocus={() => setEmpresasSugestoesOpen(true)}
+                        onBlur={() => window.setTimeout(() => setEmpresasSugestoesOpen(false), 150)}
+                        placeholder="Digite nome ou CNPJ/CPF"
+                      />
+                      {empresasSugestoesOpen ? (
+                        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                          {empresasSugestoesLoading ? (
+                            <div className="px-3 py-2 text-sm text-slate-600">Buscando…</div>
+                          ) : empresasSugestoes.length ? (
+                            <div className="max-h-64 overflow-auto">
+                              {empresasSugestoes.slice(0, 30).map((r) => (
+                                <button
+                                  key={r.id}
+                                  type="button"
+                                  className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => {
+                                    setForm((o: any) => ({ ...o, empresaNome: r.nome, idContraparteEmpresa: r.id }));
+                                    setEmpresasSugestoesOpen(false);
+                                  }}
+                                >
+                                  <div className="font-semibold text-slate-900">{r.nome}</div>
+                                  <div className="text-xs text-slate-600">{r.documento ? r.documento : '-'}</div>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="px-3 py-2 text-sm text-slate-600">Nenhuma empresa encontrada.</div>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <div className="text-xs text-slate-500">Função</div>
+                    <input className="input" value={form.funcaoPrincipal} onChange={(e) => setForm((o: any) => ({ ...o, funcaoPrincipal: e.target.value }))} />
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="flex justify-end gap-2">

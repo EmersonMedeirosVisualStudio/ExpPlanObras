@@ -1,5 +1,6 @@
 import type {
   FuncionarioDetalheDTO,
+  FuncionarioEnderecoDTO,
   FuncionarioEventoDTO,
   FuncionarioHistoricoEventoDTO,
   FuncionarioHoraExtraDTO,
@@ -31,6 +32,23 @@ async function api<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> 
   return json.data;
 }
 
+export type FuncionarioCriarPayload = {
+  matricula?: string | null;
+  nomeCompleto: string;
+  cpf: string;
+  dataNascimento?: string | null;
+  rg?: string | null;
+  titulo?: string | null;
+  nomeMae?: string | null;
+  nomePai?: string | null;
+  cargoContratual?: string | null;
+  funcaoPrincipal?: string | null;
+  tipoVinculo?: string | null;
+  telefonePrincipal?: string | null;
+  dataAdmissao?: string | null;
+  ativo?: boolean;
+};
+
 export const FuncionariosApi = {
   listar: (q = '', params?: { limit?: number; idObra?: number; idContrato?: number }) => {
     const limit = typeof params?.limit === 'number' ? `&limit=${encodeURIComponent(String(params.limit))}` : '';
@@ -46,7 +64,7 @@ export const FuncionariosApi = {
 
   eventos: (id: number) => api<FuncionarioEventoDTO[]>(`/api/v1/rh/funcionarios/${id}/eventos`),
 
-  criar: (payload: { matricula: string; nomeCompleto: string; cpf: string; dataAdmissao: string }) =>
+  criar: (payload: FuncionarioCriarPayload) =>
     api<FuncionarioDetalheDTO>(`/api/v1/rh/funcionarios`, { method: 'POST', body: JSON.stringify(payload) }),
 
   atualizar: (id: number, payload: Partial<FuncionarioDetalheDTO>) =>
@@ -89,4 +107,19 @@ export const FuncionariosApi = {
 
   processarHoraExtra: (idHoraExtra: number, payload: { statusHe: string; observacao?: string | null }) =>
     api<null>(`/api/v1/rh/horas-extras/${idHoraExtra}/processar`, { method: 'PATCH', body: JSON.stringify(payload) }),
+
+  listarEnderecos: (idFuncionario: number) => api<FuncionarioEnderecoDTO[]>(`/api/v1/rh/funcionarios/${idFuncionario}/enderecos`),
+
+  criarEndereco: (idFuncionario: number, payload: Omit<FuncionarioEnderecoDTO, 'id' | 'idFuncionario' | 'criadoEm' | 'atualizadoEm'>) =>
+    api<{ id: number }>(`/api/v1/rh/funcionarios/${idFuncionario}/enderecos`, { method: 'POST', body: JSON.stringify(payload) }),
+
+  atualizarEndereco: (
+    idFuncionario: number,
+    idEndereco: number,
+    payload: Partial<Omit<FuncionarioEnderecoDTO, 'id' | 'idFuncionario' | 'criadoEm' | 'atualizadoEm'>>
+  ) =>
+    api<null>(`/api/v1/rh/funcionarios/${idFuncionario}/enderecos/${idEndereco}`, { method: 'PUT', body: JSON.stringify(payload) }),
+
+  excluirEndereco: (idFuncionario: number, idEndereco: number) =>
+    api<null>(`/api/v1/rh/funcionarios/${idFuncionario}/enderecos/${idEndereco}`, { method: 'DELETE' }),
 };
