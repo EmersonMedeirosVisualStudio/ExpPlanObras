@@ -41,6 +41,8 @@ export type FuncionarioCriarPayload = {
   titulo?: string | null;
   nomeMae?: string | null;
   nomePai?: string | null;
+  telefoneWhatsapp?: string | null;
+  idEmpresa?: number | null;
   cargoContratual?: string | null;
   funcaoPrincipal?: string | null;
   tipoVinculo?: string | null;

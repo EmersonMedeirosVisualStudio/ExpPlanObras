@@ -72,6 +72,11 @@ export type FuncionarioDetalheDTO = FuncionarioResumoDTO & {
   rg: string | null;
   orgaoEmissorRg: string | null;
   dataNascimento: string | null;
+  titulo: string | null;
+  nomeMae: string | null;
+  nomePai: string | null;
+  telefoneWhatsapp: string | null;
+  idEmpresa: number | null;
   sexo: string | null;
   estadoCivil: string | null;
   pisPasep: string | null;

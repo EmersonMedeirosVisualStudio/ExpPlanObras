@@ -198,6 +198,7 @@ export async function POST(req: Request) {
       const nomeMae = body?.nomeMae ? String(body.nomeMae).trim() : null;
       const nomePai = body?.nomePai ? String(body.nomePai).trim() : null;
       const telefoneWhatsapp = body?.telefoneWhatsapp ? String(body.telefoneWhatsapp).trim() : null;
+      const idEmpresa = body?.idEmpresa != null && body?.idEmpresa !== '' ? Number(body.idEmpresa) : null;
 
       if (cols.has('titulo')) {
         setParts.push(`titulo = ?`);
@@ -214,6 +215,14 @@ export async function POST(req: Request) {
       if (cols.has('telefone_whatsapp')) {
         setParts.push(`telefone_whatsapp = ?`);
         setParams.push(telefoneWhatsapp);
+      }
+      if (cols.has('id_empresa')) {
+        setParts.push(`id_empresa = ?`);
+        setParams.push(Number.isFinite(idEmpresa as any) ? idEmpresa : null);
+      }
+      if (!cols.has('id_empresa') && cols.has('id_contraparte')) {
+        setParts.push(`id_contraparte = ?`);
+        setParams.push(Number.isFinite(idEmpresa as any) ? idEmpresa : null);
       }
 
       if (setParts.length) {

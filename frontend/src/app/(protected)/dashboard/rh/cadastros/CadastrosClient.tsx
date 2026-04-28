@@ -163,6 +163,8 @@ export default function CadastrosClient() {
     titulo: '',
     nomeMae: '',
     nomePai: '',
+    empresaNome: '',
+    idEmpresa: null as number | null,
     cargoContratual: '',
     funcaoPrincipal: '',
     tipoVinculo: 'CLT',
@@ -186,8 +188,9 @@ export default function CadastrosClient() {
   const [empresasSugestoesLoading, setEmpresasSugestoesLoading] = useState(false);
 
   useEffect(() => {
-    if (!modalTerceirizado) return;
-    const q = String(formTerceirizado.empresaNome || '').trim();
+    const enabled = modalTerceirizado || modalFuncionario;
+    if (!enabled) return;
+    const q = String((modalFuncionario ? formFuncionario.empresaNome : formTerceirizado.empresaNome) || '').trim();
     if (q.length < 2) {
       setEmpresasSugestoes([]);
       setEmpresasSugestoesLoading(false);
@@ -224,7 +227,7 @@ export default function CadastrosClient() {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [modalTerceirizado, formTerceirizado.empresaNome]);
+  }, [modalTerceirizado, modalFuncionario, formTerceirizado.empresaNome, formFuncionario.empresaNome]);
 
   async function carregarListasBase() {
     try {
@@ -825,6 +828,50 @@ function abrirEnderecos(row: PessoaRow) {
               <div className="text-xs text-slate-600 mb-1">Nome completo</div>
               <input className="input" value={formFuncionario.nomeCompleto} onChange={(e) => setFormFuncionario((p) => ({ ...p, nomeCompleto: e.target.value }))} />
             </div>
+            <div className="md:col-span-2">
+              <div className="text-xs text-slate-600 mb-1">Empresa (contraparte) (opcional)</div>
+              <div className="relative">
+                <input
+                  className="input"
+                  value={formFuncionario.empresaNome}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setFormFuncionario((p) => ({ ...p, empresaNome: v, idEmpresa: null }));
+                    setEmpresasSugestoesOpen(true);
+                  }}
+                  onFocus={() => setEmpresasSugestoesOpen(true)}
+                  onBlur={() => window.setTimeout(() => setEmpresasSugestoesOpen(false), 150)}
+                  placeholder="Digite nome ou CNPJ/CPF"
+                />
+                {empresasSugestoesOpen ? (
+                  <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                    {empresasSugestoesLoading ? (
+                      <div className="px-3 py-2 text-sm text-slate-600">Buscando…</div>
+                    ) : empresasSugestoes.length ? (
+                      <div className="max-h-64 overflow-auto">
+                        {empresasSugestoes.slice(0, 30).map((r) => (
+                          <button
+                            key={r.id}
+                            type="button"
+                            className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+                            onMouseDown={(ev) => ev.preventDefault()}
+                            onClick={() => {
+                              setFormFuncionario((p) => ({ ...p, empresaNome: r.nome, idEmpresa: r.id }));
+                              setEmpresasSugestoesOpen(false);
+                            }}
+                          >
+                            <div className="font-semibold text-slate-900">{r.nome}</div>
+                            <div className="text-xs text-slate-600">{r.documento ? r.documento : '-'}</div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="px-3 py-2 text-sm text-slate-600">Nenhuma empresa encontrada.</div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            </div>
             <div>
               <div className="text-xs text-slate-600 mb-1">Telefone / WhatsApp</div>
               <input
@@ -903,6 +950,7 @@ function abrirEnderecos(row: PessoaRow) {
                     matricula: String(formFuncionario.matricula || '').trim() ? String(formFuncionario.matricula || '').trim() : null,
                     nomeCompleto: formFuncionario.nomeCompleto,
                     cpf: cpfDigits,
+                    idEmpresa: typeof formFuncionario.idEmpresa === 'number' ? formFuncionario.idEmpresa : null,
                     telefoneWhatsapp: String(formFuncionario.telefoneWhatsapp || '').trim() ? String(formFuncionario.telefoneWhatsapp || '').trim() : null,
                     dataNascimento: String(formFuncionario.dataNascimento || '').slice(0, 10),
                     rg: String(formFuncionario.rg || '').trim() ? String(formFuncionario.rg || '').trim() : null,
@@ -925,6 +973,8 @@ function abrirEnderecos(row: PessoaRow) {
                     titulo: '',
                     nomeMae: '',
                     nomePai: '',
+                    empresaNome: '',
+                    idEmpresa: null,
                     cargoContratual: '',
                     funcaoPrincipal: '',
                     tipoVinculo: 'CLT',
