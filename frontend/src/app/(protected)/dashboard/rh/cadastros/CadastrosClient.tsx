@@ -423,6 +423,12 @@ export default function CadastrosClient() {
     router.push(`/dashboard/rh/pessoas/${tipo}/${row.id}/checklist?returnTo=${returnTo}`);
   }
 
+function abrirEnderecos(row: PessoaRow) {
+  if (row.tipo !== 'FUNCIONARIO') return;
+  const returnTo = encodeURIComponent(currentPath());
+  router.push(`/dashboard/rh/pessoas/funcionario/${row.id}/enderecos?returnTo=${returnTo}`);
+}
+
   return (
     <div className="p-6 space-y-6 text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -704,6 +710,7 @@ export default function CadastrosClient() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => copiarRef(r)}>Copiar referência</DropdownMenuItem>
+                            {r.tipo === 'FUNCIONARIO' ? <DropdownMenuItem onClick={() => abrirEnderecos(r)}>Endereços</DropdownMenuItem> : null}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
