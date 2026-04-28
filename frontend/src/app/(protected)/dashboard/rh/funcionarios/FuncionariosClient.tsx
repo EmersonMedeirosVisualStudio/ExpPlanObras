@@ -1,7 +1,7 @@
 'use client';
 
 import type React from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FuncionariosApi } from '@/lib/modules/funcionarios/api';
 import type { FuncionarioDetalheDTO, FuncionarioEventoDTO, FuncionarioHistoricoEventoDTO, FuncionarioResumoDTO } from '@/lib/modules/funcionarios/types';
 import { DocumentosApi } from '@/lib/modules/documentos/api';
