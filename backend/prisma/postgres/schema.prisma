@@ -66,6 +66,8 @@ model Tenant {
   subscriptions Subscription[]
   unidades  Unidade[]
   funcionarios Funcionario[]
+  pessoas   Pessoa[]
+  pessoasVinculos PessoaVinculo[]
   organizacaoSetores OrganizacaoSetor[]
   organizacaoCargos OrganizacaoCargo[]
   organogramaPosicoes OrganogramaPosicao[]
@@ -942,6 +944,55 @@ model Unidade {
 
   @@unique([tenantId, codigo])
   @@index([tenantId])
+}
+
+model Pessoa {
+  id               Int      @id @default(autoincrement())
+  tenantId          Int
+  nomeCompleto     String
+  cpf              String
+  dataNascimento   DateTime?
+  rg               String?
+  titulo           String?
+  nomeMae          String?
+  nomePai          String?
+  telefoneWhatsapp String?
+  matriculaBase    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vinculos         PessoaVinculo[]
+
+  @@unique([tenantId, cpf])
+  @@index([tenantId])
+  @@index([tenantId, nomeCompleto])
+}
+
+model PessoaVinculo {
+  id                  Int      @id @default(autoincrement())
+  tenantId             Int
+  pessoaId            Int
+  tipoVinculo         String
+  sequencia           Int
+  matricula           String?
+  funcao              String?
+  empresaContraparteId Int?
+  dataInicio          DateTime?
+  dataFim             DateTime?
+  ativo               Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pessoa              Pessoa   @relation(fields: [pessoaId], references: [id], onDelete: Cascade)
+  empresaContraparte   EngenhariaContraparte? @relation(fields: [empresaContraparteId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, matricula])
+  @@index([tenantId])
+  @@index([tenantId, pessoaId])
+  @@index([tenantId, tipoVinculo])
+  @@index([tenantId, tipoVinculo, dataFim])
 }
 
 model Funcionario {

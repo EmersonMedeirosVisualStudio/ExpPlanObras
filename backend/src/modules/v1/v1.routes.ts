@@ -1530,46 +1530,48 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const term = query.q ? query.q.trim() : '';
     const cpfTerm = term ? onlyDigits(term) : '';
-    const where: any = { tenantId: ctx.tenantId };
+    const where: any = { tenantId: ctx.tenantId, tipoVinculo: 'FUNCIONARIO', dataFim: null };
     if (term) {
       where.OR = [
-        { nomeCompleto: { contains: term, mode: 'insensitive' } },
-        { cargo: { contains: term, mode: 'insensitive' } },
-        { funcaoPrincipal: { contains: term, mode: 'insensitive' } },
-        ...(cpfTerm ? [{ cpf: { contains: cpfTerm } }] : []),
+        { matricula: { contains: term, mode: 'insensitive' } },
+        { funcao: { contains: term, mode: 'insensitive' } },
+        { pessoa: { nomeCompleto: { contains: term, mode: 'insensitive' } } },
+        ...(cpfTerm ? [{ pessoa: { cpf: { contains: cpfTerm } } }] : []),
       ];
     }
 
-    const funcionarios = await prisma.funcionario.findMany({
+    const vinculos = await prisma.pessoaVinculo.findMany({
       where,
       select: {
-        id: true,
         matricula: true,
-        nomeCompleto: true,
-        cpf: true,
-        cargo: true,
-        funcaoPrincipal: true,
-        statusFuncional: true,
-        dataAdmissao: true,
+        funcao: true,
+        dataInicio: true,
         ativo: true,
+        pessoa: {
+          select: {
+            id: true,
+            nomeCompleto: true,
+            cpf: true,
+          },
+        },
       },
-      orderBy: { nomeCompleto: 'asc' },
+      orderBy: [{ pessoa: { nomeCompleto: 'asc' } }, { id: 'desc' }],
       take: query.limit,
     });
 
     return ok(
       reply,
-      funcionarios.map((f) => ({
-        id: f.id,
-        matricula: f.matricula,
-        nomeCompleto: f.nomeCompleto,
-        cpf: f.cpf,
-        cargoContratual: f.cargo ?? null,
-        funcaoPrincipal: f.funcaoPrincipal ?? null,
-        statusFuncional: f.statusFuncional,
+      vinculos.map((v) => ({
+        id: v.pessoa.id,
+        matricula: v.matricula ?? '',
+        nomeCompleto: v.pessoa.nomeCompleto,
+        cpf: v.pessoa.cpf,
+        cargoContratual: v.funcao ?? null,
+        funcaoPrincipal: null,
+        statusFuncional: v.ativo ? 'ATIVO' : 'INATIVO',
         statusCadastroRh: 'OK',
-        dataAdmissao: f.dataAdmissao ? f.dataAdmissao.toISOString() : '',
-        ativo: f.ativo,
+        dataAdmissao: v.dataInicio ? v.dataInicio.toISOString() : '',
+        ativo: v.ativo,
         tipoLocal: null,
         idObra: null,
         idUnidade: null,
@@ -1599,10 +1601,10 @@ export default async function v1Routes(server: FastifyInstance) {
       .passthrough()
       .parse(request.body || {});
 
-    const matricula = String(body.matricula || '').trim();
+    const matriculaInput = String(body.matricula || '').trim();
     const nomeCompleto = String(body.nomeCompleto || '').trim();
     const cpfDigits = onlyDigits(String(body.cpf || ''));
-    if (!matricula) return fail(reply, 400, 'Campo Matrícula: obrigatório');
+    if (!matriculaInput) return fail(reply, 400, 'Campo Matrícula: obrigatório');
     if (!nomeCompleto) return fail(reply, 400, 'Campo Nome completo: obrigatório');
     if (cpfDigits.length !== 11) return fail(reply, 400, 'Campo CPF: deve ter 11 dígitos');
 
@@ -1616,20 +1618,113 @@ export default async function v1Routes(server: FastifyInstance) {
       if (/^\d{4}-\d{2}-\d{2}$/.test(d)) dataAdmissao = new Date(`${d}T00:00:00.000Z`);
     }
 
-    const created = await prisma.funcionario
-      .create({
-        data: {
-          tenantId: ctx.tenantId,
-          matricula,
-          nomeCompleto,
-          cpf: cpfDigits,
-          telefone,
-          cargo: cargo ? cargo : null,
-          statusFuncional: 'ATIVO',
-          dataAdmissao,
-          ativo: body.ativo !== false,
-        },
-        select: { id: true, matricula: true, nomeCompleto: true, cpf: true },
+    const created = await prisma
+      .$transaction(async (tx) => {
+        const existingPessoa = await tx.pessoa.findUnique({ where: { tenantId_cpf: { tenantId: ctx.tenantId, cpf: cpfDigits } } }).catch(() => null);
+
+        let pessoaId: number;
+        let matriculaBase: string;
+
+        if (!existingPessoa) {
+          const funcionario = await tx.funcionario.create({
+            data: {
+              tenantId: ctx.tenantId,
+              matricula: matriculaInput,
+              nomeCompleto,
+              cpf: cpfDigits,
+              telefone,
+              cargo: cargo ? cargo : null,
+              statusFuncional: 'ATIVO',
+              dataAdmissao,
+              ativo: body.ativo !== false,
+            },
+            select: { id: true },
+          });
+
+          const pessoa = await tx.pessoa.create({
+            data: {
+              id: funcionario.id,
+              tenantId: ctx.tenantId,
+              nomeCompleto,
+              cpf: cpfDigits,
+              telefoneWhatsapp: telefone,
+              matriculaBase: matriculaInput,
+            },
+            select: { id: true, matriculaBase: true },
+          });
+          pessoaId = pessoa.id;
+          matriculaBase = String(pessoa.matriculaBase || '').trim() || matriculaInput;
+        } else {
+          pessoaId = existingPessoa.id;
+          matriculaBase = String(existingPessoa.matriculaBase || '').trim() || matriculaInput;
+
+          if (!existingPessoa.matriculaBase) {
+            await tx.pessoa.update({
+              where: { id: existingPessoa.id },
+              data: { matriculaBase },
+            });
+          }
+
+          const funcionarioExists = await tx.funcionario.findFirst({ where: { id: existingPessoa.id, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
+          if (!funcionarioExists) {
+            await tx.funcionario.create({
+              data: {
+                id: existingPessoa.id,
+                tenantId: ctx.tenantId,
+                matricula: matriculaBase,
+                nomeCompleto,
+                cpf: cpfDigits,
+                telefone,
+                cargo: cargo ? cargo : null,
+                statusFuncional: 'ATIVO',
+                dataAdmissao,
+                ativo: body.ativo !== false,
+              },
+              select: { id: true },
+            });
+          }
+        }
+
+        await tx.pessoaVinculo.updateMany({
+          where: { tenantId: ctx.tenantId, pessoaId, dataFim: null },
+          data: { dataFim: new Date(), ativo: false },
+        });
+
+        const last = await tx.pessoaVinculo
+          .findFirst({ where: { tenantId: ctx.tenantId, pessoaId }, orderBy: [{ sequencia: 'desc' }, { id: 'desc' }], select: { sequencia: true } })
+          .catch(() => null);
+        const sequencia = (last?.sequencia || 0) + 1;
+        const matriculaFull = sequencia === 1 ? matriculaBase : `${matriculaBase}-${sequencia}`;
+
+        const vinculo = await tx.pessoaVinculo.create({
+          data: {
+            tenantId: ctx.tenantId,
+            pessoaId,
+            tipoVinculo: 'FUNCIONARIO',
+            sequencia,
+            matricula: matriculaFull,
+            funcao: cargo ? cargo : null,
+            dataInicio: dataAdmissao ?? new Date(),
+            dataFim: null,
+            ativo: body.ativo !== false,
+          },
+          select: { id: true, pessoaId: true, matricula: true },
+        });
+
+        await tx.funcionario.updateMany({
+          where: { id: pessoaId, tenantId: ctx.tenantId },
+          data: {
+            matricula: matriculaFull,
+            nomeCompleto,
+            telefone,
+            cargo: cargo ? cargo : null,
+            statusFuncional: 'ATIVO',
+            dataAdmissao,
+            ativo: body.ativo !== false,
+          },
+        });
+
+        return vinculo;
       })
       .catch((e: any) => {
         if (String(e?.code || '') === 'P2002') return null;
@@ -1641,20 +1736,20 @@ export default async function v1Routes(server: FastifyInstance) {
     await audit({
       tenantId: ctx.tenantId,
       userId: ctx.userId,
-      entidade: 'funcionarios',
+      entidade: 'pessoas_vinculos',
       idRegistro: String(created.id),
       acao: 'CREATE',
       dadosNovos: created as any,
     });
 
-    return ok(reply, { id: created.id }, { message: 'Funcionário cadastrado com sucesso.' });
+    return ok(reply, { id: created.pessoaId }, { message: 'Funcionário cadastrado com sucesso.' });
   });
 
   server.get('/rh/terceirizados', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
 
-    z
+    const query = z
       .object({
         q: z.string().optional(),
         limit: z.coerce.number().int().min(1).max(1000).default(200),
@@ -1663,7 +1758,148 @@ export default async function v1Routes(server: FastifyInstance) {
       })
       .parse(request.query || {});
 
-    return ok(reply, []);
+    const term = query.q ? query.q.trim() : '';
+    const cpfTerm = term ? onlyDigits(term) : '';
+    const where: any = { tenantId: ctx.tenantId, tipoVinculo: 'TERCEIRIZADO', dataFim: null, empresaContraparteId: { not: null } };
+    if (term) {
+      where.OR = [
+        { funcao: { contains: term, mode: 'insensitive' } },
+        { pessoa: { nomeCompleto: { contains: term, mode: 'insensitive' } } },
+        ...(cpfTerm ? [{ pessoa: { cpf: { contains: cpfTerm } } }] : []),
+      ];
+    }
+
+    const vinculos = await prisma.pessoaVinculo.findMany({
+      where,
+      select: {
+        funcao: true,
+        ativo: true,
+        pessoa: { select: { id: true, nomeCompleto: true, cpf: true } },
+        empresaContraparte: { select: { id: true, nomeRazao: true } },
+      },
+      orderBy: [{ pessoa: { nomeCompleto: 'asc' } }, { id: 'desc' }],
+      take: query.limit,
+    });
+
+    return ok(
+      reply,
+      vinculos.map((v) => ({
+        id: v.pessoa.id,
+        nomeCompleto: v.pessoa.nomeCompleto,
+        cpf: v.pessoa.cpf,
+        funcao: v.funcao ?? null,
+        ativo: v.ativo,
+        idEmpresaParceira: v.empresaContraparte?.id ?? 0,
+        empresaParceira: v.empresaContraparte?.nomeRazao ?? '',
+        tipoLocal: null,
+        idObra: null,
+        idUnidade: null,
+        localNome: null,
+        contratoId: null,
+        contratoNumero: null,
+      }))
+    );
+  });
+
+  server.post('/rh/terceirizados', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const body = z
+      .object({
+        nomeCompleto: z.string().min(2),
+        cpf: z.string().min(1),
+        dataNascimento: z.string().optional().nullable(),
+        funcao: z.string().optional().nullable(),
+        telefoneWhatsapp: z.string().optional().nullable(),
+        identidade: z.string().optional().nullable(),
+        titulo: z.string().optional().nullable(),
+        nomeMae: z.string().optional().nullable(),
+        nomePai: z.string().optional().nullable(),
+        idContraparteEmpresa: z.number().int().positive().optional().nullable(),
+        ativo: z.boolean().optional().default(true),
+      })
+      .passthrough()
+      .parse(request.body || {});
+
+    const nomeCompleto = String(body.nomeCompleto || '').trim();
+    const cpfDigits = onlyDigits(String(body.cpf || ''));
+    if (!nomeCompleto) return fail(reply, 400, 'Campo Nome completo: obrigatório');
+    if (cpfDigits.length !== 11) return fail(reply, 400, 'Campo CPF: deve ter 11 dígitos');
+    const empresaContraparteId = typeof body.idContraparteEmpresa === 'number' ? body.idContraparteEmpresa : null;
+    if (!empresaContraparteId) return fail(reply, 400, 'Campo Empresa: obrigatório');
+
+    const telefoneDigits = body.telefoneWhatsapp ? onlyDigits(String(body.telefoneWhatsapp || '')) : '';
+    const telefone = telefoneDigits && (telefoneDigits.length === 10 || telefoneDigits.length === 11) ? telefoneDigits : null;
+    const funcao = body.funcao ? String(body.funcao || '').trim() : '';
+
+    const created = await prisma
+      .$transaction(async (tx) => {
+        const pessoa =
+          (await tx.pessoa.findUnique({ where: { tenantId_cpf: { tenantId: ctx.tenantId, cpf: cpfDigits } } }).catch(() => null)) ||
+          (await tx.pessoa.create({
+            data: {
+              tenantId: ctx.tenantId,
+              nomeCompleto,
+              cpf: cpfDigits,
+              telefoneWhatsapp: telefone,
+              rg: body.identidade ? String(body.identidade || '').trim() : null,
+              titulo: body.titulo ? String(body.titulo || '').trim() : null,
+              nomeMae: body.nomeMae ? String(body.nomeMae || '').trim() : null,
+              nomePai: body.nomePai ? String(body.nomePai || '').trim() : null,
+            },
+            select: { id: true },
+          }));
+
+        await tx.pessoaVinculo.updateMany({
+          where: { tenantId: ctx.tenantId, pessoaId: pessoa.id, dataFim: null },
+          data: { dataFim: new Date(), ativo: false },
+        });
+
+        const last = await tx.pessoaVinculo
+          .findFirst({
+            where: { tenantId: ctx.tenantId, pessoaId: pessoa.id },
+            orderBy: [{ sequencia: 'desc' }, { id: 'desc' }],
+            select: { sequencia: true },
+          })
+          .catch(() => null);
+        const sequencia = (last?.sequencia || 0) + 1;
+
+        const vinculo = await tx.pessoaVinculo.create({
+          data: {
+            tenantId: ctx.tenantId,
+            pessoaId: pessoa.id,
+            tipoVinculo: 'TERCEIRIZADO',
+            sequencia,
+            matricula: null,
+            funcao: funcao ? funcao : null,
+            empresaContraparteId,
+            dataInicio: new Date(),
+            dataFim: null,
+            ativo: body.ativo !== false,
+          },
+          select: { id: true, pessoaId: true },
+        });
+
+        return vinculo;
+      })
+      .catch((e: any) => {
+        if (String(e?.code || '') === 'P2002') return null;
+        throw e;
+      });
+
+    if (!created) return fail(reply, 409, 'CPF já cadastrado');
+
+    await audit({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      entidade: 'pessoas_vinculos',
+      idRegistro: String(created.id),
+      acao: 'CREATE',
+      dadosNovos: created as any,
+    });
+
+    return ok(reply, { id: created.pessoaId }, { message: 'Terceirizado cadastrado com sucesso.' });
   });
 
   server.get('/engenharia/obras/responsaveis', async (request, reply) => {
