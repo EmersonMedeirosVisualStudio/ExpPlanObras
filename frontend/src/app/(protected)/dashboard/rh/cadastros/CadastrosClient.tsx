@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Download, FileText, MoreVertical, Plus, ShieldCheck, TriangleAlert, User, Users } from 'lucide-react';
 import { FuncionariosApi } from '@/lib/modules/funcionarios/api';
 import { TerceirizadosApi } from '@/lib/modules/terceirizados/api';
+import { OrganogramaApi } from '@/lib/modules/organograma/api';
 import type { FuncionarioResumoDTO } from '@/lib/modules/funcionarios/types';
 import type { TerceirizadoResumoDTO } from '@/lib/modules/terceirizados/types';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -119,40 +120,6 @@ function formatPhoneBr(value: string) {
   return `(${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`;
 }
 
-const CARGOS_CONSTRUCAO_CIVIL = [
-  'Servente',
-  'Pedreiro',
-  'Pedreiro de Acabamento',
-  'Carpinteiro',
-  'Armador',
-  'Eletricista',
-  'Eletricista Industrial',
-  'Encanador',
-  'Pintor',
-  'Gesseiro',
-  'Azulejista',
-  'Serralheiro',
-  'Soldador',
-  'Topógrafo',
-  'Auxiliar de Topografia',
-  'Mestre de Obras',
-  'Encarregado',
-  'Engenheiro Civil',
-  'Engenheiro de Segurança',
-  'Técnico em Edificações',
-  'Técnico de Segurança do Trabalho',
-  'Apontador',
-  'Almoxarife',
-  'Operador de Máquinas',
-  'Operador de Betoneira',
-  'Operador de Retroescavadeira',
-  'Operador de Escavadeira',
-  'Motorista',
-  'Vigia',
-  'Auxiliar Administrativo',
-  'Comprador',
-] as const;
-
 function currentPath() {
   try {
     if (typeof window === 'undefined') return '/dashboard/rh/cadastros';
@@ -216,8 +183,9 @@ export default function CadastrosClient() {
   const [cargoSugestoesOpen, setCargoSugestoesOpen] = useState(false);
   const [cargoOutroOpen, setCargoOutroOpen] = useState(false);
   const [cargoOutroNome, setCargoOutroNome] = useState('');
-  const [cargosExtras, setCargosExtras] = useState<string[]>([]);
-  const cargosDisponiveis = useMemo(() => [...CARGOS_CONSTRUCAO_CIVIL, ...cargosExtras], [cargosExtras]);
+  const [cargosDb, setCargosDb] = useState<string[]>([]);
+  const [cargosDbLoading, setCargosDbLoading] = useState(false);
+  const cargosDisponiveis = useMemo(() => cargosDb, [cargosDb]);
   const [formFuncionario, setFormFuncionario] = useState({
     matricula: '',
     nomeCompleto: '',
@@ -247,6 +215,29 @@ export default function CadastrosClient() {
   const [empresasSugestoes, setEmpresasSugestoes] = useState<Array<{ id: number; nome: string; documento: string | null }>>([]);
   const [empresasSugestoesOpen, setEmpresasSugestoesOpen] = useState(false);
   const [empresasSugestoesLoading, setEmpresasSugestoesLoading] = useState(false);
+
+  async function carregarCargosDb() {
+    try {
+      setCargosDbLoading(true);
+      const estrutura = await OrganogramaApi.obterEstrutura();
+      const list = (estrutura?.cargos || [])
+        .filter((c) => Boolean(c?.ativo))
+        .map((c) => String(c.nomeCargo || '').trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+      setCargosDb(list);
+    } catch {
+      setCargosDb([]);
+    } finally {
+      setCargosDbLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!modalFuncionario) return;
+    if (cargosDb.length) return;
+    carregarCargosDb();
+  }, [modalFuncionario, cargosDb.length]);
 
   useEffect(() => {
     const enabled = modalTerceirizado;
@@ -942,6 +933,9 @@ function abrirEnderecos(row: PessoaRow) {
                 {cargoSugestoesOpen ? (
                   <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
                     <div className="max-h-64 overflow-auto">
+                      {cargosDbLoading && !cargosDisponiveis.length ? (
+                        <div className="px-3 py-2 text-sm text-slate-600">Carregando cargos…</div>
+                      ) : null}
                       {cargosDisponiveis
                         .filter((c) => c.toLowerCase().includes(String(formFuncionario.cargoContratual || '').trim().toLowerCase()))
                         .slice(0, 30)
@@ -996,14 +990,25 @@ function abrirEnderecos(row: PessoaRow) {
                     <button
                       type="button"
                       className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-60"
-                      disabled={!String(cargoOutroNome || '').trim()}
-                      onClick={() => {
+                      disabled={!String(cargoOutroNome || '').trim() || cargosDbLoading}
+                      onClick={async () => {
                         const novo = String(cargoOutroNome || '').trim();
                         if (!novo) return;
-                        setCargosExtras((prev) => (prev.some((x) => x.toLowerCase() === novo.toLowerCase()) ? prev : [...prev, novo]));
-                        setFormFuncionario((p) => ({ ...p, cargoContratual: novo }));
-                        setCargoOutroOpen(false);
-                        setCargoOutroNome('');
+                        try {
+                          setCargosDbLoading(true);
+                          await OrganogramaApi.criarCargo({ nomeCargo: novo });
+                          await carregarCargosDb();
+                          setFormFuncionario((p) => ({ ...p, cargoContratual: novo }));
+                          setCargoOutroOpen(false);
+                          setCargoOutroNome('');
+                        } catch (e: any) {
+                          setModalFuncionarioMsg({
+                            kind: 'error',
+                            text: `Falha ao salvar cargo no banco: ${e?.message || 'Erro ao criar cargo'}`,
+                          });
+                        } finally {
+                          setCargosDbLoading(false);
+                        }
                       }}
                     >
                       Adicionar

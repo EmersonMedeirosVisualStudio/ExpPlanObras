@@ -7,6 +7,7 @@ import type { FuncionarioDetalheDTO, FuncionarioEventoDTO, FuncionarioHistoricoE
 import { DocumentosApi } from '@/lib/modules/documentos/api';
 import type { DocumentoRegistroDTO } from '@/lib/modules/documentos/types';
 import { TerceirizadosApi } from '@/lib/modules/terceirizados/api';
+import { OrganogramaApi } from '@/lib/modules/organograma/api';
 import api from '@/lib/api';
 
 const vazio = {
@@ -76,40 +77,6 @@ function formatPhoneBr(value: string) {
   return `(${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`;
 }
 
-const CARGOS_CONSTRUCAO_CIVIL = [
-  'Servente',
-  'Pedreiro',
-  'Pedreiro de Acabamento',
-  'Carpinteiro',
-  'Armador',
-  'Eletricista',
-  'Eletricista Industrial',
-  'Encanador',
-  'Pintor',
-  'Gesseiro',
-  'Azulejista',
-  'Serralheiro',
-  'Soldador',
-  'Topógrafo',
-  'Auxiliar de Topografia',
-  'Mestre de Obras',
-  'Encarregado',
-  'Engenheiro Civil',
-  'Engenheiro de Segurança',
-  'Técnico em Edificações',
-  'Técnico de Segurança do Trabalho',
-  'Apontador',
-  'Almoxarife',
-  'Operador de Máquinas',
-  'Operador de Betoneira',
-  'Operador de Retroescavadeira',
-  'Operador de Escavadeira',
-  'Motorista',
-  'Vigia',
-  'Auxiliar Administrativo',
-  'Comprador',
-] as const;
-
 export default function FuncionariosClient() {
   const [busca, setBusca] = useState('');
   const [lista, setLista] = useState<FuncionarioResumoDTO[]>([]);
@@ -136,8 +103,33 @@ export default function FuncionariosClient() {
   const [cargoSugestoesOpen, setCargoSugestoesOpen] = useState(false);
   const [cargoOutroOpen, setCargoOutroOpen] = useState(false);
   const [cargoOutroNome, setCargoOutroNome] = useState('');
-  const [cargosExtras, setCargosExtras] = useState<string[]>([]);
-  const cargosDisponiveis = useMemo(() => [...CARGOS_CONSTRUCAO_CIVIL, ...cargosExtras], [cargosExtras]);
+  const [cargosDb, setCargosDb] = useState<string[]>([]);
+  const [cargosDbLoading, setCargosDbLoading] = useState(false);
+  const cargosDisponiveis = useMemo(() => cargosDb, [cargosDb]);
+
+  async function carregarCargosDb() {
+    try {
+      setCargosDbLoading(true);
+      const estrutura = await OrganogramaApi.obterEstrutura();
+      const list = (estrutura?.cargos || [])
+        .filter((c) => Boolean(c?.ativo))
+        .map((c) => String(c.nomeCargo || '').trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+      setCargosDb(list);
+    } catch {
+      setCargosDb([]);
+    } finally {
+      setCargosDbLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!modalNovo) return;
+    if (form.tipoCadastro !== 'FUNCIONARIO') return;
+    if (cargosDb.length) return;
+    carregarCargosDb();
+  }, [modalNovo, form.tipoCadastro, cargosDb.length]);
 
   useEffect(() => {
     if (!modalNovo) return;
@@ -675,6 +667,9 @@ export default function FuncionariosClient() {
                       {cargoSugestoesOpen ? (
                         <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
                           <div className="max-h-64 overflow-auto">
+                            {cargosDbLoading && !cargosDisponiveis.length ? (
+                              <div className="px-3 py-2 text-sm text-slate-600">Carregando cargos…</div>
+                            ) : null}
                             {cargosDisponiveis
                               .filter((c) => c.toLowerCase().includes(String(form.cargoContratual || '').trim().toLowerCase()))
                               .slice(0, 30)
@@ -729,14 +724,22 @@ export default function FuncionariosClient() {
                           <button
                             type="button"
                             className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-60"
-                            disabled={!String(cargoOutroNome || '').trim()}
-                            onClick={() => {
+                            disabled={!String(cargoOutroNome || '').trim() || cargosDbLoading}
+                            onClick={async () => {
                               const novo = String(cargoOutroNome || '').trim();
                               if (!novo) return;
-                              setCargosExtras((prev) => (prev.some((x) => x.toLowerCase() === novo.toLowerCase()) ? prev : [...prev, novo]));
-                              setForm((o: any) => ({ ...o, cargoContratual: novo }));
-                              setCargoOutroOpen(false);
-                              setCargoOutroNome('');
+                              try {
+                                setCargosDbLoading(true);
+                                await OrganogramaApi.criarCargo({ nomeCargo: novo });
+                                await carregarCargosDb();
+                                setForm((o: any) => ({ ...o, cargoContratual: novo }));
+                                setCargoOutroOpen(false);
+                                setCargoOutroNome('');
+                              } catch (e: any) {
+                                setModalMsg({ kind: 'error', text: `Falha ao salvar cargo no banco: ${e?.message || 'Erro ao criar cargo'}` });
+                              } finally {
+                                setCargosDbLoading(false);
+                              }
                             }}
                           >
                             Adicionar
