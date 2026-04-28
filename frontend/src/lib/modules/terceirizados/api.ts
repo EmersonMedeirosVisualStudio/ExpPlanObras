@@ -39,6 +39,11 @@ export const TerceirizadosApi = {
 
   obter: (id: number) => api<TerceirizadoResumoDTO>(`/api/v1/rh/terceirizados/${encodeURIComponent(String(id))}`),
 
+  adicionarAlocacao: (
+    idTerceirizado: number,
+    payload: { tipoLocal: 'OBRA' | 'UNIDADE'; idObra: number | null; idUnidade: number | null; dataInicio: string; observacao?: string | null }
+  ) => api<{ id: number }>(`/api/v1/rh/terceirizados/${idTerceirizado}/alocacoes`, { method: 'POST', body: JSON.stringify(payload) }),
+
   criar: (payload: {
     nomeCompleto: string;
     cpf: string;

@@ -269,23 +269,37 @@ export default function AlocacaoClient() {
       .filter((k) => k.startsWith('FUNCIONARIO-'))
       .map((k) => Number(k.replace('FUNCIONARIO-', '')))
       .filter((id) => Number.isFinite(id) && id > 0);
+    const terceirizados = keys
+      .filter((k) => k.startsWith('TERCEIRIZADO-'))
+      .map((k) => Number(k.replace('TERCEIRIZADO-', '')))
+      .filter((id) => Number.isFinite(id) && id > 0);
 
-    if (!funcionarios.length) return;
+    if (!funcionarios.length && !terceirizados.length) return;
 
     try {
       setAlocando(true);
       setError(null);
-      await Promise.all(
-        funcionarios.map((idFuncionario) =>
+      const obs = observacao.trim() ? observacao.trim() : null;
+      await Promise.all([
+        ...funcionarios.map((idFuncionario) =>
           FuncionariosApi.adicionarLotacao(idFuncionario, {
             tipoLotacao: 'OBRA',
             idObra: filtros.idObra as number,
             idUnidade: null as any,
             dataInicio,
-            observacao: observacao.trim() ? observacao.trim() : null,
+            observacao: obs,
           } as any)
-        )
-      );
+        ),
+        ...terceirizados.map((idTerceirizado) =>
+          TerceirizadosApi.adicionarAlocacao(idTerceirizado, {
+            tipoLocal: 'OBRA',
+            idObra: filtros.idObra as number,
+            idUnidade: null,
+            dataInicio,
+            observacao: obs,
+          })
+        ),
+      ]);
       setSelectedKeys(new Set());
       await carregar();
     } catch (e: any) {
@@ -638,4 +652,3 @@ export default function AlocacaoClient() {
     </div>
   );
 }
-
