@@ -114,6 +114,36 @@ export default function SstTreinamentosClient() {
     alert('Serviços atualizados.');
   }
 
+  async function definirRequisitosModelo(m: any) {
+    const atual = await SstTreinamentosApi.listarRequisitosModelo(m.id).catch(() => []);
+    const atualStr = (Array.isArray(atual) ? atual : [])
+      .map((r: any) => {
+        const tipo = String(r.tipoRegra || '').toUpperCase();
+        const val = r.valorRegra ? String(r.valorRegra) : '';
+        return val ? `${tipo}:${val}` : `${tipo}`;
+      })
+      .join(', ');
+    const raw = prompt(
+      `Requisitos (checklist) para este treinamento ser obrigatório.\n\nFormato: TIPO:VALOR, separado por vírgula.\nTipos: CARGO, FUNCAO, CBO\n\nEx.: CARGO:ELETRICISTA, CARGO:AJUDANTE DE ELETRICISTA\n\nAtual: ${atualStr}`,
+      atualStr
+    );
+    if (raw == null) return;
+    const itens = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((p) => {
+        const [t, ...rest] = p.includes(':') ? p.split(':') : p.split('=');
+        const tipoRegra = String(t || '').trim().toUpperCase();
+        const valorRegra = rest.length ? rest.join(':').trim() : null;
+        return { tipoRegra, valorRegra };
+      })
+      .filter((x) => x.tipoRegra);
+
+    await SstTreinamentosApi.salvarRequisitosModelo(m.id, { itens });
+    alert('Requisitos atualizados.');
+  }
+
   async function consultarAptos() {
     const codigoServico = (prompt('Código do serviço (SER-0001):') || '').trim().toUpperCase();
     if (!codigoServico) return;
@@ -155,9 +185,14 @@ export default function SstTreinamentosClient() {
                       {m.tipoTreinamento} • {m.normaReferencia || "-"} • {m.validadeMeses ? `${m.validadeMeses}m` : "sem validade"}
                     </div>
                   </div>
-                  <button onClick={() => definirServicosModelo(m)} className="rounded border px-3 py-1.5 text-xs">
-                    Serviços
-                  </button>
+                  <div className="flex gap-2">
+                    <button onClick={() => definirRequisitosModelo(m)} className="rounded border px-3 py-1.5 text-xs">
+                      Requisitos
+                    </button>
+                    <button onClick={() => definirServicosModelo(m)} className="rounded border px-3 py-1.5 text-xs">
+                      Serviços
+                    </button>
+                  </div>
                 </div>
                 <div className="text-sm text-slate-500">
                   ID {m.id}

@@ -23,6 +23,16 @@ async function api<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> 
 }
 
 export const PresencasApi = {
+  politica: () =>
+    api<{ exigirAutorizacaoDispositivo: boolean; bloquearPorTreinamentoVencido: boolean; exigirGeolocalizacao: boolean; exigirFoto: boolean }>(
+      `/api/v1/rh/presencas/politica`
+    ),
+
+  autorizacao: () => api<{ autorizado: boolean; termoVersao: string | null; aceitoEm: string | null }>(`/api/v1/rh/presencas/autorizacao`),
+
+  aceitarTermo: (payload: { termoVersao: string; deviceUuid?: string | null; plataforma?: string | null }) =>
+    api<{ autorizado: boolean; termoVersao: string; aceitoEm: string }>(`/api/v1/rh/presencas/autorizacao`, { method: 'POST', body: JSON.stringify(payload) }),
+
   listar: (params?: { status?: StatusPresenca | ''; data?: string | '' }) => {
     const sp = new URLSearchParams();
     if (params?.status) sp.set('status', params.status);

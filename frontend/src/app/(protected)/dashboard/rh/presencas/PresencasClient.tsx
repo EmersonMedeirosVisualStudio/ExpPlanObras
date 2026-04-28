@@ -19,6 +19,16 @@ export default function PresencasClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [politica, setPolitica] = useState<{
+    exigirAutorizacaoDispositivo: boolean;
+    bloquearPorTreinamentoVencido: boolean;
+    exigirGeolocalizacao: boolean;
+    exigirFoto: boolean;
+  } | null>(null);
+  const [autorizacao, setAutorizacao] = useState<{ autorizado: boolean; termoVersao: string | null; aceitoEm: string | null } | null>(null);
+  const [modalTermo, setModalTermo] = useState(false);
+  const [termoAceito, setTermoAceito] = useState(false);
+
   const [fichas, setFichas] = useState<PresencaCabecalhoDTO[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<PresencaDetalheDTO | null>(null);
@@ -98,7 +108,30 @@ export default function PresencasClient() {
     } catch {}
   }
 
+  function getDeviceUuid() {
+    try {
+      const k = 'rh.presencas.deviceUuid';
+      const prev = localStorage.getItem(k);
+      if (prev) return prev;
+      const next = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? (crypto as any).randomUUID() : String(Date.now());
+      localStorage.setItem(k, next);
+      return next;
+    } catch {
+      return null;
+    }
+  }
+
+  async function carregarPoliticaEAutorizacao() {
+    try {
+      const [p, a] = await Promise.all([PresencasApi.politica(), PresencasApi.autorizacao()]);
+      setPolitica(p);
+      setAutorizacao(a);
+      if (p?.exigirAutorizacaoDispositivo && !a?.autorizado) setModalTermo(true);
+    } catch {}
+  }
+
   useEffect(() => {
+    carregarPoliticaEAutorizacao();
     carregarLista();
     carregarFuncionarios();
   }, []);
@@ -108,6 +141,7 @@ export default function PresencasClient() {
   }, [selectedId]);
 
   const selected = useMemo(() => fichas.find((x) => x.id === selectedId) || null, [fichas, selectedId]);
+  const bloqueadoPorTermo = !!politica?.exigirAutorizacaoDispositivo && autorizacao?.autorizado === false;
 
   async function criarFicha() {
     try {
@@ -125,6 +159,20 @@ export default function PresencasClient() {
       setSelectedId(res.id);
     } catch (e: any) {
       setError(e?.message || 'Erro ao criar ficha.');
+    }
+  }
+
+  async function aceitarTermo() {
+    try {
+      setError(null);
+      const termoVersao = 'v1';
+      const deviceUuid = getDeviceUuid();
+      const res = await PresencasApi.aceitarTermo({ termoVersao, deviceUuid, plataforma: 'WEB' });
+      setAutorizacao({ autorizado: res.autorizado, termoVersao: res.termoVersao, aceitoEm: res.aceitoEm });
+      setModalTermo(false);
+      setTermoAceito(false);
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao aceitar termo.');
     }
   }
 
@@ -231,12 +279,29 @@ export default function PresencasClient() {
           <h1 className="text-2xl font-semibold text-slate-900">Presença digital</h1>
           <p className="text-sm text-slate-600">Fichas por obra/unidade, assinatura do funcionário e envio ao RH.</p>
         </div>
-        <button onClick={() => setModalNova(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white" type="button">
+        <button
+          onClick={() => setModalNova(true)}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          type="button"
+          disabled={bloqueadoPorTermo}
+          title={bloqueadoPorTermo ? 'Aceite o termo de uso do dispositivo para registrar presença.' : ''}
+        >
           Nova ficha
         </button>
       </div>
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      {bloqueadoPorTermo && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="font-medium">Dispositivo não autorizado</div>
+            <div className="text-amber-800">Aceite o termo de uso para liberar o registro e envio de presença.</div>
+          </div>
+          <button type="button" className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white" onClick={() => setModalTermo(true)}>
+            Autorizar dispositivo
+          </button>
+        </div>
+      )}
 
       <div className="rounded-xl border bg-white p-4 shadow-sm">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
@@ -299,22 +364,22 @@ export default function PresencasClient() {
             <h2 className="text-lg font-semibold text-slate-900">Detalhe</h2>
             {detail && (
               <div className="flex gap-2 flex-wrap">
-                <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => setModalItem(true)}>
+                <button className="rounded-lg border px-3 py-2 text-xs disabled:opacity-50" type="button" onClick={() => setModalItem(true)} disabled={bloqueadoPorTermo}>
                   Adicionar/atualizar item
                 </button>
-                <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => setModalProducao(true)}>
+                <button className="rounded-lg border px-3 py-2 text-xs disabled:opacity-50" type="button" onClick={() => setModalProducao(true)} disabled={bloqueadoPorTermo}>
                   Produção
                 </button>
-                <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => acaoFicha('FECHAR')}>
+                <button className="rounded-lg border px-3 py-2 text-xs disabled:opacity-50" type="button" onClick={() => acaoFicha('FECHAR')} disabled={bloqueadoPorTermo}>
                   Fechar
                 </button>
-                <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => acaoFicha('ENVIAR_RH')}>
+                <button className="rounded-lg border px-3 py-2 text-xs disabled:opacity-50" type="button" onClick={() => acaoFicha('ENVIAR_RH')} disabled={bloqueadoPorTermo}>
                   Enviar RH
                 </button>
-                <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => acaoFicha('RECEBER_RH')}>
+                <button className="rounded-lg border px-3 py-2 text-xs disabled:opacity-50" type="button" onClick={() => acaoFicha('RECEBER_RH')} disabled={bloqueadoPorTermo}>
                   Receber RH
                 </button>
-                <button className="rounded-lg border px-3 py-2 text-xs" type="button" onClick={() => acaoFicha('REJEITAR_RH')}>
+                <button className="rounded-lg border px-3 py-2 text-xs disabled:opacity-50" type="button" onClick={() => acaoFicha('REJEITAR_RH')} disabled={bloqueadoPorTermo}>
                   Rejeitar RH
                 </button>
               </div>
@@ -548,6 +613,39 @@ export default function PresencasClient() {
             <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white" type="button" onClick={salvarItem}>
               Salvar
             </button>
+          </div>
+        </Modal>
+      )}
+
+      {modalTermo && (
+        <Modal title="Autorização de uso do dispositivo" onClose={() => setModalTermo(false)}>
+          <div className="space-y-3 text-sm text-slate-700">
+            <div className="rounded-lg border bg-slate-50 p-3">
+              <div className="font-medium text-slate-900">Termo (v1)</div>
+              <div className="mt-1 text-slate-700">
+                Ao registrar presença, você confirma que está autorizado a usar este dispositivo para lançamentos de ponto e que as informações poderão ser auditadas
+                (data/hora, IP e dispositivo).
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={termoAceito} onChange={(e) => setTermoAceito(e.target.checked)} />
+              <span>Li e aceito o termo</span>
+            </label>
+
+            <div className="flex justify-end gap-2">
+              <button type="button" className="rounded-lg border px-4 py-2 text-sm" onClick={() => setModalTermo(false)}>
+                Fechar
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                disabled={!termoAceito}
+                onClick={aceitarTermo}
+              >
+                Aceitar e continuar
+              </button>
+            </div>
           </div>
         </Modal>
       )}
