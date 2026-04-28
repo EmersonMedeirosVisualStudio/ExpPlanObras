@@ -38,13 +38,10 @@ export type FuncionarioCriarPayload = {
   cpf: string;
   dataNascimento: string;
   rg?: string | null;
-  titulo?: string | null;
   nomeMae?: string | null;
   nomePai?: string | null;
   telefoneWhatsapp?: string | null;
-  idEmpresa?: number | null;
   cargoContratual?: string | null;
-  funcaoPrincipal?: string | null;
   tipoVinculo?: string | null;
   telefonePrincipal?: string | null;
   dataAdmissao?: string | null;

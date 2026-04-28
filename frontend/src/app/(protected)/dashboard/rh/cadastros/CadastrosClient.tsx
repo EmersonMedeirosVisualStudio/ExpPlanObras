@@ -211,6 +211,8 @@ export default function CadastrosClient() {
   const [modalFuncionario, setModalFuncionario] = useState(false);
   const [modalTerceirizado, setModalTerceirizado] = useState(false);
   const [salvando, setSalvando] = useState(false);
+  const [modalFuncionarioMsg, setModalFuncionarioMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const [modalTerceirizadoMsg, setModalTerceirizadoMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [cargoSugestoesOpen, setCargoSugestoesOpen] = useState(false);
   const [cargoOutroOpen, setCargoOutroOpen] = useState(false);
   const [cargoOutroNome, setCargoOutroNome] = useState('');
@@ -223,11 +225,8 @@ export default function CadastrosClient() {
     telefoneWhatsapp: '',
     dataNascimento: '',
     rg: '',
-    titulo: '',
     nomeMae: '',
     nomePai: '',
-    empresaNome: '',
-    idEmpresa: null as number | null,
     cargoContratual: '',
     tipoVinculo: 'CLT',
     dataAdmissao: '',
@@ -250,9 +249,9 @@ export default function CadastrosClient() {
   const [empresasSugestoesLoading, setEmpresasSugestoesLoading] = useState(false);
 
   useEffect(() => {
-    const enabled = modalTerceirizado || modalFuncionario;
+    const enabled = modalTerceirizado;
     if (!enabled) return;
-    const q = String((modalFuncionario ? formFuncionario.empresaNome : formTerceirizado.empresaNome) || '').trim();
+    const q = String(formTerceirizado.empresaNome || '').trim();
     const qKey = q.length >= 2 ? q : '';
     if (!qKey && empresasSugestoes.length) return;
 
@@ -286,7 +285,7 @@ export default function CadastrosClient() {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [modalTerceirizado, modalFuncionario, formTerceirizado.empresaNome, formFuncionario.empresaNome, empresasSugestoes.length]);
+  }, [modalTerceirizado, formTerceirizado.empresaNome, empresasSugestoes.length]);
 
   async function carregarListasBase() {
     try {
@@ -584,7 +583,10 @@ function abrirEnderecos(row: PessoaRow) {
             <button
               type="button"
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 inline-flex items-center gap-2"
-              onClick={() => setModalFuncionario(true)}
+              onClick={() => {
+                setModalFuncionarioMsg(null);
+                setModalFuncionario(true);
+              }}
             >
               <Plus size={16} />
               Novo funcionário
@@ -592,7 +594,10 @@ function abrirEnderecos(row: PessoaRow) {
             <button
               type="button"
               className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 inline-flex items-center gap-2"
-              onClick={() => setModalTerceirizado(true)}
+              onClick={() => {
+                setModalTerceirizadoMsg(null);
+                setModalTerceirizado(true);
+              }}
             >
               <Plus size={16} />
               Novo terceirizado
@@ -863,6 +868,15 @@ function abrirEnderecos(row: PessoaRow) {
         }}
       >
         <div className="space-y-4">
+          {modalFuncionarioMsg ? (
+            <div
+              className={`rounded-lg border px-3 py-2 text-sm ${
+                modalFuncionarioMsg.kind === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'
+              }`}
+            >
+              {modalFuncionarioMsg.text}
+            </div>
+          ) : null}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <div className="text-xs text-slate-600 mb-1">Matrícula</div>
@@ -886,49 +900,6 @@ function abrirEnderecos(row: PessoaRow) {
               <div className="text-xs text-slate-600 mb-1">Nome completo</div>
               <input className="input" value={formFuncionario.nomeCompleto} onChange={(e) => setFormFuncionario((p) => ({ ...p, nomeCompleto: e.target.value }))} />
             </div>
-            <div className="md:col-span-2">
-              <div className="text-xs text-slate-600 mb-1">Empresa (contraparte) (opcional)</div>
-              <div className="relative">
-                <input
-                  className="input"
-                  value={formFuncionario.empresaNome}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setFormFuncionario((p) => ({ ...p, empresaNome: v, idEmpresa: null }));
-                    setEmpresasSugestoesOpen(true);
-                  }}
-                  onFocus={() => setEmpresasSugestoesOpen(true)}
-                  onBlur={() => window.setTimeout(() => setEmpresasSugestoesOpen(false), 150)}
-                  placeholder="Digite nome ou CNPJ/CPF"
-                />
-                {empresasSugestoesOpen ? (
-                  <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
-                    {empresasSugestoesLoading ? (
-                      <div className="px-3 py-2 text-sm text-slate-600">Buscando…</div>
-                    ) : empresasSugestoes.length ? (
-                      <div className="max-h-64 overflow-auto">
-                        {empresasSugestoes.slice(0, 30).map((r) => (
-                          <button
-                            key={r.id}
-                            type="button"
-                            className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
-                            onMouseDown={(ev) => ev.preventDefault()}
-                            onClick={() => {
-                              setFormFuncionario((p) => ({ ...p, empresaNome: r.nome, idEmpresa: r.id }));
-                              setEmpresasSugestoesOpen(false);
-                            }}
-                          >
-                            <div className="text-slate-900">{`#${r.id} - ${r.nome} - ${formatCnpjCpf(r.documento) || '-'}`}</div>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="px-3 py-2 text-sm text-slate-600">Nenhuma empresa encontrada.</div>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-            </div>
             <div>
               <div className="text-xs text-slate-600 mb-1">Telefone / WhatsApp</div>
               <input
@@ -945,10 +916,6 @@ function abrirEnderecos(row: PessoaRow) {
             <div>
               <div className="text-xs text-slate-600 mb-1">Identidade (RG)</div>
               <input className="input" value={formFuncionario.rg} onChange={(e) => setFormFuncionario((p) => ({ ...p, rg: e.target.value }))} />
-            </div>
-            <div>
-              <div className="text-xs text-slate-600 mb-1">Título</div>
-              <input className="input" value={formFuncionario.titulo} onChange={(e) => setFormFuncionario((p) => ({ ...p, titulo: e.target.value }))} />
             </div>
             <div>
               <div className="text-xs text-slate-600 mb-1">Nome da mãe</div>
@@ -1049,10 +1016,7 @@ function abrirEnderecos(row: PessoaRow) {
               <div className="text-xs text-slate-600 mb-1">Tipo de vínculo</div>
               <select className="input" value={formFuncionario.tipoVinculo} onChange={(e) => setFormFuncionario((p) => ({ ...p, tipoVinculo: e.target.value }))}>
                 <option value="CLT">CLT</option>
-                <option value="PJ">PJ</option>
                 <option value="ESTAGIO">Estágio</option>
-                <option value="TEMPORARIO">Temporário</option>
-                <option value="OUTRO">Outro</option>
               </select>
             </div>
             <div>
@@ -1077,26 +1041,25 @@ function abrirEnderecos(row: PessoaRow) {
               onClick={async () => {
                 try {
                   setSalvando(true);
+                  setModalFuncionarioMsg(null);
                   const cpfDigits = onlyDigits(formFuncionario.cpf || '');
-                  if (cpfDigits.length !== 11) throw new Error('CPF inválido: deve ter 11 dígitos.');
+                  if (cpfDigits.length !== 11) throw new Error('Campo CPF: deve ter 11 dígitos.');
                   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(formFuncionario.dataNascimento || '').slice(0, 10))) {
-                    throw new Error('Data de nascimento inválida.');
+                    throw new Error('Campo Data de nascimento: inválida.');
                   }
                   const matricula = String(formFuncionario.matricula || '').trim();
-                  if (!matricula) throw new Error('Matrícula é obrigatória.');
+                  if (!matricula) throw new Error('Campo Matrícula: obrigatória.');
                   const telDigits = onlyDigits(formFuncionario.telefoneWhatsapp || '');
                   if (telDigits && telDigits.length !== 10 && telDigits.length !== 11) {
-                    throw new Error('Telefone / WhatsApp inválido: deve ter 10 ou 11 dígitos (com DDD).');
+                    throw new Error('Campo Telefone/WhatsApp: deve ter 10 ou 11 dígitos (com DDD).');
                   }
                   await FuncionariosApi.criar({
                     matricula,
                     nomeCompleto: String(formFuncionario.nomeCompleto || '').trim(),
                     cpf: cpfDigits,
-                    idEmpresa: typeof formFuncionario.idEmpresa === 'number' ? formFuncionario.idEmpresa : null,
                     telefoneWhatsapp: telDigits ? telDigits : null,
                     dataNascimento: String(formFuncionario.dataNascimento || '').slice(0, 10),
                     rg: String(formFuncionario.rg || '').trim() ? String(formFuncionario.rg || '').trim() : null,
-                    titulo: String(formFuncionario.titulo || '').trim() ? String(formFuncionario.titulo || '').trim() : null,
                     nomeMae: String(formFuncionario.nomeMae || '').trim() ? String(formFuncionario.nomeMae || '').trim() : null,
                     nomePai: String(formFuncionario.nomePai || '').trim() ? String(formFuncionario.nomePai || '').trim() : null,
                     cargoContratual: String(formFuncionario.cargoContratual || '').trim() ? String(formFuncionario.cargoContratual || '').trim() : null,
@@ -1111,19 +1074,17 @@ function abrirEnderecos(row: PessoaRow) {
                     telefoneWhatsapp: '',
                     dataNascimento: '',
                     rg: '',
-                    titulo: '',
                     nomeMae: '',
                     nomePai: '',
-                    empresaNome: '',
-                    idEmpresa: null,
                     cargoContratual: '',
                     tipoVinculo: 'CLT',
                     dataAdmissao: '',
                   });
-                  setModalFuncionario(false);
                   await carregar();
+                  setModalFuncionarioMsg({ kind: 'success', text: 'Funcionário cadastrado com sucesso.' });
+                  window.setTimeout(() => setModalFuncionarioMsg(null), 4000);
                 } catch (e: any) {
-                  setError(e?.message || 'Erro ao criar funcionário');
+                  setModalFuncionarioMsg({ kind: 'error', text: `Falha no cadastro (Funcionário): ${e?.message || 'Erro ao criar funcionário'}` });
                 } finally {
                   setSalvando(false);
                 }
@@ -1143,6 +1104,15 @@ function abrirEnderecos(row: PessoaRow) {
         }}
       >
         <div className="space-y-4">
+          {modalTerceirizadoMsg ? (
+            <div
+              className={`rounded-lg border px-3 py-2 text-sm ${
+                modalTerceirizadoMsg.kind === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'
+              }`}
+            >
+              {modalTerceirizadoMsg.text}
+            </div>
+          ) : null}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="md:col-span-2">
               <div className="text-xs text-slate-600 mb-1">Nome completo</div>
@@ -1252,14 +1222,15 @@ function abrirEnderecos(row: PessoaRow) {
               onClick={async () => {
                 try {
                   setSalvando(true);
+                  setModalTerceirizadoMsg(null);
                   const cpfDigits = onlyDigits(formTerceirizado.cpf || '');
-                  if (cpfDigits.length !== 11) throw new Error('CPF inválido: deve ter 11 dígitos.');
+                  if (cpfDigits.length !== 11) throw new Error('Campo CPF: deve ter 11 dígitos.');
                   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(formTerceirizado.dataNascimento || '').slice(0, 10))) {
-                    throw new Error('Data de nascimento inválida.');
+                    throw new Error('Campo Data de nascimento: inválida.');
                   }
                   const telDigits = onlyDigits(formTerceirizado.telefoneWhatsapp || '');
                   if (telDigits && telDigits.length !== 10 && telDigits.length !== 11) {
-                    throw new Error('Telefone / WhatsApp inválido: deve ter 10 ou 11 dígitos (com DDD).');
+                    throw new Error('Campo Telefone/WhatsApp: deve ter 10 ou 11 dígitos (com DDD).');
                   }
                   await TerceirizadosApi.criar({
                     nomeCompleto: formTerceirizado.nomeCompleto,
@@ -1287,10 +1258,11 @@ function abrirEnderecos(row: PessoaRow) {
                     empresaNome: '',
                     idContraparteEmpresa: null,
                   });
-                  setModalTerceirizado(false);
                   await carregar();
+                  setModalTerceirizadoMsg({ kind: 'success', text: 'Terceirizado cadastrado com sucesso.' });
+                  window.setTimeout(() => setModalTerceirizadoMsg(null), 4000);
                 } catch (e: any) {
-                  setError(e?.message || 'Erro ao criar terceirizado');
+                  setModalTerceirizadoMsg({ kind: 'error', text: `Falha no cadastro (Terceirizado): ${e?.message || 'Erro ao criar terceirizado'}` });
                 } finally {
                   setSalvando(false);
                 }

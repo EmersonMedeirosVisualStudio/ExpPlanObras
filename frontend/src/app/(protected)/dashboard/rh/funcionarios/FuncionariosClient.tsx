@@ -128,6 +128,7 @@ export default function FuncionariosClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalNovo, setModalNovo] = useState(false);
+  const [modalMsg, setModalMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [form, setForm] = useState<any>(vazio);
   const [empresasSugestoes, setEmpresasSugestoes] = useState<Array<{ id: number; nome: string; documento: string | null }>>([]);
   const [empresasSugestoesOpen, setEmpresasSugestoesOpen] = useState(false);
@@ -140,6 +141,7 @@ export default function FuncionariosClient() {
 
   useEffect(() => {
     if (!modalNovo) return;
+    if (form.tipoCadastro !== 'TERCEIRIZADO') return;
     const q = String(form.empresaNome || '').trim();
     const qKey = q.length >= 2 ? q : '';
     if (!qKey && empresasSugestoes.length) return;
@@ -174,7 +176,7 @@ export default function FuncionariosClient() {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [modalNovo, form.empresaNome, empresasSugestoes.length]);
+  }, [modalNovo, form.tipoCadastro, form.empresaNome, empresasSugestoes.length]);
 
   async function carregar() {
     try {
@@ -216,63 +218,70 @@ export default function FuncionariosClient() {
 
   async function salvarNovo(e: React.FormEvent) {
     e.preventDefault();
-    const cpfDigits = onlyDigits(form.cpf || '');
-    if (cpfDigits.length !== 11) {
-      alert('CPF inválido: deve ter 11 dígitos.');
-      return;
-    }
-    const dataNascimento = String(form.dataNascimento || '').slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataNascimento)) {
-      alert('Data de nascimento inválida.');
-      return;
-    }
-    const telDigits = onlyDigits(form.telefoneWhatsapp || '');
-    if (telDigits && telDigits.length !== 10 && telDigits.length !== 11) {
-      alert('Telefone / WhatsApp inválido: deve ter 10 ou 11 dígitos (com DDD).');
-      return;
-    }
-
-    if (form.tipoCadastro === 'TERCEIRIZADO') {
-      await TerceirizadosApi.criar({
-        nomeCompleto: String(form.nomeCompleto || '').trim(),
-        funcao: String(form.funcaoPrincipal || '').trim() ? String(form.funcaoPrincipal || '').trim() : null,
-        ativo: form.ativo !== false,
-        cpf: cpfDigits,
-        telefoneWhatsapp: telDigits ? telDigits : null,
-        dataNascimento,
-        identidade: String(form.rg || '').trim() ? String(form.rg || '').trim() : null,
-        titulo: String(form.titulo || '').trim() ? String(form.titulo || '').trim() : null,
-        nomeMae: String(form.nomeMae || '').trim() ? String(form.nomeMae || '').trim() : null,
-        nomePai: String(form.nomePai || '').trim() ? String(form.nomePai || '').trim() : null,
-        idContraparteEmpresa: typeof form.idContraparteEmpresa === 'number' ? form.idContraparteEmpresa : null,
-      } as any);
-    } else {
-      const matricula = String(form.matricula || '').trim();
-      if (!matricula) {
-        alert('Matrícula obrigatória.');
+    try {
+      setModalMsg(null);
+      const cpfDigits = onlyDigits(form.cpf || '');
+      if (cpfDigits.length !== 11) {
+        setModalMsg({ kind: 'error', text: 'Campo CPF: deve ter 11 dígitos.' });
         return;
       }
-      await FuncionariosApi.criar({
-        matricula,
-        nomeCompleto: String(form.nomeCompleto || '').trim(),
-        cpf: cpfDigits,
-        dataNascimento,
-        rg: String(form.rg || '').trim() ? String(form.rg || '').trim() : null,
-        titulo: String(form.titulo || '').trim() ? String(form.titulo || '').trim() : null,
-        nomeMae: String(form.nomeMae || '').trim() ? String(form.nomeMae || '').trim() : null,
-        nomePai: String(form.nomePai || '').trim() ? String(form.nomePai || '').trim() : null,
-        cargoContratual: String(form.cargoContratual || '').trim() ? String(form.cargoContratual || '').trim() : null,
-        tipoVinculo: String(form.tipoVinculo || '').trim() ? String(form.tipoVinculo || '').trim() : null,
-        telefoneWhatsapp: telDigits ? telDigits : null,
-        idEmpresa: typeof form.idContraparteEmpresa === 'number' ? form.idContraparteEmpresa : null,
-        dataAdmissao: String(form.dataAdmissao || '').slice(0, 10) ? String(form.dataAdmissao || '').slice(0, 10) : null,
-        ativo: form.ativo !== false,
-      });
-      await carregar();
-    }
+      const dataNascimento = String(form.dataNascimento || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dataNascimento)) {
+        setModalMsg({ kind: 'error', text: 'Campo Data de nascimento: inválida.' });
+        return;
+      }
+      const telDigits = onlyDigits(form.telefoneWhatsapp || '');
+      if (telDigits && telDigits.length !== 10 && telDigits.length !== 11) {
+        setModalMsg({ kind: 'error', text: 'Campo Telefone/WhatsApp: deve ter 10 ou 11 dígitos (com DDD).' });
+        return;
+      }
 
-    setModalNovo(false);
-    setForm(vazio);
+      if (form.tipoCadastro === 'TERCEIRIZADO') {
+        await TerceirizadosApi.criar({
+          nomeCompleto: String(form.nomeCompleto || '').trim(),
+          funcao: String(form.funcaoPrincipal || '').trim() ? String(form.funcaoPrincipal || '').trim() : null,
+          ativo: form.ativo !== false,
+          cpf: cpfDigits,
+          telefoneWhatsapp: telDigits ? telDigits : null,
+          dataNascimento,
+          identidade: String(form.rg || '').trim() ? String(form.rg || '').trim() : null,
+          titulo: String(form.titulo || '').trim() ? String(form.titulo || '').trim() : null,
+          nomeMae: String(form.nomeMae || '').trim() ? String(form.nomeMae || '').trim() : null,
+          nomePai: String(form.nomePai || '').trim() ? String(form.nomePai || '').trim() : null,
+          idContraparteEmpresa: typeof form.idContraparteEmpresa === 'number' ? form.idContraparteEmpresa : null,
+        } as any);
+      } else {
+        const matricula = String(form.matricula || '').trim();
+        if (!matricula) {
+          setModalMsg({ kind: 'error', text: 'Campo Matrícula: obrigatória.' });
+          return;
+        }
+        await FuncionariosApi.criar({
+          matricula,
+          nomeCompleto: String(form.nomeCompleto || '').trim(),
+          cpf: cpfDigits,
+          dataNascimento,
+          rg: String(form.rg || '').trim() ? String(form.rg || '').trim() : null,
+          nomeMae: String(form.nomeMae || '').trim() ? String(form.nomeMae || '').trim() : null,
+          nomePai: String(form.nomePai || '').trim() ? String(form.nomePai || '').trim() : null,
+          cargoContratual: String(form.cargoContratual || '').trim() ? String(form.cargoContratual || '').trim() : null,
+          tipoVinculo: String(form.tipoVinculo || '').trim() ? String(form.tipoVinculo || '').trim() : null,
+          telefoneWhatsapp: telDigits ? telDigits : null,
+          dataAdmissao: String(form.dataAdmissao || '').slice(0, 10) ? String(form.dataAdmissao || '').slice(0, 10) : null,
+          ativo: form.ativo !== false,
+        });
+        await carregar();
+      }
+
+      setModalMsg({ kind: 'success', text: 'Cadastro realizado com sucesso.' });
+      window.setTimeout(() => setModalMsg(null), 4000);
+      window.setTimeout(() => {
+        setModalNovo(false);
+        setForm(vazio);
+      }, 1200);
+    } catch (e: any) {
+      setModalMsg({ kind: 'error', text: `Falha no cadastro: ${e?.message || 'Erro ao salvar'}` });
+    }
   }
 
   async function endossar(acao: 'APROVAR' | 'REJEITAR') {
@@ -294,7 +303,15 @@ export default function FuncionariosClient() {
           <h1 className="text-2xl font-semibold text-slate-900">Funcionários</h1>
           <p className="text-sm text-slate-600">Cadastro, lotação, supervisão, jornada e horas extras.</p>
         </div>
-        <button onClick={() => setModalNovo(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white" type="button">
+        <button
+          onClick={() => {
+            setModalMsg(null);
+            setForm(vazio);
+            setModalNovo(true);
+          }}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white"
+          type="button"
+        >
           Novo funcionário
         </button>
       </div>
@@ -542,10 +559,26 @@ export default function FuncionariosClient() {
           <form onSubmit={salvarNovo} className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Novo funcionário</h3>
-              <button type="button" onClick={() => setModalNovo(false)}>
+              <button
+                type="button"
+                onClick={() => {
+                  setModalMsg(null);
+                  setModalNovo(false);
+                }}
+              >
                 ✕
               </button>
             </div>
+
+            {modalMsg ? (
+              <div
+                className={`rounded-lg border px-3 py-2 text-sm ${
+                  modalMsg.kind === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'
+                }`}
+              >
+                {modalMsg.text}
+              </div>
+            ) : null}
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
@@ -606,10 +639,12 @@ export default function FuncionariosClient() {
                 <input className="input" value={form.rg} onChange={(e) => setForm((o: any) => ({ ...o, rg: e.target.value }))} />
               </div>
 
-              <div>
-                <div className="text-xs text-slate-500">Título</div>
-                <input className="input" value={form.titulo} onChange={(e) => setForm((o: any) => ({ ...o, titulo: e.target.value }))} />
-              </div>
+              {form.tipoCadastro === 'TERCEIRIZADO' ? (
+                <div>
+                  <div className="text-xs text-slate-500">Título</div>
+                  <input className="input" value={form.titulo} onChange={(e) => setForm((o: any) => ({ ...o, titulo: e.target.value }))} />
+                </div>
+              ) : null}
 
               <div>
                 <div className="text-xs text-slate-500">Nome da mãe</div>
@@ -623,51 +658,6 @@ export default function FuncionariosClient() {
 
               {form.tipoCadastro === 'FUNCIONARIO' ? (
                 <>
-                  <div className="md:col-span-2">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs text-slate-500">Empresa (contraparte) (opcional)</div>
-                    </div>
-                    <div className="relative">
-                      <input
-                        className="input"
-                        value={form.empresaNome}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setForm((o: any) => ({ ...o, empresaNome: v, idContraparteEmpresa: null }));
-                          setEmpresasSugestoesOpen(true);
-                        }}
-                        onFocus={() => setEmpresasSugestoesOpen(true)}
-                        onBlur={() => window.setTimeout(() => setEmpresasSugestoesOpen(false), 150)}
-                        placeholder="Digite nome ou CNPJ/CPF"
-                      />
-                      {empresasSugestoesOpen ? (
-                        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
-                          {empresasSugestoesLoading ? (
-                            <div className="px-3 py-2 text-sm text-slate-600">Buscando…</div>
-                          ) : empresasSugestoes.length ? (
-                            <div className="max-h-64 overflow-auto">
-                              {empresasSugestoes.slice(0, 30).map((r) => (
-                                <button
-                                  key={r.id}
-                                  type="button"
-                                  className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
-                                  onMouseDown={(e) => e.preventDefault()}
-                                  onClick={() => {
-                                    setForm((o: any) => ({ ...o, empresaNome: r.nome, idContraparteEmpresa: r.id }));
-                                    setEmpresasSugestoesOpen(false);
-                                  }}
-                                >
-                                  <div className="text-slate-900">{`#${r.id} - ${r.nome} - ${formatCnpjCpf(r.documento) || '-'}`}</div>
-                                </button>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="px-3 py-2 text-sm text-slate-600">Nenhuma empresa encontrada.</div>
-                          )}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
                   <div>
                     <div className="text-xs text-slate-500">Cargo</div>
                     <div className="relative">
@@ -760,10 +750,7 @@ export default function FuncionariosClient() {
                     <div className="text-xs text-slate-500">Tipo de vínculo</div>
                     <select className="input" value={form.tipoVinculo} onChange={(e) => setForm((o: any) => ({ ...o, tipoVinculo: e.target.value }))}>
                       <option value="CLT">CLT</option>
-                      <option value="PJ">PJ</option>
                       <option value="ESTAGIO">Estágio</option>
-                      <option value="TEMPORARIO">Temporário</option>
-                      <option value="OUTRO">Outro</option>
                     </select>
                   </div>
 
