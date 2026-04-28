@@ -751,6 +751,7 @@ export default function FuncionariosClient() {
                     <select className="input" value={form.tipoVinculo} onChange={(e) => setForm((o: any) => ({ ...o, tipoVinculo: e.target.value }))}>
                       <option value="CLT">CLT</option>
                       <option value="ESTAGIO">Estágio</option>
+                      <option value="TEMPORARIO">Temporário</option>
                     </select>
                   </div>
 
