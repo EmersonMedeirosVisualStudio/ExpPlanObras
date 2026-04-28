@@ -674,10 +674,12 @@ export default function CadastrosClient() {
           <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
             <Users size={18} />
           </div>
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Pessoas</h1>
-            <p className="text-sm text-slate-600">{breadcrumb}</p>
-            <div className="mt-3 flex gap-2 flex-wrap">
+          <div className="flex items-start gap-4 flex-wrap">
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-900">Pessoas</h1>
+              <p className="text-sm text-slate-600">{breadcrumb}</p>
+            </div>
+            <div className="mt-0.5 flex gap-2 flex-wrap">
               <button
                 type="button"
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 inline-flex items-center gap-2"

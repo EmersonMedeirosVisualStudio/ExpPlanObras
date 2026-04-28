@@ -1763,6 +1763,96 @@ export default async function v1Routes(server: FastifyInstance) {
     );
   });
 
+  server.get('/rh/funcionarios/:id', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const params = z
+      .object({
+        id: z.coerce.number().int().positive(),
+      })
+      .parse((request as any).params || {});
+
+    const id = Number(params.id);
+
+    const funcionario = await prisma.funcionario.findFirst({
+      where: { tenantId: ctx.tenantId, id },
+      select: {
+        id: true,
+        matricula: true,
+        nomeCompleto: true,
+        cpf: true,
+        telefone: true,
+        cargo: true,
+        statusFuncional: true,
+        dataAdmissao: true,
+        ativo: true,
+      },
+    });
+    if (!funcionario) return fail(reply, 404, 'Funcionário não encontrado');
+
+    const vinculo = await prisma.pessoaVinculo.findFirst({
+      where: { tenantId: ctx.tenantId, pessoaId: id, tipoVinculo: 'FUNCIONARIO', dataFim: null },
+      select: { matricula: true, funcao: true, dataInicio: true, ativo: true },
+      orderBy: [{ id: 'desc' }],
+    });
+
+    const matricula = String(vinculo?.matricula || funcionario.matricula || '').trim();
+    const cargoContratual = vinculo?.funcao ?? funcionario.cargo ?? null;
+    const dataAdmissao = vinculo?.dataInicio ?? funcionario.dataAdmissao ?? null;
+    const ativo = typeof vinculo?.ativo === 'boolean' ? vinculo.ativo : Boolean(funcionario.ativo);
+
+    return ok(reply, {
+      id: funcionario.id,
+      matricula: matricula || '',
+      nomeCompleto: funcionario.nomeCompleto,
+      cpf: funcionario.cpf,
+      cargoContratual,
+      funcaoPrincipal: null,
+      statusFuncional: String(funcionario.statusFuncional || (ativo ? 'ATIVO' : 'INATIVO')),
+      statusCadastroRh: 'OK',
+      dataAdmissao: dataAdmissao ? dataAdmissao.toISOString() : '',
+      ativo,
+      tipoLocal: null,
+      idObra: null,
+      idUnidade: null,
+      localNome: null,
+      contratoId: null,
+      contratoNumero: null,
+      presencaPercent: null,
+      custoHora: null,
+      nomeSocial: null,
+      rg: null,
+      orgaoEmissorRg: null,
+      dataNascimento: null,
+      titulo: null,
+      nomeMae: null,
+      nomePai: null,
+      telefoneWhatsapp: funcionario.telefone ? String(funcionario.telefone) : null,
+      idEmpresa: null,
+      sexo: null,
+      estadoCivil: null,
+      pisPasep: null,
+      ctpsNumero: null,
+      ctpsSerie: null,
+      ctpsUf: null,
+      cnhNumero: null,
+      cnhCategoria: null,
+      cboCodigo: null,
+      tipoVinculo: 'FUNCIONARIO',
+      dataDesligamento: null,
+      salarioBase: null,
+      emailPessoal: null,
+      telefonePrincipal: funcionario.telefone ? String(funcionario.telefone) : null,
+      contatoEmergenciaNome: null,
+      contatoEmergenciaTelefone: null,
+      lotacoes: [],
+      supervisoes: [],
+      jornadas: [],
+      horasExtras: [],
+    });
+  });
+
   server.post('/rh/funcionarios', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
