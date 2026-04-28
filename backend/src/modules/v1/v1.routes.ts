@@ -1945,10 +1945,27 @@ export default async function v1Routes(server: FastifyInstance) {
           nomeModelo: 'RH — Checklist de documentos (Terceirizado)',
           itens: [
             { ordemItem: 10, grupoItem: 'Identificação', tituloItem: 'Documento de identificação (RG/CPF)', obrigatorio: true, exigeValidade: false, validadeDias: null },
-            { ordemItem: 20, grupoItem: 'Saúde', tituloItem: 'ASO (Apto) vigente', obrigatorio: true, exigeValidade: true, validadeDias: 365 },
-            { ordemItem: 30, grupoItem: 'Treinamentos', tituloItem: 'NR-10 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
-            { ordemItem: 40, grupoItem: 'Treinamentos', tituloItem: 'NR-35 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
-            { ordemItem: 50, grupoItem: 'Contrato', tituloItem: 'Carta/declaração da empresa terceirizada (vínculo e função)', obrigatorio: true, exigeValidade: false, validadeDias: null },
+            { ordemItem: 20, grupoItem: 'Identificação', tituloItem: 'CNH (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 1825 },
+            { ordemItem: 30, grupoItem: 'Identificação', tituloItem: 'Comprovante de residência (quando exigido)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+
+            { ordemItem: 100, grupoItem: 'Empresa', tituloItem: 'Carta de alocação / declaração da contratada (vínculo, função e obra)', obrigatorio: true, exigeValidade: false, validadeDias: null },
+            { ordemItem: 110, grupoItem: 'Empresa', tituloItem: 'Comprovação de vínculo com a contratada (quando exigido)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+            { ordemItem: 120, grupoItem: 'Empresa', tituloItem: 'Ordem de Serviço / autorização de trabalho (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+
+            { ordemItem: 200, grupoItem: 'Saúde', tituloItem: 'ASO vigente (Apto)', obrigatorio: true, exigeValidade: true, validadeDias: 365 },
+
+            { ordemItem: 300, grupoItem: 'Segurança', tituloItem: 'Integração de segurança / regras de obra (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+            { ordemItem: 310, grupoItem: 'Segurança', tituloItem: 'Ficha de EPI assinada (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+            { ordemItem: 320, grupoItem: 'Segurança', tituloItem: 'Permissão de trabalho (PT) / APR (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+
+            { ordemItem: 400, grupoItem: 'Treinamentos', tituloItem: 'NR-06 (EPI) (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+            { ordemItem: 410, grupoItem: 'Treinamentos', tituloItem: 'NR-10 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+            { ordemItem: 420, grupoItem: 'Treinamentos', tituloItem: 'NR-18 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+            { ordemItem: 430, grupoItem: 'Treinamentos', tituloItem: 'NR-33 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+            { ordemItem: 440, grupoItem: 'Treinamentos', tituloItem: 'NR-35 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+            { ordemItem: 450, grupoItem: 'Treinamentos', tituloItem: 'NR-11 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+            { ordemItem: 460, grupoItem: 'Treinamentos', tituloItem: 'NR-12 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+            { ordemItem: 470, grupoItem: 'Treinamentos', tituloItem: 'NR-20 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
           ],
         };
       }
@@ -1957,11 +1974,35 @@ export default async function v1Routes(server: FastifyInstance) {
         nomeModelo: 'RH — Checklist de documentos (Funcionário)',
         itens: [
           { ordemItem: 10, grupoItem: 'Identificação', tituloItem: 'Documento de identificação (RG/CPF)', obrigatorio: true, exigeValidade: false, validadeDias: null },
-          { ordemItem: 20, grupoItem: 'Identificação', tituloItem: 'CTPS / Registro (quando aplicável)', obrigatorio: true, exigeValidade: false, validadeDias: null },
-          { ordemItem: 30, grupoItem: 'Identificação', tituloItem: 'Comprovante de residência', obrigatorio: false, exigeValidade: false, validadeDias: null },
-          { ordemItem: 40, grupoItem: 'Saúde', tituloItem: 'ASO Admissional (Apto) vigente', obrigatorio: true, exigeValidade: true, validadeDias: 365 },
-          { ordemItem: 50, grupoItem: 'Treinamentos', tituloItem: 'NR-10 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
-          { ordemItem: 60, grupoItem: 'Treinamentos', tituloItem: 'NR-35 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+          { ordemItem: 20, grupoItem: 'Identificação', tituloItem: 'CTPS / Registro (eSocial)', obrigatorio: true, exigeValidade: false, validadeDias: null },
+          { ordemItem: 30, grupoItem: 'Identificação', tituloItem: 'PIS/NIS', obrigatorio: true, exigeValidade: false, validadeDias: null },
+          { ordemItem: 40, grupoItem: 'Identificação', tituloItem: 'Comprovante de residência', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 50, grupoItem: 'Identificação', tituloItem: 'Certidão de nascimento/casamento (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 60, grupoItem: 'Identificação', tituloItem: 'Certificado de reservista (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 70, grupoItem: 'Identificação', tituloItem: 'Título de eleitor (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 80, grupoItem: 'Identificação', tituloItem: 'CNH (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 1825 },
+
+          { ordemItem: 110, grupoItem: 'Admissão', tituloItem: 'Ficha de registro do empregado / dados cadastrais', obrigatorio: true, exigeValidade: false, validadeDias: null },
+          { ordemItem: 120, grupoItem: 'Admissão', tituloItem: 'Dados bancários para pagamento', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 130, grupoItem: 'Admissão', tituloItem: 'Termo de ciência (políticas internas / LGPD) (quando exigido)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+
+          { ordemItem: 200, grupoItem: 'Saúde', tituloItem: 'ASO Admissional (Apto) vigente', obrigatorio: true, exigeValidade: true, validadeDias: 365 },
+          { ordemItem: 210, grupoItem: 'Saúde', tituloItem: 'ASO Periódico (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 365 },
+          { ordemItem: 220, grupoItem: 'Saúde', tituloItem: 'ASO Retorno ao trabalho (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 230, grupoItem: 'Saúde', tituloItem: 'ASO Mudança de risco (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 240, grupoItem: 'Saúde', tituloItem: 'ASO Demissional (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+
+          { ordemItem: 300, grupoItem: 'Segurança', tituloItem: 'Integração de segurança / regras de obra (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 310, grupoItem: 'Segurança', tituloItem: 'Ficha de EPI assinada (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+
+          { ordemItem: 400, grupoItem: 'Treinamentos', tituloItem: 'NR-06 (EPI) (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 410, grupoItem: 'Treinamentos', tituloItem: 'NR-10 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+          { ordemItem: 420, grupoItem: 'Treinamentos', tituloItem: 'NR-18 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+          { ordemItem: 430, grupoItem: 'Treinamentos', tituloItem: 'NR-33 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+          { ordemItem: 440, grupoItem: 'Treinamentos', tituloItem: 'NR-35 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+          { ordemItem: 450, grupoItem: 'Treinamentos', tituloItem: 'NR-11 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+          { ordemItem: 460, grupoItem: 'Treinamentos', tituloItem: 'NR-12 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+          { ordemItem: 470, grupoItem: 'Treinamentos', tituloItem: 'NR-20 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
         ],
       };
     };
@@ -1982,13 +2023,27 @@ export default async function v1Routes(server: FastifyInstance) {
           select: { id: true, codigo: true, nomeModelo: true, tipoVinculo: true },
         }));
 
-      const itensCount = await prismaAny.rhChecklistItemModelo.count({ where: { tenantId: ctx.tenantId, modeloId: modelo.id } });
-      if (!itensCount) {
+      if (String(modelo.nomeModelo || '') !== preset.nomeModelo || String(modelo.tipoVinculo || '') !== tipoVinculo) {
+        await prismaAny.rhChecklistModelo.updateMany({
+          where: { tenantId: ctx.tenantId, id: modelo.id },
+          data: { nomeModelo: preset.nomeModelo, tipoVinculo },
+        });
+      }
+
+      const existentes = await prismaAny.rhChecklistItemModelo.findMany({
+        where: { tenantId: ctx.tenantId, modeloId: modelo.id },
+        select: { ordemItem: true },
+        take: 2000,
+      });
+      const ordens = new Set<number>((existentes as any[]).map((e) => Number(e.ordemItem)));
+      const faltantes = preset.itens.filter((i: any) => !ordens.has(Number(i.ordemItem)));
+
+      if (faltantes.length > 0) {
         await prismaAny.rhChecklistItemModelo.createMany({
-          data: preset.itens.map((i: any) => ({
+          data: faltantes.map((i: any) => ({
             tenantId: ctx.tenantId,
             modeloId: modelo.id,
-            ordemItem: i.ordemItem,
+            ordemItem: Number(i.ordemItem),
             grupoItem: i.grupoItem ?? null,
             codigoItem: null,
             tituloItem: i.tituloItem,
@@ -1997,6 +2052,7 @@ export default async function v1Routes(server: FastifyInstance) {
             exigeValidade: !!i.exigeValidade,
             validadeDias: i.validadeDias == null ? null : Number(i.validadeDias),
           })),
+          skipDuplicates: true,
         });
       }
 
