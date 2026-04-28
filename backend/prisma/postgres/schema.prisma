@@ -69,6 +69,7 @@ model Tenant {
   pessoas   Pessoa[]
   pessoasVinculos PessoaVinculo[]
   rhChecklistModelos RhChecklistModelo[]
+  rhChecklistItensModelo RhChecklistItemModelo[]
   rhChecklistExecucoes RhChecklistExecucao[]
   rhChecklistExecucaoItens RhChecklistExecucaoItem[]
   organizacaoSetores OrganizacaoSetor[]
@@ -990,6 +991,7 @@ model PessoaVinculo {
   tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   pessoa              Pessoa   @relation(fields: [pessoaId], references: [id], onDelete: Cascade)
   empresaContraparte   EngenhariaContraparte? @relation(fields: [empresaContraparteId], references: [id], onDelete: SetNull)
+  rhChecklistExecucoes RhChecklistExecucao[]
 
   @@unique([tenantId, matricula])
   @@index([tenantId])
@@ -3320,6 +3322,7 @@ model EngenhariaContraparte {
   avaliacoes          EngenhariaContraparteAvaliacao[]
   ocorrencias         EngenhariaContraparteOcorrencia[]
   documentos          EngenhariaContraparteDocumento[]
+  pessoasVinculos     PessoaVinculo[]
 
   @@index([tenantId])
   @@index([tenantId, tipo])
