@@ -68,6 +68,9 @@ model Tenant {
   funcionarios Funcionario[]
   pessoas   Pessoa[]
   pessoasVinculos PessoaVinculo[]
+  rhChecklistModelos RhChecklistModelo[]
+  rhChecklistExecucoes RhChecklistExecucao[]
+  rhChecklistExecucaoItens RhChecklistExecucaoItem[]
   organizacaoSetores OrganizacaoSetor[]
   organizacaoCargos OrganizacaoCargo[]
   organogramaPosicoes OrganogramaPosicao[]
@@ -993,6 +996,92 @@ model PessoaVinculo {
   @@index([tenantId, pessoaId])
   @@index([tenantId, tipoVinculo])
   @@index([tenantId, tipoVinculo, dataFim])
+}
+
+model RhChecklistModelo {
+  id          Int      @id @default(autoincrement())
+  tenantId     Int
+  codigo      String
+  nomeModelo  String
+  tipoVinculo String
+  ativo       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  itens       RhChecklistItemModelo[]
+  execucoes   RhChecklistExecucao[]
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId])
+  @@index([tenantId, tipoVinculo])
+}
+
+model RhChecklistItemModelo {
+  id           Int      @id @default(autoincrement())
+  tenantId      Int
+  modeloId     Int
+  ordemItem    Int
+  grupoItem    String?
+  codigoItem   String?
+  tituloItem   String
+  descricaoItem String?
+  obrigatorio  Boolean  @default(true)
+  exigeValidade Boolean @default(false)
+  validadeDias Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  modelo       RhChecklistModelo @relation(fields: [modeloId], references: [id], onDelete: Cascade)
+  execucaoItens RhChecklistExecucaoItem[]
+
+  @@unique([tenantId, modeloId, ordemItem])
+  @@index([tenantId])
+  @@index([tenantId, modeloId])
+}
+
+model RhChecklistExecucao {
+  id          Int      @id @default(autoincrement())
+  tenantId     Int
+  modeloId    Int
+  vinculoId   Int
+  status      String   @default("ATIVA")
+  iniciadoEm  DateTime @default(now())
+  finalizadoEm DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  modelo      RhChecklistModelo @relation(fields: [modeloId], references: [id], onDelete: Cascade)
+  vinculo     PessoaVinculo @relation(fields: [vinculoId], references: [id], onDelete: Cascade)
+  itens       RhChecklistExecucaoItem[]
+
+  @@unique([tenantId, modeloId, vinculoId])
+  @@index([tenantId])
+  @@index([tenantId, vinculoId])
+}
+
+model RhChecklistExecucaoItem {
+  id           Int      @id @default(autoincrement())
+  tenantId      Int
+  execucaoId   Int
+  itemModeloId Int
+  status       String   @default("PENDENTE")
+  entregueEm   DateTime?
+  validadeAte  DateTime?
+  observacao   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  execucao     RhChecklistExecucao @relation(fields: [execucaoId], references: [id], onDelete: Cascade)
+  itemModelo   RhChecklistItemModelo @relation(fields: [itemModeloId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, execucaoId, itemModeloId])
+  @@index([tenantId])
+  @@index([tenantId, execucaoId])
+  @@index([tenantId, itemModeloId])
 }
 
 model Funcionario {

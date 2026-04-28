@@ -3,13 +3,39 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
-import { DocumentosApi } from '@/lib/modules/documentos/api';
-import type { DocumentoRegistroDTO } from '@/lib/modules/documentos/types';
-import { FuncionariosApi } from '@/lib/modules/funcionarios/api';
-import { TerceirizadosApi } from '@/lib/modules/terceirizados/api';
-import { ArrowLeft, CircleCheck, ExternalLink, FileText, RefreshCcw, TriangleAlert, X } from 'lucide-react';
+import { ArrowLeft, CircleCheck, RefreshCcw, TriangleAlert } from 'lucide-react';
 
-type PreviewState = { open: boolean; url: string | null; mime: string | null; name: string | null; versaoId: number | null; tipo: 'ORIGINAL' | 'PDF_FINAL' };
+type ChecklistStatus = 'OK' | 'PENDENTE' | 'PENDENTE_VALIDADE' | 'VENCIDO' | 'A_VENCER';
+
+type ChecklistItemDTO = {
+  idItem: number;
+  ordemItem: number;
+  grupoItem: string | null;
+  tituloItem: string;
+  descricaoItem: string | null;
+  obrigatorio: boolean;
+  exigeValidade: boolean;
+  validadeDias: number | null;
+  status: ChecklistStatus;
+  entregueEm: string | null;
+  validadeAte: string | null;
+  observacao: string | null;
+};
+
+type ChecklistResponseDTO = {
+  pessoa: { id: number; nomeCompleto: string; cpf: string };
+  vinculo: {
+    id: number;
+    tipoVinculo: 'FUNCIONARIO' | 'TERCEIRIZADO';
+    matricula: string | null;
+    funcao: string | null;
+    empresa: { id: number; nome: string } | null;
+  };
+  modelo: { id: number; codigo: string; nomeModelo: string; tipoVinculo: string };
+  execucao: { id: number; status: string; iniciadoEm: string; finalizadoEm: string | null };
+  itens: ChecklistItemDTO[];
+  resumo: { total: number; ok: number; pendente: number; vencido: number; aVencer: number; obrigatoriosPendentes: number };
+};
 
 function safeInternalPath(v: string | null) {
   const s = String(v || '').trim();
@@ -66,23 +92,23 @@ function fmtDateTime(v?: string | null) {
   return d.toLocaleString('pt-BR');
 }
 
-function groupByCategoria(docs: DocumentoRegistroDTO[]) {
-  const map = new Map<string, DocumentoRegistroDTO[]>();
-  for (const d of docs) {
-    const cat = String(d.categoriaDocumento || '').trim() || 'SEM_CATEGORIA';
-    if (!map.has(cat)) map.set(cat, []);
-    map.get(cat)!.push(d);
+function groupByGrupo(itens: ChecklistItemDTO[]) {
+  const map = new Map<string, ChecklistItemDTO[]>();
+  for (const i of itens) {
+    const g = String(i.grupoItem || '').trim() || 'GERAL';
+    if (!map.has(g)) map.set(g, []);
+    map.get(g)!.push(i);
   }
-  const cats = Array.from(map.keys()).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  return { map, cats };
+  const grupos = Array.from(map.keys()).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  return { map, grupos };
 }
 
-function statusLabel(d: DocumentoRegistroDTO) {
-  const s = String(d.statusDocumento || '').toUpperCase();
-  if (s === 'ASSINADO' || s === 'ATIVO') return { label: 'Completo', kind: 'ok' as const };
-  if (s === 'RASCUNHO' || s === 'EM_ASSINATURA') return { label: 'Pendente', kind: 'pendente' as const };
-  if (s === 'INVALIDADO' || s === 'CANCELADO') return { label: 'Irregular', kind: 'irregular' as const };
-  return { label: s || '—', kind: 'neutro' as const };
+function statusUi(s: ChecklistStatus) {
+  if (s === 'OK') return { label: 'OK', kind: 'ok' as const };
+  if (s === 'VENCIDO') return { label: 'Vencido', kind: 'irregular' as const };
+  if (s === 'A_VENCER') return { label: 'A vencer', kind: 'alerta' as const };
+  if (s === 'PENDENTE_VALIDADE') return { label: 'Validar validade', kind: 'alerta' as const };
+  return { label: 'Pendente', kind: 'pendente' as const };
 }
 
 export default function ChecklistRhClient() {
@@ -92,6 +118,8 @@ export default function ChecklistRhClient() {
 
   const tipoPath = String(params?.tipo || '').toLowerCase();
   const idNum = Number(params?.id || 0);
+  const isTerceirizado = tipoPath.includes('terceir');
+  const tipoVinculo = isTerceirizado ? 'TERCEIRIZADO' : 'FUNCIONARIO';
 
   const returnTo = useMemo(() => safeInternalPath(sp.get('returnTo') || null), [sp]);
   const sessionKey = useMemo(() => `rh_checklist_returnTo:${tipoPath || 'tipo'}:${String(idNum || 0)}`, [tipoPath, idNum]);
@@ -100,81 +128,82 @@ export default function ChecklistRhClient() {
 
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
-  const [nomePessoa, setNomePessoa] = useState<string>('');
-  const [docs, setDocs] = useState<DocumentoRegistroDTO[]>([]);
-  const [categoriaFiltro, setCategoriaFiltro] = useState<string>('TODAS');
-  const [situacaoFiltro, setSituacaoFiltro] = useState<'TODAS' | 'COMPLETO' | 'PENDENTE' | 'IRREGULAR'>('TODAS');
-  const [buscaDoc, setBuscaDoc] = useState<string>('');
+  const [pessoa, setPessoa] = useState<ChecklistResponseDTO['pessoa'] | null>(null);
+  const [vinculo, setVinculo] = useState<ChecklistResponseDTO['vinculo'] | null>(null);
+  const [modelo, setModelo] = useState<ChecklistResponseDTO['modelo'] | null>(null);
+  const [itens, setItens] = useState<ChecklistItemDTO[]>([]);
+  const [resumo, setResumo] = useState<ChecklistResponseDTO['resumo'] | null>(null);
 
-  const [preview, setPreview] = useState<PreviewState>({ open: false, url: null, mime: null, name: null, versaoId: null, tipo: 'ORIGINAL' });
+  const [grupoFiltro, setGrupoFiltro] = useState<string>('TODOS');
+  const [situacaoFiltro, setSituacaoFiltro] = useState<'TODAS' | 'OK' | 'PENDENTE' | 'A_VENCER' | 'VENCIDO'>('TODAS');
+  const [busca, setBusca] = useState<string>('');
+  const [validadeDraft, setValidadeDraft] = useState<Record<number, string>>({});
+  const [observacaoDraft, setObservacaoDraft] = useState<Record<number, string>>({});
 
   const carregar = useCallback(async () => {
     if (!Number.isFinite(idNum) || idNum <= 0) return;
     try {
       setLoading(true);
       setErro(null);
+      if (!tipoVinculo) throw new Error('Tipo inválido');
 
-      const isFuncionario = tipoPath.includes('funcionario');
-      const isTerceirizado = tipoPath.includes('terceir');
-      if (!isFuncionario && !isTerceirizado) throw new Error('Tipo inválido');
+      const r = await api.get(`/api/v1/rh/pessoas/${idNum}/checklist`, { params: { tipoVinculo } });
+      const data = (r?.data?.data || r?.data) as ChecklistResponseDTO;
+      if (!data?.pessoa?.id) throw new Error('Resposta inválida');
 
-      const entidadeTipos = isFuncionario ? ['FUNCIONARIO'] : ['TERCEIRIZADO_TRABALHADOR', 'TERCEIRIZADO'];
+      setPessoa(data.pessoa);
+      setVinculo(data.vinculo);
+      setModelo(data.modelo);
+      setItens(Array.isArray(data.itens) ? data.itens : []);
+      setResumo(data.resumo || null);
 
-      const pessoa = await (isFuncionario ? FuncionariosApi.obter(idNum) : TerceirizadosApi.obter(idNum));
-
-      let documentos: DocumentoRegistroDTO[] = [];
-
-      for (const entidadeTipo of entidadeTipos) {
-        const list = await DocumentosApi.listar({ entidadeTipo, entidadeId: idNum, categoriaPrefix: 'RH_', limit: 200 }).catch(() => []);
-        if (Array.isArray(list) && list.length > 0) {
-          documentos = list;
-          break;
-        }
+      const vd: Record<number, string> = {};
+      const od: Record<number, string> = {};
+      for (const item of Array.isArray(data.itens) ? data.itens : []) {
+        if (item.validadeAte) vd[item.idItem] = String(item.validadeAte).slice(0, 10);
+        if (item.observacao) od[item.idItem] = String(item.observacao);
       }
-
-      if (documentos.length === 0) {
-        for (const entidadeTipo of entidadeTipos) {
-          const list = await DocumentosApi.listar({ entidadeTipo, entidadeId: idNum, limit: 200 }).catch(() => []);
-          if (Array.isArray(list) && list.length > 0) {
-            documentos = list;
-            break;
-          }
-        }
-      }
-
-      const nome = isFuncionario ? String((pessoa as any)?.nomeCompleto || '') : String((pessoa as any)?.nomeCompleto || '');
-      setNomePessoa(nome);
-      setDocs(documentos);
+      setValidadeDraft(vd);
+      setObservacaoDraft(od);
     } catch (e: any) {
-      setErro(e?.message || 'Erro ao carregar checklist');
-      setDocs([]);
-      setNomePessoa('');
+      setErro(e?.response?.data?.message || e?.message || 'Erro ao carregar checklist');
+      setPessoa(null);
+      setVinculo(null);
+      setModelo(null);
+      setItens([]);
+      setResumo(null);
     } finally {
       setLoading(false);
     }
-  }, [idNum, tipoPath]);
+  }, [idNum, tipoVinculo]);
 
-  async function visualizar(versaoId: number, tipo: 'ORIGINAL' | 'PDF_FINAL', nome: string) {
-    try {
-      setErro(null);
-      const res = await api.get(`/api/v1/documentos/versoes/${versaoId}/download?tipo=${tipo}`, { responseType: 'blob' as any });
-      const blob = res.data as Blob;
-      const url = URL.createObjectURL(blob);
-      setPreview((prev) => {
-        if (prev.url) URL.revokeObjectURL(prev.url);
-        return { open: true, url, mime: blob.type || 'application/octet-stream', name: nome, versaoId, tipo };
-      });
-    } catch (e: any) {
-      setErro(e?.response?.data?.message || e?.message || 'Erro ao abrir documento');
-    }
-  }
+  const atualizarItem = useCallback(
+    async (item: ChecklistItemDTO, next: 'ENTREGUE' | 'PENDENTE') => {
+      try {
+        setErro(null);
+        if (loading) return;
 
-  function fecharPreview() {
-    setPreview((prev) => {
-      if (prev.url) URL.revokeObjectURL(prev.url);
-      return { open: false, url: null, mime: null, name: null, versaoId: null, tipo: 'ORIGINAL' };
-    });
-  }
+        const validadeAte = validadeDraft[item.idItem] ? String(validadeDraft[item.idItem]).slice(0, 10) : null;
+        const observacao = observacaoDraft[item.idItem] != null ? String(observacaoDraft[item.idItem]) : null;
+
+        if (next === 'ENTREGUE' && item.exigeValidade && (!validadeAte || !/^\d{4}-\d{2}-\d{2}$/.test(validadeAte))) {
+          setErro('Preencha a validade (data) antes de marcar como entregue.');
+          return;
+        }
+
+        await api.patch(`/api/v1/rh/pessoas/${idNum}/checklist/itens/${item.idItem}`, {
+          tipoVinculo,
+          status: next,
+          validadeAte,
+          observacao,
+        });
+        await carregar();
+      } catch (e: any) {
+        setErro(e?.response?.data?.message || e?.message || 'Erro ao atualizar item');
+      }
+    },
+    [carregar, idNum, loading, observacaoDraft, tipoVinculo, validadeDraft]
+  );
 
   useEffect(() => {
     carregar();
@@ -229,65 +258,50 @@ export default function ChecklistRhClient() {
     };
   }, [returnTo]);
 
-  useEffect(() => {
-    return () => {
-      try {
-        if (preview.url) URL.revokeObjectURL(preview.url);
-      } catch {}
-    };
-  }, [preview.url]);
+  const agrupado = useMemo(() => groupByGrupo(itens), [itens]);
+  const grupos = useMemo(() => ['TODOS', ...agrupado.grupos], [agrupado.grupos]);
 
-  const agrupado = useMemo(() => groupByCategoria(docs), [docs]);
-
-  const categorias = useMemo(() => ['TODAS', ...agrupado.cats], [agrupado.cats]);
-
-  const docsFiltrados = useMemo(() => {
-    let out = docs;
-    if (categoriaFiltro !== 'TODAS') out = out.filter((d) => String(d.categoriaDocumento || '').trim() === categoriaFiltro);
+  const itensFiltrados = useMemo(() => {
+    let out = itens;
+    if (grupoFiltro !== 'TODOS') out = out.filter((i) => String(i.grupoItem || '').trim() === grupoFiltro);
     if (situacaoFiltro !== 'TODAS') {
-      out = out.filter((d) => {
-        const st = statusLabel(d).kind;
-        if (situacaoFiltro === 'COMPLETO') return st === 'ok';
-        if (situacaoFiltro === 'PENDENTE') return st === 'pendente';
-        if (situacaoFiltro === 'IRREGULAR') return st === 'irregular';
-        return true;
-      });
+      out = out.filter((i) => i.status === situacaoFiltro);
     }
-    const q = String(buscaDoc || '').trim().toLowerCase();
+    const q = String(busca || '').trim().toLowerCase();
     if (q) {
-      out = out.filter((d) => {
-        const t = String(d.tituloDocumento || '').toLowerCase();
-        const desc = String(d.descricaoDocumento || '').toLowerCase();
-        const cat = String(d.categoriaDocumento || '').toLowerCase();
-        return t.includes(q) || desc.includes(q) || cat.includes(q) || String(d.id).includes(q);
+      out = out.filter((i) => {
+        const t = String(i.tituloItem || '').toLowerCase();
+        const d = String(i.descricaoItem || '').toLowerCase();
+        const g = String(i.grupoItem || '').toLowerCase();
+        return t.includes(q) || d.includes(q) || g.includes(q) || String(i.idItem).includes(q);
       });
     }
     return out;
-  }, [docs, categoriaFiltro, situacaoFiltro, buscaDoc]);
+  }, [busca, grupoFiltro, itens, situacaoFiltro]);
 
-  const agrupadoFiltrado = useMemo(() => groupByCategoria(docsFiltrados), [docsFiltrados]);
+  const agrupadoFiltrado = useMemo(() => groupByGrupo(itensFiltrados), [itensFiltrados]);
 
-  const resumo = useMemo(() => {
-    const base = docs;
-    const total = base.length;
-    const c = base.filter((d) => statusLabel(d).kind === 'ok').length;
-    const p = base.filter((d) => statusLabel(d).kind === 'pendente').length;
-    const i = base.filter((d) => statusLabel(d).kind === 'irregular').length;
-    return { total, completos: c, pendentes: p, irregulares: i, vencidos: 0 };
-  }, [docs]);
-
-  const categoriaSelecionada = categoriaFiltro === 'TODAS' ? agrupadoFiltrado.cats[0] || 'TODAS' : categoriaFiltro;
-  const listaCategorias = useMemo(() => {
-    return agrupado.cats.map((cat) => ({ cat, total: agrupado.map.get(cat)?.length || 0 }));
-  }, [agrupado.cats, agrupado.map]);
+  const grupoSelecionado = grupoFiltro === 'TODOS' ? agrupadoFiltrado.grupos[0] || 'TODOS' : grupoFiltro;
+  const listaGrupos = useMemo(() => {
+    return agrupado.grupos.map((g) => ({ g, total: agrupado.map.get(g)?.length || 0 }));
+  }, [agrupado.grupos, agrupado.map]);
 
   return (
     <div className="p-6 space-y-6 text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="text-xs text-slate-500">{breadcrumb}</div>
-          <h1 className="text-2xl font-semibold text-slate-900">Checklist por categoria (RH)</h1>
-          <div className="mt-1 text-sm text-slate-600">{nomePessoa ? nomePessoa : `Pessoa #${idNum}`}</div>
+          <h1 className="text-2xl font-semibold text-slate-900">Checklist (RH) — {isTerceirizado ? 'Terceirizado' : 'Funcionário'}</h1>
+          <div className="mt-1 text-sm text-slate-600">
+            {pessoa?.nomeCompleto ? pessoa.nomeCompleto : `Pessoa #${idNum}`}
+            {pessoa?.cpf ? ` — CPF: ${pessoa.cpf}` : ''}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {vinculo?.matricula ? `Matrícula: ${vinculo.matricula}` : ''}
+            {vinculo?.funcao ? `${vinculo?.matricula ? ' — ' : ''}Função: ${vinculo.funcao}` : ''}
+            {vinculo?.empresa?.nome ? ` — Empresa: ${vinculo.empresa.nome}` : ''}
+            {modelo?.nomeModelo ? ` — Modelo: ${modelo.nomeModelo}` : ''}
+          </div>
         </div>
         <div className="flex gap-2 flex-wrap">
           <button className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2" type="button" onClick={() => router.push(backHref)}>
@@ -310,40 +324,40 @@ export default function ChecklistRhClient() {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-xs text-slate-500">Total de documentos</div>
-          <div className="mt-1 text-2xl font-semibold text-slate-900">{loading ? '—' : resumo.total}</div>
+          <div className="text-xs text-slate-500">Total de itens</div>
+          <div className="mt-1 text-2xl font-semibold text-slate-900">{loading ? '—' : resumo?.total ?? 0}</div>
         </div>
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <div className="text-xs text-emerald-800">Documentos completos</div>
+            <div className="text-xs text-emerald-800">Itens OK</div>
             <CircleCheck className="text-emerald-700" size={18} />
           </div>
-          <div className="mt-1 text-2xl font-semibold text-emerald-900">{loading ? '—' : resumo.completos}</div>
+          <div className="mt-1 text-2xl font-semibold text-emerald-900">{loading ? '—' : resumo?.ok ?? 0}</div>
         </div>
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <div className="text-xs text-amber-800">Documentos pendentes</div>
+            <div className="text-xs text-amber-800">Pendentes</div>
             <TriangleAlert className="text-amber-700" size={18} />
           </div>
-          <div className="mt-1 text-2xl font-semibold text-amber-900">{loading ? '—' : resumo.pendentes}</div>
+          <div className="mt-1 text-2xl font-semibold text-amber-900">{loading ? '—' : resumo?.pendente ?? 0}</div>
         </div>
         <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <div className="text-xs text-rose-800">Documentos irregulares</div>
+            <div className="text-xs text-rose-800">Vencidos</div>
             <TriangleAlert className="text-rose-700" size={18} />
           </div>
-          <div className="mt-1 text-2xl font-semibold text-rose-900">{loading ? '—' : resumo.irregulares}</div>
+          <div className="mt-1 text-2xl font-semibold text-rose-900">{loading ? '—' : resumo?.vencido ?? 0}</div>
         </div>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-3">
-            <div className="text-xs text-slate-600 mb-1">Categoria</div>
-            <select className="input" value={categoriaFiltro} onChange={(e) => setCategoriaFiltro(e.target.value)}>
-              {categorias.map((c) => (
-                <option key={c} value={c}>
-                  {c === 'TODAS' ? 'Todas' : c}
+            <div className="text-xs text-slate-600 mb-1">Grupo</div>
+            <select className="input" value={grupoFiltro} onChange={(e) => setGrupoFiltro(e.target.value)}>
+              {grupos.map((g) => (
+                <option key={g} value={g}>
+                  {g === 'TODOS' ? 'Todos' : g}
                 </option>
               ))}
             </select>
@@ -352,23 +366,24 @@ export default function ChecklistRhClient() {
             <div className="text-xs text-slate-600 mb-1">Situação</div>
             <select className="input" value={situacaoFiltro} onChange={(e) => setSituacaoFiltro(e.target.value as any)}>
               <option value="TODAS">Todas</option>
-              <option value="COMPLETO">Completos</option>
+              <option value="OK">OK</option>
               <option value="PENDENTE">Pendentes</option>
-              <option value="IRREGULAR">Irregulares</option>
+              <option value="A_VENCER">A vencer</option>
+              <option value="VENCIDO">Vencidos</option>
             </select>
           </div>
           <div className="md:col-span-4">
             <div className="text-xs text-slate-600 mb-1">Buscar</div>
-            <input className="input" value={buscaDoc} onChange={(e) => setBuscaDoc(e.target.value)} placeholder="Buscar por título, categoria ou id..." />
+            <input className="input" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por item, grupo ou id..." />
           </div>
           <div className="md:col-span-2 flex items-end justify-end">
             <button
               type="button"
               className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
               onClick={() => {
-                setCategoriaFiltro('TODAS');
+                setGrupoFiltro('TODOS');
                 setSituacaoFiltro('TODAS');
-                setBuscaDoc('');
+                setBusca('');
               }}
             >
               Limpar filtros
@@ -381,28 +396,28 @@ export default function ChecklistRhClient() {
         <aside className="lg:col-span-3">
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="border-b bg-slate-50 px-4 py-3">
-              <div className="font-semibold text-slate-900">Categorias</div>
-              <div className="text-xs text-slate-500">{listaCategorias.length} categoria(s)</div>
+              <div className="font-semibold text-slate-900">Grupos</div>
+              <div className="text-xs text-slate-500">{listaGrupos.length} grupo(s)</div>
             </div>
             <div className="p-2">
-              {listaCategorias.length === 0 ? (
-                <div className="px-3 py-4 text-sm text-slate-600">Nenhuma categoria encontrada.</div>
+              {listaGrupos.length === 0 ? (
+                <div className="px-3 py-4 text-sm text-slate-600">Nenhum grupo encontrado.</div>
               ) : (
                 <div className="space-y-1">
-                  {listaCategorias.map((c) => {
-                    const selected = categoriaFiltro === c.cat;
+                  {listaGrupos.map((x) => {
+                    const selected = grupoFiltro === x.g;
                     return (
                       <button
-                        key={c.cat}
+                        key={x.g}
                         type="button"
                         className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
                           selected ? 'bg-indigo-50 text-indigo-800 border border-indigo-200' : 'hover:bg-slate-50 text-slate-800'
                         }`}
-                        onClick={() => setCategoriaFiltro(c.cat)}
+                        onClick={() => setGrupoFiltro(x.g)}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <div className="font-medium">{c.cat}</div>
-                          <div className="text-xs text-slate-500">{c.total}</div>
+                          <div className="font-medium">{x.g}</div>
+                          <div className="text-xs text-slate-500">{x.total}</div>
                         </div>
                       </button>
                     );
@@ -410,88 +425,112 @@ export default function ChecklistRhClient() {
                 </div>
               )}
             </div>
-            <div className="border-t bg-slate-50 p-3 text-xs text-slate-600">
-              Documentos marcados como RH normalmente usam categorias com prefixo RH_.
-            </div>
+            {resumo?.obrigatoriosPendentes != null ? (
+              <div className="border-t bg-slate-50 p-3 text-xs text-slate-600">Obrigatórios com pendência: {resumo.obrigatoriosPendentes}</div>
+            ) : null}
           </div>
         </aside>
 
         <section className="lg:col-span-9 space-y-4">
-          {!loading && docsFiltrados.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Nenhum documento encontrado com os filtros atuais.</div>
+          {!loading && itensFiltrados.length === 0 ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Nenhum item encontrado com os filtros atuais.</div>
           ) : null}
 
           {Array.from(agrupadoFiltrado.map.entries())
-            .filter(([cat]) => categoriaFiltro === 'TODAS' || cat === categoriaSelecionada)
-            .map(([cat, list]) => {
-              const ordered = [...list].sort((a, b) => String(b.atualizadoEm || '').localeCompare(String(a.atualizadoEm || '')));
+            .filter(([g]) => grupoFiltro === 'TODOS' || g === grupoSelecionado)
+            .map(([g, list]) => {
+              const ordered = [...list].sort((a, b) => a.ordemItem - b.ordemItem);
               return (
-                <div key={cat} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div key={g} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                   <div className="flex items-center justify-between gap-3 border-b bg-slate-50 px-4 py-3">
-                    <div className="font-semibold text-slate-900">Documentos da categoria: {cat}</div>
+                    <div className="font-semibold text-slate-900">Grupo: {g}</div>
                     <div className="text-sm text-slate-600">{ordered.length} item(ns)</div>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-sm">
                       <thead className="text-left text-slate-700">
                         <tr>
-                          <th className="px-4 py-2">Documento</th>
+                          <th className="px-4 py-2">Item</th>
                           <th className="px-4 py-2">Obrigatório</th>
                           <th className="px-4 py-2">Validade</th>
-                          <th className="px-4 py-2">Verificação</th>
                           <th className="px-4 py-2">Status</th>
+                          <th className="px-4 py-2">Entregue em</th>
                           <th className="px-4 py-2 text-right">Ações</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {ordered.map((d) => {
-                          const s = statusLabel(d);
+                        {ordered.map((item) => {
+                          const s = statusUi(item.status);
                           const pill =
                             s.kind === 'ok'
                               ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                               : s.kind === 'pendente'
                                 ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                : s.kind === 'irregular'
+                                : s.kind === 'alerta'
+                                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                  : s.kind === 'irregular'
                                   ? 'bg-rose-50 text-rose-800 border-rose-200'
                                   : 'bg-slate-50 text-slate-700 border-slate-200';
                           return (
-                            <tr key={d.id} className="border-t">
+                            <tr key={item.idItem} className="border-t">
                               <td className="px-4 py-2">
-                                <div className="font-medium text-slate-900">{d.tituloDocumento || `Documento #${d.id}`}</div>
-                                <div className="text-xs text-slate-500">{d.descricaoDocumento || ''}</div>
+                                <div className="font-medium text-slate-900">{item.tituloItem || `Item #${item.idItem}`}</div>
+                                <div className="text-xs text-slate-500">{item.descricaoItem || ''}</div>
+                                {item.exigeValidade ? (
+                                  <div className="mt-2 flex items-center gap-2">
+                                    <div className="text-xs text-slate-500">Validade até</div>
+                                    <input
+                                      className="input h-9"
+                                      type="date"
+                                      value={validadeDraft[item.idItem] || ''}
+                                      onChange={(e) => setValidadeDraft((p) => ({ ...p, [item.idItem]: e.target.value }))}
+                                    />
+                                  </div>
+                                ) : null}
+                                <div className="mt-2">
+                                  <input
+                                    className="input h-9"
+                                    value={observacaoDraft[item.idItem] || ''}
+                                    onChange={(e) => setObservacaoDraft((p) => ({ ...p, [item.idItem]: e.target.value }))}
+                                    placeholder="Observação (opcional)..."
+                                  />
+                                </div>
                               </td>
                               <td className="px-4 py-2">
-                                <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs text-emerald-800">Sim</span>
+                                {item.obrigatorio ? (
+                                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs text-emerald-800">Sim</span>
+                                ) : (
+                                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700">Não</span>
+                                )}
                               </td>
-                              <td className="px-4 py-2 text-slate-600">Não se aplica</td>
-                              <td className="px-4 py-2 text-slate-600">—</td>
+                              <td className="px-4 py-2 text-slate-600">
+                                {item.exigeValidade ? (item.validadeAte ? String(item.validadeAte).slice(0, 10) : '-') : 'Não se aplica'}
+                              </td>
                               <td className="px-4 py-2">
                                 <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${pill}`}>{s.label}</span>
                               </td>
+                              <td className="px-4 py-2 text-slate-600">{fmtDateTime(item.entregueEm)}</td>
                               <td className="px-4 py-2 text-right">
                                 <div className="inline-flex items-center gap-2">
-                                  {d.idVersaoAtual ? (
+                                  {item.status === 'OK' || item.status === 'A_VENCER' ? (
                                     <button
                                       type="button"
-                                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
-                                      onClick={() => visualizar(d.idVersaoAtual as number, 'ORIGINAL', d.tituloDocumento || `Documento #${d.id}`)}
+                                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                      onClick={() => atualizarItem(item, 'PENDENTE')}
+                                      disabled={loading}
                                     >
-                                      <FileText size={16} />
-                                      Visualizar
+                                      Marcar pendente
                                     </button>
                                   ) : (
-                                    <button type="button" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-400 inline-flex items-center gap-2" disabled>
-                                      <FileText size={16} />
-                                      Sem versão
+                                    <button
+                                      type="button"
+                                      className="rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700"
+                                      onClick={() => atualizarItem(item, 'ENTREGUE')}
+                                      disabled={loading}
+                                    >
+                                      Marcar entregue
                                     </button>
                                   )}
-                                  <a
-                                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
-                                    href={`/dashboard/documentos/${d.id}`}
-                                  >
-                                    <ExternalLink size={16} />
-                                    Detalhes
-                                  </a>
                                 </div>
                               </td>
                             </tr>
@@ -505,58 +544,6 @@ export default function ChecklistRhClient() {
             })}
         </section>
       </div>
-
-      {preview.open ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-5xl rounded-xl bg-white shadow-xl">
-            <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
-              <div>
-                <div className="text-sm font-semibold text-slate-900">{preview.name || 'Visualizador'}</div>
-                <div className="text-xs text-slate-500">{preview.mime || ''}</div>
-              </div>
-              <div className="flex items-center gap-2">
-                {preview.versaoId ? (
-                  <>
-                    <button
-                      type="button"
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                      onClick={() => visualizar(preview.versaoId as number, 'ORIGINAL', preview.name || 'Documento')}
-                    >
-                      Original
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                      onClick={() => visualizar(preview.versaoId as number, 'PDF_FINAL', preview.name || 'Documento')}
-                    >
-                      PDF final
-                    </button>
-                  </>
-                ) : null}
-                <button type="button" className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 inline-flex items-center justify-center" onClick={fecharPreview}>
-                  <X size={16} />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-5">
-              {preview.url ? (
-                preview.mime?.includes('pdf') ? (
-                  <iframe className="w-full h-[70vh] rounded-lg bg-white" src={preview.url} />
-                ) : preview.mime?.startsWith('image/') ? (
-                  <div className="flex justify-center">
-                    <img className="max-h-[70vh] w-auto rounded-lg border border-slate-200 bg-white" src={preview.url} alt={preview.name || 'Documento'} />
-                  </div>
-                ) : (
-                  <a className="text-sm text-blue-700 underline" href={preview.url} target="_blank" rel="noreferrer">
-                    Abrir documento
-                  </a>
-                )
-              ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

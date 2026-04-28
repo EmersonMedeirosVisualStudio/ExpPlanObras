@@ -1902,6 +1902,308 @@ export default async function v1Routes(server: FastifyInstance) {
     return ok(reply, { id: created.pessoaId }, { message: 'Terceirizado cadastrado com sucesso.' });
   });
 
+  server.get('/rh/pessoas/:id/checklist', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const q = z
+      .object({
+        tipoVinculo: z.string().optional().nullable(),
+      })
+      .parse(request.query || {});
+
+    const tipoVinculoIn = String(q.tipoVinculo || '').trim().toUpperCase();
+    const tipoVinculo = tipoVinculoIn === 'TERCEIRIZADO' ? 'TERCEIRIZADO' : 'FUNCIONARIO';
+
+    const pessoa = await prisma.pessoa.findFirst({ where: { id, tenantId: ctx.tenantId }, select: { id: true, nomeCompleto: true, cpf: true } }).catch(() => null);
+    if (!pessoa) return fail(reply, 404, 'Pessoa não encontrada');
+
+    const vinculo = await prisma.pessoaVinculo
+      .findFirst({
+        where: { tenantId: ctx.tenantId, pessoaId: pessoa.id, tipoVinculo, dataFim: null },
+        select: {
+          id: true,
+          tipoVinculo: true,
+          sequencia: true,
+          matricula: true,
+          funcao: true,
+          dataInicio: true,
+          ativo: true,
+          empresaContraparte: { select: { id: true, nomeRazao: true } },
+        },
+      })
+      .catch(() => null);
+    if (!vinculo) return fail(reply, 404, 'Vínculo ativo não encontrado para este tipo');
+
+    const now = new Date();
+
+    const padroes = (tipo: 'FUNCIONARIO' | 'TERCEIRIZADO') => {
+      if (tipo === 'TERCEIRIZADO') {
+        return {
+          codigo: 'RH_TERCEIRIZADO_PADRAO',
+          nomeModelo: 'RH — Checklist de documentos (Terceirizado)',
+          itens: [
+            { ordemItem: 10, grupoItem: 'Identificação', tituloItem: 'Documento de identificação (RG/CPF)', obrigatorio: true, exigeValidade: false, validadeDias: null },
+            { ordemItem: 20, grupoItem: 'Saúde', tituloItem: 'ASO (Apto) vigente', obrigatorio: true, exigeValidade: true, validadeDias: 365 },
+            { ordemItem: 30, grupoItem: 'Treinamentos', tituloItem: 'NR-10 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+            { ordemItem: 40, grupoItem: 'Treinamentos', tituloItem: 'NR-35 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+            { ordemItem: 50, grupoItem: 'Contrato', tituloItem: 'Carta/declaração da empresa terceirizada (vínculo e função)', obrigatorio: true, exigeValidade: false, validadeDias: null },
+          ],
+        };
+      }
+      return {
+        codigo: 'RH_FUNCIONARIO_PADRAO',
+        nomeModelo: 'RH — Checklist de documentos (Funcionário)',
+        itens: [
+          { ordemItem: 10, grupoItem: 'Identificação', tituloItem: 'Documento de identificação (RG/CPF)', obrigatorio: true, exigeValidade: false, validadeDias: null },
+          { ordemItem: 20, grupoItem: 'Identificação', tituloItem: 'CTPS / Registro (quando aplicável)', obrigatorio: true, exigeValidade: false, validadeDias: null },
+          { ordemItem: 30, grupoItem: 'Identificação', tituloItem: 'Comprovante de residência', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 40, grupoItem: 'Saúde', tituloItem: 'ASO Admissional (Apto) vigente', obrigatorio: true, exigeValidade: true, validadeDias: 365 },
+          { ordemItem: 50, grupoItem: 'Treinamentos', tituloItem: 'NR-10 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+          { ordemItem: 60, grupoItem: 'Treinamentos', tituloItem: 'NR-35 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+        ],
+      };
+    };
+
+    const data = await prisma.$transaction(async (tx) => {
+      const prismaAny = tx as any;
+      const preset = padroes(tipoVinculo as any);
+
+      const modelo =
+        (await prismaAny.rhChecklistModelo
+          .findFirst({
+            where: { tenantId: ctx.tenantId, codigo: preset.codigo },
+            select: { id: true, codigo: true, nomeModelo: true, tipoVinculo: true },
+          })
+          .catch(() => null)) ||
+        (await prismaAny.rhChecklistModelo.create({
+          data: { tenantId: ctx.tenantId, codigo: preset.codigo, nomeModelo: preset.nomeModelo, tipoVinculo, ativo: true },
+          select: { id: true, codigo: true, nomeModelo: true, tipoVinculo: true },
+        }));
+
+      const itensCount = await prismaAny.rhChecklistItemModelo.count({ where: { tenantId: ctx.tenantId, modeloId: modelo.id } });
+      if (!itensCount) {
+        await prismaAny.rhChecklistItemModelo.createMany({
+          data: preset.itens.map((i: any) => ({
+            tenantId: ctx.tenantId,
+            modeloId: modelo.id,
+            ordemItem: i.ordemItem,
+            grupoItem: i.grupoItem ?? null,
+            codigoItem: null,
+            tituloItem: i.tituloItem,
+            descricaoItem: null,
+            obrigatorio: !!i.obrigatorio,
+            exigeValidade: !!i.exigeValidade,
+            validadeDias: i.validadeDias == null ? null : Number(i.validadeDias),
+          })),
+        });
+      }
+
+      const execucao =
+        (await prismaAny.rhChecklistExecucao
+          .findUnique({
+            where: { tenantId_modeloId_vinculoId: { tenantId: ctx.tenantId, modeloId: modelo.id, vinculoId: vinculo.id } },
+            select: { id: true, status: true, iniciadoEm: true, finalizadoEm: true },
+          })
+          .catch(() => null)) ||
+        (await prismaAny.rhChecklistExecucao.create({
+          data: { tenantId: ctx.tenantId, modeloId: modelo.id, vinculoId: vinculo.id, status: 'ATIVA' },
+          select: { id: true, status: true, iniciadoEm: true, finalizadoEm: true },
+        }));
+
+      const itensModelo = await prismaAny.rhChecklistItemModelo.findMany({
+        where: { tenantId: ctx.tenantId, modeloId: modelo.id },
+        select: {
+          id: true,
+          ordemItem: true,
+          grupoItem: true,
+          codigoItem: true,
+          tituloItem: true,
+          descricaoItem: true,
+          obrigatorio: true,
+          exigeValidade: true,
+          validadeDias: true,
+        },
+        orderBy: [{ ordemItem: 'asc' }, { id: 'asc' }],
+      });
+
+      if (Array.isArray(itensModelo) && itensModelo.length > 0) {
+        await prismaAny.rhChecklistExecucaoItem.createMany({
+          data: itensModelo.map((i: any) => ({
+            tenantId: ctx.tenantId,
+            execucaoId: execucao.id,
+            itemModeloId: i.id,
+            status: 'PENDENTE',
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      const execItens = await prismaAny.rhChecklistExecucaoItem.findMany({
+        where: { tenantId: ctx.tenantId, execucaoId: execucao.id },
+        select: { itemModeloId: true, status: true, entregueEm: true, validadeAte: true, observacao: true },
+      });
+
+      const byItemId = new Map<number, any>();
+      for (const e of execItens as any[]) byItemId.set(Number(e.itemModeloId), e);
+
+      const itens = (itensModelo as any[]).map((i) => {
+        const e = byItemId.get(Number(i.id)) || null;
+        const entregueEm = e?.entregueEm ? new Date(e.entregueEm) : null;
+        const validadeAte = e?.validadeAte ? new Date(e.validadeAte) : null;
+        const exigeValidade = !!i.exigeValidade;
+        const obrigatorio = !!i.obrigatorio;
+
+        let status = entregueEm ? 'OK' : 'PENDENTE';
+        if (entregueEm && exigeValidade) {
+          if (validadeAte && Number.isFinite(validadeAte.getTime())) {
+            const diffMs = validadeAte.getTime() - now.getTime();
+            const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            if (diffDays < 0) status = 'VENCIDO';
+            else if (diffDays <= 30) status = 'A_VENCER';
+            else status = 'OK';
+          } else {
+            status = 'PENDENTE_VALIDADE';
+          }
+        }
+
+        return {
+          idItem: Number(i.id),
+          ordemItem: Number(i.ordemItem),
+          grupoItem: i.grupoItem ? String(i.grupoItem) : null,
+          tituloItem: String(i.tituloItem),
+          descricaoItem: i.descricaoItem ? String(i.descricaoItem) : null,
+          obrigatorio,
+          exigeValidade,
+          validadeDias: i.validadeDias == null ? null : Number(i.validadeDias),
+          status,
+          entregueEm: entregueEm ? entregueEm.toISOString() : null,
+          validadeAte: validadeAte ? validadeAte.toISOString() : null,
+          observacao: e?.observacao != null ? String(e.observacao) : null,
+        };
+      });
+
+      const resumo = {
+        total: itens.length,
+        ok: itens.filter((x) => x.status === 'OK').length,
+        pendente: itens.filter((x) => x.status === 'PENDENTE' || x.status === 'PENDENTE_VALIDADE').length,
+        vencido: itens.filter((x) => x.status === 'VENCIDO').length,
+        aVencer: itens.filter((x) => x.status === 'A_VENCER').length,
+        obrigatoriosPendentes: itens.filter((x) => x.obrigatorio && (x.status === 'PENDENTE' || x.status === 'PENDENTE_VALIDADE' || x.status === 'VENCIDO')).length,
+      };
+
+      return { modelo, execucao, itens, resumo };
+    });
+
+    return ok(reply, {
+      pessoa: { id: pessoa.id, nomeCompleto: pessoa.nomeCompleto, cpf: pessoa.cpf },
+      vinculo: {
+        id: vinculo.id,
+        tipoVinculo: vinculo.tipoVinculo,
+        matricula: vinculo.matricula ?? null,
+        funcao: vinculo.funcao ?? null,
+        empresa: vinculo.empresaContraparte ? { id: vinculo.empresaContraparte.id, nome: vinculo.empresaContraparte.nomeRazao } : null,
+      },
+      modelo: data.modelo,
+      execucao: data.execucao,
+      itens: data.itens,
+      resumo: data.resumo,
+    });
+  });
+
+  server.patch('/rh/pessoas/:id/checklist/itens/:itemId', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const { id, itemId } = z.object({ id: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        tipoVinculo: z.string().optional().nullable(),
+        status: z.enum(['ENTREGUE', 'PENDENTE']),
+        validadeAte: z.string().optional().nullable(),
+        observacao: z.string().optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    const tipoVinculoIn = String(body.tipoVinculo || '').trim().toUpperCase();
+    const tipoVinculo = tipoVinculoIn === 'TERCEIRIZADO' ? 'TERCEIRIZADO' : 'FUNCIONARIO';
+
+    const pessoa = await prisma.pessoa.findFirst({ where: { id, tenantId: ctx.tenantId }, select: { id: true } }).catch(() => null);
+    if (!pessoa) return fail(reply, 404, 'Pessoa não encontrada');
+
+    const vinculo = await prisma.pessoaVinculo.findFirst({ where: { tenantId: ctx.tenantId, pessoaId: pessoa.id, tipoVinculo, dataFim: null }, select: { id: true } }).catch(() => null);
+    if (!vinculo) return fail(reply, 404, 'Vínculo ativo não encontrado para este tipo');
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const prismaAny = tx as any;
+
+      const itemModelo = await prismaAny.rhChecklistItemModelo
+        .findFirst({
+          where: { tenantId: ctx.tenantId, id: itemId },
+          select: { id: true, modeloId: true, exigeValidade: true },
+        })
+        .catch(() => null);
+      if (!itemModelo) return null;
+
+      const execucao =
+        (await prismaAny.rhChecklistExecucao
+          .findUnique({
+            where: { tenantId_modeloId_vinculoId: { tenantId: ctx.tenantId, modeloId: itemModelo.modeloId, vinculoId: vinculo.id } },
+            select: { id: true },
+          })
+          .catch(() => null)) ||
+        (await prismaAny.rhChecklistExecucao.create({
+          data: { tenantId: ctx.tenantId, modeloId: itemModelo.modeloId, vinculoId: vinculo.id, status: 'ATIVA' },
+          select: { id: true },
+        }));
+
+      const validadeAte = body.validadeAte ? parseDateOnly(String(body.validadeAte).slice(0, 10)) : null;
+
+      const dataUpdate =
+        body.status === 'ENTREGUE'
+          ? {
+              status: 'ENTREGUE',
+              entregueEm: new Date(),
+              validadeAte: itemModelo.exigeValidade ? validadeAte : null,
+              observacao: body.observacao != null ? String(body.observacao) : null,
+            }
+          : {
+              status: 'PENDENTE',
+              entregueEm: null,
+              validadeAte: null,
+              observacao: body.observacao != null ? String(body.observacao) : null,
+            };
+
+      const row = await prismaAny.rhChecklistExecucaoItem.upsert({
+        where: { tenantId_execucaoId_itemModeloId: { tenantId: ctx.tenantId, execucaoId: execucao.id, itemModeloId: itemModelo.id } },
+        create: {
+          tenantId: ctx.tenantId,
+          execucaoId: execucao.id,
+          itemModeloId: itemModelo.id,
+          ...dataUpdate,
+        },
+        update: dataUpdate,
+        select: { id: true, status: true, entregueEm: true, validadeAte: true, observacao: true },
+      });
+
+      return row;
+    });
+
+    if (!updated) return fail(reply, 404, 'Item de checklist não encontrado');
+
+    await audit({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      entidade: 'rh_checklist_execucao_itens',
+      idRegistro: String((updated as any).id),
+      acao: 'UPDATE',
+      dadosNovos: updated as any,
+    });
+
+    return ok(reply, { ok: true }, { message: 'Checklist atualizado' });
+  });
+
   server.get('/engenharia/obras/responsaveis', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
