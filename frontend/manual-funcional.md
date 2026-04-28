@@ -803,19 +803,26 @@ O módulo RH é responsável pela gestão de pessoas da empresa, ligando a estru
 
 ### 9.1 Cadastro de pessoas e funcionários
 
-O módulo deve permitir:
+Tela principal: **RH → Pessoas**
 
-- cadastro de pessoas;
-- cadastro de funcionários;
-- vínculo funcional;
-- lotação;
-- situação funcional;
-- histórico de movimentações;
-- admissões;
-- desligamentos;
-- readmissões;
-- função;
-- unidade e obra vinculadas.
+#### Implementação (no sistema)
+
+- Lista única de pessoas (funcionários e terceirizados) com coluna de ações para abrir a **Ficha**.
+- Acesso rápido por botões:
+  - Tipo: **Funcionários** / **Terceirizados** / **Todos**
+  - Status: **Ativo** / **Inativo** / **Todos**
+- Filtros adicionais: Obra (quando aplicável) e busca por nome/matrícula/CPF.
+- Ações no topo (alinhadas ao título da tela): **Novo funcionário**, **Novo terceirizado**, **Presença da obra**, **Dashboard RH**.
+
+#### Fichas (detalhamento)
+
+- **Ficha do Funcionário**: exibe dados gerais, vínculo/obra, documentos e endereços (com botão para gerenciar endereços).
+- **Ficha do Terceirizado**: exibe dados gerais, vínculo/obra, documentos e demais abas operacionais.
+
+#### Navegação e rastreabilidade
+
+- Botão **Voltar** nas fichas retorna para a tela de origem (mantida via parâmetro `returnTo`, com fallback para RH → Pessoas).
+- Subtítulo/breadcrumb é dinâmico e reflete o caminho real até a tela (ex.: `Engenharia → Obras → Obra selecionada → RH → Pessoas → Ficha do Funcionário`).
 
 ### 9.2 Pessoas por escritório, unidade e obra
 

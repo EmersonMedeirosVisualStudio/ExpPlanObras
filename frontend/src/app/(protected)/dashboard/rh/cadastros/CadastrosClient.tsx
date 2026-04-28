@@ -3,7 +3,7 @@
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, CheckCircle, Download, FileText, MoreVertical, Plus, ShieldCheck, TriangleAlert, User, Users, XCircle } from 'lucide-react';
+import { ArrowLeft, Building2, CheckCircle, Download, FileText, IdCard, MoreVertical, Plus, ShieldCheck, TriangleAlert, User, Users, XCircle } from 'lucide-react';
 import { FuncionariosApi } from '@/lib/modules/funcionarios/api';
 import { TerceirizadosApi } from '@/lib/modules/terceirizados/api';
 import { OrganogramaApi } from '@/lib/modules/organograma/api';
@@ -160,24 +160,58 @@ function parseInternalPath(path: string | null) {
   }
 }
 
-function breadcrumbFromReturnTo(returnTo: string | null, extra?: { obraNome?: string | null }) {
+function breadcrumbFromReturnTo(returnTo: string | null, extra?: { obraNome?: string | null; obras?: Array<{ id: number; nome: string }> }) {
   const parsed = parseInternalPath(returnTo);
-  const rt = String(returnTo || '').toLowerCase();
   const suffix = 'RH → Pessoas';
-  if (!rt) return suffix;
+  if (!parsed?.pathname) return suffix;
 
-  const obraMatch = rt.match(/\/dashboard\/engenharia\/obras\/(\d+)/);
-  if (obraMatch?.[1]) {
-    const obraNome = extra?.obraNome ?? parsed?.searchParams?.get('obraNome');
-    const obraLabel = obraNome ? String(obraNome) : 'Obra selecionada';
-    return `Engenharia → Obras → ${obraLabel} → ${suffix}`;
+  const parts = parsed.pathname.split('/').filter(Boolean);
+  const segs = parts[0] === 'dashboard' ? parts.slice(1) : parts;
+  const labels: string[] = [];
+
+  const map: Record<string, string> = {
+    engenharia: 'Engenharia',
+    obras: 'Obras',
+    projetos: 'Projetos',
+    fiscalizacao: 'Fiscalização',
+    diario: 'Diário',
+    medicoes: 'Medições',
+    rh: 'RH',
+    presencas: 'Presenças',
+    painel: 'Painel',
+    cadastros: 'Pessoas',
+    pessoas: 'Pessoas',
+  };
+
+  for (let i = 0; i < segs.length; i++) {
+    const seg = String(segs[i] || '');
+    const lower = seg.toLowerCase();
+    const prev = String(segs[i - 1] || '').toLowerCase();
+
+    if (/^\d+$/.test(seg)) {
+      if (prev === 'obras') {
+        const idObra = Number(seg);
+        const nome =
+          extra?.obras?.find((o) => o.id === idObra)?.nome ??
+          extra?.obraNome ??
+          parsed?.searchParams?.get('obraNome') ??
+          null;
+        labels.push(nome ? String(nome) : `Obra #${idObra}`);
+        continue;
+      }
+      labels.push(`#${seg}`);
+      continue;
+    }
+
+    labels.push(map[lower] || (seg.length ? seg[0].toUpperCase() + seg.slice(1) : seg));
   }
-  if (rt.includes('/dashboard/engenharia/obras')) return `Engenharia → Obras → ${suffix}`;
-  if (rt.includes('/dashboard/engenharia/projetos')) return `Engenharia → Projetos → ${suffix}`;
-  if (rt.includes('/dashboard/rh/presencas')) return `RH → Presenças → ${suffix}`;
-  if (rt.includes('/dashboard/rh')) return `RH → ${suffix}`;
-  if (rt.includes('/dashboard')) return `Dashboard → ${suffix}`;
-  return suffix;
+
+  const base = labels.filter(Boolean).join(' → ');
+  if (!base) return suffix;
+  if (base.includes('RH → Pessoas') || base.endsWith('RH → Pessoas') || base.endsWith('Pessoas')) return base;
+  if (base.startsWith('RH →') || base === 'RH') return `${base} → Pessoas`;
+  if (base.endsWith('RH')) return `${base} → Pessoas`;
+  return `${base} → ${suffix}`;
 }
 
 function Modal({
@@ -293,7 +327,7 @@ export default function CadastrosClient() {
     const obraMatch = String(parsed?.pathname || '').match(/\/dashboard\/engenharia\/obras\/(\d+)/);
     const idObra = obraMatch?.[1] ? Number(obraMatch[1]) : NaN;
     const obraNome = Number.isFinite(idObra) ? obras.find((o) => o.id === idObra)?.nome ?? null : null;
-    return breadcrumbFromReturnTo(returnTo, { obraNome });
+    return breadcrumbFromReturnTo(returnTo, { obraNome, obras });
   }, [returnTo, obras]);
 
   async function carregarCargosDb() {
@@ -613,11 +647,17 @@ export default function CadastrosClient() {
     router.push(`/dashboard/rh/pessoas/${tipo}/${row.id}/checklist?returnTo=${returnTo}`);
   }
 
-function abrirEnderecos(row: PessoaRow) {
-  if (row.tipo !== 'FUNCIONARIO') return;
-  const returnTo = encodeURIComponent(currentPath());
-  router.push(`/dashboard/rh/pessoas/funcionario/${row.id}/enderecos?returnTo=${returnTo}`);
-}
+  function abrirEnderecos(row: PessoaRow) {
+    if (row.tipo !== 'FUNCIONARIO') return;
+    const returnTo = encodeURIComponent(currentPath());
+    router.push(`/dashboard/rh/pessoas/funcionario/${row.id}/enderecos?returnTo=${returnTo}`);
+  }
+
+  function abrirFicha(row: PessoaRow) {
+    const returnTo = encodeURIComponent(currentPath());
+    const tipo = row.tipo === 'FUNCIONARIO' ? 'funcionario' : 'terceirizado';
+    router.push(`/dashboard/rh/pessoas/${tipo}/${row.id}?returnTo=${returnTo}`);
+  }
 
   return (
     <div className="p-6 space-y-6 text-slate-900">
@@ -637,11 +677,111 @@ function abrirEnderecos(row: PessoaRow) {
           <div>
             <h1 className="text-2xl font-semibold text-slate-900">Pessoas</h1>
             <p className="text-sm text-slate-600">{breadcrumb}</p>
+            <div className="mt-3 flex gap-2 flex-wrap">
+              <button
+                type="button"
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 inline-flex items-center gap-2"
+                onClick={() => {
+                  setModalFuncionarioMsg(null);
+                  setModalFuncionario(true);
+                }}
+              >
+                <Plus size={16} />
+                Novo funcionário
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 inline-flex items-center gap-2"
+                onClick={() => {
+                  setModalTerceirizadoMsg(null);
+                  setModalTerceirizado(true);
+                }}
+              >
+                <Plus size={16} />
+                Novo terceirizado
+              </button>
+              <button type="button" className="rounded-lg bg-violet-600 px-4 py-2 text-sm text-white hover:bg-violet-700" onClick={gotoPresencas}>
+                Presença da obra
+              </button>
+              <button type="button" className="rounded-lg bg-amber-500 px-4 py-2 text-sm text-white hover:bg-amber-600" onClick={gotoDashboardRh}>
+                Dashboard RH
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1 rounded-lg bg-slate-50 p-1">
+              <button
+                type="button"
+                className={classNames(
+                  'rounded-md px-3 py-1.5 text-sm',
+                  filtros.tipo === 'TODOS' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-600 hover:bg-white/60'
+                )}
+                onClick={() => setFiltros((p) => ({ ...p, tipo: 'TODOS' }))}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                className={classNames(
+                  'rounded-md px-3 py-1.5 text-sm',
+                  filtros.tipo === 'FUNCIONARIO' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-600 hover:bg-white/60'
+                )}
+                onClick={() => setFiltros((p) => ({ ...p, tipo: 'FUNCIONARIO' }))}
+              >
+                Funcionários
+              </button>
+              <button
+                type="button"
+                className={classNames(
+                  'rounded-md px-3 py-1.5 text-sm',
+                  filtros.tipo === 'TERCEIRIZADO' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-600 hover:bg-white/60'
+                )}
+                onClick={() => setFiltros((p) => ({ ...p, tipo: 'TERCEIRIZADO' }))}
+              >
+                Terceirizados
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1 rounded-lg bg-slate-50 p-1">
+              <button
+                type="button"
+                className={classNames(
+                  'rounded-md px-3 py-1.5 text-sm',
+                  filtros.status === 'TODOS' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-600 hover:bg-white/60'
+                )}
+                onClick={() => setFiltros((p) => ({ ...p, status: 'TODOS' }))}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                className={classNames(
+                  'rounded-md px-3 py-1.5 text-sm',
+                  filtros.status === 'ATIVO' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-600 hover:bg-white/60'
+                )}
+                onClick={() => setFiltros((p) => ({ ...p, status: 'ATIVO' }))}
+              >
+                Ativo
+              </button>
+              <button
+                type="button"
+                className={classNames(
+                  'rounded-md px-3 py-1.5 text-sm',
+                  filtros.status === 'INATIVO' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-600 hover:bg-white/60'
+                )}
+                onClick={() => setFiltros((p) => ({ ...p, status: 'INATIVO' }))}
+              >
+                Inativo
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-2">
             <div className="text-xs text-slate-600 mb-1">Obra</div>
@@ -675,25 +815,7 @@ function abrirEnderecos(row: PessoaRow) {
             </select>
           </div>
 
-          <div className="md:col-span-2">
-            <div className="text-xs text-slate-600 mb-1">Tipo</div>
-            <select className="input" value={filtros.tipo} onChange={(e) => setFiltros((p) => ({ ...p, tipo: e.target.value as any }))}>
-              <option value="TODOS">Todos</option>
-              <option value="FUNCIONARIO">Funcionário</option>
-              <option value="TERCEIRIZADO">Terceirizado</option>
-            </select>
-          </div>
-
-          <div className="md:col-span-2">
-            <div className="text-xs text-slate-600 mb-1">Status</div>
-            <select className="input" value={filtros.status} onChange={(e) => setFiltros((p) => ({ ...p, status: e.target.value as any }))}>
-              <option value="ATIVO">Ativo</option>
-              <option value="INATIVO">Inativo</option>
-              <option value="TODOS">Todos</option>
-            </select>
-          </div>
-
-          <div className="md:col-span-3">
+          <div className="md:col-span-7">
             <div className="text-xs text-slate-600 mb-1">Busca</div>
             <input
               className="input"
@@ -716,41 +838,7 @@ function abrirEnderecos(row: PessoaRow) {
         </div>
 
         <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex gap-2 flex-wrap">
-            <button
-              type="button"
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 inline-flex items-center gap-2"
-              onClick={() => {
-                setModalFuncionarioMsg(null);
-                setModalFuncionario(true);
-              }}
-            >
-              <Plus size={16} />
-              Novo funcionário
-            </button>
-            <button
-              type="button"
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 inline-flex items-center gap-2"
-              onClick={() => {
-                setModalTerceirizadoMsg(null);
-                setModalTerceirizado(true);
-              }}
-            >
-              <Plus size={16} />
-              Novo terceirizado
-            </button>
-            <button
-              type="button"
-              className="rounded-lg bg-violet-600 px-4 py-2 text-sm text-white hover:bg-violet-700"
-              onClick={gotoPresencas}
-            >
-              Presença da obra
-            </button>
-            <button type="button" className="rounded-lg bg-amber-500 px-4 py-2 text-sm text-white hover:bg-amber-600" onClick={gotoDashboardRh}>
-              Dashboard RH
-            </button>
-          </div>
-
+          <div />
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -920,11 +1008,11 @@ function abrirEnderecos(row: PessoaRow) {
                       <div className="inline-flex items-center gap-1">
                         <button
                           type="button"
-                          title="Abrir cadastro"
+                          title={r.tipo === 'FUNCIONARIO' ? 'Ficha do funcionário' : 'Ficha do terceirizado'}
                           className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 inline-flex items-center justify-center"
-                          onClick={() => (r.tipo === 'FUNCIONARIO' ? router.push(`/dashboard/rh/funcionarios?open=${r.id}`) : copiarRef(r))}
+                          onClick={() => abrirFicha(r)}
                         >
-                          <User size={16} />
+                          {r.tipo === 'FUNCIONARIO' ? <User size={16} /> : <Building2 size={16} />}
                         </button>
                         <button
                           type="button"
