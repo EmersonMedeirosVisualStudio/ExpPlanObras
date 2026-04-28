@@ -1,8 +1,8 @@
-import { redirect } from 'next/navigation';
 import { requirePermission } from '@/lib/auth/access';
 import { PERMISSIONS } from '@/lib/auth/permissions';
+import FuncionariosClient from './FuncionariosClient';
 
 export default async function FuncionariosPage() {
   await requirePermission(PERMISSIONS.RH_FUNCIONARIOS_VIEW);
-  redirect('/dashboard/rh/cadastros');
+  return <FuncionariosClient />;
 }

@@ -2,8 +2,15 @@
 
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { FuncionariosApi } from '@/lib/modules/funcionarios/api';
-import type { FuncionarioDetalheDTO, FuncionarioEventoDTO, FuncionarioHistoricoEventoDTO, FuncionarioResumoDTO } from '@/lib/modules/funcionarios/types';
+import type {
+  FuncionarioDetalheDTO,
+  FuncionarioEnderecoDTO,
+  FuncionarioEventoDTO,
+  FuncionarioHistoricoEventoDTO,
+  FuncionarioResumoDTO,
+} from '@/lib/modules/funcionarios/types';
 import { DocumentosApi } from '@/lib/modules/documentos/api';
 import type { DocumentoRegistroDTO } from '@/lib/modules/documentos/types';
 import { TerceirizadosApi } from '@/lib/modules/terceirizados/api';
@@ -78,9 +85,36 @@ function formatPhoneBr(value: string) {
 }
 
 export default function FuncionariosClient() {
+  const searchParams = useSearchParams();
   const [busca, setBusca] = useState('');
   const [lista, setLista] = useState<FuncionarioResumoDTO[]>([]);
   const [selecionado, setSelecionado] = useState<FuncionarioDetalheDTO | null>(null);
+  const [enderecosOpen, setEnderecosOpen] = useState(false);
+  const [enderecosLoading, setEnderecosLoading] = useState(false);
+  const [enderecosMsg, setEnderecosMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const [enderecos, setEnderecos] = useState<FuncionarioEnderecoDTO[]>([]);
+  const [enderecoNovoOpen, setEnderecoNovoOpen] = useState(false);
+  const [enderecoForm, setEnderecoForm] = useState<{
+    cep: string;
+    logradouro: string;
+    numero: string;
+    complemento: string;
+    bairro: string;
+    cidade: string;
+    uf: string;
+    observacao: string;
+    principal: boolean;
+  }>({
+    cep: '',
+    logradouro: '',
+    numero: '',
+    complemento: '',
+    bairro: '',
+    cidade: '',
+    uf: '',
+    observacao: '',
+    principal: true,
+  });
   const [historico, setHistorico] = useState<FuncionarioHistoricoEventoDTO[]>([]);
   const [eventos, setEventos] = useState<FuncionarioEventoDTO[]>([]);
   const [documentos, setDocumentos] = useState<DocumentoRegistroDTO[]>([]);
@@ -188,6 +222,10 @@ export default function FuncionariosClient() {
   async function abrir(id: number) {
     const det = await FuncionariosApi.obter(id);
     setSelecionado(det);
+    setEnderecosOpen(false);
+    setEnderecoNovoOpen(false);
+    setEnderecos([]);
+    setEnderecosMsg(null);
     try {
       const hist = await FuncionariosApi.historico(id);
       setHistorico(hist);
@@ -207,6 +245,54 @@ export default function FuncionariosClient() {
       setDocumentos([]);
     }
   }
+
+  function enderecoLabel(e: FuncionarioEnderecoDTO) {
+    const partes: string[] = [];
+    const logradouro = e.logradouro ? String(e.logradouro).trim() : '';
+    const numero = e.numero ? String(e.numero).trim() : '';
+    const bairro = e.bairro ? String(e.bairro).trim() : '';
+    const cidade = e.cidade ? String(e.cidade).trim() : '';
+    const uf = e.uf ? String(e.uf).trim() : '';
+    if (logradouro) partes.push(logradouro);
+    if (numero) partes.push(numero);
+    if (bairro) partes.push(bairro);
+    const local = [cidade, uf].filter(Boolean).join('/');
+    if (local) partes.push(local);
+    return partes.length ? partes.join(' • ') : 'Endereço';
+  }
+
+  async function carregarEnderecos(idFuncionario: number) {
+    try {
+      setEnderecosLoading(true);
+      setEnderecosMsg(null);
+      const list = await FuncionariosApi.listarEnderecos(idFuncionario);
+      setEnderecos(Array.isArray(list) ? list : []);
+    } catch (e: any) {
+      setEnderecos([]);
+      setEnderecosMsg({ kind: 'error', text: e?.message || 'Erro ao carregar endereços' });
+    } finally {
+      setEnderecosLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const openRaw = searchParams.get('open');
+    const id = openRaw ? Number(openRaw) : NaN;
+    if (!Number.isFinite(id) || id <= 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (cancelled) return;
+        await abrir(id);
+      } catch (e: any) {
+        if (cancelled) return;
+        setError(e?.message || 'Erro ao abrir funcionário');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams]);
 
   async function salvarNovo(e: React.FormEvent) {
     e.preventDefault();
@@ -374,6 +460,20 @@ export default function FuncionariosClient() {
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-lg font-semibold">Dados do funcionário</h2>
               <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    if (!selecionado) return;
+                    const next = !enderecosOpen;
+                    setEnderecosOpen(next);
+                    setEnderecoNovoOpen(false);
+                    setEnderecosMsg(null);
+                    if (next) await carregarEnderecos(selecionado.id);
+                  }}
+                  className="rounded-lg bg-slate-900 px-3 py-2 text-xs text-white"
+                  type="button"
+                >
+                  Endereço
+                </button>
                 <button onClick={() => endossar('APROVAR')} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs text-white" type="button">
                   Endossar RH
                 </button>
@@ -395,6 +495,220 @@ export default function FuncionariosClient() {
               <Info label="RH" value={selecionado.statusCadastroRh} />
             </div>
           </section>
+
+          {enderecosOpen && selecionado && (
+            <section className="rounded-xl border bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold">Endereços</h2>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg border bg-white px-3 py-2 text-xs"
+                    disabled={enderecosLoading}
+                    onClick={() => carregarEnderecos(selecionado.id)}
+                  >
+                    Atualizar
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg bg-blue-600 px-3 py-2 text-xs text-white"
+                    onClick={() => {
+                      setEnderecosMsg(null);
+                      setEnderecoNovoOpen((v) => !v);
+                    }}
+                  >
+                    {enderecoNovoOpen ? 'Fechar' : 'Novo endereço'}
+                  </button>
+                </div>
+              </div>
+
+              {enderecosMsg ? (
+                <div
+                  className={`mb-3 rounded-lg border px-3 py-2 text-sm ${
+                    enderecosMsg.kind === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'
+                  }`}
+                >
+                  {enderecosMsg.text}
+                </div>
+              ) : null}
+
+              {enderecoNovoOpen ? (
+                <div className="mb-4 space-y-3 rounded-lg border bg-slate-50 p-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div>
+                      <div className="text-xs text-slate-500">CEP (opcional)</div>
+                      <input className="input" value={enderecoForm.cep} onChange={(e) => setEnderecoForm((p) => ({ ...p, cep: e.target.value }))} />
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500">UF</div>
+                      <input className="input" value={enderecoForm.uf} onChange={(e) => setEnderecoForm((p) => ({ ...p, uf: e.target.value }))} />
+                    </div>
+                    <div className="md:col-span-2">
+                      <div className="text-xs text-slate-500">Logradouro</div>
+                      <input className="input" value={enderecoForm.logradouro} onChange={(e) => setEnderecoForm((p) => ({ ...p, logradouro: e.target.value }))} />
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500">Número</div>
+                      <input className="input" value={enderecoForm.numero} onChange={(e) => setEnderecoForm((p) => ({ ...p, numero: e.target.value }))} />
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500">Complemento (opcional)</div>
+                      <input className="input" value={enderecoForm.complemento} onChange={(e) => setEnderecoForm((p) => ({ ...p, complemento: e.target.value }))} />
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500">Bairro (opcional)</div>
+                      <input className="input" value={enderecoForm.bairro} onChange={(e) => setEnderecoForm((p) => ({ ...p, bairro: e.target.value }))} />
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500">Cidade</div>
+                      <input className="input" value={enderecoForm.cidade} onChange={(e) => setEnderecoForm((p) => ({ ...p, cidade: e.target.value }))} />
+                    </div>
+                    <div className="md:col-span-2">
+                      <div className="text-xs text-slate-500">Observação (opcional)</div>
+                      <input className="input" value={enderecoForm.observacao} onChange={(e) => setEnderecoForm((p) => ({ ...p, observacao: e.target.value }))} />
+                    </div>
+                    <label className="inline-flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={enderecoForm.principal}
+                        onChange={(e) => setEnderecoForm((p) => ({ ...p, principal: e.target.checked }))}
+                      />
+                      Definir como atual
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      className="rounded-lg border bg-white px-3 py-2 text-sm"
+                      onClick={() => {
+                        setEnderecoNovoOpen(false);
+                      }}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-60"
+                      disabled={enderecosLoading}
+                      onClick={async () => {
+                        if (!selecionado) return;
+                        try {
+                          setEnderecosLoading(true);
+                          setEnderecosMsg(null);
+                          const uf = String(enderecoForm.uf || '').trim().toUpperCase();
+                          const logradouro = String(enderecoForm.logradouro || '').trim();
+                          const cidade = String(enderecoForm.cidade || '').trim();
+                          if (!logradouro || logradouro.length < 3) throw new Error('Logradouro é obrigatório');
+                          if (!cidade || cidade.length < 2) throw new Error('Cidade é obrigatória');
+                          if (!uf || uf.length !== 2) throw new Error('UF inválida');
+
+                          await FuncionariosApi.criarEndereco(selecionado.id, {
+                            cep: String(enderecoForm.cep || '').trim() ? String(enderecoForm.cep || '').trim() : null,
+                            logradouro,
+                            numero: String(enderecoForm.numero || '').trim() ? String(enderecoForm.numero || '').trim() : null,
+                            complemento: String(enderecoForm.complemento || '').trim() ? String(enderecoForm.complemento || '').trim() : null,
+                            bairro: String(enderecoForm.bairro || '').trim() ? String(enderecoForm.bairro || '').trim() : null,
+                            cidade,
+                            uf,
+                            observacao: String(enderecoForm.observacao || '').trim() ? String(enderecoForm.observacao || '').trim() : null,
+                            principal: enderecoForm.principal === true,
+                          });
+
+                          setEnderecoForm({
+                            cep: '',
+                            logradouro: '',
+                            numero: '',
+                            complemento: '',
+                            bairro: '',
+                            cidade: '',
+                            uf: '',
+                            observacao: '',
+                            principal: true,
+                          });
+                          setEnderecoNovoOpen(false);
+                          await carregarEnderecos(selecionado.id);
+                          setEnderecosMsg({ kind: 'success', text: 'Endereço criado' });
+                          window.setTimeout(() => setEnderecosMsg(null), 4000);
+                        } catch (e: any) {
+                          setEnderecosMsg({ kind: 'error', text: e?.message || 'Erro ao criar endereço' });
+                        } finally {
+                          setEnderecosLoading(false);
+                        }
+                      }}
+                    >
+                      Salvar
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {enderecosLoading ? (
+                <div className="text-sm text-slate-600">Carregando...</div>
+              ) : enderecos.length === 0 ? (
+                <div className="text-sm text-slate-600">Nenhum endereço cadastrado.</div>
+              ) : (
+                <div className="space-y-2">
+                  {enderecos.map((e) => (
+                    <div key={e.id} className="rounded-lg border bg-white px-3 py-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="text-sm">
+                          <div className="font-medium">
+                            #{e.id} - {enderecoLabel(e)} {e.principal ? <span className="ml-2 text-emerald-700">✓ atual</span> : null}
+                          </div>
+                          <div className="text-xs text-slate-500">{e.observacao ? e.observacao : ''}</div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            className="rounded-lg border bg-white px-3 py-1 text-xs disabled:opacity-60"
+                            disabled={enderecosLoading || e.principal}
+                            onClick={async () => {
+                              if (!selecionado) return;
+                              try {
+                                setEnderecosLoading(true);
+                                setEnderecosMsg(null);
+                                await FuncionariosApi.atualizarEndereco(selecionado.id, e.id, { principal: true });
+                                await carregarEnderecos(selecionado.id);
+                              } catch (err: any) {
+                                setEnderecosMsg({ kind: 'error', text: err?.message || 'Erro ao definir endereço atual' });
+                              } finally {
+                                setEnderecosLoading(false);
+                              }
+                            }}
+                          >
+                            Definir atual
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs text-red-700 disabled:opacity-60"
+                            disabled={enderecosLoading}
+                            onClick={async () => {
+                              if (!selecionado) return;
+                              try {
+                                setEnderecosLoading(true);
+                                setEnderecosMsg(null);
+                                await FuncionariosApi.excluirEndereco(selecionado.id, e.id);
+                                await carregarEnderecos(selecionado.id);
+                                setEnderecosMsg({ kind: 'success', text: 'Endereço excluído' });
+                                window.setTimeout(() => setEnderecosMsg(null), 4000);
+                              } catch (err: any) {
+                                setEnderecosMsg({ kind: 'error', text: err?.message || 'Erro ao excluir endereço' });
+                              } finally {
+                                setEnderecosLoading(false);
+                              }
+                            }}
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
 
           <section className="rounded-xl border bg-white p-4 shadow-sm">
             <h2 className="mb-3 text-lg font-semibold">Situação atual</h2>

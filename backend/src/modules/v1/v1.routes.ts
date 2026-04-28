@@ -280,8 +280,187 @@ function randomTempPassword() {
   return crypto.randomBytes(6).toString('base64url');
 }
 
+const ORGANOGRAMA_CARGOS_BASE = [
+  'Servente',
+  'Pedreiro',
+  'Pedreiro de Acabamento',
+  'Carpinteiro',
+  'Armador',
+  'Eletricista',
+  'Eletricista Industrial',
+  'Encanador',
+  'Pintor',
+  'Gesseiro',
+  'Azulejista',
+  'Serralheiro',
+  'Soldador',
+  'Topógrafo',
+  'Auxiliar de Topografia',
+  'Mestre de Obras',
+  'Encarregado',
+  'Engenheiro Civil',
+  'Engenheiro de Segurança',
+  'Técnico em Edificações',
+  'Técnico de Segurança do Trabalho',
+  'Apontador',
+  'Almoxarife',
+  'Operador de Máquinas',
+  'Operador de Betoneira',
+  'Operador de Retroescavadeira',
+  'Operador de Escavadeira',
+  'Motorista',
+  'Vigia',
+  'Auxiliar Administrativo',
+  'Comprador',
+] as const;
+
+async function ensureOrganogramaCargosBase(tenantId: number) {
+  const nomes = ORGANOGRAMA_CARGOS_BASE.map((s) => String(s).trim()).filter(Boolean);
+  if (!nomes.length) return;
+  await prisma.organizacaoCargo.createMany({
+    data: nomes.map((nomeCargo) => ({ tenantId, nomeCargo, ativo: true })),
+    skipDuplicates: true,
+  });
+}
+
 export default async function v1Routes(server: FastifyInstance) {
   server.addHook('onRequest', authenticate);
+
+  server.get('/organograma/estrutura', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    await ensureOrganogramaCargosBase(ctx.tenantId);
+
+    const [setores, cargos, posicoes, vinculos, ocupacoes] = await Promise.all([
+      prisma.organizacaoSetor.findMany({
+        where: { tenantId: ctx.tenantId },
+        select: { id: true, nomeSetor: true, tipoSetor: true, setorPaiId: true, ativo: true },
+        orderBy: [{ nomeSetor: 'asc' }, { id: 'desc' }],
+        take: 5000,
+      }),
+      prisma.organizacaoCargo.findMany({
+        where: { tenantId: ctx.tenantId },
+        select: { id: true, nomeCargo: true, ativo: true },
+        orderBy: [{ nomeCargo: 'asc' }, { id: 'desc' }],
+        take: 5000,
+      }),
+      prisma.organogramaPosicao.findMany({
+        where: { tenantId: ctx.tenantId },
+        select: {
+          id: true,
+          setorId: true,
+          cargoId: true,
+          tituloExibicao: true,
+          ativo: true,
+          setor: { select: { nomeSetor: true } },
+          cargo: { select: { nomeCargo: true } },
+        },
+        orderBy: [{ tituloExibicao: 'asc' }, { id: 'desc' }],
+        take: 10000,
+      }),
+      prisma.organogramaVinculo.findMany({
+        where: {
+          ativo: true,
+          posicaoSuperior: { tenantId: ctx.tenantId },
+          posicaoSubordinada: { tenantId: ctx.tenantId },
+        },
+        select: { id: true, posicaoSuperiorId: true, posicaoSubordinadaId: true },
+        orderBy: [{ id: 'desc' }],
+        take: 20000,
+      }),
+      prisma.funcionarioPosicao.findMany({
+        where: { vigente: true, posicao: { tenantId: ctx.tenantId } },
+        select: {
+          id: true,
+          funcionarioId: true,
+          posicaoId: true,
+          dataInicio: true,
+          dataFim: true,
+          vigente: true,
+          funcionario: { select: { nomeCompleto: true } },
+        },
+        orderBy: [{ vigente: 'desc' }, { id: 'desc' }],
+        take: 20000,
+      }),
+    ]);
+
+    return ok(reply, {
+      setores: setores.map((s) => ({
+        id: s.id,
+        nomeSetor: s.nomeSetor,
+        tipoSetor: s.tipoSetor || null,
+        idSetorPai: s.setorPaiId ?? null,
+        ativo: !!s.ativo,
+      })),
+      cargos: cargos.map((c) => ({
+        id: c.id,
+        nomeCargo: c.nomeCargo,
+        ativo: !!c.ativo,
+      })),
+      posicoes: posicoes.map((p) => ({
+        id: p.id,
+        idSetor: p.setorId,
+        idCargo: p.cargoId,
+        tituloExibicao: p.tituloExibicao,
+        ordemExibicao: 0,
+        ativo: !!p.ativo,
+        setorNome: p.setor?.nomeSetor || '',
+        cargoNome: p.cargo?.nomeCargo || '',
+      })),
+      vinculos: vinculos.map((v) => ({
+        id: v.id,
+        idPosicaoSuperior: v.posicaoSuperiorId,
+        idPosicaoSubordinada: v.posicaoSubordinadaId,
+      })),
+      ocupacoes: ocupacoes.map((o) => ({
+        id: o.id,
+        idFuncionario: o.funcionarioId,
+        idPosicao: o.posicaoId,
+        funcionarioNome: o.funcionario?.nomeCompleto || '',
+        dataInicio: o.dataInicio.toISOString(),
+        dataFim: o.dataFim ? o.dataFim.toISOString() : null,
+        vigente: !!o.vigente,
+      })),
+    });
+  });
+
+  server.post('/organograma/cargos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const body = z
+      .object({
+        nomeCargo: z.string().min(2),
+      })
+      .parse(request.body || {});
+
+    const nomeCargo = String(body.nomeCargo || '').trim();
+    if (!nomeCargo) return fail(reply, 422, 'Nome do cargo é obrigatório');
+
+    const created = await prisma.organizacaoCargo
+      .create({
+        data: { tenantId: ctx.tenantId, nomeCargo, ativo: true },
+        select: { id: true, nomeCargo: true, ativo: true },
+      })
+      .catch((e: any) => {
+        if (String(e?.code || '') === 'P2002') return null;
+        throw e;
+      });
+
+    if (!created) return fail(reply, 409, 'Cargo já cadastrado');
+
+    await audit({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      entidade: 'organizacao_cargos',
+      idRegistro: String(created.id),
+      acao: 'CREATE',
+      dadosNovos: created as any,
+    });
+
+    return ok(reply, created, { message: 'Cargo criado' });
+  });
 
   server.get('/empresa/configuracao', async (request, reply) => {
     const ctx = await requireRepresentative(request, reply);

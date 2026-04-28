@@ -5,9 +5,66 @@ import { PERMISSIONS } from '@/lib/auth/permissions';
 
 export const runtime = 'nodejs';
 
+const ORGANOGRAMA_CARGOS_BASE = [
+  'Servente',
+  'Pedreiro',
+  'Pedreiro de Acabamento',
+  'Carpinteiro',
+  'Armador',
+  'Eletricista',
+  'Eletricista Industrial',
+  'Encanador',
+  'Pintor',
+  'Gesseiro',
+  'Azulejista',
+  'Serralheiro',
+  'Soldador',
+  'Topógrafo',
+  'Auxiliar de Topografia',
+  'Mestre de Obras',
+  'Encarregado',
+  'Engenheiro Civil',
+  'Engenheiro de Segurança',
+  'Técnico em Edificações',
+  'Técnico de Segurança do Trabalho',
+  'Apontador',
+  'Almoxarife',
+  'Operador de Máquinas',
+  'Operador de Betoneira',
+  'Operador de Retroescavadeira',
+  'Operador de Escavadeira',
+  'Motorista',
+  'Vigia',
+  'Auxiliar Administrativo',
+  'Comprador',
+] as const;
+
+async function ensureOrganogramaCargosBase(tenantId: number) {
+  const nomes = ORGANOGRAMA_CARGOS_BASE.map((s) => String(s).trim()).filter(Boolean);
+  if (!nomes.length) return;
+
+  const [existing]: any = await db.query(
+    `SELECT nome_cargo nomeCargo
+     FROM organizacao_cargos
+     WHERE tenant_id = ?
+       AND nome_cargo IN (${nomes.map(() => '?').join(', ')})`,
+    [tenantId, ...nomes]
+  );
+  const existingSet = new Set<string>((Array.isArray(existing) ? existing : []).map((r: any) => String(r?.nomeCargo || r?.nome_cargo || '').trim()));
+  const toInsert = nomes.filter((n) => !existingSet.has(n));
+  if (!toInsert.length) return;
+
+  const valuesSql = toInsert.map(() => '(?, ?, 1)').join(', ');
+  const params: any[] = [];
+  for (const n of toInsert) params.push(tenantId, n);
+
+  await db.query(`INSERT INTO organizacao_cargos (tenant_id, nome_cargo, ativo) VALUES ${valuesSql}`, params);
+}
+
 export async function GET() {
   try {
     const current = await requireApiPermission(PERMISSIONS.ORGANOGRAMA_VIEW);
+    await ensureOrganogramaCargosBase(current.tenantId);
 
     const [setores]: any = await db.query(
       `
