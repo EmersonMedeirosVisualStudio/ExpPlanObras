@@ -1495,6 +1495,109 @@ export default async function v1Routes(server: FastifyInstance) {
     });
   });
 
+  server.get('/rh/contratos-select', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const contratos = await prisma.contrato.findMany({
+      where: { tenantId: ctx.tenantId },
+      select: { id: true, numeroContrato: true },
+      orderBy: [{ numeroContrato: 'asc' }, { id: 'desc' }],
+      take: 1000,
+    });
+
+    return ok(
+      reply,
+      contratos.map((c) => ({
+        id: c.id,
+        numeroContrato: c.numeroContrato,
+      }))
+    );
+  });
+
+  server.get('/rh/funcionarios', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const query = z
+      .object({
+        q: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(1000).default(200),
+        idObra: z.coerce.number().int().optional(),
+        idContrato: z.coerce.number().int().optional(),
+      })
+      .parse(request.query || {});
+
+    const term = query.q ? query.q.trim() : '';
+    const cpfTerm = term ? onlyDigits(term) : '';
+    const where: any = { tenantId: ctx.tenantId };
+    if (term) {
+      where.OR = [
+        { nomeCompleto: { contains: term, mode: 'insensitive' } },
+        { cargo: { contains: term, mode: 'insensitive' } },
+        { funcaoPrincipal: { contains: term, mode: 'insensitive' } },
+        ...(cpfTerm ? [{ cpf: { contains: cpfTerm } }] : []),
+      ];
+    }
+
+    const funcionarios = await prisma.funcionario.findMany({
+      where,
+      select: {
+        id: true,
+        matricula: true,
+        nomeCompleto: true,
+        cpf: true,
+        cargo: true,
+        funcaoPrincipal: true,
+        statusFuncional: true,
+        dataAdmissao: true,
+        ativo: true,
+      },
+      orderBy: { nomeCompleto: 'asc' },
+      take: query.limit,
+    });
+
+    return ok(
+      reply,
+      funcionarios.map((f) => ({
+        id: f.id,
+        matricula: f.matricula,
+        nomeCompleto: f.nomeCompleto,
+        cpf: f.cpf,
+        cargoContratual: f.cargo ?? null,
+        funcaoPrincipal: f.funcaoPrincipal ?? null,
+        statusFuncional: f.statusFuncional,
+        statusCadastroRh: 'OK',
+        dataAdmissao: f.dataAdmissao ? f.dataAdmissao.toISOString() : '',
+        ativo: f.ativo,
+        tipoLocal: null,
+        idObra: null,
+        idUnidade: null,
+        localNome: null,
+        contratoId: null,
+        contratoNumero: null,
+        presencaPercent: null,
+        custoHora: null,
+      }))
+    );
+  });
+
+  server.get('/rh/terceirizados', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    z
+      .object({
+        q: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(1000).default(200),
+        idObra: z.coerce.number().int().optional(),
+        idContrato: z.coerce.number().int().optional(),
+      })
+      .parse(request.query || {});
+
+    return ok(reply, []);
+  });
+
   server.get('/engenharia/obras/responsaveis', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;

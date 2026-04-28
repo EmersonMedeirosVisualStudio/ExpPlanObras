@@ -2,8 +2,8 @@
 
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Download, FileText, MoreVertical, Plus, ShieldCheck, TriangleAlert, User, Users } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { ArrowLeft, Download, FileText, MoreVertical, Plus, ShieldCheck, TriangleAlert, User, Users } from 'lucide-react';
 import { FuncionariosApi } from '@/lib/modules/funcionarios/api';
 import { TerceirizadosApi } from '@/lib/modules/terceirizados/api';
 import { OrganogramaApi } from '@/lib/modules/organograma/api';
@@ -131,6 +131,46 @@ function currentPath() {
   }
 }
 
+function safeInternalPath(path: string | null) {
+  const raw = String(path || '').trim();
+  if (!raw) return null;
+  if (!raw.startsWith('/')) return null;
+  if (raw.startsWith('//')) return null;
+  if (raw.includes('://')) return null;
+  return raw;
+}
+
+function parseInternalPath(path: string | null) {
+  const safe = safeInternalPath(path);
+  if (!safe) return null;
+  try {
+    const u = new URL(safe, 'https://internal.local');
+    return { pathname: u.pathname, searchParams: u.searchParams };
+  } catch {
+    return null;
+  }
+}
+
+function breadcrumbFromReturnTo(returnTo: string | null, extra?: { obraNome?: string | null }) {
+  const parsed = parseInternalPath(returnTo);
+  const rt = String(returnTo || '').toLowerCase();
+  const suffix = 'RH → Pessoas';
+  if (!rt) return suffix;
+
+  const obraMatch = rt.match(/\/dashboard\/engenharia\/obras\/(\d+)/);
+  if (obraMatch?.[1]) {
+    const obraNome = extra?.obraNome ?? parsed?.searchParams?.get('obraNome');
+    const obraLabel = obraNome ? String(obraNome) : 'Obra selecionada';
+    return `Engenharia → Obras → ${obraLabel} → ${suffix}`;
+  }
+  if (rt.includes('/dashboard/engenharia/obras')) return `Engenharia → Obras → ${suffix}`;
+  if (rt.includes('/dashboard/engenharia/projetos')) return `Engenharia → Projetos → ${suffix}`;
+  if (rt.includes('/dashboard/rh/presencas')) return `RH → Presenças → ${suffix}`;
+  if (rt.includes('/dashboard/rh')) return `RH → ${suffix}`;
+  if (rt.includes('/dashboard')) return `Dashboard → ${suffix}`;
+  return suffix;
+}
+
 function Modal({
   open,
   title,
@@ -160,6 +200,10 @@ function Modal({
 
 export default function CadastrosClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnToParam = searchParams.get('returnTo');
+  const sessionKey = 'rh_pessoas:returnTo';
+  const [returnTo, setReturnTo] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -215,6 +259,31 @@ export default function CadastrosClient() {
   const [empresasSugestoes, setEmpresasSugestoes] = useState<Array<{ id: number; nome: string; documento: string | null }>>([]);
   const [empresasSugestoesOpen, setEmpresasSugestoesOpen] = useState(false);
   const [empresasSugestoesLoading, setEmpresasSugestoesLoading] = useState(false);
+
+  useEffect(() => {
+    try {
+      const safe = safeInternalPath(returnToParam);
+      if (safe) {
+        sessionStorage.setItem(sessionKey, safe);
+        setReturnTo(safe);
+        return;
+      }
+      const stored = safeInternalPath(sessionStorage.getItem(sessionKey));
+      setReturnTo(stored);
+    } catch {
+      setReturnTo(safeInternalPath(returnToParam));
+    }
+  }, [returnToParam, sessionKey]);
+
+  const backHref = useMemo(() => safeInternalPath(returnTo) || '/dashboard/rh/painel', [returnTo]);
+
+  const breadcrumb = useMemo(() => {
+    const parsed = parseInternalPath(returnTo);
+    const obraMatch = String(parsed?.pathname || '').match(/\/dashboard\/engenharia\/obras\/(\d+)/);
+    const idObra = obraMatch?.[1] ? Number(obraMatch[1]) : NaN;
+    const obraNome = Number.isFinite(idObra) ? obras.find((o) => o.id === idObra)?.nome ?? null : null;
+    return breadcrumbFromReturnTo(returnTo, { obraNome });
+  }, [returnTo, obras]);
 
   async function carregarCargosDb() {
     try {
@@ -485,12 +554,20 @@ function abrirEnderecos(row: PessoaRow) {
     <div className="p-6 space-y-6 text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-start gap-3">
+          <button
+            type="button"
+            className="mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            onClick={() => router.push(backHref)}
+            title="Voltar"
+          >
+            <ArrowLeft size={18} />
+          </button>
           <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
             <Users size={18} />
           </div>
           <div>
             <h1 className="text-2xl font-semibold text-slate-900">Pessoas</h1>
-            <p className="text-sm text-slate-600">Gerencie funcionários e terceirizados</p>
+            <p className="text-sm text-slate-600">{breadcrumb}</p>
           </div>
         </div>
       </div>
