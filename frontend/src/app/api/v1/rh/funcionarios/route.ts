@@ -79,9 +79,10 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const conn = await db.getConnection();
+  let conn: any = null;
   try {
     const user = await requireApiPermission(PERMISSIONS.RH_FUNCIONARIOS_CRUD);
+    conn = await db.getConnection();
     const body = await req.json();
 
     if (!body?.nomeCompleto?.trim()) throw new ApiError(422, 'Nome obrigatório');
@@ -287,9 +288,13 @@ export async function POST(req: Request) {
     await conn.commit();
     return created(row);
   } catch (error) {
-    await conn.rollback();
+    try {
+      if (conn) await conn.rollback();
+    } catch {}
     return handleApiError(error);
   } finally {
-    conn.release();
+    try {
+      if (conn) conn.release();
+    } catch {}
   }
 }
