@@ -54,7 +54,7 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
     const idCol = pickIdColumn(cols);
     const funcCol = pickFuncionarioColumn(cols);
 
-    const selectCols: string[] = [`e.${idCol} id`];
+    const selectCols: string[] = [`e.${idCol} id`, `e.${funcCol} idFuncionario`];
     const map: Array<[string, string]> = [
       ['cep', 'cep'],
       ['logradouro', 'logradouro'],
@@ -69,6 +69,10 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
     for (const [col, alias] of map) {
       if (cols.has(col)) selectCols.push(`e.${col} ${alias}`);
     }
+    if (cols.has('criado_em')) selectCols.push(`e.criado_em criadoEm`);
+    else if (cols.has('created_at')) selectCols.push(`e.created_at criadoEm`);
+    if (cols.has('atualizado_em')) selectCols.push(`e.atualizado_em atualizadoEm`);
+    else if (cols.has('updated_at')) selectCols.push(`e.updated_at atualizadoEm`);
 
     const [rows]: any = await db.query(
       `SELECT ${selectCols.join(', ')}
@@ -79,8 +83,10 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
       [user.tenantId, idFuncionario]
     );
 
+    const nowIso = new Date().toISOString();
     const list = (Array.isArray(rows) ? rows : []).map((r: any) => ({
       id: Number(r.id),
+      idFuncionario: Number(r.idFuncionario || idFuncionario),
       cep: r.cep == null ? null : String(r.cep),
       logradouro: r.logradouro == null ? null : String(r.logradouro),
       numero: r.numero == null ? null : String(r.numero),
@@ -90,6 +96,8 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
       uf: r.uf == null ? null : String(r.uf),
       observacao: r.observacao == null ? null : String(r.observacao),
       principal: cols.has('principal') ? !!r.principal : false,
+      criadoEm: r.criadoEm ? new Date(r.criadoEm).toISOString() : nowIso,
+      atualizadoEm: r.atualizadoEm ? new Date(r.atualizadoEm).toISOString() : (r.criadoEm ? new Date(r.criadoEm).toISOString() : nowIso),
     }));
 
     return ok(list);
@@ -196,4 +204,3 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     return handleApiError(e);
   }
 }
-
