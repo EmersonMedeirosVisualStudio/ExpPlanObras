@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
 import { DocumentosApi } from '@/lib/modules/documentos/api';
@@ -19,12 +19,30 @@ function safeInternalPath(v: string | null) {
   return s;
 }
 
+function parseInternalPath(path: string | null) {
+  const p = safeInternalPath(path);
+  if (!p) return null;
+  try {
+    const u = new URL(`http://local${p}`);
+    return { pathname: u.pathname, searchParams: u.searchParams };
+  } catch {
+    return null;
+  }
+}
+
 function breadcrumbFromReturnTo(returnTo: string | null) {
+  const parsed = parseInternalPath(returnTo);
   const rt = String(returnTo || '').toLowerCase();
   const suffix = 'RH → Pessoas → Checklist de documentos';
   if (!rt) return suffix;
 
-  if (/\/dashboard\/engenharia\/obras\/\d+/.test(rt)) return `Engenharia → Obras → Obra selecionada → ${suffix}`;
+  if (/\/dashboard\/engenharia\/obras\/\d+/.test(rt) || rt.includes('/dashboard/engenharia/obras/cadastro')) {
+    const obraNome = parsed?.searchParams?.get('obraNome');
+    const contratoNumero = parsed?.searchParams?.get('contratoNumero');
+    const obraLabel = obraNome ? String(obraNome) : 'Obra selecionada';
+    const contratoLabel = contratoNumero ? ` — Contrato: ${String(contratoNumero)}` : '';
+    return `Engenharia → Obras → ${obraLabel}${contratoLabel} → ${suffix}`;
+  }
   if (rt.includes('/dashboard/engenharia/obras')) return `Engenharia → Obras → ${suffix}`;
   if (rt.includes('/dashboard/engenharia/projetos')) return `Engenharia → Projetos → ${suffix}`;
   if (rt.includes('/dashboard/rh/presencas')) return `RH → Presenças → Checklist de documentos`;
@@ -71,7 +89,7 @@ export default function ChecklistRhClient() {
 
   const [preview, setPreview] = useState<PreviewState>({ open: false, url: null, mime: null, name: null, versaoId: null, tipo: 'ORIGINAL' });
 
-  async function carregar() {
+  const carregar = useCallback(async () => {
     if (!Number.isFinite(idNum) || idNum <= 0) return;
     try {
       setLoading(true);
@@ -81,16 +99,33 @@ export default function ChecklistRhClient() {
       const isTerceirizado = tipoPath.includes('terceir');
       if (!isFuncionario && !isTerceirizado) throw new Error('Tipo inválido');
 
-      const entidadeTipo = isFuncionario ? 'FUNCIONARIO' : 'TERCEIRIZADO_TRABALHADOR';
+      const entidadeTipos = isFuncionario ? ['FUNCIONARIO'] : ['TERCEIRIZADO_TRABALHADOR', 'TERCEIRIZADO'];
 
-      const [pessoa, documentos] = await Promise.all([
-        isFuncionario ? FuncionariosApi.obter(idNum) : TerceirizadosApi.obter(idNum),
-        DocumentosApi.listar({ entidadeTipo, entidadeId: idNum, categoriaPrefix: 'RH_', limit: 200 }),
-      ]);
+      const pessoa = await (isFuncionario ? FuncionariosApi.obter(idNum) : TerceirizadosApi.obter(idNum));
+
+      let documentos: DocumentoRegistroDTO[] = [];
+
+      for (const entidadeTipo of entidadeTipos) {
+        const list = await DocumentosApi.listar({ entidadeTipo, entidadeId: idNum, categoriaPrefix: 'RH_', limit: 200 }).catch(() => []);
+        if (Array.isArray(list) && list.length > 0) {
+          documentos = list;
+          break;
+        }
+      }
+
+      if (documentos.length === 0) {
+        for (const entidadeTipo of entidadeTipos) {
+          const list = await DocumentosApi.listar({ entidadeTipo, entidadeId: idNum, limit: 200 }).catch(() => []);
+          if (Array.isArray(list) && list.length > 0) {
+            documentos = list;
+            break;
+          }
+        }
+      }
 
       const nome = isFuncionario ? String((pessoa as any)?.nomeCompleto || '') : String((pessoa as any)?.nomeCompleto || '');
       setNomePessoa(nome);
-      setDocs(Array.isArray(documentos) ? documentos : []);
+      setDocs(documentos);
     } catch (e: any) {
       setErro(e?.message || 'Erro ao carregar checklist');
       setDocs([]);
@@ -98,7 +133,7 @@ export default function ChecklistRhClient() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [idNum, tipoPath]);
 
   async function visualizar(versaoId: number, tipo: 'ORIGINAL' | 'PDF_FINAL', nome: string) {
     try {
@@ -124,9 +159,8 @@ export default function ChecklistRhClient() {
 
   useEffect(() => {
     carregar();
-    return () => {
+  }, [carregar]);
 
-  const agrupado = useMemo(() => groupByCategoria(docs), [docs]);
   useEffect(() => {
     return () => {
       try {
@@ -135,7 +169,7 @@ export default function ChecklistRhClient() {
     };
   }, [preview.url]);
 
-
+  const agrupado = useMemo(() => groupByCategoria(docs), [docs]);
 
   const categorias = useMemo(() => ['TODAS', ...agrupado.cats], [agrupado.cats]);
 
