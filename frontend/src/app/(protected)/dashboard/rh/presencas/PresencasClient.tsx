@@ -103,7 +103,7 @@ export default function PresencasClient() {
 
   async function carregarFuncionarios() {
     try {
-      const rows = await FuncionariosApi.listar('');
+      const rows = await FuncionariosApi.listar('', { limit: 500 });
       setFuncionarios(Array.isArray(rows) ? rows : []);
     } catch {}
   }

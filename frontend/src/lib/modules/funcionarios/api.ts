@@ -32,10 +32,13 @@ async function api<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> 
 }
 
 export const FuncionariosApi = {
-  listar: (q = '', limit?: number) =>
-    api<FuncionarioResumoDTO[]>(
-      `/api/v1/rh/funcionarios?q=${encodeURIComponent(q)}${typeof limit === 'number' ? `&limit=${encodeURIComponent(String(limit))}` : ''}`
-    ),
+  listar: (q = '', params?: { limit?: number; idObra?: number; idContrato?: number }) => {
+    const limit = typeof params?.limit === 'number' ? `&limit=${encodeURIComponent(String(params.limit))}` : '';
+    const idObra = typeof params?.idObra === 'number' && params.idObra > 0 ? `&idObra=${encodeURIComponent(String(params.idObra))}` : '';
+    const idContrato =
+      typeof params?.idContrato === 'number' && params.idContrato > 0 ? `&idContrato=${encodeURIComponent(String(params.idContrato))}` : '';
+    return api<FuncionarioResumoDTO[]>(`/api/v1/rh/funcionarios?q=${encodeURIComponent(q)}${limit}${idObra}${idContrato}`);
+  },
 
   obter: (id: number) => api<FuncionarioDetalheDTO>(`/api/v1/rh/funcionarios/${id}`),
 

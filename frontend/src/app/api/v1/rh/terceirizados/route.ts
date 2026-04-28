@@ -25,6 +25,11 @@ export async function GET(req: Request) {
     const current = await requireApiPermission(PERMISSIONS.RH_FUNCIONARIOS_VIEW);
     const { searchParams } = new URL(req.url);
     const q = String(searchParams.get('q') || '').trim();
+    const idObra = Number(searchParams.get('idObra') || 0);
+    const idContrato = Number(searchParams.get('idContrato') || 0);
+    const limitParam = searchParams.get('limit');
+    const requested = limitParam ? Number(limitParam) : NaN;
+    const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 1000) : q ? 500 : 200;
 
     await ensureEmpresaParceiraPadrao(current.tenantId);
 
@@ -32,22 +37,51 @@ export async function GET(req: Request) {
       SELECT
         t.id_terceirizado_trabalhador id,
         t.nome_completo nomeCompleto,
+        t.cpf,
         t.funcao,
         t.ativo,
         t.id_empresa_parceira idEmpresaParceira,
-        ep.razao_social empresaParceira
+        ep.razao_social empresaParceira,
+        CASE
+          WHEN a.tipo_local = 'OBRA' THEN 'OBRA'
+          WHEN a.tipo_local = 'UNIDADE' THEN 'UNIDADE'
+          ELSE NULL
+        END AS tipoLocal,
+        a.id_obra AS idObra,
+        a.id_unidade AS idUnidade,
+        CASE
+          WHEN a.tipo_local = 'OBRA' THEN COALESCE(NULLIF(o.nome_obra, ''), CONCAT('Obra #', o.id_obra))
+          WHEN a.tipo_local = 'UNIDADE' THEN u.nome
+          ELSE NULL
+        END AS localNome,
+        c.id_contrato AS contratoId,
+        c.numero_contrato AS contratoNumero
       FROM terceirizados_trabalhadores t
       JOIN terceirizados_empresas_parceiras ep ON ep.id_empresa_parceira = t.id_empresa_parceira
+      LEFT JOIN terceirizados_alocacoes a ON a.id_terceirizado_trabalhador = t.id_terceirizado_trabalhador AND a.atual = 1
+      LEFT JOIN obras o ON o.id_obra = a.id_obra
+      LEFT JOIN unidades u ON u.tenant_id = t.tenant_id AND u.id_unidade = a.id_unidade
+      LEFT JOIN contratos c ON c.tenant_id = t.tenant_id AND c.id_contrato = o.id_contrato
       WHERE t.tenant_id = ?
     `;
     const params: any[] = [current.tenantId];
 
-    if (q) {
-      sql += ` AND (t.nome_completo LIKE ? OR COALESCE(t.funcao,'') LIKE ? OR COALESCE(ep.razao_social,'') LIKE ?)`;
-      params.push(`%${q}%`, `%${q}%`, `%${q}%`);
+    if (Number.isFinite(idObra) && idObra > 0) {
+      sql += ` AND a.tipo_local = 'OBRA' AND a.id_obra = ?`;
+      params.push(idObra);
     }
 
-    sql += ` ORDER BY t.nome_completo`;
+    if (Number.isFinite(idContrato) && idContrato > 0) {
+      sql += ` AND c.id_contrato = ?`;
+      params.push(idContrato);
+    }
+
+    if (q) {
+      sql += ` AND (t.nome_completo LIKE ? OR COALESCE(t.cpf,'') LIKE ? OR COALESCE(t.funcao,'') LIKE ? OR COALESCE(ep.razao_social,'') LIKE ?)`;
+      params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+    }
+
+    sql += ` ORDER BY t.nome_completo LIMIT ${limit}`;
 
     const [rows]: any = await db.query(sql, params);
     return ok(rows);
@@ -87,4 +121,3 @@ export async function POST(req: Request) {
     return handleApiError(e);
   }
 }
-

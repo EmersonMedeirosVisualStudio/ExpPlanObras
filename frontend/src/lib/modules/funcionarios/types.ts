@@ -9,6 +9,14 @@ export type FuncionarioResumoDTO = {
   statusCadastroRh: string;
   dataAdmissao: string;
   ativo: boolean;
+  tipoLocal?: 'OBRA' | 'UNIDADE' | null;
+  idObra?: number | null;
+  idUnidade?: number | null;
+  localNome?: string | null;
+  contratoId?: number | null;
+  contratoNumero?: string | null;
+  presencaPercent?: number | null;
+  custoHora?: number | null;
 };
 
 export type FuncionarioLotacaoDTO = {

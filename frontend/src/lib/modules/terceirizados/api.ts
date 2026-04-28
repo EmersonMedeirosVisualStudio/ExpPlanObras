@@ -23,9 +23,16 @@ async function api<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> 
 }
 
 export const TerceirizadosApi = {
-  listar: (q = '') => api<TerceirizadoResumoDTO[]>(`/api/v1/rh/terceirizados?q=${encodeURIComponent(q)}`),
+  listar: (q = '', params?: { limit?: number; idObra?: number; idContrato?: number }) => {
+    const limit = typeof params?.limit === 'number' ? `&limit=${encodeURIComponent(String(params.limit))}` : '';
+    const idObra = typeof params?.idObra === 'number' && params.idObra > 0 ? `&idObra=${encodeURIComponent(String(params.idObra))}` : '';
+    const idContrato =
+      typeof params?.idContrato === 'number' && params.idContrato > 0 ? `&idContrato=${encodeURIComponent(String(params.idContrato))}` : '';
+    return api<TerceirizadoResumoDTO[]>(`/api/v1/rh/terceirizados?q=${encodeURIComponent(q)}${limit}${idObra}${idContrato}`);
+  },
+
+  obter: (id: number) => api<TerceirizadoResumoDTO>(`/api/v1/rh/terceirizados/${encodeURIComponent(String(id))}`),
 
   criar: (payload: { nomeCompleto: string; funcao?: string | null; ativo?: boolean; idEmpresaParceira?: number | null }) =>
     api<{ id: number }>(`/api/v1/rh/terceirizados`, { method: 'POST', body: JSON.stringify(payload) }),
 };
-

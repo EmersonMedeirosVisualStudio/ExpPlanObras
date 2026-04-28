@@ -48,7 +48,7 @@ export default function FuncionariosClient() {
       setLoading(true);
       setError(null);
       const q = busca.trim();
-      const rows = await FuncionariosApi.listar(q, q ? 500 : 200);
+      const rows = await FuncionariosApi.listar(q, { limit: q ? 500 : 200 });
       setLista(rows);
     } catch (e: any) {
       setError(e?.message || 'Erro ao carregar funcionários');

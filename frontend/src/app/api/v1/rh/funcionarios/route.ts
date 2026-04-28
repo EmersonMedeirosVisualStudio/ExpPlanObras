@@ -11,6 +11,8 @@ export async function GET(req: Request) {
     const user = await requireApiPermission(PERMISSIONS.RH_FUNCIONARIOS_VIEW);
     const { searchParams } = new URL(req.url);
     const q = (searchParams.get('q') || '').trim();
+    const idObra = Number(searchParams.get('idObra') || 0);
+    const idContrato = Number(searchParams.get('idContrato') || 0);
     const limitParam = searchParams.get('limit');
     const requested = limitParam ? Number(limitParam) : NaN;
     const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 1000) : q ? 500 : 200;
@@ -26,10 +28,41 @@ export async function GET(req: Request) {
         f.status_funcional statusFuncional,
         f.status_cadastro_rh statusCadastroRh,
         f.data_admissao dataAdmissao,
-        f.ativo
+        f.ativo,
+        CASE
+          WHEN fl.tipo_lotacao = 'OBRA' THEN 'OBRA'
+          WHEN fl.tipo_lotacao = 'UNIDADE' THEN 'UNIDADE'
+          ELSE NULL
+        END AS tipoLocal,
+        fl.id_obra AS idObra,
+        fl.id_unidade AS idUnidade,
+        CASE
+          WHEN fl.tipo_lotacao = 'OBRA' THEN COALESCE(NULLIF(o.nome_obra, ''), CONCAT('Obra #', o.id_obra))
+          WHEN fl.tipo_lotacao = 'UNIDADE' THEN u.nome
+          ELSE NULL
+        END AS localNome,
+        c.id_contrato AS contratoId,
+        c.numero_contrato AS contratoNumero
       FROM funcionarios f
+      LEFT JOIN funcionarios_lotacoes fl
+        ON fl.tenant_id = f.tenant_id
+       AND fl.id_funcionario = f.id_funcionario
+       AND fl.atual = 1
+      LEFT JOIN obras o ON o.id_obra = fl.id_obra
+      LEFT JOIN unidades u ON u.tenant_id = f.tenant_id AND u.id_unidade = fl.id_unidade
+      LEFT JOIN contratos c ON c.tenant_id = f.tenant_id AND c.id_contrato = o.id_contrato
       WHERE f.tenant_id = ?`;
     const params: any[] = [user.tenantId];
+
+    if (Number.isFinite(idObra) && idObra > 0) {
+      sql += ` AND fl.tipo_lotacao = 'OBRA' AND fl.id_obra = ?`;
+      params.push(idObra);
+    }
+
+    if (Number.isFinite(idContrato) && idContrato > 0) {
+      sql += ` AND c.id_contrato = ?`;
+      params.push(idContrato);
+    }
 
     if (q) {
       sql += ` AND (f.nome_completo LIKE ? OR f.matricula LIKE ? OR f.cpf LIKE ?)`;
