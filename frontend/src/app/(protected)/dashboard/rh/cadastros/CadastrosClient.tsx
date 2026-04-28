@@ -3,7 +3,7 @@
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Download, FileText, MoreVertical, Plus, ShieldCheck, TriangleAlert, User, Users } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Download, FileText, MoreVertical, Plus, ShieldCheck, TriangleAlert, User, Users, XCircle } from 'lucide-react';
 import { FuncionariosApi } from '@/lib/modules/funcionarios/api';
 import { TerceirizadosApi } from '@/lib/modules/terceirizados/api';
 import { OrganogramaApi } from '@/lib/modules/organograma/api';
@@ -45,6 +45,15 @@ type PessoaRow = {
 
 type SelectItem = { id: number; nome: string };
 type ContratoSelectItem = { id: number; numeroContrato: string | null };
+
+type ChecklistAlertaNivel = 'OK' | 'PENDENTE' | 'PENDENTE_OBRIG' | 'A_VENCER' | 'VENCIDO' | 'SEM_VINCULO';
+type ChecklistAlertaDTO = {
+  pessoaId: number;
+  tipoVinculo: TipoPessoa;
+  nivel: ChecklistAlertaNivel;
+  tooltip: string;
+  resumo: { total: number; ok: number; pendente: number; vencido: number; aVencer: number; obrigatoriosPendentes: number };
+};
 
 function classNames(...parts: Array<string | false | undefined | null>) {
   return parts.filter(Boolean).join(' ');
@@ -210,6 +219,8 @@ export default function CadastrosClient() {
   const [obras, setObras] = useState<SelectItem[]>([]);
   const [contratos, setContratos] = useState<ContratoSelectItem[]>([]);
   const [rows, setRows] = useState<PessoaRow[]>([]);
+  const [alertasLoading, setAlertasLoading] = useState(false);
+  const [alertasByKey, setAlertasByKey] = useState<Record<string, ChecklistAlertaDTO>>({});
 
   const [filtros, setFiltros] = useState<Filtros>({
     idObra: null,
@@ -462,6 +473,56 @@ export default function CadastrosClient() {
     carregarListasBase();
     carregar();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function carregarAlertas() {
+      try {
+        if (loading) return;
+        if (!rows.length) {
+          setAlertasByKey({});
+          return;
+        }
+
+        setAlertasLoading(true);
+        const funcs = rows.filter((r) => r.tipo === 'FUNCIONARIO').map((r) => r.id);
+        const tercs = rows.filter((r) => r.tipo === 'TERCEIRIZADO').map((r) => r.id);
+
+        const [rFunc, rTerc] = await Promise.all([
+          funcs.length ? api.get('/api/v1/rh/pessoas/checklist-alertas', { params: { tipoVinculo: 'FUNCIONARIO', ids: funcs.slice(0, 200).join(',') } }) : Promise.resolve(null as any),
+          tercs.length ? api.get('/api/v1/rh/pessoas/checklist-alertas', { params: { tipoVinculo: 'TERCEIRIZADO', ids: tercs.slice(0, 200).join(',') } }) : Promise.resolve(null as any),
+        ]);
+
+        const dataFunc = rFunc ? ((rFunc.data?.data ?? rFunc.data) as any) : [];
+        const dataTerc = rTerc ? ((rTerc.data?.data ?? rTerc.data) as any) : [];
+
+        const list = ([] as any[]).concat(Array.isArray(dataFunc) ? dataFunc : [], Array.isArray(dataTerc) ? dataTerc : []);
+
+        const next: Record<string, ChecklistAlertaDTO> = {};
+        for (const a of list) {
+          const pessoaId = Number(a?.pessoaId);
+          const tipoVinculo = String(a?.tipoVinculo || '').toUpperCase() === 'TERCEIRIZADO' ? 'TERCEIRIZADO' : 'FUNCIONARIO';
+          if (!Number.isFinite(pessoaId) || pessoaId <= 0) continue;
+          next[`${tipoVinculo}-${pessoaId}`] = {
+            pessoaId,
+            tipoVinculo: tipoVinculo as any,
+            nivel: (a?.nivel as ChecklistAlertaNivel) || 'PENDENTE',
+            tooltip: String(a?.tooltip || ''),
+            resumo: a?.resumo as any,
+          };
+        }
+        if (!cancelled) setAlertasByKey(next);
+      } catch {
+        if (!cancelled) setAlertasByKey({});
+      } finally {
+        if (!cancelled) setAlertasLoading(false);
+      }
+    }
+    carregarAlertas();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, rows]);
 
   const resumo = useMemo(() => {
     const total = rows.length;
@@ -721,6 +782,7 @@ function abrirEnderecos(row: PessoaRow) {
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50 text-left text-slate-700">
               <tr>
+                <th className="px-3 py-2">Alerta</th>
                 <th className="px-3 py-2">Nome</th>
                 <th className="px-3 py-2">Matrícula</th>
                 <th className="px-3 py-2">CPF</th>
@@ -737,13 +799,60 @@ function abrirEnderecos(row: PessoaRow) {
             <tbody>
               {loading ? (
                 <tr>
-                  <td className="px-3 py-6 text-slate-600" colSpan={11}>
+                  <td className="px-3 py-6 text-slate-600" colSpan={12}>
                     Carregando...
                   </td>
                 </tr>
               ) : rows.length ? (
                 rows.map((r) => (
                   <tr key={`${r.tipo}-${r.id}`} className="border-t hover:bg-slate-50">
+                    <td className="px-3 py-2">
+                      {(() => {
+                        const a = alertasByKey[`${r.tipo}-${r.id}`] || null;
+                        const tip = a?.tooltip || (alertasLoading ? 'Carregando alertas...' : 'Sem informações de alerta.');
+                        const nivel: ChecklistAlertaNivel = a?.nivel || (alertasLoading ? 'PENDENTE' : 'PENDENTE');
+                        if (nivel === 'OK') {
+                          return (
+                            <div className="inline-flex items-center" title={tip}>
+                              <CheckCircle size={18} className="text-emerald-600" />
+                            </div>
+                          );
+                        }
+                        if (nivel === 'VENCIDO') {
+                          return (
+                            <div className="inline-flex items-center" title={tip}>
+                              <XCircle size={18} className="text-rose-600" />
+                            </div>
+                          );
+                        }
+                        if (nivel === 'SEM_VINCULO') {
+                          return (
+                            <div className="inline-flex items-center" title={tip}>
+                              <TriangleAlert size={18} className="text-slate-400" />
+                            </div>
+                          );
+                        }
+                        if (nivel === 'PENDENTE_OBRIG') {
+                          return (
+                            <div className="inline-flex items-center" title={tip}>
+                              <TriangleAlert size={18} className="text-amber-600" />
+                            </div>
+                          );
+                        }
+                        if (nivel === 'A_VENCER') {
+                          return (
+                            <div className="inline-flex items-center" title={tip}>
+                              <TriangleAlert size={18} className="text-amber-600" />
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="inline-flex items-center" title={tip}>
+                            <TriangleAlert size={18} className="text-slate-500" />
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-3">
                         <div className="h-9 w-9 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center font-semibold">
@@ -862,7 +971,7 @@ function abrirEnderecos(row: PessoaRow) {
                 ))
               ) : (
                 <tr>
-                  <td className="px-3 py-6 text-center text-slate-500" colSpan={11}>
+                  <td className="px-3 py-6 text-center text-slate-500" colSpan={12}>
                     Nenhum registro encontrado.
                   </td>
                 </tr>

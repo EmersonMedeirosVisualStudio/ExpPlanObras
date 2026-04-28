@@ -2168,6 +2168,258 @@ export default async function v1Routes(server: FastifyInstance) {
     });
   });
 
+  server.get('/rh/pessoas/checklist-alertas', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const q = z
+      .object({
+        tipoVinculo: z.string().optional().nullable(),
+        ids: z.string().optional().nullable(),
+      })
+      .parse(request.query || {});
+
+    const tipoVinculoIn = String(q.tipoVinculo || '').trim().toUpperCase();
+    const tipoVinculo = tipoVinculoIn === 'TERCEIRIZADO' ? 'TERCEIRIZADO' : 'FUNCIONARIO';
+
+    const ids = Array.from(
+      new Set(
+        String(q.ids || '')
+          .split(',')
+          .map((s) => Number(String(s || '').trim()))
+          .filter((n) => Number.isFinite(n) && n > 0)
+      )
+    ).slice(0, 200);
+
+    if (!ids.length) return ok(reply, []);
+
+    const now = new Date();
+
+    const padroes = (tipo: 'FUNCIONARIO' | 'TERCEIRIZADO') => {
+      if (tipo === 'TERCEIRIZADO') {
+        return {
+          codigo: 'RH_TERCEIRIZADO_PADRAO',
+          nomeModelo: 'RH — Checklist de documentos (Terceirizado)',
+          itens: [
+            { ordemItem: 10, grupoItem: 'Identificação', tituloItem: 'Documento de identificação (RG/CPF)', obrigatorio: true, exigeValidade: false, validadeDias: null },
+            { ordemItem: 20, grupoItem: 'Identificação', tituloItem: 'CNH (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 1825 },
+            { ordemItem: 30, grupoItem: 'Identificação', tituloItem: 'Comprovante de residência (quando exigido)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+            { ordemItem: 100, grupoItem: 'Empresa', tituloItem: 'Carta de alocação / declaração da contratada (vínculo, função e obra)', obrigatorio: true, exigeValidade: false, validadeDias: null },
+            { ordemItem: 110, grupoItem: 'Empresa', tituloItem: 'Comprovação de vínculo com a contratada (quando exigido)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+            { ordemItem: 120, grupoItem: 'Empresa', tituloItem: 'Ordem de Serviço / autorização de trabalho (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+            { ordemItem: 200, grupoItem: 'Saúde', tituloItem: 'ASO vigente (Apto)', obrigatorio: true, exigeValidade: true, validadeDias: 365 },
+            { ordemItem: 300, grupoItem: 'Segurança', tituloItem: 'Integração de segurança / regras de obra (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+            { ordemItem: 310, grupoItem: 'Segurança', tituloItem: 'Ficha de EPI assinada (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+            { ordemItem: 320, grupoItem: 'Segurança', tituloItem: 'Permissão de trabalho (PT) / APR (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+            { ordemItem: 400, grupoItem: 'Treinamentos', tituloItem: 'NR-06 (EPI) (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+            { ordemItem: 410, grupoItem: 'Treinamentos', tituloItem: 'NR-10 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+            { ordemItem: 420, grupoItem: 'Treinamentos', tituloItem: 'NR-18 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+            { ordemItem: 430, grupoItem: 'Treinamentos', tituloItem: 'NR-33 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+            { ordemItem: 440, grupoItem: 'Treinamentos', tituloItem: 'NR-35 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+            { ordemItem: 450, grupoItem: 'Treinamentos', tituloItem: 'NR-11 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+            { ordemItem: 460, grupoItem: 'Treinamentos', tituloItem: 'NR-12 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+            { ordemItem: 470, grupoItem: 'Treinamentos', tituloItem: 'NR-20 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+          ],
+        };
+      }
+      return {
+        codigo: 'RH_FUNCIONARIO_PADRAO',
+        nomeModelo: 'RH — Checklist de documentos (Funcionário)',
+        itens: [
+          { ordemItem: 10, grupoItem: 'Identificação', tituloItem: 'Documento de identificação (RG/CPF)', obrigatorio: true, exigeValidade: false, validadeDias: null },
+          { ordemItem: 20, grupoItem: 'Identificação', tituloItem: 'CTPS / Registro (eSocial)', obrigatorio: true, exigeValidade: false, validadeDias: null },
+          { ordemItem: 30, grupoItem: 'Identificação', tituloItem: 'PIS/NIS', obrigatorio: true, exigeValidade: false, validadeDias: null },
+          { ordemItem: 40, grupoItem: 'Identificação', tituloItem: 'Comprovante de residência', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 50, grupoItem: 'Identificação', tituloItem: 'Certidão de nascimento/casamento (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 60, grupoItem: 'Identificação', tituloItem: 'Certificado de reservista (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 70, grupoItem: 'Identificação', tituloItem: 'Título de eleitor (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 80, grupoItem: 'Identificação', tituloItem: 'CNH (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 1825 },
+          { ordemItem: 110, grupoItem: 'Admissão', tituloItem: 'Ficha de registro do empregado / dados cadastrais', obrigatorio: true, exigeValidade: false, validadeDias: null },
+          { ordemItem: 120, grupoItem: 'Admissão', tituloItem: 'Dados bancários para pagamento', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 130, grupoItem: 'Admissão', tituloItem: 'Termo de ciência (políticas internas / LGPD) (quando exigido)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 200, grupoItem: 'Saúde', tituloItem: 'ASO Admissional (Apto) vigente', obrigatorio: true, exigeValidade: true, validadeDias: 365 },
+          { ordemItem: 210, grupoItem: 'Saúde', tituloItem: 'ASO Periódico (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 365 },
+          { ordemItem: 220, grupoItem: 'Saúde', tituloItem: 'ASO Retorno ao trabalho (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 230, grupoItem: 'Saúde', tituloItem: 'ASO Mudança de risco (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 240, grupoItem: 'Saúde', tituloItem: 'ASO Demissional (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 300, grupoItem: 'Segurança', tituloItem: 'Integração de segurança / regras de obra (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 310, grupoItem: 'Segurança', tituloItem: 'Ficha de EPI assinada (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 400, grupoItem: 'Treinamentos', tituloItem: 'NR-06 (EPI) (quando aplicável)', obrigatorio: false, exigeValidade: false, validadeDias: null },
+          { ordemItem: 410, grupoItem: 'Treinamentos', tituloItem: 'NR-10 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+          { ordemItem: 420, grupoItem: 'Treinamentos', tituloItem: 'NR-18 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+          { ordemItem: 430, grupoItem: 'Treinamentos', tituloItem: 'NR-33 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+          { ordemItem: 440, grupoItem: 'Treinamentos', tituloItem: 'NR-35 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+          { ordemItem: 450, grupoItem: 'Treinamentos', tituloItem: 'NR-11 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+          { ordemItem: 460, grupoItem: 'Treinamentos', tituloItem: 'NR-12 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+          { ordemItem: 470, grupoItem: 'Treinamentos', tituloItem: 'NR-20 (quando aplicável)', obrigatorio: false, exigeValidade: true, validadeDias: 730 },
+        ],
+      };
+    };
+
+    const preset = padroes(tipoVinculo as any);
+
+    const modeloData = await prisma.$transaction(async (tx) => {
+      const prismaAny = tx as any;
+
+      const modelo =
+        (await prismaAny.rhChecklistModelo
+          .findFirst({
+            where: { tenantId: ctx.tenantId, codigo: preset.codigo },
+            select: { id: true, codigo: true, nomeModelo: true, tipoVinculo: true },
+          })
+          .catch(() => null)) ||
+        (await prismaAny.rhChecklistModelo.create({
+          data: { tenantId: ctx.tenantId, codigo: preset.codigo, nomeModelo: preset.nomeModelo, tipoVinculo, ativo: true },
+          select: { id: true, codigo: true, nomeModelo: true, tipoVinculo: true },
+        }));
+
+      if (String(modelo.nomeModelo || '') !== preset.nomeModelo || String(modelo.tipoVinculo || '') !== tipoVinculo) {
+        await prismaAny.rhChecklistModelo.updateMany({
+          where: { tenantId: ctx.tenantId, id: modelo.id },
+          data: { nomeModelo: preset.nomeModelo, tipoVinculo },
+        });
+      }
+
+      const existentes = await prismaAny.rhChecklistItemModelo.findMany({
+        where: { tenantId: ctx.tenantId, modeloId: modelo.id },
+        select: { ordemItem: true },
+        take: 2000,
+      });
+      const ordens = new Set<number>((existentes as any[]).map((e) => Number(e.ordemItem)));
+      const faltantes = preset.itens.filter((i: any) => !ordens.has(Number(i.ordemItem)));
+
+      if (faltantes.length > 0) {
+        await prismaAny.rhChecklistItemModelo.createMany({
+          data: faltantes.map((i: any) => ({
+            tenantId: ctx.tenantId,
+            modeloId: modelo.id,
+            ordemItem: Number(i.ordemItem),
+            grupoItem: i.grupoItem ?? null,
+            codigoItem: null,
+            tituloItem: i.tituloItem,
+            descricaoItem: null,
+            obrigatorio: !!i.obrigatorio,
+            exigeValidade: !!i.exigeValidade,
+            validadeDias: i.validadeDias == null ? null : Number(i.validadeDias),
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      const itensModelo = await prismaAny.rhChecklistItemModelo.findMany({
+        where: { tenantId: ctx.tenantId, modeloId: modelo.id },
+        select: { id: true, ordemItem: true, tituloItem: true, obrigatorio: true, exigeValidade: true },
+        orderBy: [{ ordemItem: 'asc' }, { id: 'asc' }],
+      });
+
+      return { modelo, itensModelo };
+    });
+
+    const vinculos = await prisma.pessoaVinculo.findMany({
+      where: { tenantId: ctx.tenantId, pessoaId: { in: ids }, tipoVinculo, dataFim: null },
+      select: { id: true, pessoaId: true },
+    });
+
+    const vinculoByPessoaId = new Map<number, number>();
+    for (const v of vinculos as any[]) vinculoByPessoaId.set(Number(v.pessoaId), Number(v.id));
+
+    const vinculoIds = Array.from(new Set(vinculos.map((v: any) => Number(v.id)).filter((n: any) => Number.isFinite(n) && n > 0)));
+
+    const execucoes = await (prisma as any).rhChecklistExecucao.findMany({
+      where: { tenantId: ctx.tenantId, modeloId: modeloData.modelo.id, vinculoId: { in: vinculoIds.length ? vinculoIds : [0] } },
+      select: { id: true, vinculoId: true },
+      take: 2000,
+    });
+
+    const execucaoByVinculoId = new Map<number, number>();
+    for (const e of execucoes as any[]) execucaoByVinculoId.set(Number(e.vinculoId), Number(e.id));
+
+    const execucaoIds = Array.from(new Set(execucoes.map((e: any) => Number(e.id)).filter((n: any) => Number.isFinite(n) && n > 0)));
+
+    const execItens = await (prisma as any).rhChecklistExecucaoItem.findMany({
+      where: { tenantId: ctx.tenantId, execucaoId: { in: execucaoIds.length ? execucaoIds : [0] } },
+      select: { execucaoId: true, itemModeloId: true, status: true, entregueEm: true, validadeAte: true },
+      take: 10000,
+    });
+
+    const itensByExecucaoId = new Map<number, Map<number, any>>();
+    for (const r of execItens as any[]) {
+      const exId = Number(r.execucaoId);
+      if (!itensByExecucaoId.has(exId)) itensByExecucaoId.set(exId, new Map());
+      itensByExecucaoId.get(exId)!.set(Number(r.itemModeloId), r);
+    }
+
+    const itensModelo = (modeloData.itensModelo as any[]).map((i) => ({
+      id: Number(i.id),
+      ordemItem: Number(i.ordemItem),
+      tituloItem: String(i.tituloItem || ''),
+      obrigatorio: !!i.obrigatorio,
+      exigeValidade: !!i.exigeValidade,
+    }));
+
+    const results = ids.map((pessoaId) => {
+      const vinculoId = vinculoByPessoaId.get(Number(pessoaId)) || null;
+      const execucaoId = vinculoId ? execucaoByVinculoId.get(Number(vinculoId)) || null : null;
+      const mapa = execucaoId ? itensByExecucaoId.get(Number(execucaoId)) || null : null;
+
+      let okCount = 0;
+      let pendenteCount = 0;
+      let vencidoCount = 0;
+      let aVencerCount = 0;
+      let obrigatoriosPendentesCount = 0;
+      const pendencias: Array<{ status: string; titulo: string }> = [];
+
+      for (const i of itensModelo) {
+        const e = mapa ? mapa.get(i.id) : null;
+        const entregueEm = e?.entregueEm ? new Date(e.entregueEm) : null;
+        const validadeAte = e?.validadeAte ? new Date(e.validadeAte) : null;
+
+        let status = entregueEm ? 'OK' : 'PENDENTE';
+        if (entregueEm && i.exigeValidade) {
+          if (validadeAte && Number.isFinite(validadeAte.getTime())) {
+            const diffMs = validadeAte.getTime() - now.getTime();
+            const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            if (diffDays < 0) status = 'VENCIDO';
+            else if (diffDays <= 30) status = 'A_VENCER';
+            else status = 'OK';
+          } else {
+            status = 'PENDENTE_VALIDADE';
+          }
+        }
+
+        if (status === 'OK') okCount += 1;
+        else if (status === 'VENCIDO') vencidoCount += 1;
+        else if (status === 'A_VENCER') aVencerCount += 1;
+        else pendenteCount += 1;
+
+        if (i.obrigatorio && (status === 'PENDENTE' || status === 'PENDENTE_VALIDADE' || status === 'VENCIDO')) obrigatoriosPendentesCount += 1;
+        if (status !== 'OK') pendencias.push({ status, titulo: i.tituloItem });
+      }
+
+      let nivel = 'OK';
+      if (!vinculoId) nivel = 'SEM_VINCULO';
+      else if (vencidoCount > 0) nivel = 'VENCIDO';
+      else if (obrigatoriosPendentesCount > 0) nivel = 'PENDENTE_OBRIG';
+      else if (aVencerCount > 0) nivel = 'A_VENCER';
+      else if (pendenteCount > 0) nivel = 'PENDENTE';
+
+      const linhas = [
+        vinculoId ? `Vencidos: ${vencidoCount} • A vencer: ${aVencerCount} • Pendentes: ${pendenteCount} • Obrigatórios pendentes: ${obrigatoriosPendentesCount}` : 'Vínculo ativo não encontrado para este tipo.',
+        ...pendencias.slice(0, 6).map((p) => `- ${p.status}: ${p.titulo}`),
+      ].filter(Boolean);
+
+      return {
+        pessoaId: Number(pessoaId),
+        tipoVinculo,
+        nivel,
+        tooltip: linhas.join('\n'),
+        resumo: { total: itensModelo.length, ok: okCount, pendente: pendenteCount, vencido: vencidoCount, aVencer: aVencerCount, obrigatoriosPendentes: obrigatoriosPendentesCount },
+      };
+    });
+
+    return ok(reply, results);
+  });
+
   server.patch('/rh/pessoas/:id/checklist/itens/:itemId', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
