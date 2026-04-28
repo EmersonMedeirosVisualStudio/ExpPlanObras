@@ -292,6 +292,13 @@ export const APP_MENU: MenuSectionConfig[] = [
         permission: PERMISSIONS.RH_FUNCIONARIOS_VIEW,
       },
       {
+        key: 'rh-alocacao',
+        label: 'Alocação de Equipe',
+        href: '/dashboard/rh/alocacao',
+        icon: 'shuffle',
+        permission: PERMISSIONS.RH_FUNCIONARIOS_VIEW,
+      },
+      {
         key: 'presencas',
         label: 'Presenças',
         href: '/dashboard/rh/presencas',

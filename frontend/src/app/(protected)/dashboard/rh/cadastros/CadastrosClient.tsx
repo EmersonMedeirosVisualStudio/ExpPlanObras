@@ -1,7 +1,7 @@
 'use client';
 
 import type React from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Building2, CheckCircle, Download, FileText, IdCard, MoreVertical, Plus, ShieldCheck, TriangleAlert, User, Users, XCircle } from 'lucide-react';
 import { FuncionariosApi } from '@/lib/modules/funcionarios/api';
@@ -503,9 +503,22 @@ export default function CadastrosClient() {
     }
   }
 
+  const autoFilterReadyRef = useRef(false);
+  useEffect(() => {
+    if (!autoFilterReadyRef.current) return;
+    carregar();
+  }, [filtros.tipo, filtros.status, filtros.idObra, filtros.idContrato]);
+
+  useEffect(() => {
+    if (!autoFilterReadyRef.current) return;
+    const t = window.setTimeout(() => carregar(), 350);
+    return () => window.clearTimeout(t);
+  }, [filtros.busca]);
+
   useEffect(() => {
     carregarListasBase();
     carregar();
+    autoFilterReadyRef.current = true;
   }, []);
 
   useEffect(() => {
@@ -583,7 +596,6 @@ export default function CadastrosClient() {
 
   function limparFiltros() {
     setFiltros({ idObra: null, idContrato: null, tipo: 'TODOS', status: 'ATIVO', busca: '' });
-    setTimeout(() => carregar(), 0);
   }
 
   function exportarCsv() {
@@ -674,42 +686,41 @@ export default function CadastrosClient() {
           <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
             <Users size={18} />
           </div>
-          <div className="flex items-start gap-4 flex-wrap">
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-900">Pessoas</h1>
-              <p className="text-sm text-slate-600">{breadcrumb}</p>
-            </div>
-            <div className="mt-0.5 flex gap-2 flex-wrap">
-              <button
-                type="button"
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 inline-flex items-center gap-2"
-                onClick={() => {
-                  setModalFuncionarioMsg(null);
-                  setModalFuncionario(true);
-                }}
-              >
-                <Plus size={16} />
-                Novo funcionário
-              </button>
-              <button
-                type="button"
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 inline-flex items-center gap-2"
-                onClick={() => {
-                  setModalTerceirizadoMsg(null);
-                  setModalTerceirizado(true);
-                }}
-              >
-                <Plus size={16} />
-                Novo terceirizado
-              </button>
-              <button type="button" className="rounded-lg bg-violet-600 px-4 py-2 text-sm text-white hover:bg-violet-700" onClick={gotoPresencas}>
-                Presença da obra
-              </button>
-              <button type="button" className="rounded-lg bg-amber-500 px-4 py-2 text-sm text-white hover:bg-amber-600" onClick={gotoDashboardRh}>
-                Dashboard RH
-              </button>
-            </div>
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">Pessoas</h1>
+            <p className="text-sm text-slate-600">{breadcrumb}</p>
           </div>
+        </div>
+
+        <div className="mt-0.5 flex gap-2 flex-wrap justify-end">
+          <button
+            type="button"
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 inline-flex items-center gap-2"
+            onClick={() => {
+              setModalFuncionarioMsg(null);
+              setModalFuncionario(true);
+            }}
+          >
+            <Plus size={16} />
+            Novo funcionário
+          </button>
+          <button
+            type="button"
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 inline-flex items-center gap-2"
+            onClick={() => {
+              setModalTerceirizadoMsg(null);
+              setModalTerceirizado(true);
+            }}
+          >
+            <Plus size={16} />
+            Novo terceirizado
+          </button>
+          <button type="button" className="rounded-lg bg-violet-600 px-4 py-2 text-sm text-white hover:bg-violet-700" onClick={gotoPresencas}>
+            Presença da obra
+          </button>
+          <button type="button" className="rounded-lg bg-amber-500 px-4 py-2 text-sm text-white hover:bg-amber-600" onClick={gotoDashboardRh}>
+            Dashboard RH
+          </button>
         </div>
       </div>
 
@@ -817,7 +828,7 @@ export default function CadastrosClient() {
             </select>
           </div>
 
-          <div className="md:col-span-7">
+          <div className="md:col-span-8">
             <div className="text-xs text-slate-600 mb-1">Busca</div>
             <input
               className="input"
@@ -825,17 +836,6 @@ export default function CadastrosClient() {
               value={filtros.busca}
               onChange={(e) => setFiltros((p) => ({ ...p, busca: e.target.value }))}
             />
-          </div>
-
-          <div className="md:col-span-1 flex items-end gap-2">
-            <button
-              type="button"
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 w-full"
-              onClick={carregar}
-              disabled={loading}
-            >
-              Filtrar
-            </button>
           </div>
         </div>
 
