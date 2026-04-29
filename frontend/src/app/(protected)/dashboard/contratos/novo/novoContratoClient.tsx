@@ -401,8 +401,7 @@ export default function NovoContratoClient() {
         setEmpresaParceiraNome(nomeCp);
         setEmpresaParceiraDocumento(docCp);
         setContraparteSearch(nomeCp);
-        setContraparteSugestoes([]);
-        setContraparteSugOpen(false);
+        setContraparteOpen(false);
         setStatus(normalizeContratoStatus(c.status || "NAO_INICIADO"));
         setDataAssinatura(c.dataAssinatura ? new Date(String(c.dataAssinatura)).toISOString().slice(0, 10) : "");
         setDataOS(c.dataOS ? new Date(String(c.dataOS)).toISOString().slice(0, 10) : "");
