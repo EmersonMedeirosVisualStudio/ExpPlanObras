@@ -331,11 +331,7 @@ model Contrato {
   vigenciaInicial DateTime?
   vigenciaAtual  DateTime?
   valorContratado Decimal?
-  valorConcedenteInicial Decimal?
-  valorProprioInicial Decimal?
   valorTotalInicial Decimal?
-  valorConcedenteAtual Decimal?
-  valorProprioAtual Decimal?
   valorTotalAtual Decimal?
   planilhaVersao Int @default(1)
   createdAt      DateTime @default(now())
@@ -436,14 +432,10 @@ model ContratoAditivo {
 
   prazoAdicionadoDias Int?
   valorTotalAdicionado Decimal?
-  valorConcedenteAdicionado Decimal?
-  valorProprioAdicionado Decimal?
 
   snapshotPrazoDias Int?
   snapshotVigenciaAtual DateTime?
   snapshotValorTotalAtual Decimal?
-  snapshotValorConcedenteAtual Decimal?
-  snapshotValorProprioAtual Decimal?
   snapshotPlanilhaVersao Int?
   planilhaVersaoNova Int?
 

@@ -213,7 +213,7 @@ O aditivo é o histórico de mudanças. O contrato “vigente” é sempre o con
 - Use as abas: **Dashboard**, **Aditivos** (lista/CRUD) e **Novo aditivo**
 
 ### ETAPA 3 — O que preencher
-- Em **Novo aditivo**, preencha o que mudou (ex.: dias adicionados, valor adicionado, motivo/observação do aditivo)
+- Em **Novo aditivo**, preencha o que mudou (ex.: dias adicionados, **valor total após o aditivo**, motivo/observação do aditivo)
 - Salve como **rascunho**
 - Quando estiver certo, clique em **aprovar**
 

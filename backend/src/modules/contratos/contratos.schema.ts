@@ -19,12 +19,7 @@ export const createContratoSchema = z.object({
   vigenciaInicial: z.string().optional().nullable(),
   vigenciaAtual: z.string().optional().nullable(),
   valorContratado: z.number().optional().nullable(),
-  valorConcedenteInicial: z.number().optional().nullable(),
-  valorProprioInicial: z.number().optional().nullable(),
   valorTotalInicial: z.number().optional().nullable(),
-  valorConcedenteAtual: z.number().optional().nullable(),
-  valorProprioAtual: z.number().optional().nullable(),
-  valorTotalAtual: z.number().optional().nullable(),
 });
 
 export const updateContratoSchema = z.object({
@@ -46,12 +41,7 @@ export const updateContratoSchema = z.object({
   vigenciaInicial: z.string().optional().nullable(),
   vigenciaAtual: z.string().optional().nullable(),
   valorContratado: z.number().optional().nullable(),
-  valorConcedenteInicial: z.number().optional().nullable(),
-  valorProprioInicial: z.number().optional().nullable(),
   valorTotalInicial: z.number().optional().nullable(),
-  valorConcedenteAtual: z.number().optional().nullable(),
-  valorProprioAtual: z.number().optional().nullable(),
-  valorTotalAtual: z.number().optional().nullable(),
 });
 
 export type CreateContratoInput = z.infer<typeof createContratoSchema>;

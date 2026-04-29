@@ -3091,7 +3091,7 @@ Regras-base (modelo correto de contrato de obra):
 
 - **Número do contrato é único** dentro do Tenant (evita duplicidade e confusão em relatórios/medições).
 - datas de controle: **assinatura**, **OS**, **prazo (dias)**, **vigência inicial** (não muda) e **vigência atual** (muda via aditivo).
-- valores: suporta contrato **Público** (Concedente + Próprio) e **Privado/PF** (Valor total).
+- valores: **Valor total (inicial)** (digitado) e **Valor total (atual)** (automático). Sem aditivo de valor, o atual = inicial; com aditivo de valor aprovado, o atual é o valor definido no aditivo.
 - o contrato pode existir sem obra; obras podem ser vinculadas depois.
 - toda obra possui contrato (quando obra ainda não tem, usa-se contrato “PENDENTE” interno).
 
@@ -3275,7 +3275,7 @@ Tipos de aditivo (modelo do sistema):
 - planilha: por padrão **Não** (pode ser Sim se você quiser registrar uma reprogramação junto, mas o sistema deixa opcional)
 
 2) Aditivo de **Valor**
-- altera: valor total do contrato (e, se for público, concedente/próprio)
+- altera: **valor total do contrato** (define o “Valor total (atual)”)
 - regra obrigatória: **sempre altera planilha**
 - motivo: aumento/redução precisa estar distribuído nos itens
 

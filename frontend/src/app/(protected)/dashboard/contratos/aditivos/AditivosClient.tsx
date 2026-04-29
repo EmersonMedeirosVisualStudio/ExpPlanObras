@@ -18,13 +18,9 @@ type AditivoRow = {
   descricao: string | null;
   prazoAdicionadoDias: number | null;
   valorTotalAdicionado: number | null;
-  valorConcedenteAdicionado: number | null;
-  valorProprioAdicionado: number | null;
   snapshotPrazoDias: number | null;
   snapshotVigenciaAtual: string | null;
   snapshotValorTotalAtual: number | null;
-  snapshotValorConcedenteAtual: number | null;
-  snapshotValorProprioAtual: number | null;
   snapshotPlanilhaVersao?: number | null;
   planilhaVersaoNova?: number | null;
   aplicadoEm: string | null;
@@ -213,9 +209,7 @@ export default function AditivosClient() {
   const [dataFimVigencia, setDataFimVigencia] = useState("");
   const [prazoAdicionadoDias, setPrazoAdicionadoDias] = useState("");
   const [prazoUnidade, setPrazoUnidade] = useState<"DIAS" | "MESES" | "ANOS">("DIAS");
-  const [valorAdicionado, setValorAdicionado] = useState("0,00");
-  const [valorConcedenteAdicionado, setValorConcedenteAdicionado] = useState("0,00");
-  const [valorProprioAdicionado, setValorProprioAdicionado] = useState("0,00");
+  const [valorTotalDefinido, setValorTotalDefinido] = useState("0,00");
   const [justificativa, setJustificativa] = useState("");
   const [descricao, setDescricao] = useState("");
   const [docPdf, setDocPdf] = useState<File | null>(null);
@@ -372,9 +366,7 @@ export default function AditivosClient() {
       setDataFimVigencia("");
     }
     if (tipo !== "VALOR") {
-      setValorAdicionado("0,00");
-      setValorConcedenteAdicionado("0,00");
-      setValorProprioAdicionado("0,00");
+      setValorTotalDefinido("0,00");
     }
   }, [formOpen, tipo]);
 
@@ -397,31 +389,17 @@ export default function AditivosClient() {
   const impactPreview = useMemo(() => {
     const c = consolidado?.contrato;
     if (!c) return null;
-    const tipoContrato = String(c.tipoContratante || "PRIVADO").toUpperCase();
-    const publico = tipoContrato === "PUBLICO";
     const prazoAtual = c.prazoDias == null ? null : Number(c.prazoDias);
     const vigAtual = c.vigenciaAtual ? String(c.vigenciaAtual).slice(0, 10) : null;
     const novoPrazo = tipo === "PRAZO" ? (prazoAtual != null ? prazoAtual + prazoAddDias : prazoAddDias || null) : prazoAtual;
     const novaVig = tipo === "PRAZO" && vigAtual && prazoAddDias ? addDays(vigAtual, prazoAddDias) : null;
 
     const valorTotalAtual = c.valorTotalAtual == null ? 0 : Number(c.valorTotalAtual);
-    const vAddPriv = parseMoneyBR(valorAdicionado);
-    const novoValorPriv = valorTotalAtual + vAddPriv;
-
-    const vcAtual = c.valorConcedenteAtual == null ? 0 : Number(c.valorConcedenteAtual);
-    const vpAtual = c.valorProprioAtual == null ? 0 : Number(c.valorProprioAtual);
-    const vcAdd = parseMoneyBR(valorConcedenteAdicionado);
-    const vpAdd = parseMoneyBR(valorProprioAdicionado);
-    const novoVc = vcAtual + vcAdd;
-    const novoVp = vpAtual + vpAdd;
-    const novoTotalPub = novoVc + novoVp;
-
-    const deltaValor = tipo === "VALOR" ? (publico ? vcAdd + vpAdd : vAddPriv) : 0;
-    const novoValor = tipo === "VALOR" ? (publico ? novoTotalPub : novoValorPriv) : valorTotalAtual;
+    const novoValor = tipo === "VALOR" ? parseMoneyBR(valorTotalDefinido) : valorTotalAtual;
+    const deltaValor = tipo === "VALOR" ? novoValor - valorTotalAtual : 0;
     const variacaoPercent = valorTotalAtual > 0 && deltaValor !== 0 ? Number(((deltaValor / valorTotalAtual) * 100).toFixed(2)) : null;
 
     return {
-      publico,
       prazoAtual,
       vigAtual,
       novoPrazo,
@@ -432,7 +410,7 @@ export default function AditivosClient() {
       deltaPrazo: tipo === "PRAZO" ? prazoAddDias : 0,
       variacaoPercent,
     };
-  }, [consolidado, tipo, prazoAddDias, valorAdicionado, valorConcedenteAdicionado, valorProprioAdicionado]);
+  }, [consolidado, tipo, prazoAddDias, valorTotalDefinido]);
 
   async function criarAditivo() {
     if (!contratoId) return;
@@ -454,12 +432,7 @@ export default function AditivosClient() {
       };
       if (tipo === "PRAZO") payload.prazoAdicionadoDias = prazoAddDias;
       if (tipo === "VALOR") {
-        if (String(consolidado?.contrato?.tipoContratante || "").toUpperCase() === "PUBLICO") {
-          payload.valorConcedenteAdicionado = parseMoneyBR(valorConcedenteAdicionado);
-          payload.valorProprioAdicionado = parseMoneyBR(valorProprioAdicionado);
-        } else {
-          payload.valorTotalAdicionado = parseMoneyBR(valorAdicionado);
-        }
+        payload.valorTotalAdicionado = parseMoneyBR(valorTotalDefinido);
       }
       const res = await api.post(`/api/contratos/${contratoId}/aditivos`, payload);
       const aditivoId = Number((res.data as any)?.id || 0);
@@ -657,10 +630,11 @@ export default function AditivosClient() {
                         <td className="px-3 py-2">{tipoLabel(a.tipo)}</td>
                         <td className="px-3 py-2">
                           {(() => {
-                            const delta = a.valorTotalAdicionado != null ? Number(a.valorTotalAdicionado) : Number(a.valorConcedenteAdicionado || 0) + Number(a.valorProprioAdicionado || 0);
-                            if (!delta) return "—";
-                            if (delta > 0) return `+${moeda(delta)}`;
-                            return `-${moeda(Math.abs(delta))}`;
+                            if (a.tipo !== "VALOR" && a.tipo !== "AMBOS") return "—";
+                            if (a.valorTotalAdicionado == null) return "—";
+                            const v = Number(a.valorTotalAdicionado);
+                            if (!Number.isFinite(v) || v <= 0) return "—";
+                            return moeda(v);
                           })()}
                         </td>
                         <td className="px-3 py-2">
@@ -989,41 +963,20 @@ export default function AditivosClient() {
             {tipo === "VALOR" ? (
               <div className="md:col-span-3 rounded-lg border border-[#e6edf5] bg-white p-3">
                 <div className="text-sm font-semibold">Valor</div>
-                {String(consolidado?.contrato?.tipoContratante || "").toUpperCase() === "PUBLICO" ? (
-                  <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <div>
-                      <div className="text-sm text-slate-600">Concedente (Δ)</div>
-                      <input className="input bg-white text-slate-900" value={valorConcedenteAdicionado} onChange={(e) => setValorConcedenteAdicionado(formatMoneyBRFromInput(e.target.value))} />
-                    </div>
-                    <div>
-                      <div className="text-sm text-slate-600">Próprio (Δ)</div>
-                      <input className="input bg-white text-slate-900" value={valorProprioAdicionado} onChange={(e) => setValorProprioAdicionado(formatMoneyBRFromInput(e.target.value))} />
-                    </div>
-                    <div>
-                      <div className="text-sm text-slate-600">Antes → Depois</div>
-                      <div className="text-sm">
-                        {moeda(impactPreview?.valorAtual ?? 0)} → {moeda(impactPreview?.novoValor ?? 0)} ({(impactPreview?.deltaValor ?? 0) >= 0 ? "+" : "-"}
-                        {moeda(Math.abs(impactPreview?.deltaValor ?? 0))})
-                      </div>
-                      <div className="mt-1 text-xs text-slate-600">Variação: {impactPreview?.variacaoPercent == null ? "—" : `${impactPreview.variacaoPercent}%`}</div>
-                    </div>
+                <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div>
+                    <div className="text-sm text-slate-600">Valor total (após aditivo)</div>
+                    <input className="input bg-white text-slate-900" value={valorTotalDefinido} onChange={(e) => setValorTotalDefinido(formatMoneyBRFromInput(e.target.value))} />
                   </div>
-                ) : (
-                  <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <div>
-                      <div className="text-sm text-slate-600">Valor (Δ)</div>
-                      <input className="input bg-white text-slate-900" value={valorAdicionado} onChange={(e) => setValorAdicionado(formatMoneyBRFromInput(e.target.value))} />
+                  <div className="md:col-span-2">
+                    <div className="text-sm text-slate-600">Antes → Depois</div>
+                    <div className="text-sm">
+                      {moeda(impactPreview?.valorAtual ?? 0)} → {moeda(impactPreview?.novoValor ?? 0)} ({(impactPreview?.deltaValor ?? 0) >= 0 ? "+" : "-"}
+                      {moeda(Math.abs(impactPreview?.deltaValor ?? 0))})
                     </div>
-                    <div className="md:col-span-2">
-                      <div className="text-sm text-slate-600">Antes → Depois</div>
-                      <div className="text-sm">
-                        {moeda(impactPreview?.valorAtual ?? 0)} → {moeda(impactPreview?.novoValor ?? 0)} ({(impactPreview?.deltaValor ?? 0) >= 0 ? "+" : "-"}
-                        {moeda(Math.abs(impactPreview?.deltaValor ?? 0))})
-                      </div>
-                      <div className="mt-1 text-xs text-slate-600">Variação: {impactPreview?.variacaoPercent == null ? "—" : `${impactPreview.variacaoPercent}%`}</div>
-                    </div>
+                    <div className="mt-1 text-xs text-slate-600">Variação: {impactPreview?.variacaoPercent == null ? "—" : `${impactPreview.variacaoPercent}%`}</div>
                   </div>
-                )}
+                </div>
               </div>
             ) : null}
 

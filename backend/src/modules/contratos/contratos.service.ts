@@ -60,49 +60,17 @@ function computeVigencias(input: { dataOS?: Date | null; dataAssinatura?: Date |
 
 function computeValores(input: {
   tipoContratante?: string | null;
-  valorConcedenteInicial?: number | null;
-  valorProprioInicial?: number | null;
   valorTotalInicial?: number | null;
-  valorConcedenteAtual?: number | null;
-  valorProprioAtual?: number | null;
   valorTotalAtual?: number | null;
 }) {
   const tipo = input.tipoContratante ? String(input.tipoContratante).trim().toUpperCase() : 'PRIVADO';
-  const isPublico = tipo === 'PUBLICO';
-
-  const vci = toNumberOrNull(input.valorConcedenteInicial);
-  const vpi = toNumberOrNull(input.valorProprioInicial);
   const vti = toNumberOrNull(input.valorTotalInicial);
-
-  const vca = toNumberOrNull(input.valorConcedenteAtual);
-  const vpa = toNumberOrNull(input.valorProprioAtual);
   const vta = toNumberOrNull(input.valorTotalAtual);
-
-  if (isPublico) {
-    const totalInicial = vti != null ? vti : (vci || 0) + (vpi || 0);
-    const concedenteAtual = vca != null ? vca : vci;
-    const proprioAtual = vpa != null ? vpa : vpi;
-    const totalAtual = vta != null ? vta : (concedenteAtual || 0) + (proprioAtual || 0);
-    return {
-      tipoContratante: tipo,
-      valorConcedenteInicial: vci,
-      valorProprioInicial: vpi,
-      valorTotalInicial: totalInicial,
-      valorConcedenteAtual: concedenteAtual,
-      valorProprioAtual: proprioAtual,
-      valorTotalAtual: totalAtual,
-    };
-  }
-
   const totalInicial = vti != null ? vti : null;
   const totalAtual = vta != null ? vta : totalInicial;
   return {
     tipoContratante: tipo,
-    valorConcedenteInicial: null,
-    valorProprioInicial: null,
     valorTotalInicial: totalInicial,
-    valorConcedenteAtual: null,
-    valorProprioAtual: null,
     valorTotalAtual: totalAtual,
   };
 }
@@ -110,7 +78,6 @@ function computeValores(input: {
 function computeStatusEAlertas(row: any) {
   const issues: string[] = [];
   const tipo = String(row.tipoContratante || 'PRIVADO').toUpperCase();
-  const isPublico = tipo === 'PUBLICO';
 
   const dataOS = row.dataOS ? new Date(row.dataOS) : null;
   const dataAss = row.dataAssinatura ? new Date(row.dataAssinatura) : null;
@@ -126,15 +93,8 @@ function computeStatusEAlertas(row: any) {
   if (!row.empresaParceiraNome) issues.push('Empresa parceira não vinculada');
   if (temAditivoAberto) issues.push('Aditivo em aberto');
 
-  if (isPublico) {
-    const vci = toNumberOrNull(row.valorConcedenteInicial);
-    const vpi = toNumberOrNull(row.valorProprioInicial);
-    const vti = toNumberOrNull(row.valorTotalInicial);
-    if (vci == null && vpi == null && vti == null) issues.push('Valor inicial não informado');
-  } else {
-    const vti = toNumberOrNull(row.valorTotalInicial);
-    if (vti == null) issues.push('Valor inicial não informado');
-  }
+  const vti = toNumberOrNull(row.valorTotalInicial);
+  if (vti == null) issues.push('Valor inicial não informado');
 
   if (valorTotalAtual <= 0) issues.push(valorTotalAtual === 0 ? 'Valor total do contrato é 0' : 'Valor total do contrato é negativo');
 
@@ -467,10 +427,6 @@ export async function createSubcontrato(
         valorTotalInicial: valorNovo,
         valorTotalAtual: valorNovo,
         valorContratado: null,
-        valorConcedenteInicial: null,
-        valorProprioInicial: null,
-        valorConcedenteAtual: null,
-        valorProprioAtual: null,
       },
     });
 
@@ -966,8 +922,6 @@ export async function createContratoAditivo(
     descricao?: string | null;
     prazoAdicionadoDias?: number | null;
     valorTotalAdicionado?: number | null;
-    valorConcedenteAdicionado?: number | null;
-    valorProprioAdicionado?: number | null;
   }
 ) {
   return withRLS(tenantId, async (tx) => {
@@ -1005,21 +959,14 @@ export async function createContratoAditivo(
     }
 
     const valorTotalAdicionado = toNumberOrNull(input.valorTotalAdicionado);
-    const valorConcedenteAdicionado = toNumberOrNull(input.valorConcedenteAdicionado);
-    const valorProprioAdicionado = toNumberOrNull(input.valorProprioAdicionado);
 
     const alterouPlanilhaFinal = tipo === 'VALOR' ? true : Boolean(input.alterouPlanilha);
 
     if (tipo === 'PRAZO' && (!prazoAdicionadoDias || prazoAdicionadoDias <= 0)) throw new Error('Prazo: informe a data fim da vigência ou o prazo adicionado (dias) > 0');
     if (tipo === 'VALOR') {
-      const isPublico = String(contrato.tipoContratante || '').toUpperCase() === 'PUBLICO';
-      if (isPublico) {
-        const c = valorConcedenteAdicionado ?? 0;
-        const p = valorProprioAdicionado ?? 0;
-        if (c === 0 && p === 0) throw new Error('Informe valor concedente e/ou próprio (aumentos ou reduções)');
-      } else {
-        if (!valorTotalAdicionado || valorTotalAdicionado === 0) throw new Error('Informe a variação de valor (aumento ou redução)');
-      }
+      const atual = toNumberOrNull(contrato.valorTotalAtual) ?? 0;
+      if (valorTotalAdicionado == null || !Number.isFinite(valorTotalAdicionado) || valorTotalAdicionado <= 0) throw new Error('Informe o valor total do contrato após o aditivo (deve ser > 0)');
+      if (valorTotalAdicionado === atual) throw new Error('O valor total (após aditivo) deve ser diferente do valor atual do contrato');
     }
 
     const created = await tx.contratoAditivo.create({
@@ -1037,8 +984,6 @@ export async function createContratoAditivo(
         descricao: input.descricao ?? null,
         prazoAdicionadoDias: tipo === 'PRAZO' ? prazoAdicionadoDias : null,
         valorTotalAdicionado: tipo === 'VALOR' ? (valorTotalAdicionado == null ? null : valorTotalAdicionado) : null,
-        valorConcedenteAdicionado: tipo === 'VALOR' ? (valorConcedenteAdicionado == null ? null : valorConcedenteAdicionado) : null,
-        valorProprioAdicionado: tipo === 'VALOR' ? (valorProprioAdicionado == null ? null : valorProprioAdicionado) : null,
       },
     });
 
@@ -1074,8 +1019,6 @@ export async function updateContratoAditivo(
     descricao: string | null;
     prazoAdicionadoDias: number | null;
     valorTotalAdicionado: number | null;
-    valorConcedenteAdicionado: number | null;
-    valorProprioAdicionado: number | null;
   }>
 ) {
   return withRLS(tenantId, async (tx) => {
@@ -1119,22 +1062,14 @@ export async function updateContratoAditivo(
     }
 
     const valorTotalAdicionado = input.valorTotalAdicionado != null ? toNumberOrNull(input.valorTotalAdicionado) : toNumberOrNull(current.valorTotalAdicionado);
-    const valorConcedenteAdicionado =
-      input.valorConcedenteAdicionado != null ? toNumberOrNull(input.valorConcedenteAdicionado) : toNumberOrNull(current.valorConcedenteAdicionado);
-    const valorProprioAdicionado = input.valorProprioAdicionado != null ? toNumberOrNull(input.valorProprioAdicionado) : toNumberOrNull(current.valorProprioAdicionado);
 
-    const isPublico = String(contrato.tipoContratante || '').toUpperCase() === 'PUBLICO';
     const alterouPlanilhaFinal = tipo === 'VALOR' || tipo === 'AMBOS' ? true : input.alterouPlanilha != null ? Boolean(input.alterouPlanilha) : Boolean((current as any).alterouPlanilha);
 
     if (tipo === 'PRAZO' && (!prazoAdicionadoDias || prazoAdicionadoDias <= 0)) throw new Error('Prazo: informe a data fim da vigência ou o prazo adicionado (dias) > 0');
     if (tipo === 'VALOR' || tipo === 'AMBOS') {
-      if (isPublico) {
-        const c = valorConcedenteAdicionado ?? 0;
-        const p = valorProprioAdicionado ?? 0;
-        if (c === 0 && p === 0) throw new Error('Informe valor concedente e/ou próprio (aumentos ou reduções)');
-      } else {
-        if (!valorTotalAdicionado || valorTotalAdicionado === 0) throw new Error('Informe a variação de valor (aumento ou redução)');
-      }
+      const atual = toNumberOrNull(contrato.valorTotalAtual) ?? 0;
+      if (valorTotalAdicionado == null || !Number.isFinite(valorTotalAdicionado) || valorTotalAdicionado <= 0) throw new Error('Informe o valor total do contrato após o aditivo (deve ser > 0)');
+      if (valorTotalAdicionado === atual) throw new Error('O valor total (após aditivo) deve ser diferente do valor atual do contrato');
     }
 
     const updated = await tx.contratoAditivo.update({
@@ -1157,18 +1092,6 @@ export async function updateContratoAditivo(
           input.valorTotalAdicionado != null || input.tipo != null
             ? tipo === 'VALOR' || tipo === 'AMBOS'
               ? valorTotalAdicionado
-              : null
-            : undefined,
-        valorConcedenteAdicionado:
-          input.valorConcedenteAdicionado != null || input.tipo != null
-            ? tipo === 'VALOR' || tipo === 'AMBOS'
-              ? valorConcedenteAdicionado
-              : null
-            : undefined,
-        valorProprioAdicionado:
-          input.valorProprioAdicionado != null || input.tipo != null
-            ? tipo === 'VALOR' || tipo === 'AMBOS'
-              ? valorProprioAdicionado
               : null
             : undefined,
       },
@@ -1212,7 +1135,6 @@ export async function aprovarContratoAditivo(tenantId: number, contratoId: numbe
     if (!contrato) throw new Error('Contrato não encontrado');
 
     const tipo = String(ad.tipo || 'PRAZO').toUpperCase();
-    const isPublico = String(contrato.tipoContratante || '').toUpperCase() === 'PUBLICO';
     const planilhaVersaoAtual = (contrato as any).planilhaVersao != null ? Math.trunc(Number((contrato as any).planilhaVersao)) : 1;
     const alterouPlanilhaFinal = Boolean((ad as any).alterouPlanilha) || tipo === 'VALOR' || tipo === 'AMBOS';
     const planilhaVersaoNova = alterouPlanilhaFinal ? planilhaVersaoAtual + 1 : planilhaVersaoAtual;
@@ -1239,19 +1161,11 @@ export async function aprovarContratoAditivo(tenantId: number, contratoId: numbe
 
     let nextValores: any = {};
     if (aplicaValor) {
-      if (isPublico) {
-        const ca = (toNumberOrNull(contrato.valorConcedenteAtual) ?? 0) + (toNumberOrNull(ad.valorConcedenteAdicionado) ?? 0);
-        const pa = (toNumberOrNull(contrato.valorProprioAtual) ?? 0) + (toNumberOrNull(ad.valorProprioAdicionado) ?? 0);
-        const ta = ca + pa;
-        if (ta <= 0) throw new Error('Valor total resultante do contrato deve ser > 0');
-        nextValores = { valorConcedenteAtual: ca, valorProprioAtual: pa, valorTotalAtual: ta };
-      } else {
-        const add = toNumberOrNull(ad.valorTotalAdicionado) ?? 0;
-        const ta = (toNumberOrNull(contrato.valorTotalAtual) ?? 0) + add;
-        if (add === 0) throw new Error('valorTotalAdicionado não pode ser 0');
-        if (ta <= 0) throw new Error('Valor total resultante do contrato deve ser > 0');
-        nextValores = { valorTotalAtual: ta };
-      }
+      const atual = toNumberOrNull(contrato.valorTotalAtual) ?? 0;
+      const novoTotal = toNumberOrNull(ad.valorTotalAdicionado);
+      if (novoTotal == null || !Number.isFinite(novoTotal) || novoTotal <= 0) throw new Error('valorTotalAdicionado (novo total após aditivo) deve ser > 0');
+      if (novoTotal === atual) throw new Error('O valor total (após aditivo) deve ser diferente do valor atual do contrato');
+      nextValores = { valorTotalAtual: novoTotal };
     }
 
     const updatedContrato = await tx.contrato.update({
@@ -1272,8 +1186,6 @@ export async function aprovarContratoAditivo(tenantId: number, contratoId: numbe
         snapshotPrazoDias: prazoAtual != null ? Math.trunc(prazoAtual) : null,
         snapshotVigenciaAtual: vigAtual,
         snapshotValorTotalAtual: contrato.valorTotalAtual ?? null,
-        snapshotValorConcedenteAtual: contrato.valorConcedenteAtual ?? null,
-        snapshotValorProprioAtual: contrato.valorProprioAtual ?? null,
         snapshotPlanilhaVersao: planilhaVersaoAtual,
         planilhaVersaoNova: alterouPlanilhaFinal ? planilhaVersaoNova : null,
       },
@@ -2144,20 +2056,8 @@ export async function createContrato(tenantId: number, input: CreateContratoInpu
       vigenciaAtual: input.vigenciaAtual ? parseDateOnly(input.vigenciaAtual) : null,
     });
 
-    const computedValores = computeValores({
-      tipoContratante,
-      valorConcedenteInicial: input.valorConcedenteInicial ?? null,
-      valorProprioInicial: input.valorProprioInicial ?? null,
-      valorTotalInicial: input.valorTotalInicial ?? null,
-      valorConcedenteAtual: input.valorConcedenteAtual ?? null,
-      valorProprioAtual: input.valorProprioAtual ?? null,
-      valorTotalAtual: input.valorTotalAtual ?? null,
-    });
-
-    const totalInicial = toNumberOrNull(computedValores.valorTotalInicial);
-    const totalAtual = toNumberOrNull(computedValores.valorTotalAtual);
-    if (totalInicial != null && totalInicial <= 0) throw new Error('Valor total do contrato deve ser maior que zero');
-    if (totalAtual != null && totalAtual <= 0) throw new Error('Valor total do contrato deve ser maior que zero');
+    const totalInicial = toNumberOrNull(input.valorTotalInicial);
+    if (totalInicial == null || !Number.isFinite(totalInicial) || totalInicial <= 0) throw new Error('Valor total do contrato deve ser maior que zero');
 
     const created = await tx.contrato.create({
       data: {
@@ -2180,12 +2080,8 @@ export async function createContrato(tenantId: number, input: CreateContratoInpu
         vigenciaInicial: computedVig.vigenciaInicial,
         vigenciaAtual: computedVig.vigenciaAtual,
         valorContratado: input.valorContratado ?? null,
-        valorConcedenteInicial: computedValores.valorConcedenteInicial,
-        valorProprioInicial: computedValores.valorProprioInicial,
-        valorTotalInicial: computedValores.valorTotalInicial,
-        valorConcedenteAtual: computedValores.valorConcedenteAtual,
-        valorProprioAtual: computedValores.valorProprioAtual,
-        valorTotalAtual: computedValores.valorTotalAtual,
+        valorTotalInicial: totalInicial,
+        valorTotalAtual: totalInicial,
       },
     });
     return created;
@@ -2233,20 +2129,20 @@ export async function updateContrato(tenantId: number, id: number, input: Update
       vigenciaAtual: input.vigenciaAtual != null ? parseDateOnly(input.vigenciaAtual) : current.vigenciaAtual ?? null,
     });
 
-    const computedValores = computeValores({
-      tipoContratante,
-      valorConcedenteInicial: input.valorConcedenteInicial != null ? input.valorConcedenteInicial : current.valorConcedenteInicial ?? null,
-      valorProprioInicial: input.valorProprioInicial != null ? input.valorProprioInicial : current.valorProprioInicial ?? null,
-      valorTotalInicial: input.valorTotalInicial != null ? input.valorTotalInicial : current.valorTotalInicial ?? null,
-      valorConcedenteAtual: input.valorConcedenteAtual != null ? input.valorConcedenteAtual : current.valorConcedenteAtual ?? null,
-      valorProprioAtual: input.valorProprioAtual != null ? input.valorProprioAtual : current.valorProprioAtual ?? null,
-      valorTotalAtual: input.valorTotalAtual != null ? input.valorTotalAtual : current.valorTotalAtual ?? null,
-    });
+    const totalInicialNext = input.valorTotalInicial != null ? toNumberOrNull(input.valorTotalInicial) : toNumberOrNull(current.valorTotalInicial);
+    if (input.valorTotalInicial != null) {
+      if (totalInicialNext == null || !Number.isFinite(totalInicialNext) || totalInicialNext <= 0) throw new Error('Valor total do contrato deve ser maior que zero');
+    }
 
-    const totalInicial = toNumberOrNull(computedValores.valorTotalInicial);
-    const totalAtual = toNumberOrNull(computedValores.valorTotalAtual);
-    if (totalInicial != null && totalInicial <= 0) throw new Error('Valor total do contrato deve ser maior que zero');
-    if (totalAtual != null && totalAtual <= 0) throw new Error('Valor total do contrato deve ser maior que zero');
+    let valorTotalAtualNext: number | undefined = undefined;
+    if (input.valorTotalInicial != null) {
+      const hasValorAprovado = await tx.contratoAditivo
+        .findFirst({ where: { tenantId, contratoId: id, status: 'APROVADO', tipo: { in: ['VALOR', 'AMBOS'] } }, select: { id: true } })
+        .catch(() => null);
+      if (!hasValorAprovado) {
+        valorTotalAtualNext = totalInicialNext == null ? undefined : totalInicialNext;
+      }
+    }
 
     const updated = await tx.contrato.update({
       where: { id },
@@ -2269,12 +2165,8 @@ export async function updateContrato(tenantId: number, id: number, input: Update
         vigenciaInicial: computedVig.vigenciaInicial ?? undefined,
         vigenciaAtual: computedVig.vigenciaAtual ?? undefined,
         valorContratado: input.valorContratado ?? undefined,
-        valorConcedenteInicial: computedValores.valorConcedenteInicial ?? undefined,
-        valorProprioInicial: computedValores.valorProprioInicial ?? undefined,
-        valorTotalInicial: computedValores.valorTotalInicial ?? undefined,
-        valorConcedenteAtual: computedValores.valorConcedenteAtual ?? undefined,
-        valorProprioAtual: computedValores.valorProprioAtual ?? undefined,
-        valorTotalAtual: computedValores.valorTotalAtual ?? undefined,
+        valorTotalInicial: input.valorTotalInicial != null ? (totalInicialNext == null ? undefined : totalInicialNext) : undefined,
+        valorTotalAtual: valorTotalAtualNext,
       },
     });
     return updated;

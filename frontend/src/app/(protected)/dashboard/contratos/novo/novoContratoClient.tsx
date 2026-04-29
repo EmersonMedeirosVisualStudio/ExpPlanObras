@@ -263,6 +263,7 @@ export default function NovoContratoClient() {
   const syncingPrazoRef = useRef(false);
   const prazoUnidadePrevRef = useRef<"DIAS" | "SEMANAS" | "MESES" | "ANOS">("DIAS");
   const [aditivosInfo, setAditivosInfo] = useState<{ total: number; rascunho: number } | null>(null);
+  const [temAditivoValorAprovado, setTemAditivoValorAprovado] = useState(false);
   type DocTipo =
     | "CONTRATO"
     | "OS"
@@ -282,14 +283,8 @@ export default function NovoContratoClient() {
   const [docSelecionadoId, setDocSelecionadoId] = useState<string>("");
   const [docPreviewUrl, setDocPreviewUrl] = useState<string | null>(null);
 
-  const [valorConcedenteInicial, setValorConcedenteInicial] = useState("0,00");
-  const [valorProprioInicial, setValorProprioInicial] = useState("0,00");
-  const [valorConcedenteAtual, setValorConcedenteAtual] = useState("0,00");
-  const [valorProprioAtual, setValorProprioAtual] = useState("0,00");
   const [valorTotalInicial, setValorTotalInicial] = useState("0,00");
   const [valorTotalAtual, setValorTotalAtual] = useState("0,00");
-
-  const isPublico = tipoContratante === "PUBLICO";
 
   const baseDate = useMemo(() => dataOS || dataAssinatura || "", [dataOS, dataAssinatura]);
   const prazoDias = useMemo(() => {
@@ -383,6 +378,7 @@ export default function NovoContratoClient() {
   useEffect(() => {
     if (!contratoId) {
       setAditivosInfo(null);
+      setTemAditivoValorAprovado(false);
       return;
     }
 
@@ -430,12 +426,17 @@ export default function NovoContratoClient() {
         setDatasLastEdited("PRAZO");
         setVigenciaFim(vigFim);
 
-        setValorConcedenteInicial(c.valorConcedenteInicial == null ? "0,00" : formatMoneyBRFromDigits(String(Math.round(Number(c.valorConcedenteInicial || 0) * 100))));
-        setValorProprioInicial(c.valorProprioInicial == null ? "0,00" : formatMoneyBRFromDigits(String(Math.round(Number(c.valorProprioInicial || 0) * 100))));
-        setValorTotalInicial(c.valorTotalInicial == null ? "0,00" : formatMoneyBRFromDigits(String(Math.round(Number(c.valorTotalInicial || 0) * 100))));
-        setValorConcedenteAtual(c.valorConcedenteAtual == null ? "0,00" : formatMoneyBRFromDigits(String(Math.round(Number(c.valorConcedenteAtual || 0) * 100))));
-        setValorProprioAtual(c.valorProprioAtual == null ? "0,00" : formatMoneyBRFromDigits(String(Math.round(Number(c.valorProprioAtual || 0) * 100))));
-        setValorTotalAtual(c.valorTotalAtual == null ? "0,00" : formatMoneyBRFromDigits(String(Math.round(Number(c.valorTotalAtual || 0) * 100))));
+        const hasValorAprovado = ads.some((a) => {
+          const t = String((a as any)?.tipo || "").toUpperCase();
+          const s = String((a as any)?.status || "").toUpperCase();
+          return (t === "VALOR" || t === "AMBOS") && s === "APROVADO";
+        });
+        setTemAditivoValorAprovado(hasValorAprovado);
+
+        const vti = c.valorTotalInicial == null ? "0,00" : formatMoneyBRFromDigits(String(Math.round(Number(c.valorTotalInicial || 0) * 100)));
+        const vtaRaw = c.valorTotalAtual == null ? null : formatMoneyBRFromDigits(String(Math.round(Number(c.valorTotalAtual || 0) * 100)));
+        setValorTotalInicial(vti);
+        setValorTotalAtual(vtaRaw ?? vti);
 
         const rasc = ads.filter((a) => String((a as any)?.status || "").toUpperCase() === "RASCUNHO").length;
         setAditivosInfo({ total: ads.length, rascunho: rasc });
@@ -620,16 +621,9 @@ export default function NovoContratoClient() {
   }
 
   useEffect(() => {
-    if (!isPublico) return;
-    const total = parseMoneyBR(valorConcedenteInicial) + parseMoneyBR(valorProprioInicial);
-    setValorTotalInicial(formatMoneyBRFromDigits(String(Math.round(total * 100))));
-  }, [isPublico, valorConcedenteInicial, valorProprioInicial]);
-
-  useEffect(() => {
-    if (!isPublico) return;
-    const total = parseMoneyBR(valorConcedenteAtual) + parseMoneyBR(valorProprioAtual);
-    setValorTotalAtual(formatMoneyBRFromDigits(String(Math.round(total * 100))));
-  }, [isPublico, valorConcedenteAtual, valorProprioAtual]);
+    if (temAditivoValorAprovado) return;
+    setValorTotalAtual(valorTotalInicial);
+  }, [temAditivoValorAprovado, valorTotalInicial]);
 
   async function salvar() {
     try {
@@ -649,10 +643,9 @@ export default function NovoContratoClient() {
       }
 
       const vti = parseMoneyBR(valorTotalInicial);
-      const vta = parseMoneyBR(valorTotalAtual);
-      if (vti <= 0 || vta <= 0) {
+      if (vti <= 0) {
         setErr("Valor total do contrato deve ser maior que zero.");
-        setFieldErr((p) => ({ ...p, valorTotalInicial: "Valor inválido", valorTotalAtual: "Valor inválido" }));
+        setFieldErr((p) => ({ ...p, valorTotalInicial: "Valor inválido" }));
         return;
       }
 
@@ -674,12 +667,7 @@ export default function NovoContratoClient() {
         prazoDias,
         vigenciaInicial: vigenciaFim ? new Date(`${vigenciaFim}T00:00:00`).toISOString() : null,
         vigenciaAtual: vigenciaFim ? new Date(`${vigenciaFim}T00:00:00`).toISOString() : null,
-        valorConcedenteInicial: isPublico ? parseMoneyBR(valorConcedenteInicial) : null,
-        valorProprioInicial: isPublico ? parseMoneyBR(valorProprioInicial) : null,
-        valorTotalInicial: isPublico ? parseMoneyBR(valorTotalInicial) : parseMoneyBR(valorTotalInicial),
-        valorConcedenteAtual: isPublico ? parseMoneyBR(valorConcedenteAtual) : null,
-        valorProprioAtual: isPublico ? parseMoneyBR(valorProprioAtual) : null,
-        valorTotalAtual: isPublico ? parseMoneyBR(valorTotalAtual) : parseMoneyBR(valorTotalAtual),
+        valorTotalInicial: parseMoneyBR(valorTotalInicial),
       };
       if (contratoId) {
         await api.put(`/api/contratos/${contratoId}`, payload);
@@ -854,7 +842,7 @@ export default function NovoContratoClient() {
                   <input className={`input ${fieldErr.dataOS ? "ring-2 ring-red-400" : ""}`} type="date" value={dataOS} onChange={(e) => setDataOS(e.target.value)} />
                   {fieldErr.dataOS ? <div className="mt-1 text-xs text-red-600">{fieldErr.dataOS}</div> : null}
                 </div>
-                <div className="md:col-span-7">
+                <div className="md:col-span-3">
                   <div className="text-sm text-slate-600">Prazo (valor)</div>
                   <input
                     className={`input ${fieldErr.prazoValor ? "ring-2 ring-red-400" : ""}`}
@@ -866,7 +854,7 @@ export default function NovoContratoClient() {
                     placeholder="Ex: 180"
                   />
                 </div>
-                <div className="md:col-span-1">
+                <div className="md:col-span-5">
                   <div className="text-sm text-slate-600">Unidade</div>
                   <select
                     className="input w-full"
@@ -1095,56 +1083,22 @@ export default function NovoContratoClient() {
 
         <div className="rounded-xl border bg-slate-50 p-4">
           <div className="text-sm font-semibold">Valores</div>
-          {isPublico ? (
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-              <div>
-                <div className="text-sm text-slate-600">Concedente (inicial)</div>
-                <input className="input" value={valorConcedenteInicial} onChange={(e) => setValorConcedenteInicial(formatMoneyBRFromDigits(e.target.value))} />
-              </div>
-              <div>
-                <div className="text-sm text-slate-600">Recursos próprios (inicial)</div>
-                <input className="input" value={valorProprioInicial} onChange={(e) => setValorProprioInicial(formatMoneyBRFromDigits(e.target.value))} />
-              </div>
-              <div>
-                <div className="text-sm text-slate-600">Total (inicial)</div>
-                <input className="input" value={valorTotalInicial} disabled />
-              </div>
-
-              <div>
-                <div className="text-sm text-slate-600">Concedente (atual)</div>
-                <input className="input" value={valorConcedenteAtual} onChange={(e) => setValorConcedenteAtual(formatMoneyBRFromDigits(e.target.value))} />
-              </div>
-              <div>
-                <div className="text-sm text-slate-600">Recursos próprios (atual)</div>
-                <input className="input" value={valorProprioAtual} onChange={(e) => setValorProprioAtual(formatMoneyBRFromDigits(e.target.value))} />
-              </div>
-              <div>
-                <div className="text-sm text-slate-600">Total (atual)</div>
-                <input className="input" value={valorTotalAtual} disabled />
-              </div>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <div className="text-sm text-slate-600">Valor total (inicial)</div>
+              <input
+                className={`input ${fieldErr.valorTotalInicial ? "ring-2 ring-red-400" : ""}`}
+                value={valorTotalInicial}
+                onChange={(e) => setValorTotalInicial(formatMoneyBRFromDigits(e.target.value))}
+              />
+              {fieldErr.valorTotalInicial ? <div className="mt-1 text-xs text-red-600">{fieldErr.valorTotalInicial}</div> : null}
             </div>
-          ) : (
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <div className="text-sm text-slate-600">Valor total (inicial)</div>
-                <input
-                  className={`input ${fieldErr.valorTotalInicial ? "ring-2 ring-red-400" : ""}`}
-                  value={valorTotalInicial}
-                  onChange={(e) => setValorTotalInicial(formatMoneyBRFromDigits(e.target.value))}
-                />
-                {fieldErr.valorTotalInicial ? <div className="mt-1 text-xs text-red-600">{fieldErr.valorTotalInicial}</div> : null}
-              </div>
-              <div>
-                <div className="text-sm text-slate-600">Valor total (atual)</div>
-                <input
-                  className={`input ${fieldErr.valorTotalAtual ? "ring-2 ring-red-400" : ""}`}
-                  value={valorTotalAtual}
-                  onChange={(e) => setValorTotalAtual(formatMoneyBRFromDigits(e.target.value))}
-                />
-                {fieldErr.valorTotalAtual ? <div className="mt-1 text-xs text-red-600">{fieldErr.valorTotalAtual}</div> : null}
-              </div>
+            <div>
+              <div className="text-sm text-slate-600">Valor total (atual)</div>
+              <input className="input" value={valorTotalAtual} disabled />
+              {temAditivoValorAprovado ? <div className="mt-1 text-xs text-slate-500">Preenchido automaticamente por aditivo de valor aprovado.</div> : null}
             </div>
-          )}
+          </div>
         </div>
 
         {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}

@@ -25,11 +25,7 @@ type ContratoRow = {
   prazoDias: number | null;
   vigenciaInicial: string | null;
   vigenciaAtual: string | null;
-  valorConcedenteInicial?: number | null;
-  valorProprioInicial?: number | null;
   valorTotalInicial: number | null;
-  valorConcedenteAtual?: number | null;
-  valorProprioAtual?: number | null;
   valorTotalAtual: number | null;
   createdAt: string;
   updatedAt: string;
@@ -56,8 +52,6 @@ type AditivoLiteRow = {
   dataAssinatura: string | null;
   prazoAdicionadoDias: number | null;
   valorTotalAdicionado: number | null;
-  valorConcedenteAdicionado: number | null;
-  valorProprioAdicionado: number | null;
 };
 
 type MedicaoLiteRow = {
@@ -237,10 +231,7 @@ function formatAditivoImpacto(a: AditivoLiteRow) {
   const dias = a.prazoAdicionadoDias != null ? Number(a.prazoAdicionadoDias) : null;
   if (dias && Number.isFinite(dias) && dias !== 0) parts.push(`${dias > 0 ? "+" : ""}${dias} dias`);
   const vt = a.valorTotalAdicionado != null ? Number(a.valorTotalAdicionado) : null;
-  const vc = a.valorConcedenteAdicionado != null ? Number(a.valorConcedenteAdicionado) : null;
-  const vp = a.valorProprioAdicionado != null ? Number(a.valorProprioAdicionado) : null;
   if (vt && Number.isFinite(vt) && vt !== 0) parts.push(moeda(vt));
-  else if ((vc && Number.isFinite(vc) && vc !== 0) || (vp && Number.isFinite(vp) && vp !== 0)) parts.push(`C:${moeda(vc || 0)} P:${moeda(vp || 0)}`);
   return parts.length ? parts.join(" • ") : "—";
 }
 
@@ -422,10 +413,6 @@ export default function ContratosClient() {
   const [ePrazoUnidade, setEPrazoUnidade] = useState<"DIAS" | "MESES" | "ANOS">("DIAS");
   const [eVigenciaCalculada, setEVigenciaCalculada] = useState("");
 
-  const [eValorConcedenteInicial, setEValorConcedenteInicial] = useState("0,00");
-  const [eValorProprioInicial, setEValorProprioInicial] = useState("0,00");
-  const [eValorConcedenteAtual, setEValorConcedenteAtual] = useState("0,00");
-  const [eValorProprioAtual, setEValorProprioAtual] = useState("0,00");
   const [eValorTotalInicial, setEValorTotalInicial] = useState("0,00");
   const [eValorTotalAtual, setEValorTotalAtual] = useState("0,00");
 
@@ -490,7 +477,6 @@ export default function ContratosClient() {
     };
   }, []);
 
-  const eIsPublico = eTipoContratante === "PUBLICO";
   const eBaseDate = useMemo(() => eDataOS || eDataAssinatura || "", [eDataOS, eDataAssinatura]);
   const ePrazoDias = useMemo(() => {
     const q = Math.trunc(Number(ePrazoValor || 0));
@@ -499,6 +485,10 @@ export default function ContratosClient() {
     if (ePrazoUnidade === "ANOS") return q * 365;
     return q;
   }, [ePrazoValor, ePrazoUnidade]);
+
+  const eTemAditivoValorAprovado = useMemo(() => {
+    return aditivos.some((a) => (a.tipo === "VALOR" || a.tipo === "AMBOS") && String(a.status || "").toUpperCase() === "APROVADO");
+  }, [aditivos]);
 
   useEffect(() => {
     if (!editOpen) return;
@@ -559,16 +549,10 @@ export default function ContratosClient() {
   }, [editOpen, eBaseDate, ePrazoDias]);
 
   useEffect(() => {
-    if (!editOpen || !eIsPublico) return;
-    const total = parseMoneyBR(eValorConcedenteInicial) + parseMoneyBR(eValorProprioInicial);
-    setEValorTotalInicial(formatMoneyBRFromDigits(String(Math.round(total * 100))));
-  }, [editOpen, eIsPublico, eValorConcedenteInicial, eValorProprioInicial]);
-
-  useEffect(() => {
-    if (!editOpen || !eIsPublico) return;
-    const total = parseMoneyBR(eValorConcedenteAtual) + parseMoneyBR(eValorProprioAtual);
-    setEValorTotalAtual(formatMoneyBRFromDigits(String(Math.round(total * 100))));
-  }, [editOpen, eIsPublico, eValorConcedenteAtual, eValorProprioAtual]);
+    if (!editOpen) return;
+    if (eTemAditivoValorAprovado) return;
+    setEValorTotalAtual(eValorTotalInicial);
+  }, [editOpen, eTemAditivoValorAprovado, eValorTotalInicial]);
 
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
@@ -673,11 +657,7 @@ export default function ContratosClient() {
             ...x,
             tipoContratante: normalizeTipoContratante(x.tipoContratante),
             prazoDias: x.prazoDias == null ? null : Number(x.prazoDias),
-            valorConcedenteInicial: x.valorConcedenteInicial == null ? null : Number(x.valorConcedenteInicial),
-            valorProprioInicial: x.valorProprioInicial == null ? null : Number(x.valorProprioInicial),
             valorTotalInicial: x.valorTotalInicial == null ? null : Number(x.valorTotalInicial),
-            valorConcedenteAtual: x.valorConcedenteAtual == null ? null : Number(x.valorConcedenteAtual),
-            valorProprioAtual: x.valorProprioAtual == null ? null : Number(x.valorProprioAtual),
             valorTotalAtual: x.valorTotalAtual == null ? null : Number(x.valorTotalAtual),
           }))
           .filter((x) => !x?.contratoPrincipalId) ?? []
@@ -701,11 +681,7 @@ export default function ContratosClient() {
         ...d,
         tipoContratante: normalizeTipoContratante(d.tipoContratante),
         prazoDias: d.prazoDias == null ? null : Number(d.prazoDias),
-        valorConcedenteInicial: d.valorConcedenteInicial == null ? null : Number(d.valorConcedenteInicial),
-        valorProprioInicial: d.valorProprioInicial == null ? null : Number(d.valorProprioInicial),
         valorTotalInicial: d.valorTotalInicial == null ? null : Number(d.valorTotalInicial),
-        valorConcedenteAtual: d.valorConcedenteAtual == null ? null : Number(d.valorConcedenteAtual),
-        valorProprioAtual: d.valorProprioAtual == null ? null : Number(d.valorProprioAtual),
         valorTotalAtual: d.valorTotalAtual == null ? null : Number(d.valorTotalAtual),
         obras: (d.obras || []).map((o: any) => ({ ...o, valorPrevisto: Number(o.valorPrevisto || 0) })),
       });
@@ -760,8 +736,6 @@ export default function ContratosClient() {
             dataAssinatura: r.dataAssinatura ? String(r.dataAssinatura) : null,
             prazoAdicionadoDias: r.prazoAdicionadoDias == null ? null : Number(r.prazoAdicionadoDias),
             valorTotalAdicionado: r.valorTotalAdicionado == null ? null : Number(r.valorTotalAdicionado),
-            valorConcedenteAdicionado: r.valorConcedenteAdicionado == null ? null : Number(r.valorConcedenteAdicionado),
-            valorProprioAdicionado: r.valorProprioAdicionado == null ? null : Number(r.valorProprioAdicionado),
           }))
           .filter((r: AditivoLiteRow) => Number.isFinite(r.id) && r.id > 0)
       );
@@ -868,8 +842,7 @@ export default function ContratosClient() {
       }
 
       const vti = parseMoneyBR(eValorTotalInicial);
-      const vta = parseMoneyBR(eValorTotalAtual);
-      if (vti <= 0 || vta <= 0) {
+      if (vti <= 0) {
         setEditErr("Valor total do contrato deve ser maior que zero.");
         return;
       }
@@ -888,12 +861,7 @@ export default function ContratosClient() {
         prazoDias: ePrazoDias,
         vigenciaInicial: eVigenciaCalculada ? new Date(`${eVigenciaCalculada}T00:00:00`).toISOString() : null,
         vigenciaAtual: eVigenciaCalculada ? new Date(`${eVigenciaCalculada}T00:00:00`).toISOString() : null,
-        valorConcedenteInicial: eIsPublico ? parseMoneyBR(eValorConcedenteInicial) : null,
-        valorProprioInicial: eIsPublico ? parseMoneyBR(eValorProprioInicial) : null,
         valorTotalInicial: parseMoneyBR(eValorTotalInicial),
-        valorConcedenteAtual: eIsPublico ? parseMoneyBR(eValorConcedenteAtual) : null,
-        valorProprioAtual: eIsPublico ? parseMoneyBR(eValorProprioAtual) : null,
-        valorTotalAtual: parseMoneyBR(eValorTotalAtual),
       };
 
       await api.put(`/api/contratos/${contratoId}`, payload);
@@ -1477,45 +1445,17 @@ export default function ContratosClient() {
                   </div>
 
                   <div className="mt-2 text-sm font-semibold">Valores</div>
-                  {eIsPublico ? (
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <div>
-                        <div className="text-sm text-[#6B7280]">Concedente (inicial)</div>
-                        <input className="input" value={eValorConcedenteInicial} onChange={(e) => setEValorConcedenteInicial(formatMoneyBRFromDigits(e.target.value))} />
-                      </div>
-                      <div>
-                        <div className="text-sm text-[#6B7280]">Próprio (inicial)</div>
-                        <input className="input" value={eValorProprioInicial} onChange={(e) => setEValorProprioInicial(formatMoneyBRFromDigits(e.target.value))} />
-                      </div>
-                      <div className="md:col-span-2">
-                        <div className="text-sm text-[#6B7280]">Total (inicial)</div>
-                        <input className="input" value={eValorTotalInicial} disabled />
-                      </div>
-                      <div>
-                        <div className="text-sm text-[#6B7280]">Concedente (atual)</div>
-                        <input className="input" value={eValorConcedenteAtual} onChange={(e) => setEValorConcedenteAtual(formatMoneyBRFromDigits(e.target.value))} />
-                      </div>
-                      <div>
-                        <div className="text-sm text-[#6B7280]">Próprio (atual)</div>
-                        <input className="input" value={eValorProprioAtual} onChange={(e) => setEValorProprioAtual(formatMoneyBRFromDigits(e.target.value))} />
-                      </div>
-                      <div className="md:col-span-2">
-                        <div className="text-sm text-[#6B7280]">Total (atual)</div>
-                        <input className="input" value={eValorTotalAtual} disabled />
-                      </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div>
+                      <div className="text-sm text-[#6B7280]">Valor total (inicial)</div>
+                      <input className="input" value={eValorTotalInicial} onChange={(e) => setEValorTotalInicial(formatMoneyBRFromDigits(e.target.value))} />
                     </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <div>
-                        <div className="text-sm text-[#6B7280]">Valor total (inicial)</div>
-                        <input className="input" value={eValorTotalInicial} onChange={(e) => setEValorTotalInicial(formatMoneyBRFromDigits(e.target.value))} />
-                      </div>
-                      <div>
-                        <div className="text-sm text-[#6B7280]">Valor total (atual)</div>
-                        <input className="input" value={eValorTotalAtual} onChange={(e) => setEValorTotalAtual(formatMoneyBRFromDigits(e.target.value))} />
-                      </div>
+                    <div>
+                      <div className="text-sm text-[#6B7280]">Valor total (atual)</div>
+                      <input className="input" value={eValorTotalAtual} disabled />
+                      {eTemAditivoValorAprovado ? <div className="mt-1 text-xs text-[#6B7280]">Preenchido automaticamente por aditivo de valor aprovado.</div> : null}
                     </div>
-                  )}
+                  </div>
                 </section>
               </div>
             </div>
