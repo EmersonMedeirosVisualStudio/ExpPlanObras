@@ -255,6 +255,7 @@ export default function NovoContratoClient() {
   const [vigenciaFim, setVigenciaFim] = useState<string>("");
   const [datasLastEdited, setDatasLastEdited] = useState<"PRAZO" | "VIGENCIA">("PRAZO");
   const syncingPrazoRef = useRef(false);
+  const prazoUnidadePrevRef = useRef<"DIAS" | "SEMANAS" | "MESES" | "ANOS">("DIAS");
   const [aditivosInfo, setAditivosInfo] = useState<{ total: number; rascunho: number } | null>(null);
   type DocTipo =
     | "CONTRATO"
@@ -302,6 +303,38 @@ export default function NovoContratoClient() {
     const diff = diffDaysDateOnly(base, end);
     return diff > 0 ? diff : 0;
   }, [baseDate, datasLastEdited, prazoUnidade, prazoValor, vigenciaFim]);
+
+  useEffect(() => {
+    const prev = prazoUnidadePrevRef.current;
+    if (prev === prazoUnidade) return;
+    prazoUnidadePrevRef.current = prazoUnidade;
+    if (datasLastEdited !== "PRAZO") return;
+
+    const base = parseDateOnlyInput(baseDate);
+    if (!base) return;
+
+    const q = Math.trunc(Number(prazoValor || 0));
+    if (!q || q <= 0) return;
+
+    const end = addByUnidade(base, q, prev);
+    const diff = diffDaysDateOnly(base, end);
+    if (!diff || diff <= 0) return;
+
+    const nextPrazo =
+      prazoUnidade === "DIAS"
+        ? String(diff)
+        : prazoUnidade === "SEMANAS"
+          ? String(Math.max(1, Math.round(diff / 7)))
+          : prazoUnidade === "MESES"
+            ? String(Math.max(1, diffMonthsDateOnly(base, end)))
+            : String(Math.max(1, diffYearsDateOnly(base, end)));
+
+    syncingPrazoRef.current = true;
+    setPrazoValor(nextPrazo);
+    queueMicrotask(() => {
+      syncingPrazoRef.current = false;
+    });
+  }, [baseDate, datasLastEdited, prazoUnidade, prazoValor]);
 
   useEffect(() => {
     const base = parseDateOnlyInput(baseDate);
@@ -795,7 +828,7 @@ export default function NovoContratoClient() {
         <div className="rounded-xl border bg-slate-50 p-4">
           <div className="text-sm font-semibold">Datas</div>
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-12">
-            <div className="md:col-span-3">
+            <div className="md:col-span-2">
               <div className="text-sm text-slate-600">Data assinatura</div>
               <input
                 className={`input ${fieldErr.dataAssinatura ? "ring-2 ring-red-400" : ""}`}
@@ -805,12 +838,12 @@ export default function NovoContratoClient() {
               />
               {fieldErr.dataAssinatura ? <div className="mt-1 text-xs text-red-600">{fieldErr.dataAssinatura}</div> : null}
             </div>
-            <div className="md:col-span-3">
+            <div className="md:col-span-2">
               <div className="text-sm text-slate-600">Data OS (preferencial)</div>
               <input className={`input ${fieldErr.dataOS ? "ring-2 ring-red-400" : ""}`} type="date" value={dataOS} onChange={(e) => setDataOS(e.target.value)} />
               {fieldErr.dataOS ? <div className="mt-1 text-xs text-red-600">{fieldErr.dataOS}</div> : null}
             </div>
-            <div className="md:col-span-6">
+            <div className="md:col-span-8">
               <div className="text-sm text-slate-600">Prazo</div>
               <div className="flex gap-2">
                 <input
@@ -826,7 +859,7 @@ export default function NovoContratoClient() {
                   className="input w-[110px]"
                   value={prazoUnidade}
                   onChange={(e) => {
-                    setDatasLastEdited("PRAZO");
+                    if (datasLastEdited !== "VIGENCIA") setDatasLastEdited("PRAZO");
                     setPrazoUnidade(e.target.value as any);
                   }}
                 >

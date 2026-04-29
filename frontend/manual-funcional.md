@@ -3160,6 +3160,7 @@ Onde ficam as contrapartes (cadastro de empresas/pessoas externas):
 Navegação:
 
 - A tela de contrapartes possui **Voltar** e breadcrumb dinâmico (via `returnTo`), para manter o contexto de onde você veio (ex.: Contrato #X → Contrapartes).
+- Existe um campo de **seleção com busca (select + digitação)** para localizar rapidamente uma contraparte pelo formato `#id - nome - CPF/CNPJ`.
 
 Como o contrato guarda a contraparte hoje:
 
@@ -3209,6 +3210,14 @@ Regras:
   - **Descrição**
   - Ações: **Exibir** (preview) e **Excluir**
 - A visualização possui botão **Fechar visualização** para voltar à lista.
+
+#### Prazo e vigência (Novo/Editar contrato)
+
+Comportamentos:
+
+- Ao preencher o **Prazo**, o sistema calcula automaticamente o **fim da vigência**.
+- Ao preencher o **fim da vigência**, o sistema calcula automaticamente o **Prazo** na unidade selecionada.
+- Ao trocar a **unidade** (Dias/Semanas/Meses/Anos), o sistema converte o prazo mantendo o mesmo fim de vigência, evitando mudanças inesperadas de data.
 
 #### Documentos (Obra/Contrato) — tela única
 

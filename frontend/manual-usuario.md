@@ -194,6 +194,7 @@ Os contratos concentram as informações oficiais de prazo e valores.
 - A lista mostra **ALERTA** (OK/Pendente/Crítico) e **STATUS** (Em andamento / A vencer / Vencido / etc.)
 - No detalhe, você verá datas e valores do contrato (e botões de ação, como **Aditivos**)
 - Em **Editar contrato**, existe botão **Voltar** e um subtítulo no topo que mostra o caminho real (breadcrumb)
+- Em **Editar contrato**, ao preencher **Prazo** o sistema calcula a **Vigência (fim)**; ao preencher a **Vigência (fim)** o sistema calcula o **Prazo**; ao trocar a unidade (dias/semanas/meses/anos) o prazo é convertido automaticamente.
 
 ### ETAPA 4 — Como validar
 - Volte para a lista e confirme se o contrato aparece e se o status/alerta fazem sentido

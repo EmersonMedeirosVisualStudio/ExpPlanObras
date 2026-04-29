@@ -372,6 +372,31 @@ export default function ContrapartesClient() {
   const cidadesOpcoes = useMemo(() => Array.from(new Set(rows.map((r) => String(r.cidade || "").trim()).filter(Boolean))).sort(), [rows]);
   const ufsOpcoes = useMemo(() => Array.from(new Set(rows.map((r) => String(r.uf || "").trim().toUpperCase()).filter(Boolean))).sort(), [rows]);
 
+  const [contraparteSelectBusca, setContraparteSelectBusca] = useState("");
+  const [contraparteSelectOpen, setContraparteSelectOpen] = useState(false);
+  const contraparteSelectOptions = useMemo(() => {
+    const raw = String(contraparteSelectBusca || "").trim();
+    const term = removeDiacritics(raw).toLowerCase();
+    const dig = onlyDigits(term);
+    const base = rows.slice();
+    const filtered = term
+      ? base.filter((r) => {
+          const label = `#${r.idContraparte} ${r.nomeRazao || ""} ${r.documento || ""}`.toLowerCase();
+          if (label.includes(term)) return true;
+          if (dig) return String(r.idContraparte) === dig || onlyDigits(String(r.documento || "")) === dig;
+          return false;
+        })
+      : base;
+    return filtered.slice(0, 12);
+  }, [contraparteSelectBusca, rows]);
+
+  useEffect(() => {
+    if (!selecionado) return;
+    const doc = selecionado.documento ? formatCpfCnpj(selecionado.documento) : "";
+    const label = `#${selecionado.idContraparte} - ${selecionado.nomeRazao || "—"}${doc ? ` - ${doc}` : ""}`;
+    setContraparteSelectBusca(label);
+  }, [selecionado]);
+
   function setNovoField<K extends keyof typeof novo>(key: K, value: (typeof novo)[K]) {
     setNovo((p) => ({ ...p, [key]: value }));
   }
@@ -933,6 +958,59 @@ export default function ContrapartesClient() {
           >
             Voltar
           </button>
+          <div className="relative">
+            <input
+              className="input h-10 w-[320px] bg-white"
+              value={contraparteSelectBusca}
+              onChange={(e) => {
+                const v = e.target.value;
+                setContraparteSelectBusca(v);
+                setContraparteSelectOpen(true);
+                const onlyId = v.trim().match(/^#?(\d+)\b/);
+                if (onlyId?.[1]) {
+                  const id = Number(onlyId[1]);
+                  if (Number.isFinite(id) && rows.some((r) => r.idContraparte === id)) setIdSelecionado(id);
+                }
+              }}
+              onFocus={() => setContraparteSelectOpen(true)}
+              onBlur={() => window.setTimeout(() => setContraparteSelectOpen(false), 120)}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                const onlyId = contraparteSelectBusca.trim().match(/^#?(\d+)\b/);
+                if (!onlyId?.[1]) return;
+                const id = Number(onlyId[1]);
+                if (!Number.isFinite(id)) return;
+                if (rows.some((r) => r.idContraparte === id)) setIdSelecionado(id);
+              }}
+              placeholder="#id - Nome - CPF/CNPJ"
+            />
+            {contraparteSelectOpen ? (
+              <div className="absolute right-0 z-20 mt-1 w-[520px] overflow-hidden rounded-lg border border-[#D1D5DB] bg-white shadow-sm">
+                <div className="max-h-64 overflow-auto">
+                  {contraparteSelectOptions.map((r) => {
+                    const doc = r.documento ? formatCpfCnpj(r.documento) : "";
+                    const label = `#${r.idContraparte} - ${r.nomeRazao || "—"}${doc ? ` - ${doc}` : ""}`;
+                    return (
+                      <button
+                        key={r.idContraparte}
+                        type="button"
+                        className="w-full px-3 py-2 text-left text-sm text-[#111827] hover:bg-[#F9FAFB]"
+                        onMouseDown={(ev) => ev.preventDefault()}
+                        onClick={() => {
+                          setIdSelecionado(r.idContraparte);
+                          setContraparteSelectBusca(label);
+                          setContraparteSelectOpen(false);
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                  {!contraparteSelectOptions.length ? <div className="px-3 py-2 text-sm text-[#6B7280]">Nenhuma contraparte encontrada.</div> : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
           <button
             type="button"
             className="inline-flex items-center gap-2 rounded-lg bg-[#16A34A] px-4 py-2 text-sm text-white hover:bg-[#15803D] disabled:opacity-60"
