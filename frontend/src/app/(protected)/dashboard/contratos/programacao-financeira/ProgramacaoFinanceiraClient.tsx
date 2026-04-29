@@ -88,7 +88,7 @@ function labelsFromPath(path: string | null) {
     engenharia: "Engenharia",
     obras: "Obras",
     contratos: "Contratos",
-    programacao-financeira: "Programação financeira",
+    "programacao-financeira": "Programação financeira",
     medicoes: "Medições",
     aditivos: "Aditivos",
     documentos: "Documentos",
