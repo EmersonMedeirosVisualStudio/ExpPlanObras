@@ -243,9 +243,9 @@ export default function NovoContratoClient() {
   const [empresaParceiraNome, setEmpresaParceiraNome] = useState("");
   const [empresaParceiraDocumento, setEmpresaParceiraDocumento] = useState("");
   const [contraparteSearch, setContraparteSearch] = useState("");
-  const [contraparteSugestoes, setContraparteSugestoes] = useState<Array<{ id: number; nomeRazao: string; documento: string | null }>>([]);
-  const [contraparteSugOpen, setContraparteSugOpen] = useState(false);
-  const [contraparteSugLoading, setContraparteSugLoading] = useState(false);
+  const [contraparteOptions, setContraparteOptions] = useState<Array<{ id: number; nomeRazao: string; documento: string | null }>>([]);
+  const [contraparteOpen, setContraparteOpen] = useState(false);
+  const [contraparteLoading, setContraparteLoading] = useState(false);
   const [status, setStatus] = useState("NAO_INICIADO");
   const [dataAssinatura, setDataAssinatura] = useState("");
   const [dataOS, setDataOS] = useState("");
@@ -475,40 +475,47 @@ export default function NovoContratoClient() {
   }, [contratoId]);
 
   useEffect(() => {
-    const q = String(contraparteSearch || "").trim();
-    if (q.length < 2) {
-      setContraparteSugestoes([]);
-      setContraparteSugLoading(false);
-      return;
-    }
     let cancelled = false;
-    setContraparteSugLoading(true);
-    const t = window.setTimeout(async () => {
+    (async () => {
       try {
-        const res = await api.get("/api/v1/engenharia/contrapartes", { params: { q, status: "ATIVO" } });
+        setContraparteLoading(true);
+        const res = await api.get("/api/v1/engenharia/contrapartes", { params: { status: "ATIVO" } });
         const data = unwrapApiData<any>(res.data);
         if (cancelled) return;
-        const rows = (Array.isArray(data) ? data : [])
+        const list = (Array.isArray(data) ? data : [])
           .map((r: any) => ({
             id: Number(r.idContraparte),
             nomeRazao: String(r.nomeRazao || ""),
             documento: r.documento ? String(r.documento) : null,
           }))
           .filter((r: any) => Number.isFinite(r.id) && r.id > 0 && r.nomeRazao)
-          .slice(0, 12);
-        setContraparteSugestoes(rows);
+          .slice(0, 500);
+        setContraparteOptions(list);
       } catch {
-        if (cancelled) return;
-        setContraparteSugestoes([]);
+        if (!cancelled) setContraparteOptions([]);
       } finally {
-        if (!cancelled) setContraparteSugLoading(false);
+        if (!cancelled) setContraparteLoading(false);
       }
-    }, 250);
+    })();
     return () => {
       cancelled = true;
-      window.clearTimeout(t);
     };
-  }, [contraparteSearch]);
+  }, []);
+
+  const contrapartesFiltradas = useMemo(() => {
+    const q = String(contraparteSearch || "").trim();
+    const term = removeDiacritics(q).toLowerCase();
+    const dig = onlyDigits(term);
+    if (!term) return contraparteOptions.slice(0, 12);
+    return contraparteOptions
+      .filter((c) => {
+        const label = `#${c.id} ${c.nomeRazao || ""} ${c.documento || ""}`.toLowerCase();
+        if (label.includes(term)) return true;
+        if (dig) return String(c.id) === dig || onlyDigits(String(c.documento || "")) === dig;
+        return false;
+      })
+      .slice(0, 12);
+  }, [contraparteOptions, contraparteSearch]);
 
   useEffect(() => {
     if (tipoPapel === "CONTRATADO" && contratoVinculadoId) setContratoVinculadoId("");
@@ -671,7 +678,6 @@ export default function NovoContratoClient() {
       };
       if (contratoId) {
         await api.put(`/api/contratos/${contratoId}`, payload);
-        await anexarDocumentos(Number(contratoId));
         const baseUrl = effectiveReturnTo || `/dashboard/contratos?id=${contratoId}`;
         const [path, qs] = baseUrl.split("?");
         const params = new URLSearchParams(qs || "");
@@ -828,48 +834,49 @@ export default function NovoContratoClient() {
         <div className="rounded-xl border bg-slate-50 p-4">
           <div className="text-sm font-semibold">Datas</div>
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-12">
-            <div className="md:col-span-2">
-              <div className="text-sm text-slate-600">Data assinatura</div>
-              <input
-                className={`input ${fieldErr.dataAssinatura ? "ring-2 ring-red-400" : ""}`}
-                type="date"
-                value={dataAssinatura}
-                onChange={(e) => setDataAssinatura(e.target.value)}
-              />
-              {fieldErr.dataAssinatura ? <div className="mt-1 text-xs text-red-600">{fieldErr.dataAssinatura}</div> : null}
-            </div>
-            <div className="md:col-span-2">
-              <div className="text-sm text-slate-600">Data OS (preferencial)</div>
-              <input className={`input ${fieldErr.dataOS ? "ring-2 ring-red-400" : ""}`} type="date" value={dataOS} onChange={(e) => setDataOS(e.target.value)} />
-              {fieldErr.dataOS ? <div className="mt-1 text-xs text-red-600">{fieldErr.dataOS}</div> : null}
-            </div>
-            <div className="md:col-span-8">
-              <div className="text-sm text-slate-600">Prazo</div>
-              <div className="flex gap-2">
-                <input
-                  className={`input flex-1 ${fieldErr.prazoValor ? "ring-2 ring-red-400" : ""}`}
-                  value={prazoValor}
-                  onChange={(e) => {
-                    setDatasLastEdited("PRAZO");
-                    if (!syncingPrazoRef.current) setPrazoValor(e.target.value);
-                  }}
-                  placeholder="Ex: 180"
-                />
-                <select
-                  className="input w-[110px]"
-                  value={prazoUnidade}
-                  onChange={(e) => {
-                    if (datasLastEdited !== "VIGENCIA") setDatasLastEdited("PRAZO");
-                    setPrazoUnidade(e.target.value as any);
-                  }}
-                >
-                  <option value="DIAS">Dias</option>
-                  <option value="SEMANAS">Semanas</option>
-                  <option value="MESES">Meses</option>
-                  <option value="ANOS">Anos</option>
-                </select>
-              </div>
-            </div>
+                <div className="md:col-span-2">
+                  <div className="text-sm text-slate-600">Data assinatura</div>
+                  <input
+                    className={`input ${fieldErr.dataAssinatura ? "ring-2 ring-red-400" : ""}`}
+                    type="date"
+                    value={dataAssinatura}
+                    onChange={(e) => setDataAssinatura(e.target.value)}
+                  />
+                  {fieldErr.dataAssinatura ? <div className="mt-1 text-xs text-red-600">{fieldErr.dataAssinatura}</div> : null}
+                </div>
+                <div className="md:col-span-2">
+                  <div className="text-sm text-slate-600">Data OS</div>
+                  <input className={`input ${fieldErr.dataOS ? "ring-2 ring-red-400" : ""}`} type="date" value={dataOS} onChange={(e) => setDataOS(e.target.value)} />
+                  {fieldErr.dataOS ? <div className="mt-1 text-xs text-red-600">{fieldErr.dataOS}</div> : null}
+                </div>
+                <div className="md:col-span-7">
+                  <div className="text-sm text-slate-600">Prazo (valor)</div>
+                  <input
+                    className={`input ${fieldErr.prazoValor ? "ring-2 ring-red-400" : ""}`}
+                    value={prazoValor}
+                    onChange={(e) => {
+                      setDatasLastEdited("PRAZO");
+                      setPrazoValor(e.target.value);
+                    }}
+                    placeholder="Ex: 180"
+                  />
+                </div>
+                <div className="md:col-span-1">
+                  <div className="text-sm text-slate-600">Unidade</div>
+                  <select
+                    className="input w-full"
+                    value={prazoUnidade}
+                    onChange={(e) => {
+                      if (datasLastEdited !== "VIGENCIA") setDatasLastEdited("PRAZO");
+                      setPrazoUnidade(e.target.value as any);
+                    }}
+                  >
+                    <option value="DIAS">Dias</option>
+                    <option value="SEMANAS">Semanas</option>
+                    <option value="MESES">Meses</option>
+                    <option value="ANOS">Anos</option>
+                  </select>
+                </div>
             <div className="md:col-span-12">
               <div className="text-sm text-slate-600">Vigência (fim)</div>
               <input
@@ -920,38 +927,49 @@ export default function NovoContratoClient() {
                 <input
                   className="input"
                   value={contraparteSearch}
-                  onFocus={() => setContraparteSugOpen(true)}
-                  onBlur={() => window.setTimeout(() => setContraparteSugOpen(false), 120)}
+                  onFocus={() => setContraparteOpen(true)}
+                  onBlur={() => window.setTimeout(() => setContraparteOpen(false), 120)}
                   onChange={(e) => {
                     const v = e.target.value;
                     setContraparteSearch(v);
-                    setContraparteSugOpen(true);
-                    setEmpresaParceiraNome("");
+                    setContraparteOpen(true);
+                    setEmpresaParceiraNome(v.trim());
                     setEmpresaParceiraDocumento("");
+                    const onlyId = v.trim().match(/^#?(\d+)\b/);
+                    if (onlyId?.[1]) {
+                      const id = Number(onlyId[1]);
+                      const match = contraparteOptions.find((x) => x.id === id) || null;
+                      if (match) {
+                        setEmpresaParceiraNome(match.nomeRazao);
+                        setEmpresaParceiraDocumento(match.documento || "");
+                      }
+                    }
                   }}
                   placeholder="Ex: #12 - Construtora XPTO"
                 />
-                {contraparteSugOpen ? (
+                {contraparteOpen ? (
                   <div className="absolute z-20 mt-1 w-full rounded-lg border bg-white shadow-sm max-h-64 overflow-auto">
-                    {contraparteSugLoading ? <div className="px-3 py-2 text-sm text-slate-600">Carregando...</div> : null}
-                    {!contraparteSugLoading && !contraparteSugestoes.length ? <div className="px-3 py-2 text-sm text-slate-600">Sem resultados.</div> : null}
-                    {contraparteSugestoes.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          setContraparteSearch(`#${c.id} - ${c.nomeRazao}`);
-                          setEmpresaParceiraNome(c.nomeRazao);
-                          setEmpresaParceiraDocumento(c.documento ? onlyDigits(c.documento) : "");
-                          setContraparteSugOpen(false);
-                        }}
-                      >
-                        <div className="font-medium">#{c.id} - {c.nomeRazao}</div>
-                        <div className="text-xs text-slate-600">{c.documento ? formatCpfCnpj(c.documento) : "-"}</div>
-                      </button>
-                    ))}
+                    {contraparteLoading ? <div className="px-3 py-2 text-sm text-slate-600">Carregando...</div> : null}
+                    {!contraparteLoading && !contrapartesFiltradas.length ? <div className="px-3 py-2 text-sm text-slate-600">Sem resultados.</div> : null}
+                    {contrapartesFiltradas.map((c) => {
+                      const label = `#${c.id} - ${c.nomeRazao}${c.documento ? ` - ${formatCpfCnpj(c.documento)}` : ""}`;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setContraparteSearch(label);
+                            setEmpresaParceiraNome(c.nomeRazao);
+                            setEmpresaParceiraDocumento(c.documento ? onlyDigits(c.documento) : "");
+                            setContraparteOpen(false);
+                          }}
+                        >
+                          <div className="font-medium">{label}</div>
+                        </button>
+                      );
+                    })}
                   </div>
                 ) : null}
               </div>
@@ -963,125 +981,112 @@ export default function NovoContratoClient() {
           </div>
         </div>
 
-        <div className="rounded-xl border bg-slate-50 p-4">
-          <div className="text-sm font-semibold">Documentos</div>
-          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div>
-              <div className="text-sm text-slate-600">Tipo</div>
-              <select className="input" value={docTipoDraft} onChange={(e) => setDocTipoDraft(e.target.value as any)}>
-                <option value="CONTRATO">Contrato</option>
-                <option value="OS">OS</option>
-                <option value="ADITIVO">Aditivo</option>
-                <option value="MEDICAO">Medição</option>
-                <option value="COMUNICACAO">Comunicação</option>
-                <option value="TERMO_RESCISAO">Termo de Rescisão</option>
-                <option value="TERMO_SUSPENSAO">Termo de Suspensão</option>
-                <option value="TERMO_REINICIO">Termo de Reinício</option>
-                <option value="OUTROS">Outros</option>
-              </select>
-            </div>
-            <div>
-              <div className="text-sm text-slate-600">Arquivo</div>
-              <input key={docInputKey} className="input py-1.5" type="file" onChange={(e) => setDocArquivoDraft(e.target.files?.[0] || null)} />
-            </div>
-            <div className="md:col-span-2">
-              <div className="text-sm text-slate-600">Descrição</div>
-              <input className="input" value={docDescricaoDraft} onChange={(e) => setDocDescricaoDraft(e.target.value)} placeholder="Ex: Contrato assinado, OS emitida, termo, comunicado, etc." />
-            </div>
-            <div className="md:col-span-2 flex items-center justify-end">
-              <button
-                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
-                type="button"
-                onClick={addDocumento}
-                disabled={!docArquivoDraft}
-              >
-                Adicionar documento
-              </button>
-            </div>
-          </div>
-
-          {docsDraft.length ? (
-            <div className="mt-4 overflow-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-white text-left text-slate-700">
-                  <tr className="border-b">
-                    <th className="px-3 py-2">#</th>
-                    <th className="px-3 py-2">Tipo</th>
-                    <th className="px-3 py-2">Descrição</th>
-                    <th className="px-3 py-2 text-right">Ação</th>
-                  </tr>
-                </thead>
-                <tbody className="text-slate-900">
-                  {docsDraft.map((d, idx) => (
-                    <tr key={d.id} className="border-b">
-                      <td className="px-3 py-2">{idx + 1}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">{docTipoLabel(d.tipo)}</td>
-                      <td className="px-3 py-2">
-                        <div className="font-semibold">{d.descricao || "—"}</div>
-                        <div className="text-xs text-slate-500">{d.file.name}</div>
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            className="rounded-lg border bg-white p-2 hover:bg-slate-50"
-                            type="button"
-                            title="Exibir"
-                            onClick={() => setDocSelecionadoId(d.id)}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-                          <button
-                            className="rounded-lg border border-red-200 bg-white p-2 text-red-700 hover:bg-red-50"
-                            type="button"
-                            title="Excluir"
-                            onClick={() => {
-                              setDocsDraft((p) => p.filter((x) => x.id !== d.id));
-                              setDocSelecionadoId((cur) => (cur === d.id ? "" : cur));
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="mt-3 text-xs text-slate-500">Nenhum documento adicionado.</div>
-          )}
-
-          {docPreviewUrl && docSelecionadoId ? (
-            <div className="mt-4 rounded-lg border bg-white p-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-sm font-semibold">Visualização</div>
-                <button
-                  className="rounded-lg border bg-white px-3 py-1 text-sm hover:bg-slate-50"
-                  type="button"
-                  onClick={() => setDocSelecionadoId("")}
-                >
-                  Fechar visualização
+        {!isEdit ? (
+          <div className="rounded-xl border bg-slate-50 p-4">
+            <div className="text-sm font-semibold">Documentos</div>
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <div className="text-sm text-slate-600">Tipo</div>
+                <select className="input" value={docTipoDraft} onChange={(e) => setDocTipoDraft(e.target.value as any)}>
+                  <option value="CONTRATO">Contrato</option>
+                  <option value="OS">OS</option>
+                  <option value="ADITIVO">Aditivo</option>
+                  <option value="MEDICAO">Medição</option>
+                  <option value="COMUNICACAO">Comunicação</option>
+                  <option value="TERMO_RESCISAO">Termo de Rescisão</option>
+                  <option value="TERMO_SUSPENSAO">Termo de Suspensão</option>
+                  <option value="TERMO_REINICIO">Termo de Reinício</option>
+                  <option value="OUTROS">Outros</option>
+                </select>
+              </div>
+              <div>
+                <div className="text-sm text-slate-600">Arquivo</div>
+                <input key={docInputKey} className="input py-1.5" type="file" onChange={(e) => setDocArquivoDraft(e.target.files?.[0] || null)} />
+              </div>
+              <div className="md:col-span-2">
+                <div className="text-sm text-slate-600">Descrição</div>
+                <input className="input" value={docDescricaoDraft} onChange={(e) => setDocDescricaoDraft(e.target.value)} placeholder="Ex: Contrato assinado, OS emitida, termo, comunicado, etc." />
+              </div>
+              <div className="md:col-span-2 flex items-center justify-end">
+                <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50" type="button" onClick={addDocumento} disabled={!docArquivoDraft}>
+                  Adicionar documento
                 </button>
               </div>
-              <div className="mt-2">
-                {(() => {
-                  const d = docsDraft.find((x) => x.id === docSelecionadoId) || null;
-                  const mt = d?.file?.type || "";
-                  if (!d) return null;
-                  if (mt.startsWith("image/")) return <img className="max-h-[420px] w-auto rounded" src={docPreviewUrl} alt="Documento" />;
-                  if (mt === "application/pdf" || d.file.name.toLowerCase().endsWith(".pdf"))
-                    return <iframe className="h-[520px] w-full rounded" src={docPreviewUrl} title="Documento" />;
-                  return (
-                    <a className="text-sm text-blue-700 hover:underline" href={docPreviewUrl} download={d.file.name}>
-                      Baixar arquivo
-                    </a>
-                  );
-                })()}
-              </div>
             </div>
-          ) : null}
-        </div>
+
+            {docsDraft.length ? (
+              <div className="mt-4 overflow-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-white text-left text-slate-700">
+                    <tr className="border-b">
+                      <th className="px-3 py-2">#</th>
+                      <th className="px-3 py-2">Tipo</th>
+                      <th className="px-3 py-2">Descrição</th>
+                      <th className="px-3 py-2 text-right">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-slate-900">
+                    {docsDraft.map((d, idx) => (
+                      <tr key={d.id} className="border-b">
+                        <td className="px-3 py-2">{idx + 1}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{docTipoLabel(d.tipo)}</td>
+                        <td className="px-3 py-2">
+                          <div className="font-semibold">{d.descricao || "—"}</div>
+                          <div className="text-xs text-slate-500">{d.file.name}</div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center justify-end gap-2">
+                            <button className="rounded-lg border bg-white p-2 hover:bg-slate-50" type="button" title="Exibir" onClick={() => setDocSelecionadoId(d.id)}>
+                              <Eye className="h-4 w-4" />
+                            </button>
+                            <button
+                              className="rounded-lg border border-red-200 bg-white p-2 text-red-700 hover:bg-red-50"
+                              type="button"
+                              title="Excluir"
+                              onClick={() => {
+                                setDocsDraft((p) => p.filter((x) => x.id !== d.id));
+                                setDocSelecionadoId((cur) => (cur === d.id ? "" : cur));
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="mt-3 text-xs text-slate-500">Nenhum documento adicionado.</div>
+            )}
+
+            {docPreviewUrl && docSelecionadoId ? (
+              <div className="mt-4 rounded-lg border bg-white p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold">Visualização</div>
+                  <button className="rounded-lg border bg-white px-3 py-1 text-sm hover:bg-slate-50" type="button" onClick={() => setDocSelecionadoId("")}>
+                    Fechar visualização
+                  </button>
+                </div>
+                <div className="mt-2">
+                  {(() => {
+                    const d = docsDraft.find((x) => x.id === docSelecionadoId) || null;
+                    const mt = d?.file?.type || "";
+                    if (!d) return null;
+                    if (mt.startsWith("image/")) return <img className="max-h-[420px] w-auto rounded" src={docPreviewUrl} alt="Documento" />;
+                    if (mt === "application/pdf" || d.file.name.toLowerCase().endsWith(".pdf")) return <iframe className="h-[520px] w-full rounded" src={docPreviewUrl} title="Documento" />;
+                    return (
+                      <a className="text-sm text-blue-700 hover:underline" href={docPreviewUrl} download={d.file.name}>
+                        Baixar arquivo
+                      </a>
+                    );
+                  })()}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="rounded-xl border bg-slate-50 p-4">
           <div className="text-sm font-semibold">Valores</div>

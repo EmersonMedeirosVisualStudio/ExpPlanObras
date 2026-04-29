@@ -3200,16 +3200,13 @@ Como fica a “próxima melhoria” (quando você pedir para implementar):
 - Isso mantém o **Tenant separado** (não confunde “nossa empresa do sistema” com “empresas do contrato”).
 - O autocompletar continua vindo do cadastro de **Contrapartes**, mas o contrato passa a armazenar os dois papéis com clareza.
 
-#### Documentos no contrato (Novo/Editar)
+#### Documentos no contrato
 
 Regras:
 
-- Um contrato pode ter **vários documentos** anexados (ex.: contrato assinado, OS, aditivos, medições, comunicações).
-- Cada documento possui:
-  - **Tipo** (Contrato, OS, Aditivo, Medição, Comunicação, Termos e Outros)
-  - **Descrição**
-  - Ações: **Exibir** (preview) e **Excluir**
-- A visualização possui botão **Fechar visualização** para voltar à lista.
+- A gestão de documentos do contrato deve ser feita pela tela única de documentos: `/dashboard/obras/documentos` (contexto **CONTRATO**).
+- Em **Editar contrato**, não existe mais a seção de documentos dentro do formulário (para evitar duplicidade e inconsistência).
+- Em **Novo contrato**, pode existir rascunho de documentos para anexar no momento da criação (quando habilitado no formulário).
 
 #### Prazo e vigência (Novo/Editar contrato)
 
