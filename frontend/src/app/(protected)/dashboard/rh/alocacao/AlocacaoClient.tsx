@@ -38,7 +38,7 @@ type PessoaRow = {
   empresaParceira: string | null;
 };
 
-type SelectItem = { id: number; nome: string };
+type SelectItem = { id: number; nome: string; contratoId?: number | null };
 type ContratoSelectItem = { id: number; numeroContrato: string | null };
 
 function classNames(...parts: Array<string | false | undefined | null>) {
@@ -114,7 +114,11 @@ export default function AlocacaoClient() {
       const obrasRaw = Array.isArray(data?.obras) ? data.obras : [];
       setObras(
         obrasRaw
-          .map((o: any) => ({ id: Number(o.id), nome: String(o.nome || '') }))
+          .map((o: any) => ({
+            id: Number(o.id),
+            nome: String(o.nome || ''),
+            contratoId: o.contratoId == null ? null : Number(o.contratoId),
+          }))
           .filter((o: any) => Number.isFinite(o.id) && o.id > 0)
       );
     } catch {
@@ -225,6 +229,21 @@ export default function AlocacaoClient() {
     carregar();
     autoReadyRef.current = true;
   }, []);
+
+  const obrasVisiveis = useMemo(() => {
+    if (!filtros.idContrato) return obras;
+    return obras.filter((o) => Number(o.contratoId) === filtros.idContrato);
+  }, [obras, filtros.idContrato]);
+
+  useEffect(() => {
+    if (!autoReadyRef.current) return;
+    if (!filtros.idContrato || !filtros.idObra) return;
+    const obraAtual = obras.find((o) => o.id === filtros.idObra);
+    if (!obraAtual) return;
+    if (obraAtual.contratoId != null && Number(obraAtual.contratoId) !== filtros.idContrato) {
+      setFiltros((prev) => ({ ...prev, idObra: null }));
+    }
+  }, [filtros.idContrato, filtros.idObra, obras]);
 
   const alocados = useMemo(() => {
     if (!filtros.idObra) return [];
@@ -400,10 +419,18 @@ export default function AlocacaoClient() {
             <select
               className="input"
               value={filtros.idObra ?? ''}
-              onChange={(e) => setFiltros((p) => ({ ...p, idObra: e.target.value ? Number(e.target.value) : null }))}
+              onChange={(e) =>
+                setFiltros((p) => {
+                  const idObra = e.target.value ? Number(e.target.value) : null;
+                  if (!idObra) return { ...p, idObra: null };
+                  const found = obras.find((o) => o.id === idObra);
+                  const contratoId = found?.contratoId == null ? p.idContrato : Number(found.contratoId);
+                  return { ...p, idObra, idContrato: contratoId || null };
+                })
+              }
             >
               <option value="">Selecione uma obra</option>
-              {obras.map((o) => (
+              {obrasVisiveis.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.nome}
                 </option>

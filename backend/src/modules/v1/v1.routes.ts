@@ -1661,7 +1661,7 @@ export default async function v1Routes(server: FastifyInstance) {
         tenantId: ctx.tenantId,
         ...(empresaTotal ? {} : scopedObras.length ? { id: { in: scopedObras } } : { id: { in: [] as number[] } }),
       },
-      select: { id: true, name: true },
+      select: { id: true, name: true, contratoId: true },
       orderBy: { id: 'desc' },
       take: 1000,
     });
@@ -1670,7 +1670,7 @@ export default async function v1Routes(server: FastifyInstance) {
       empresaTotal,
       diretorias: [],
       unidades: [],
-      obras: obras.map((o) => ({ id: o.id, nome: o.name })),
+      obras: obras.map((o) => ({ id: o.id, nome: o.name, contratoId: o.contratoId })),
     });
   });
 
@@ -1852,6 +1852,82 @@ export default async function v1Routes(server: FastifyInstance) {
       horasExtras: [],
     });
   });
+
+  server.post(
+    '/rh/funcionarios/:id/lotacoes',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        body: z.object({
+          tipoLotacao: z.enum(['OBRA', 'UNIDADE']),
+          idObra: z.coerce.number().int().positive().optional().nullable(),
+          idUnidade: z.coerce.number().int().positive().optional().nullable(),
+          dataInicio: z.string().min(8),
+          observacao: z.string().optional().nullable(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const ctx = await requireTenantUser(request, reply);
+      if (!ctx || (ctx as any).success === false) return;
+
+      const { id } = (request.params as any) as { id: number };
+      const body = request.body as any;
+
+      const tipoLotacao = String(body.tipoLotacao || '').toUpperCase();
+      const idObra = body.idObra == null ? null : Number(body.idObra);
+      const idUnidade = body.idUnidade == null ? null : Number(body.idUnidade);
+      const dataInicioRaw = String(body.dataInicio || '').slice(0, 10);
+      const observacao = body.observacao == null ? null : String(body.observacao).trim();
+
+      if (tipoLotacao !== 'OBRA' && tipoLotacao !== 'UNIDADE') return fail(reply, 422, 'Tipo de lotação inválido');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicioRaw)) return fail(reply, 422, 'Data de início inválida');
+
+      if (tipoLotacao === 'OBRA' && (!idObra || !Number.isFinite(idObra))) return fail(reply, 422, 'Informe a obra');
+      if (tipoLotacao === 'UNIDADE' && (!idUnidade || !Number.isFinite(idUnidade))) return fail(reply, 422, 'Informe a unidade');
+
+      const dataInicio = new Date(`${dataInicioRaw}T00:00:00.000Z`);
+      if (Number.isNaN(dataInicio.getTime())) return fail(reply, 422, 'Data de início inválida');
+
+      const funcionario = await prisma.funcionario.findFirst({ where: { tenantId: ctx.tenantId, id: Number(id) }, select: { id: true } });
+      if (!funcionario) return fail(reply, 404, 'Funcionário não encontrado');
+
+      const created = await prisma.$transaction(async (tx) => {
+        const now = new Date();
+        await tx.funcionarioLotacao.updateMany({
+          where: { funcionarioId: funcionario.id, atual: true },
+          data: { atual: false, dataFim: now },
+        });
+
+        const lotacao = await tx.funcionarioLotacao.create({
+          data: {
+            funcionarioId: funcionario.id,
+            tipoLotacao,
+            obraId: tipoLotacao === 'OBRA' ? (idObra as number) : null,
+            unidadeId: tipoLotacao === 'UNIDADE' ? (idUnidade as number) : null,
+            dataInicio,
+            dataFim: null,
+            atual: true,
+            observacao: observacao || null,
+          },
+          select: { id: true },
+        });
+
+        return lotacao;
+      });
+
+      await audit({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        entidade: 'funcionario_lotacoes',
+        idRegistro: String(created.id),
+        acao: 'CREATE',
+        dadosNovos: { funcionarioId: funcionario.id, tipoLotacao, idObra, idUnidade, dataInicio: dataInicioRaw, observacao: observacao || null },
+      });
+
+      return ok(reply, { id: created.id }, { message: 'Lotação registrada' });
+    }
+  );
 
   server.post('/rh/funcionarios', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
