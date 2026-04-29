@@ -4012,13 +4012,10 @@ export default async function v1Routes(server: FastifyInstance) {
         contratoNumero: obra.contrato?.numeroContrato ? String(obra.contrato.numeroContrato) : null,
         valorPrevisto: obra.valorPrevisto == null ? null : Number(obra.valorPrevisto),
       };
-      const isObraNaoIniciada = String(obraStatus || '').toUpperCase() === 'NAO_INICIADA';
 
       const isMultipart = typeof (request as any).isMultipart === 'function' ? (request as any).isMultipart() : false;
 
       if (isMultipart) {
-        if (!isObraNaoIniciada) return fail(reply, 422, 'A obra precisa estar em status "Não iniciada" para alterar a planilha atual.');
-
         const parts = (request as any).parts();
         let action = '';
         let nome = '';
@@ -4128,7 +4125,6 @@ export default async function v1Routes(server: FastifyInstance) {
       const action = String(body.action || '').trim().toUpperCase();
 
       if (action === 'NOVA_VERSAO') {
-        if (!isObraNaoIniciada) return fail(reply, 422, 'A obra precisa estar em status "Não iniciada" para alterar a planilha atual.');
         const created = await prisma.$transaction(async (tx: any) => {
           const maxRows = (await tx.$queryRawUnsafe(
             `SELECT COALESCE(MAX(numero_versao),0) AS "maxVersao" FROM obras_planilhas_versoes WHERE tenant_id = $1 AND id_obra = $2`,

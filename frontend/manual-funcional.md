@@ -1666,6 +1666,7 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 
 - Engenharia → Obras → Planilha contratada / Planilha orçamentária
 - Importação/edição: serviços, composições, insumos, quantitativos e custos
+- Importação e criação de versões não são bloqueadas pelo status da obra; a edição é permitida apenas na versão atual
 
 #### Validação
 

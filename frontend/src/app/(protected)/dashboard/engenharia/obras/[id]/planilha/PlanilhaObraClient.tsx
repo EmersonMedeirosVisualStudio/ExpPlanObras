@@ -122,7 +122,6 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   });
 
   const podeEditar = useMemo(() => {
-    if (String(obraStatus || "").toUpperCase() !== "NAO_INICIADA") return false;
     if (!planilha) return true;
     return Boolean(planilha.atual);
   }, [planilha, obraStatus]);
@@ -491,7 +490,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={loading || !podeEditar}
-            title={!podeEditar ? 'Importar somente quando a obra estiver "Não iniciada" e na versão atual' : "Importar CSV"}
+            title={!podeEditar ? "Importar somente na versão atual" : "Importar CSV"}
           >
             Importar CSV
           </button>
@@ -504,7 +503,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             type="button"
             onClick={criarNovaVersao}
             disabled={loading || !podeEditar}
-            title={!podeEditar ? 'Criar nova versão somente quando a obra estiver "Não iniciada" e na versão atual' : "Nova planilha"}
+            title={!podeEditar ? "Criar nova versão somente na versão atual" : "Nova planilha"}
           >
             Nova planilha
           </button>
@@ -512,9 +511,6 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       </div>
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
-      {!podeEditar && obraStatus && String(obraStatus).toUpperCase() !== "NAO_INICIADA" ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Edição bloqueada: a obra precisa estar em status "Não iniciada" para editar a planilha atual.</div>
-      ) : null}
 
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="text-lg font-semibold">Versões cadastradas</div>
