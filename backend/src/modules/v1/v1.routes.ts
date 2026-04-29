@@ -3808,7 +3808,7 @@ export default async function v1Routes(server: FastifyInstance) {
       const obraStatus = obra.status ? String(obra.status) : null;
 
       if (view === 'versoes') {
-        const rows = await prisma.$queryRawUnsafe<any[]>(
+        const rows = (await prisma.$queryRawUnsafe(
           `
           SELECT
             v.id_planilha AS "idPlanilha",
@@ -3828,7 +3828,7 @@ export default async function v1Routes(server: FastifyInstance) {
           `,
           ctx.tenantId,
           idObra
-        );
+        )) as any[];
 
         return ok(reply, {
           idObra,
@@ -3849,7 +3849,7 @@ export default async function v1Routes(server: FastifyInstance) {
       const idPlanilhaFromQuery = planilhaIdParam && Number.isFinite(planilhaIdParam) && planilhaIdParam > 0 ? planilhaIdParam : null;
       let idPlanilha: number | null = idPlanilhaFromQuery;
       if (!idPlanilha) {
-        const rows = await prisma.$queryRawUnsafe<any[]>(
+        const rows = (await prisma.$queryRawUnsafe(
           `
           SELECT id_planilha AS "idPlanilha"
           FROM obras_planilhas_versoes
@@ -3859,13 +3859,13 @@ export default async function v1Routes(server: FastifyInstance) {
           `,
           ctx.tenantId,
           idObra
-        );
+        )) as any[];
         idPlanilha = rows?.[0]?.idPlanilha ? Number(rows[0].idPlanilha) : null;
       }
 
       if (!idPlanilha) return ok(reply, { idObra, obraStatus, planilha: null });
 
-      const versoes = await prisma.$queryRawUnsafe<any[]>(
+      const versoes = (await prisma.$queryRawUnsafe(
         `
         SELECT
           id_planilha AS "idPlanilha",
@@ -3891,11 +3891,11 @@ export default async function v1Routes(server: FastifyInstance) {
         ctx.tenantId,
         idObra,
         idPlanilha
-      );
+      )) as any[];
       const v = versoes?.[0] || null;
       if (!v) return ok(reply, { idObra, obraStatus, planilha: null });
 
-      const linhas = await prisma.$queryRawUnsafe<any[]>(
+      const linhas = (await prisma.$queryRawUnsafe(
         `
         SELECT
           id_linha AS "idLinha",
@@ -3916,7 +3916,7 @@ export default async function v1Routes(server: FastifyInstance) {
         `,
         ctx.tenantId,
         idPlanilha
-      );
+      )) as any[];
 
       return ok(reply, {
         idObra,
@@ -4018,15 +4018,15 @@ export default async function v1Routes(server: FastifyInstance) {
         if (missing.length) return fail(reply, 422, `Colunas obrigatórias ausentes no CSV: ${missing.join(', ')}`);
 
         const created = await prisma.$transaction(async (tx: any) => {
-          const maxRows = await tx.$queryRawUnsafe<any[]>(
+          const maxRows = (await tx.$queryRawUnsafe(
             `SELECT COALESCE(MAX(numero_versao),0) AS "maxVersao" FROM obras_planilhas_versoes WHERE tenant_id = $1 AND id_obra = $2`,
             ctx.tenantId,
             idObra
-          );
+          )) as any[];
           const nextVersao = Number(maxRows?.[0]?.maxVersao || 0) + 1;
           const nomeFinal = String(nome || `Versão ${nextVersao}`).trim() || `Versão ${nextVersao}`;
 
-          const ins = await tx.$queryRawUnsafe<any[]>(
+          const ins = (await tx.$queryRawUnsafe(
             `
             INSERT INTO obras_planilhas_versoes
               (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador)
@@ -4039,7 +4039,7 @@ export default async function v1Routes(server: FastifyInstance) {
             nextVersao,
             nomeFinal,
             ctx.userId
-          );
+          )) as any[];
           const idPlanilha = Number(ins?.[0]?.idPlanilha || 0);
           await tx.$executeRawUnsafe(`UPDATE obras_planilhas_versoes SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2`, ctx.tenantId, idObra);
           await tx.$executeRawUnsafe(
@@ -4100,16 +4100,16 @@ export default async function v1Routes(server: FastifyInstance) {
       if (action === 'NOVA_VERSAO') {
         if (!isObraNaoIniciada) return fail(reply, 422, 'A obra precisa estar em status "Não iniciada" para alterar a planilha atual.');
         const created = await prisma.$transaction(async (tx: any) => {
-          const maxRows = await tx.$queryRawUnsafe<any[]>(
+          const maxRows = (await tx.$queryRawUnsafe(
             `SELECT COALESCE(MAX(numero_versao),0) AS "maxVersao" FROM obras_planilhas_versoes WHERE tenant_id = $1 AND id_obra = $2`,
             ctx.tenantId,
             idObra
-          );
+          )) as any[];
           const nextVersao = Number(maxRows?.[0]?.maxVersao || 0) + 1;
           const nome = String(body.nome || `Versão ${nextVersao}`).trim() || `Versão ${nextVersao}`;
           const copyFrom = body.copyFromPlanilhaId != null ? Number(body.copyFromPlanilhaId) : null;
 
-          const ins = await tx.$queryRawUnsafe<any[]>(
+          const ins = (await tx.$queryRawUnsafe(
             `
             INSERT INTO obras_planilhas_versoes
               (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador)
@@ -4122,7 +4122,7 @@ export default async function v1Routes(server: FastifyInstance) {
             nextVersao,
             nome,
             ctx.userId
-          );
+          )) as any[];
           const idPlanilha = Number(ins?.[0]?.idPlanilha || 0);
           await tx.$executeRawUnsafe(`UPDATE obras_planilhas_versoes SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2`, ctx.tenantId, idObra);
           await tx.$executeRawUnsafe(
