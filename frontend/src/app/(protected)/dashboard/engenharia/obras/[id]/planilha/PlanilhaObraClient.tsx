@@ -111,8 +111,9 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   });
 
   const podeEditar = useMemo(() => {
-    if (!planilha?.atual) return false;
-    return String(obraStatus || "").toUpperCase() === "NAO_INICIADA";
+    if (String(obraStatus || "").toUpperCase() !== "NAO_INICIADA") return false;
+    if (!planilha) return true;
+    return Boolean(planilha.atual);
   }, [planilha, obraStatus]);
 
   const breadcrumb = useMemo(() => {
@@ -429,7 +430,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
           <h1 className="text-2xl font-semibold">Planilha orçamentária — Obra #{idObra}</h1>
           <div className="text-sm text-slate-600">Versões do orçamento por obra (itens, subitens e serviços). A programação e apropriação usam os serviços da versão atual.</div>
         </div>
-        <div className="flex gap-2 flex-wrap items-center">
+        <div className="flex gap-2 flex-wrap items-center justify-end w-full sm:w-auto">
           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push(returnTo || `/dashboard/engenharia/obras/${idObra}`)}>
             Voltar
           </button>
