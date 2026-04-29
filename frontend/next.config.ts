@@ -20,8 +20,10 @@ const nextConfig: NextConfig = {
       { source: "/api/v1/engenharia/projetos/:path*", destination: "/api/v1/engenharia/projetos/:path*" },
       { source: "/api/v1/engenharia/obras/:id/planilha/:path*", destination: "/api/v1/engenharia/obras/:id/planilha/:path*" },
       { source: "/api/v1/engenharia/obras/:id/planilha", destination: "/api/v1/engenharia/obras/:id/planilha" },
-      { source: "/api/v1/documentos/:path*", destination: "/api/v1/documentos/:path*" },
-      { source: "/api/v1/documentos", destination: "/api/v1/documentos" },
+      { source: "/api/v1/documentos/versoes/:id/download", destination: "/api/v1/documentos/versoes/:id/download" },
+      { source: "/api/v1/documentos/versoes/:id/verificar", destination: "/api/v1/documentos/versoes/:id/verificar" },
+      { source: "/api/v1/documentos/verificacao/:token", destination: "/api/v1/documentos/verificacao/:token" },
+      { source: "/api/v1/documentos/:id", destination: "/api/v1/documentos/:id" },
     ];
 
     const rules = [
