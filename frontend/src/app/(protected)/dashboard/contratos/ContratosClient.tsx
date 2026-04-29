@@ -882,104 +882,122 @@ export default function ContratosClient() {
         : "rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]";
 
     return (
-      <div className="space-y-4 text-[#111827]">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            {breadcrumbContrato ? <div className="text-xs text-[#6B7280]">{breadcrumbContrato}</div> : null}
-            <h1 className="text-2xl font-semibold">Contrato #{contratoId}</h1>
-            <div className="text-sm text-[#6B7280]">Detalhes, financeiro e vínculos com obras.</div>
+      <div className="p-6 bg-[#f7f8fa] text-slate-900">
+        <div className="max-w-7xl mx-auto space-y-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              {breadcrumbContrato ? <div className="text-xs text-[#6B7280]">{breadcrumbContrato}</div> : null}
+              <h1 className="text-2xl font-semibold">Contrato #{contratoId}</h1>
+              <div className="text-sm text-[#6B7280]">Detalhes, financeiro e vínculos com obras.</div>
+            </div>
+            <div className="flex flex-wrap gap-2 justify-end">
+              <button className={navBtnClass(true)} type="button" onClick={() => router.push(`/dashboard/contratos?id=${contratoId}`)}>
+                Contrato
+              </button>
+              <button
+                className={navBtnClass(false)}
+                type="button"
+                onClick={() => {
+                  const qp = new URLSearchParams();
+                  qp.set("tipo", "CONTRATO");
+                  qp.set("id", String(contratoId));
+                  qp.set("returnTo", `/dashboard/contratos?id=${contratoId}`);
+                  router.push(`/dashboard/obras/documentos?${qp.toString()}`);
+                }}
+              >
+                Documentos
+              </button>
+              <button
+                className={navBtnClass(false)}
+                type="button"
+                onClick={() =>
+                  router.push(`/dashboard/contratos/programacao-financeira?contratoId=${contratoId}&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${contratoId}`)}`)
+                }
+              >
+                Programação financeira
+              </button>
+              <button
+                className={navBtnClass(false)}
+                type="button"
+                onClick={() =>
+                  router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}&tab=lista&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${contratoId}`)}`)
+                }
+              >
+                Aditivos
+              </button>
+              <button
+                className={navBtnClass(false)}
+                type="button"
+                onClick={() => router.push(`/dashboard/contratos/medicoes?contratoId=${contratoId}&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${contratoId}`)}`)}
+              >
+                Medições
+              </button>
+              <button
+                className={navBtnClass(false)}
+                type="button"
+                onClick={() =>
+                  router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}&tab=eventos&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${contratoId}`)}`)
+                }
+              >
+                Eventos
+              </button>
+              <button
+                className={navBtnClass(false)}
+                type="button"
+                onClick={() => {
+                  if (effectiveReturnTo) router.push(effectiveReturnTo);
+                  else router.back();
+                }}
+              >
+                Voltar
+              </button>
+            </div>
           </div>
-          <button
-            className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
-            type="button"
-            onClick={() => {
-              if (effectiveReturnTo) router.push(effectiveReturnTo);
-              else router.back();
-            }}
-          >
-            Voltar
-          </button>
-        </div>
 
-        <div className="sticky top-0 z-40 py-3 bg-white border-b border-[#E5E7EB]">
-          <div className="flex flex-wrap gap-2">
-            <button className={navBtnClass(true)} type="button" onClick={() => router.push(`/dashboard/contratos?id=${contratoId}`)}>
-              Contrato
-            </button>
-            <button
-              className={navBtnClass(false)}
-              type="button"
-              onClick={() => {
-                const qp = new URLSearchParams();
-                qp.set("tipo", "CONTRATO");
-                qp.set("id", String(contratoId));
-                qp.set("returnTo", `/dashboard/contratos?id=${contratoId}`);
-                router.push(`/dashboard/obras/documentos?${qp.toString()}`);
-              }}
-            >
-              Documentos
-            </button>
-            <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos/programacao-financeira?contratoId=${contratoId}&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${contratoId}`)}`)}>
-              Programação financeira
-            </button>
-            <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}&tab=lista&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${contratoId}`)}`)}>
-              Aditivos
-            </button>
-            <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos/medicoes?contratoId=${contratoId}&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${contratoId}`)}`)}>
-              Medições
-            </button>
-            <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}&tab=eventos&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${contratoId}`)}`)}>
-              Eventos
-            </button>
-          </div>
-        </div>
+          {saved ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Contrato salvo com sucesso.</div> : null}
 
-        {saved ? (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Contrato salvo com sucesso.</div>
-        ) : null}
+          {detailErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{detailErr}</div> : null}
+          {detailLoading ? <div className="text-sm text-[#6B7280]">Carregando...</div> : null}
 
-        {detailErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{detailErr}</div> : null}
-        {detailLoading ? <div className="text-sm text-[#6B7280]">Carregando...</div> : null}
-
-        {detail ? (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-            <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-6">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm text-[#6B7280]">Número</div>
-                  <div className="text-xl font-semibold">{detail.numeroContrato}</div>
-                  <div className="mt-2 text-sm text-[#6B7280]">{detail.nome || detail.objeto || "—"}</div>
+          {detail ? (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+              <section className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm lg:col-span-6">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm text-[#6B7280]">Número</div>
+                    <div className="text-xl font-semibold">{detail.numeroContrato}</div>
+                    <div className="mt-2 text-sm text-[#6B7280]">{detail.nome || detail.objeto || "—"}</div>
+                  </div>
+                  <button
+                    className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:cursor-not-allowed disabled:opacity-60"
+                    type="button"
+                    onClick={abrirEdicao}
+                    disabled={!podeEditarContrato}
+                    title="Editar contrato"
+                  >
+                    Editar contrato
+                  </button>
                 </div>
-                <button
-                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB] disabled:cursor-not-allowed disabled:opacity-60"
-                  type="button"
-                  onClick={abrirEdicao}
-                  disabled={!podeEditarContrato}
-                  title="Editar contrato"
-                >
-                  Editar contrato
-                </button>
-              </div>
 
-              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
-                  <div className="text-xs text-[#6B7280]">Status</div>
-                  <div className="mt-1">
-                    <span className="inline-flex items-center gap-2">
-                      <span
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: statusUi(normalizeContratoStatusForSelect(detail.statusCalculado || detail.status)).dot }}
-                      />
-                      <select
-                        className={`h-8 rounded-md bg-transparent text-sm font-semibold outline-none ${statusUi(normalizeContratoStatusForSelect(detail.statusCalculado || detail.status)).className}`}
-                        value={normalizeContratoStatusForSelect(detail.statusCalculado || detail.status)}
-                        onChange={async (e) => {
-                          const next = String(e.target.value || "").toUpperCase() as StatusCalc;
-                          try {
-                            setStatusUpdating(true);
-                            setStatusUpdateErr(null);
-                            setDetail((cur) => (cur ? ({ ...cur, status: next, statusCalculado: next } as any) : cur));
-                            await api.put(`/api/contratos/${contratoId}`, { status: next });
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-[#E5E7EB] bg-white p-3">
+                    <div className="text-xs text-[#6B7280]">Status</div>
+                    <div className="mt-1">
+                      <span className="inline-flex items-center gap-2">
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: statusUi(normalizeContratoStatusForSelect(detail.statusCalculado || detail.status)).dot }}
+                        />
+                        <select
+                          className={`h-8 rounded-md bg-transparent text-sm font-semibold outline-none ${statusUi(normalizeContratoStatusForSelect(detail.statusCalculado || detail.status)).className}`}
+                          value={normalizeContratoStatusForSelect(detail.statusCalculado || detail.status)}
+                          onChange={async (e) => {
+                            const next = String(e.target.value || "").toUpperCase() as StatusCalc;
+                            try {
+                              setStatusUpdating(true);
+                              setStatusUpdateErr(null);
+                              setDetail((cur) => (cur ? ({ ...cur, status: next, statusCalculado: next } as any) : cur));
+                              await api.put(`/api/contratos/${contratoId}`, { status: next });
                             await carregarLista();
                             await carregarDetalhe(contratoId);
                           } catch (err: any) {

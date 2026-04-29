@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { DocumentosApi } from '@/lib/modules/documentos/api';
 import type { DocumentoRegistroDTO } from '@/lib/modules/documentos/types';
 import api from '@/lib/api';
-import { ArrowLeft, ExternalLink, FileText, Info, Pencil, RefreshCcw, Search, Trash2, Upload, X } from 'lucide-react';
+import { ExternalLink, FileText, Info, Pencil, RefreshCcw, Search, Trash2, Upload, X } from 'lucide-react';
 
 type ContratoOption = { id: number; numeroContrato: string; objeto: string | null };
 type ObraOption = { id: number; nome: string };
@@ -161,6 +161,13 @@ export default function ObrasDocumentosPage() {
   }, [rows, busca, categoriaFiltro, fixedCategoriaPrefix]);
 
   const pageTitle = useMemo(() => (tipo === 'OBRA' ? 'Documentos da Obra' : 'Documentos do Contrato'), [tipo]);
+  const navBtnClass = useCallback(
+    (active: boolean) =>
+      active
+        ? 'rounded-lg bg-blue-600 px-3 py-2 text-sm text-white'
+        : 'rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]',
+    []
+  );
 
   function normalizeCategoriaForTipo(rawSuffixOrFull: string, nextTipo?: 'OBRA' | 'CONTRATO') {
     const t = nextTipo || tipo;
@@ -460,9 +467,9 @@ export default function ObrasDocumentosPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 bg-[#f7f8fa] text-slate-900">
+    <div className="p-6 bg-[#f7f8fa] text-slate-900">
       <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="text-xs text-slate-500">{breadcrumb}</div>
             <div className="mt-1 flex items-center gap-3 flex-wrap">
@@ -470,50 +477,25 @@ export default function ObrasDocumentosPage() {
                 <FileText className="h-4 w-4" />
               </span>
               <h1 className="text-2xl font-semibold">{pageTitle}</h1>
-            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
-              <Info className="h-3.5 w-3.5" />
-              Campos obrigatórios marcados com *
-            </span>
+              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
+                <Info className="h-3.5 w-3.5" />
+                Campos obrigatórios marcados com *
+              </span>
+            </div>
+            <div className="mt-1 text-sm text-slate-600">Gerencie e organize os documentos de forma rápida e segura.</div>
+            {tipo === 'OBRA' && Number(idRef || 0) > 0 ? <div className="mt-1 text-sm text-slate-600">{`Obra: #${Number(idRef || 0)} - ${obraNome || '—'}`}</div> : null}
           </div>
-          <div className="mt-1 text-sm text-slate-600">Gerencie e organize os documentos de forma rápida e segura.</div>
-          {tipo === 'OBRA' && Number(idRef || 0) > 0 ? (
-            <div className="mt-1 text-sm text-slate-600">{`Obra: #${Number(idRef || 0)} - ${obraNome || '—'}`}</div>
-          ) : null}
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <button className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2" type="button" onClick={voltar}>
-            <ArrowLeft className="h-4 w-4" />
-            Voltar
-          </button>
-          {tipo === 'OBRA' && Number(idRef || 0) > 0 ? (
-            <button
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2"
-              type="button"
-              onClick={() => router.push(`/dashboard/engenharia/obras/cadastro?obraId=${Number(idRef || 0)}`)}
-            >
-              <ExternalLink className="h-4 w-4" />
-              Ver detalhes da obra
-            </button>
-          ) : null}
-        </div>
-      </div>
 
-      {tipo === 'CONTRATO' && Number(idRef || 0) > 0 ? (
-        <div className="sticky top-0 z-40 bg-[#f7f8fa] py-3 border-b border-slate-200">
-          <div className="max-w-7xl mx-auto">
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-                type="button"
-                onClick={() => router.push(`/dashboard/contratos?id=${Number(idRef || 0)}`)}
-              >
+          {tipo === 'CONTRATO' && Number(idRef || 0) > 0 ? (
+            <div className="flex flex-wrap gap-2 justify-end">
+              <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos?id=${Number(idRef || 0)}`)}>
                 Contrato
               </button>
-              <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white" type="button">
+              <button className={navBtnClass(true)} type="button">
                 Documentos
               </button>
               <button
-                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                className={navBtnClass(false)}
                 type="button"
                 onClick={() =>
                   router.push(
@@ -524,34 +506,48 @@ export default function ObrasDocumentosPage() {
                 Programação financeira
               </button>
               <button
-                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                className={navBtnClass(false)}
                 type="button"
-                onClick={() =>
-                  router.push(`/dashboard/contratos/aditivos?contratoId=${Number(idRef || 0)}&tab=lista&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${Number(idRef || 0)}`)}`)
-                }
+                onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${Number(idRef || 0)}&tab=lista&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${Number(idRef || 0)}`)}`)}
               >
                 Aditivos
               </button>
               <button
-                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                className={navBtnClass(false)}
                 type="button"
                 onClick={() => router.push(`/dashboard/contratos/medicoes?contratoId=${Number(idRef || 0)}&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${Number(idRef || 0)}`)}`)}
               >
                 Medições
               </button>
               <button
-                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                className={navBtnClass(false)}
                 type="button"
-                onClick={() =>
-                  router.push(`/dashboard/contratos/aditivos?contratoId=${Number(idRef || 0)}&tab=eventos&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${Number(idRef || 0)}`)}`)
-                }
+                onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${Number(idRef || 0)}&tab=eventos&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${Number(idRef || 0)}`)}`)}
               >
                 Eventos
               </button>
+              <button className={navBtnClass(false)} type="button" onClick={voltar}>
+                Voltar
+              </button>
             </div>
-          </div>
+          ) : (
+            <div className="flex gap-2 flex-wrap">
+              <button className={navBtnClass(false)} type="button" onClick={voltar}>
+                Voltar
+              </button>
+              {tipo === 'OBRA' && Number(idRef || 0) > 0 ? (
+                <button
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2"
+                  type="button"
+                  onClick={() => router.push(`/dashboard/engenharia/obras/cadastro?obraId=${Number(idRef || 0)}`)}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Ver detalhes da obra
+                </button>
+              ) : null}
+            </div>
+          )}
         </div>
-      ) : null}
 
       {erro ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{erro}</div> : null}
 

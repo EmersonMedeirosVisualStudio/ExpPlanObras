@@ -145,7 +145,9 @@ export default function ProgramacaoFinanceiraClient() {
   }, [contratoId, effectiveReturnTo]);
 
   const navBtnClass = (active: boolean) =>
-    active ? "rounded-lg bg-blue-600 px-3 py-2 text-sm text-white" : "rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50";
+    active
+      ? "rounded-lg bg-blue-600 px-3 py-2 text-sm text-white"
+      : "rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]";
 
   const contratoReturnTo = contratoId ? encodeURIComponent(`/dashboard/contratos?id=${contratoId}`) : "";
 
@@ -285,60 +287,80 @@ export default function ProgramacaoFinanceiraClient() {
   const totalContrato = Number(contrato?.valorTotalAtual || 0) || 0;
 
   return (
-    <div className="p-6 space-y-6 bg-[#f7f8fa] text-slate-900">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <div className="text-xs text-slate-500">{breadcrumb}</div>
-          <h1 className="text-2xl font-semibold">Programação financeira</h1>
-          <div className="text-sm text-slate-600">Cadastre a programação de execução financeira e compare com medições aprovadas.</div>
-        </div>
-        <button
-          className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-          type="button"
-          onClick={() => {
-            if (effectiveReturnTo) router.push(effectiveReturnTo);
-            else if (contratoId) router.push(`/dashboard/contratos?id=${contratoId}`);
-            else router.push("/dashboard/contratos");
-          }}
-        >
-          Voltar
-        </button>
-      </div>
-
-      {contratoId ? (
-        <div className="sticky top-0 z-40 -mx-6 px-6 py-3 bg-[#f7f8fa] border-b border-[#e6edf5]">
-          <div className="flex flex-wrap gap-2">
-            <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos?id=${contratoId}`)}>
-              Contrato
-            </button>
+    <div className="p-6 bg-[#f7f8fa] text-slate-900">
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="text-xs text-slate-500">{breadcrumb}</div>
+            <h1 className="text-2xl font-semibold">Programação financeira</h1>
+            <div className="text-sm text-slate-600">Cadastre a programação de execução financeira e compare com medições aprovadas.</div>
+          </div>
+          {contratoId ? (
+            <div className="flex flex-wrap gap-2 justify-end">
+              <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos?id=${contratoId}`)}>
+                Contrato
+              </button>
+              <button
+                className={navBtnClass(false)}
+                type="button"
+                onClick={() => {
+                  const qp = new URLSearchParams();
+                  qp.set("tipo", "CONTRATO");
+                  qp.set("id", String(contratoId));
+                  qp.set("returnTo", `/dashboard/contratos?id=${contratoId}`);
+                  router.push(`/dashboard/obras/documentos?${qp.toString()}`);
+                }}
+              >
+                Documentos
+              </button>
+              <button className={navBtnClass(true)} type="button">
+                Programação financeira
+              </button>
+              <button
+                className={navBtnClass(false)}
+                type="button"
+                onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}&tab=lista&returnTo=${contratoReturnTo}`)}
+              >
+                Aditivos
+              </button>
+              <button
+                className={navBtnClass(false)}
+                type="button"
+                onClick={() => router.push(`/dashboard/contratos/medicoes?contratoId=${contratoId}&returnTo=${contratoReturnTo}`)}
+              >
+                Medições
+              </button>
+              <button
+                className={navBtnClass(false)}
+                type="button"
+                onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}&tab=eventos&returnTo=${contratoReturnTo}`)}
+              >
+                Eventos
+              </button>
+              <button
+                className={navBtnClass(false)}
+                type="button"
+                onClick={() => {
+                  if (effectiveReturnTo) router.push(effectiveReturnTo);
+                  else router.push(`/dashboard/contratos?id=${contratoId}`);
+                }}
+              >
+                Voltar
+              </button>
+            </div>
+          ) : (
             <button
               className={navBtnClass(false)}
               type="button"
               onClick={() => {
-                const qp = new URLSearchParams();
-                qp.set("tipo", "CONTRATO");
-                qp.set("id", String(contratoId));
-                qp.set("returnTo", `/dashboard/contratos?id=${contratoId}`);
-                router.push(`/dashboard/obras/documentos?${qp.toString()}`);
+                if (effectiveReturnTo) router.push(effectiveReturnTo);
+                else router.push("/dashboard/contratos");
               }}
             >
-              Documentos
+              Voltar
             </button>
-            <button className={navBtnClass(true)} type="button">
-              Programação financeira
-            </button>
-            <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}&tab=lista&returnTo=${contratoReturnTo}`)}>
-              Aditivos
-            </button>
-            <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos/medicoes?contratoId=${contratoId}&returnTo=${contratoReturnTo}`)}>
-              Medições
-            </button>
-            <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}&tab=eventos&returnTo=${contratoReturnTo}`)}>
-              Eventos
-            </button>
-          </div>
+          )}
         </div>
-      ) : null}
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
       {loading ? <div className="text-sm text-slate-600">Carregando...</div> : null}
@@ -453,6 +475,7 @@ export default function ProgramacaoFinanceiraClient() {
           </section>
         </>
       )}
+      </div>
     </div>
   );
 }

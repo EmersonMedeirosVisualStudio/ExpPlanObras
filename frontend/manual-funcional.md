@@ -3084,6 +3084,8 @@ Princípio:
 Observação importante:
 
 - Algumas APIs legadas ainda podem rodar como **API do Next** (server runtime) enquanto o módulo não for migrado para o backend. Isso mantém o sistema funcionando sem “quebrar produção” e permite migração por etapas.
+- No estado atual do código, essas APIs do Next usam um banco **MySQL** (variáveis `MYSQL_URL` ou `DB_HOST/DB_USER/DB_PASSWORD/DB_NAME`) e rodam na **Vercel**.
+- O módulo de **Contratos** (regras de negócio) roda no **Backend (Render)** e persiste no **Neon/Postgres** (via Prisma).
 
 ### 21.1 Contratos (módulo de Engenharia)
 
@@ -3110,7 +3112,7 @@ Navegação (padrão de usabilidade):
 
 - Botões **Voltar** e subtítulos (breadcrumb) usam `returnTo` para retornar à tela chamadora e exibir o **caminho real**.
 - Se `returnTo` não existir, o sistema volta para o padrão do módulo (ou usa `back()` do navegador quando aplicável).
-- Dentro do contexto de um contrato, existe uma barra fixa (sticky) de navegação: **Contrato**, **Documentos**, **Programação financeira**, **Aditivos**, **Medições** e **Eventos**. Ao navegar entre as telas, apenas o botão da tela atual fica em estado ativo.
+- Dentro do contexto de um contrato, os botões de navegação ficam à direita do título, na ordem: **Contrato**, **Documentos**, **Programação financeira**, **Aditivos**, **Medições**, **Eventos** e **Voltar**. Ao navegar entre as telas, apenas o botão da tela atual fica em estado ativo.
 
 Menu (padrão):
 

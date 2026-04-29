@@ -210,7 +210,7 @@ O aditivo é o histórico de mudanças. O contrato “vigente” é sempre o con
 
 ### ETAPA 2 — O que clicar
 - Primeiro selecione o contrato
-- Use a barra fixa do contrato e clique em **Aditivos**
+- No topo da tela (à direita do título), clique em **Aditivos**
 - Dentro de **Aditivos**, clique em **Novo aditivo**
 
 ### ETAPA 3 — O que preencher
@@ -227,13 +227,13 @@ O aditivo é o histórico de mudanças. O contrato “vigente” é sempre o con
 
 ---
 
-## 10. Histórico (Eventos) + Observações + Anexos (PDF/imagem)
+## 10. Histórico (Eventos / Observações) + Anexos (PDF/imagem)
 
 Use esta área para registrar justificativas do dia a dia e guardar evidências (PDFs e imagens) dentro do sistema.
 
 ### ETAPA 1 — Onde acessar
 - Menu lateral → **Contratos (Engenharia) → Contratos → Aditivos (selecionar contrato)**
-- Selecione o contrato e clique em **Eventos** (na barra fixa do contrato)
+- Selecione o contrato e, no topo da tela (à direita do título), clique em **Eventos**
 
 ### ETAPA 2 — O que clicar
 - Use os filtros (Contrato/Aditivos/Obras/Documentos/Observações) para “enxergar só o que interessa”
@@ -250,4 +250,4 @@ Use esta área para registrar justificativas do dia a dia e guardar evidências 
 - Para arquivos selecionados antes de salvar, você pode clicar em **Preview** para ver PDF/imagem dentro do sistema
 
 ### ETAPA 5 — Como validar
-- Reabra a aba **Eventos** e confirme se a observação e os anexos continuam listados
+- Reabra a aba **Eventos / Observações** e confirme se a observação e os anexos continuam listados

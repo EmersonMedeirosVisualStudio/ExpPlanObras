@@ -272,7 +272,9 @@ export default function AditivosClient() {
   }, [contratoId, effectiveReturnTo, tab]);
 
   function navBtnClass(active: boolean) {
-    return active ? "rounded-lg bg-blue-600 px-3 py-2 text-sm text-white" : "rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50";
+    return active
+      ? "rounded-lg bg-blue-600 px-3 py-2 text-sm text-white"
+      : "rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]";
   }
 
   const contratoSelfPath = contratoId ? `/dashboard/contratos?id=${contratoId}` : null;
@@ -634,60 +636,79 @@ export default function AditivosClient() {
   }
 
   return (
-    <div className="p-6 space-y-6 bg-[#f7f8fa] text-slate-900">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <div className="text-xs text-slate-500">{breadcrumb}</div>
-          <h1 className="text-2xl font-semibold">Aditivos de Contrato</h1>
-          <div className="text-sm text-slate-600">Gerencie aditivos com histórico, snapshot e aplicação no contrato.</div>
-        </div>
-        <button
-          className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-          type="button"
-          onClick={() => {
-            if (effectiveReturnTo) router.push(effectiveReturnTo);
-            else if (contratoId) router.push(contratoPath);
-            else router.push("/dashboard/contratos");
-          }}
-        >
-          Voltar
-        </button>
-      </div>
-
-      {contratoId ? (
-        <div className="sticky top-0 z-40 -mx-6 px-6 py-3 bg-[#f7f8fa] border-b border-[#e6edf5]">
-          <div className="flex flex-wrap gap-2">
-            <button className={navBtnClass(false)} type="button" onClick={() => router.push(contratoPathWithReturnTo)}>
-              Contrato
-            </button>
+    <div className="p-6 bg-[#f7f8fa] text-slate-900">
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="text-xs text-slate-500">{breadcrumb}</div>
+            <h1 className="text-2xl font-semibold">{tab === "eventos" ? "Eventos / Observações" : "Aditivos de Contrato"}</h1>
+            <div className="text-sm text-slate-600">
+              {tab === "eventos" ? "Registre observações e anexos na linha do tempo do contrato." : "Gerencie aditivos com histórico, snapshot e aplicação no contrato."}
+            </div>
+          </div>
+          {contratoId ? (
+            <div className="flex flex-wrap gap-2 justify-end">
+              <button className={navBtnClass(false)} type="button" onClick={() => router.push(contratoPathWithReturnTo)}>
+                Contrato
+              </button>
+              <button
+                className={navBtnClass(false)}
+                type="button"
+                onClick={() => {
+                  const qp = new URLSearchParams();
+                  qp.set("tipo", "CONTRATO");
+                  qp.set("id", String(contratoId));
+                  qp.set("returnTo", `/dashboard/contratos?id=${contratoId}`);
+                  router.push(`/dashboard/obras/documentos?${qp.toString()}`);
+                }}
+              >
+                Documentos
+              </button>
+              <button
+                className={navBtnClass(false)}
+                type="button"
+                onClick={() => router.push(`/dashboard/contratos/programacao-financeira?contratoId=${contratoId}&returnTo=${contratoReturnTo}`)}
+              >
+                Programação financeira
+              </button>
+              <button className={navBtnClass(tab !== "eventos")} type="button" onClick={() => setQuery({ tab: "lista" })}>
+                Aditivos
+              </button>
+              <button
+                className={navBtnClass(false)}
+                type="button"
+                onClick={() => router.push(`/dashboard/contratos/medicoes?contratoId=${contratoId}&returnTo=${contratoReturnTo}`)}
+              >
+                Medições
+              </button>
+              <button className={navBtnClass(tab === "eventos")} type="button" onClick={() => setQuery({ tab: "eventos" })}>
+                Eventos
+              </button>
+              <button
+                className={navBtnClass(false)}
+                type="button"
+                onClick={() => {
+                  if (effectiveReturnTo) router.push(effectiveReturnTo);
+                  else if (contratoId) router.push(contratoPath);
+                  else router.push("/dashboard/contratos");
+                }}
+              >
+                Voltar
+              </button>
+            </div>
+          ) : (
             <button
               className={navBtnClass(false)}
               type="button"
               onClick={() => {
-                const qp = new URLSearchParams();
-                qp.set("tipo", "CONTRATO");
-                qp.set("id", String(contratoId));
-                qp.set("returnTo", `/dashboard/contratos?id=${contratoId}`);
-                router.push(`/dashboard/obras/documentos?${qp.toString()}`);
+                if (effectiveReturnTo) router.push(effectiveReturnTo);
+                else router.push("/dashboard/contratos");
               }}
             >
-              Documentos
+              Voltar
             </button>
-            <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos/programacao-financeira?contratoId=${contratoId}&returnTo=${contratoReturnTo}`)}>
-              Programação financeira
-            </button>
-            <button className={navBtnClass(tab !== "eventos")} type="button" onClick={() => setQuery({ tab: "lista" })}>
-              Aditivos
-            </button>
-            <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos/medicoes?contratoId=${contratoId}&returnTo=${contratoReturnTo}`)}>
-              Medições
-            </button>
-            <button className={navBtnClass(tab === "eventos")} type="button" onClick={() => setQuery({ tab: "eventos" })}>
-              Eventos
-            </button>
-          </div>
+          )}
         </div>
-      ) : null}
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
 
@@ -1160,6 +1181,7 @@ export default function AditivosClient() {
           </div>
         </section>
       ) : null}
+      </div>
     </div>
   );
 }
