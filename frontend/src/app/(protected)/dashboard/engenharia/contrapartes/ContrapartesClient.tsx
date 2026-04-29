@@ -14,6 +14,66 @@ function unwrapApiData<T>(json: any): T {
   return json as T;
 }
 
+function safeInternalPath(path: string | null) {
+  const raw = String(path || "").trim();
+  if (!raw) return null;
+  if (!raw.startsWith("/")) return null;
+  if (raw.startsWith("//")) return null;
+  if (raw.includes("://")) return null;
+  return raw;
+}
+
+function parseInternalPath(path: string | null) {
+  const safe = safeInternalPath(path);
+  if (!safe) return null;
+  try {
+    const u = new URL(safe, "https://internal.local");
+    return { pathname: u.pathname, searchParams: u.searchParams };
+  } catch {
+    return null;
+  }
+}
+
+function labelsFromPath(path: string | null) {
+  const parsed = parseInternalPath(path);
+  if (!parsed?.pathname) return [];
+  const parts = parsed.pathname.split("/").filter(Boolean);
+  const segs = parts[0] === "dashboard" ? parts.slice(1) : parts;
+  const labels: string[] = [];
+  const map: Record<string, string> = {
+    engenharia: "Engenharia",
+    obras: "Obras",
+    cadastro: "Cadastro",
+    contratos: "Contratos",
+    rh: "RH",
+    pessoas: "Pessoas",
+    cadastros: "Pessoas",
+    fiscalizacao: "Fiscalização",
+    painel: "Painel",
+    documentos: "Documentos",
+  };
+  for (let i = 0; i < segs.length; i++) {
+    const seg = String(segs[i] || "");
+    const prev = String(segs[i - 1] || "").toLowerCase();
+    if (/^\d+$/.test(seg)) {
+      if (prev === "obras") labels.push(`Obra #${seg}`);
+      else labels.push(`#${seg}`);
+      continue;
+    }
+    const lower = seg.toLowerCase();
+    labels.push(map[lower] || (seg.length ? seg[0].toUpperCase() + seg.slice(1) : seg));
+  }
+  if (parsed.pathname === "/dashboard/contratos") {
+    const id = parsed.searchParams.get("id");
+    if (id && /^\d+$/.test(id)) labels.push(`Contrato #${id}`);
+  }
+  if (parsed.pathname === "/dashboard/engenharia/obras/cadastro") {
+    const obraId = parsed.searchParams.get("obraId");
+    if (obraId && /^\d+$/.test(obraId)) labels.push(`Obra #${obraId}`);
+  }
+  return labels.filter(Boolean);
+}
+
 function onlyDigits(value: string) {
   return String(value || "").replace(/\D/g, "");
 }
@@ -204,7 +264,10 @@ export default function ContrapartesClient() {
   const router = useRouter();
   const sp = useSearchParams();
   const urlIdContraparte = sp.get("idContraparte");
-  const returnTo = sp.get("returnTo");
+  const returnToParam = safeInternalPath(sp.get("returnTo") || sp.get("from"));
+  const returnToStorageKey = "exp:returnTo:contrapartes";
+  const [returnToStored, setReturnToStored] = useState<string | null>(null);
+  const effectiveReturnTo = returnToParam || returnToStored;
   const targetId = useMemo(() => {
     const n = urlIdContraparte ? Number(urlIdContraparte) : null;
     return n && Number.isFinite(n) && n > 0 ? n : null;
@@ -218,6 +281,28 @@ export default function ContrapartesClient() {
   const [rows, setRows] = useState<ContraparteDTO[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    try {
+      setReturnToStored(safeInternalPath(sessionStorage.getItem(returnToStorageKey)));
+    } catch {
+      setReturnToStored(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!returnToParam) return;
+    try {
+      sessionStorage.setItem(returnToStorageKey, returnToParam);
+      setReturnToStored(returnToParam);
+    } catch {}
+  }, [returnToParam]);
+
+  const breadcrumb = useMemo(() => {
+    const base = labelsFromPath(effectiveReturnTo);
+    if (!base.length) return "Engenharia → Parceiros Comerciais";
+    return `${base.join(" → ")} → Parceiros Comerciais`;
+  }, [effectiveReturnTo]);
 
   const [coordMsg, setCoordMsg] = useState("");
   const [coordOrigem, setCoordOrigem] = useState<"LINK" | "CEP" | "MANUAL">("MANUAL");
@@ -833,19 +918,21 @@ export default function ContrapartesClient() {
     <div className="space-y-6 text-[#111827]">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
+          <div className="text-xs text-[#6B7280]">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Parceiros Comerciais (Contrapartes)</h1>
           <p className="text-sm text-[#6B7280]">Cadastro unificado de pessoas jurídicas e pessoas físicas.</p>
         </div>
         <div className="flex items-center gap-2">
-          {returnTo ? (
-            <button
-              type="button"
-              className="inline-flex items-center gap-2 rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
-              onClick={() => router.push(returnTo)}
-            >
-              Voltar
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
+            onClick={() => {
+              if (effectiveReturnTo) router.push(effectiveReturnTo);
+              else router.back();
+            }}
+          >
+            Voltar
+          </button>
           <button
             type="button"
             className="inline-flex items-center gap-2 rounded-lg bg-[#16A34A] px-4 py-2 text-sm text-white hover:bg-[#15803D] disabled:opacity-60"

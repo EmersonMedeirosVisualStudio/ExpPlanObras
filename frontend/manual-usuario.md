@@ -96,6 +96,32 @@ O contrato é uma informação associada à obra. Para ver:
 
 ---
 
+## 4.1 Documentos (Obra e Contrato)
+
+Você pode gerenciar documentos tanto da **Obra** quanto do **Contrato** na mesma tela.
+
+### ETAPA 1 — Onde acessar
+- Para **Obra**: no menu lateral, acesse **Engenharia → Obras → Documentos**
+- Para **Contrato**: abra o contrato e clique em **Documentos do contrato**
+
+### ETAPA 2 — O que clicar
+- Use o seletor **Obra / Contrato** quando você não entrou por um item específico
+- No campo de ID, digite parte do texto para filtrar a lista (ex.: `#1`, nome da obra ou número do contrato)
+
+### ETAPA 3 — O que preencher
+- Para criar um documento:
+  - Categoria
+  - Título
+  - (Opcional) Descrição
+  - (Opcional) Arquivo (PDF/imagem)
+
+### ETAPA 4 — O que esperar
+- Se você entrou por uma obra/contrato específico, o contexto fica travado para evitar anexar no lugar errado
+- O topo da tela mostra o caminho (breadcrumb) e existe botão **Voltar**
+
+### ETAPA 5 — Como validar
+- Na seção “Documentos cadastrados”, filtre por **Categoria prefixo** (Todos / Contrato / Obra) e confirme que os documentos aparecem
+
 ## 5. Responsável técnico e fiscal (por obra)
 
 Esses dados são cadastrados por obra e aparecem nos dados principais.
@@ -167,6 +193,7 @@ Os contratos concentram as informações oficiais de prazo e valores.
 ### ETAPA 3 — O que esperar
 - A lista mostra **ALERTA** (OK/Pendente/Crítico) e **STATUS** (Em andamento / A vencer / Vencido / etc.)
 - No detalhe, você verá datas e valores do contrato (e botões de ação, como **Aditivos**)
+- Em **Editar contrato**, existe botão **Voltar** e um subtítulo no topo que mostra o caminho real (breadcrumb)
 
 ### ETAPA 4 — Como validar
 - Volte para a lista e confirme se o contrato aparece e se o status/alerta fazem sentido

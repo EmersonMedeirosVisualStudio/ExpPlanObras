@@ -5,6 +5,10 @@ const nextConfig: NextConfig = {
     const apiOrigin = process.env.API_ORIGIN || process.env.NEXT_PUBLIC_API_URL || "http://localhost:3333";
     const apiMode = String(process.env.NEXT_PUBLIC_API_MODE || process.env.API_MODE || "").trim().toLowerCase();
     const useNextApi = apiMode === "next";
+    const localOverridesAlways = [
+      { source: "/api/v1/documentos/:path*", destination: "/api/v1/documentos/:path*" },
+      { source: "/api/v1/documentos", destination: "/api/v1/documentos" },
+    ];
     const localRules = [
       { source: "/api/v1/me/:path*", destination: "/api/v1/me/:path*" },
       { source: "/api/v1/realtime/:path*", destination: "/api/v1/realtime/:path*" },
@@ -20,10 +24,6 @@ const nextConfig: NextConfig = {
       { source: "/api/v1/engenharia/projetos/:path*", destination: "/api/v1/engenharia/projetos/:path*" },
       { source: "/api/v1/engenharia/obras/:id/planilha/:path*", destination: "/api/v1/engenharia/obras/:id/planilha/:path*" },
       { source: "/api/v1/engenharia/obras/:id/planilha", destination: "/api/v1/engenharia/obras/:id/planilha" },
-      { source: "/api/v1/documentos/versoes/:id/download", destination: "/api/v1/documentos/versoes/:id/download" },
-      { source: "/api/v1/documentos/versoes/:id/verificar", destination: "/api/v1/documentos/versoes/:id/verificar" },
-      { source: "/api/v1/documentos/verificacao/:token", destination: "/api/v1/documentos/verificacao/:token" },
-      { source: "/api/v1/documentos/:id", destination: "/api/v1/documentos/:id" },
     ];
 
     const rules = [
@@ -39,7 +39,7 @@ const nextConfig: NextConfig = {
     const proxyRulesBeforeFiles = [{ source: "/api/v1/:path*", destination: `${apiOrigin}/api/v1/:path*` }];
 
     return {
-      beforeFiles: useNextApi ? [...localRules] : [...proxyRulesBeforeFiles],
+      beforeFiles: useNextApi ? [...localOverridesAlways, ...localRules] : [...localOverridesAlways, ...proxyRulesBeforeFiles],
       afterFiles: [],
       fallback: rules,
     };

@@ -3073,6 +3073,18 @@ O sistema foi pensado para ser:
 
 Esta seção documenta o que já está implementado no sistema, com foco em **Contratos**, **Planejamento (Gantt)**, **Aditivos** e como isso conversa com **Execução, Medição e Financeiro**.
 
+### 21.0 Arquitetura (padrão do sistema)
+
+Princípio:
+
+- **Frontend (Vercel)**: interface (Next.js), experiência do usuário e navegação.
+- **Backend (Render)**: regras de negócio e APIs.
+- **Banco (Neon/Postgres)**: persistência principal do sistema (via Prisma no backend).
+
+Observação importante:
+
+- Algumas APIs legadas ainda podem rodar como **API do Next** (server runtime) enquanto o módulo não for migrado para o backend. Isso mantém o sistema funcionando sem “quebrar produção” e permite migração por etapas.
+
 ### 21.1 Contratos (módulo de Engenharia)
 
 Regras-base (modelo correto de contrato de obra):
@@ -3093,6 +3105,11 @@ Telas:
 
 - Lista/Detalhe (contratos principais): `/dashboard/contratos`
 - Novo contrato: `/dashboard/contratos/novo`
+
+Navegação (padrão de usabilidade):
+
+- Botões **Voltar** e subtítulos (breadcrumb) usam `returnTo` para retornar à tela chamadora e exibir o **caminho real**.
+- Se `returnTo` não existir, o sistema volta para o padrão do módulo (ou usa `back()` do navegador quando aplicável).
 
 Menu (padrão):
 
@@ -3139,6 +3156,10 @@ Onde ficam as contrapartes (cadastro de empresas/pessoas externas):
 - Tela de CRUD: `/dashboard/engenharia/contrapartes`
 - API: `/api/v1/engenharia/contrapartes`
 - Tabela do cadastro: `engenharia_contrapartes`
+
+Navegação:
+
+- A tela de contrapartes possui **Voltar** e breadcrumb dinâmico (via `returnTo`), para manter o contexto de onde você veio (ex.: Contrato #X → Contrapartes).
 
 Como o contrato guarda a contraparte hoje:
 
@@ -3188,6 +3209,27 @@ Regras:
   - **Descrição**
   - Ações: **Exibir** (preview) e **Excluir**
 - A visualização possui botão **Fechar visualização** para voltar à lista.
+
+#### Documentos (Obra/Contrato) — tela única
+
+Objetivo:
+
+- Centralizar documentos em uma única tela, com contexto **OBRA** ou **CONTRATO**, e navegação consistente.
+
+Tela:
+
+- Documentos (Obra/Contrato): `/dashboard/obras/documentos`
+
+Comportamentos:
+
+- Pode ser aberta por **Contrato** (contexto fixo) ou por **Obra** (contexto fixo). Quando chamada com `tipo` + `id`, o contexto fica travado para evitar anexar no lugar errado.
+- Quando aberta sem contexto (sem `id`), permite selecionar **Obra** ou **Contrato** usando campo de texto com lista filtrável.
+- Possui **Voltar** e breadcrumb dinâmico (via `returnTo`).
+- Em “Documentos cadastrados”, permite filtrar por **Categoria prefixo**: **Todos / Contrato / Obra**.
+
+Compatibilidade:
+
+- A rota antiga `/dashboard/contratos/documentos` foi descontinuada e redireciona para a tela única de documentos.
 
 ### 21.2 Planejamento (Gantt) por contrato
 

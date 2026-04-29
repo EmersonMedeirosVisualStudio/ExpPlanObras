@@ -120,15 +120,107 @@ function diffYearsDateOnly(base: Date, end: Date) {
   return Math.max(0, Math.round(months / 12));
 }
 
+function safeInternalPath(path: string | null) {
+  const raw = String(path || "").trim();
+  if (!raw) return null;
+  if (!raw.startsWith("/")) return null;
+  if (raw.startsWith("//")) return null;
+  if (raw.includes("://")) return null;
+  return raw;
+}
+
+function parseInternalPath(path: string | null) {
+  const safe = safeInternalPath(path);
+  if (!safe) return null;
+  try {
+    const u = new URL(safe, "https://internal.local");
+    return { pathname: u.pathname, searchParams: u.searchParams };
+  } catch {
+    return null;
+  }
+}
+
+function labelsFromPath(path: string | null) {
+  const parsed = parseInternalPath(path);
+  if (!parsed?.pathname) return [];
+  const parts = parsed.pathname.split("/").filter(Boolean);
+  const segs = parts[0] === "dashboard" ? parts.slice(1) : parts;
+  const labels: string[] = [];
+  const map: Record<string, string> = {
+    engenharia: "Engenharia",
+    obras: "Obras",
+    cadastro: "Cadastro",
+    contratos: "Contratos",
+    rh: "RH",
+    pessoas: "Pessoas",
+    cadastros: "Pessoas",
+    fiscalizacao: "Fiscalização",
+    painel: "Painel",
+    documentos: "Documentos",
+  };
+  for (let i = 0; i < segs.length; i++) {
+    const seg = String(segs[i] || "");
+    const prev = String(segs[i - 1] || "").toLowerCase();
+    if (/^\d+$/.test(seg)) {
+      if (prev === "obras") labels.push(`Obra #${seg}`);
+      else labels.push(`#${seg}`);
+      continue;
+    }
+    const lower = seg.toLowerCase();
+    labels.push(map[lower] || (seg.length ? seg[0].toUpperCase() + seg.slice(1) : seg));
+  }
+  if (parsed.pathname === "/dashboard/contratos") {
+    const id = parsed.searchParams.get("id");
+    if (id && /^\d+$/.test(id)) labels.push(`Contrato #${id}`);
+  }
+  if (parsed.pathname === "/dashboard/engenharia/obras/cadastro") {
+    const obraId = parsed.searchParams.get("obraId");
+    if (obraId && /^\d+$/.test(obraId)) labels.push(`Obra #${obraId}`);
+  }
+  return labels.filter(Boolean);
+}
+
 export default function NovoContratoClient() {
   const router = useRouter();
   const sp = useSearchParams();
   const contratoId = sp.get("id");
-  const returnTo = sp.get("returnTo");
+  const returnToParam = safeInternalPath(sp.get("returnTo") || sp.get("from"));
+  const returnToStorageKey = "exp:returnTo:contrato-form";
+  const [returnToStored, setReturnToStored] = useState<string | null>(null);
+  const effectiveReturnTo = returnToParam || returnToStored;
   const isEdit = Boolean(contratoId);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [fieldErr, setFieldErr] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    try {
+      setReturnToStored(safeInternalPath(sessionStorage.getItem(returnToStorageKey)));
+    } catch {
+      setReturnToStored(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!returnToParam) return;
+    try {
+      sessionStorage.setItem(returnToStorageKey, returnToParam);
+      setReturnToStored(returnToParam);
+    } catch {}
+  }, [returnToParam]);
+
+  const breadcrumb = useMemo(() => {
+    const parts = labelsFromPath(effectiveReturnTo);
+    const out = parts.length ? parts.slice() : ["Contratos"];
+    if (isEdit && contratoId) {
+      const label = `Contrato #${contratoId}`;
+      if (!out.includes(label)) out.push(label);
+      out.push("Editar contrato");
+    } else {
+      out.push("Novo contrato");
+    }
+    return out.join(" → ");
+  }, [contratoId, effectiveReturnTo, isEdit]);
 
   function normalizeContratoStatus(input: unknown) {
     const s = String(input || "").toUpperCase();
@@ -547,7 +639,7 @@ export default function NovoContratoClient() {
       if (contratoId) {
         await api.put(`/api/contratos/${contratoId}`, payload);
         await anexarDocumentos(Number(contratoId));
-        const baseUrl = returnTo || `/dashboard/contratos?id=${contratoId}`;
+        const baseUrl = effectiveReturnTo || `/dashboard/contratos?id=${contratoId}`;
         const [path, qs] = baseUrl.split("?");
         const params = new URLSearchParams(qs || "");
         params.set("saved", "1");
@@ -578,6 +670,7 @@ export default function NovoContratoClient() {
     <div className="p-6 space-y-6 max-w-4xl">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
+          <div className="text-xs text-slate-500">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">{isEdit ? "Editar Contrato" : "Novo Contrato"}</h1>
           <div className="text-sm text-slate-600">Um contrato pode existir sem obra; obras podem ser vinculadas depois.</div>
         </div>
@@ -585,7 +678,8 @@ export default function NovoContratoClient() {
           className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
           type="button"
           onClick={() => {
-            if (isEdit && contratoId) router.push(returnTo || `/dashboard/contratos?id=${contratoId}`);
+            if (effectiveReturnTo) router.push(effectiveReturnTo);
+            else if (isEdit && contratoId) router.push(`/dashboard/contratos?id=${contratoId}`);
             else router.push("/dashboard/contratos");
           }}
         >
