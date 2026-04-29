@@ -119,6 +119,68 @@ function formatCpfCnpj(value: string) {
   return out;
 }
 
+function safeInternalPath(path: string | null) {
+  const raw = String(path || "").trim();
+  if (!raw) return null;
+  if (!raw.startsWith("/")) return null;
+  if (raw.startsWith("//")) return null;
+  if (raw.includes("://")) return null;
+  return raw;
+}
+
+function parseInternalPath(path: string | null) {
+  const safe = safeInternalPath(path);
+  if (!safe) return null;
+  try {
+    const u = new URL(safe, "https://internal.local");
+    return { pathname: u.pathname, searchParams: u.searchParams };
+  } catch {
+    return null;
+  }
+}
+
+function currentPath() {
+  try {
+    if (typeof window === "undefined") return "/dashboard/contratos";
+    const p = window.location.pathname || "/dashboard/contratos";
+    const s = window.location.search || "";
+    return `${p}${s}`;
+  } catch {
+    return "/dashboard/contratos";
+  }
+}
+
+function labelsFromPath(path: string | null) {
+  const parsed = parseInternalPath(path);
+  if (!parsed?.pathname) return [];
+  const parts = parsed.pathname.split("/").filter(Boolean);
+  const segs = parts[0] === "dashboard" ? parts.slice(1) : parts;
+  const labels: string[] = [];
+  const map: Record<string, string> = {
+    engenharia: "Engenharia",
+    obras: "Obras",
+    cadastro: "Cadastro",
+    contratos: "Contratos",
+    rh: "RH",
+    pessoas: "Pessoas",
+    cadastros: "Pessoas",
+    fiscalizacao: "Fiscalização",
+    painel: "Painel",
+  };
+  for (let i = 0; i < segs.length; i++) {
+    const seg = String(segs[i] || "");
+    const prev = String(segs[i - 1] || "").toLowerCase();
+    if (/^\d+$/.test(seg)) {
+      if (prev === "obras") labels.push(`Obra #${seg}`);
+      else labels.push(`#${seg}`);
+      continue;
+    }
+    const lower = seg.toLowerCase();
+    labels.push(map[lower] || (seg.length ? seg[0].toUpperCase() + seg.slice(1) : seg));
+  }
+  return labels.filter(Boolean);
+}
+
 function parseMoneyBR(input: string) {
   const s = String(input || "")
     .replace(/\./g, "")
@@ -277,6 +339,10 @@ const OBRA_STATUS_LABEL_MAP: Record<string, string> = {
 export default function ContratosClient() {
   const router = useRouter();
   const sp = useSearchParams();
+  const returnToParam = safeInternalPath(sp.get("returnTo") || sp.get("from"));
+  const returnToStorageKey = "exp:returnTo:contratos";
+  const [returnToStored, setReturnToStored] = useState<string | null>(null);
+  const effectiveReturnTo = returnToParam || returnToStored;
   const contratoId = sp.get("id");
   const saved = sp.get("saved");
   const urlStatus = sp.get("status");
@@ -284,6 +350,22 @@ export default function ContratosClient() {
   const urlContraparteId = sp.get("contraparteId");
   const urlPapel = sp.get("papel");
   const urlTipoContratante = sp.get("tipoContratante");
+
+  useEffect(() => {
+    try {
+      setReturnToStored(safeInternalPath(sessionStorage.getItem(returnToStorageKey)));
+    } catch {
+      setReturnToStored(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!returnToParam) return;
+    try {
+      sessionStorage.setItem(returnToStorageKey, returnToParam);
+      setReturnToStored(returnToParam);
+    } catch {}
+  }, [returnToParam]);
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -562,10 +644,15 @@ export default function ContratosClient() {
   }, [detail]);
 
   const podeEditarContrato = useMemo(() => {
-    if (!detail) return false;
-    const s = String(detail.statusCalculado || "").toUpperCase();
-    return s === "NAO_INICIADO";
+    return !!detail;
   }, [detail]);
+
+  const breadcrumbContrato = useMemo(() => {
+    if (!contratoId) return "";
+    const labels = labelsFromPath(effectiveReturnTo);
+    const base = labels.length ? labels.join(" → ") : "Contratos";
+    return `${base} → Contrato #${contratoId}`;
+  }, [contratoId, effectiveReturnTo]);
 
   function limparFiltros() {
     setQ("");
@@ -825,6 +912,7 @@ export default function ContratosClient() {
       <div className="space-y-4 text-[#111827]">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
+            {breadcrumbContrato ? <div className="text-xs text-[#6B7280]">{breadcrumbContrato}</div> : null}
             <h1 className="text-2xl font-semibold">Contrato #{contratoId}</h1>
             <div className="text-sm text-[#6B7280]">Detalhes, financeiro e vínculos com obras.</div>
           </div>
@@ -833,8 +921,12 @@ export default function ContratosClient() {
               className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
               type="button"
               onClick={() => {
-                const returnTo = encodeURIComponent(`/dashboard/contratos?id=${contratoId}`);
-                router.push(`/dashboard/contratos/documentos?contratoId=${contratoId}&returnTo=${returnTo}`);
+                const qp = new URLSearchParams();
+                qp.set("tipo", "CONTRATO");
+                qp.set("id", String(contratoId));
+                qp.set("categoriaPrefix", "CONTRATO:");
+                qp.set("returnTo", currentPath());
+                router.push(`/dashboard/obras/documentos?${qp.toString()}`);
               }}
             >
               Documentos do contrato
@@ -872,7 +964,10 @@ export default function ContratosClient() {
             <button
               className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
               type="button"
-              onClick={() => router.push("/dashboard/contratos")}
+              onClick={() => {
+                if (effectiveReturnTo) router.push(effectiveReturnTo);
+                else router.back();
+              }}
             >
               Voltar
             </button>
@@ -900,7 +995,7 @@ export default function ContratosClient() {
                   type="button"
                   onClick={abrirEdicao}
                   disabled={!podeEditarContrato}
-                  title={podeEditarContrato ? "Editar contrato" : "Somente contratos com status 'Não iniciado' podem ser editados."}
+                  title="Editar contrato"
                 >
                   Editar contrato
                 </button>
@@ -1068,7 +1163,14 @@ export default function ContratosClient() {
                   </thead>
                   <tbody>
                     {vinculados.map((r) => (
-                      <tr key={r.id} className="border-t border-[#E5E7EB] cursor-pointer hover:bg-[#F9FAFB]" onClick={() => router.push(`/dashboard/contratos?id=${r.id}`)}>
+                      <tr
+                        key={r.id}
+                        className="border-t border-[#E5E7EB] cursor-pointer hover:bg-[#F9FAFB]"
+                        onClick={() => {
+                          const returnTo = encodeURIComponent(currentPath());
+                          router.push(`/dashboard/contratos?id=${r.id}&returnTo=${returnTo}`);
+                        }}
+                      >
                         <td className="px-3 py-2 font-semibold">{r.numeroContrato || `#${r.id}`}</td>
                         <td className="px-3 py-2">{r.empresaParceiraNome || "—"}</td>
                         <td className="px-3 py-2">{labelSubStatus(r.status)}</td>
@@ -1609,7 +1711,10 @@ export default function ContratosClient() {
                 <tr
                   key={r.id}
                   className={`border-t border-[#E5E7EB] hover:bg-[#F3F4F6] cursor-pointer ${isAlerta ? "bg-red-50" : ""}`}
-                  onClick={() => router.push(`/dashboard/contratos?id=${r.id}`)}
+                  onClick={() => {
+                    const returnTo = encodeURIComponent(currentPath());
+                    router.push(`/dashboard/contratos?id=${r.id}&returnTo=${returnTo}`);
+                  }}
                 >
                   <td className="px-3 py-2">
                     <span className={`font-semibold ${alertaUi(r.alerta).className}`} title={(r.alertas || []).join(" • ")}>

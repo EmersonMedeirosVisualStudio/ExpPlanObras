@@ -17,6 +17,58 @@ function safeInternalPath(v: string | null) {
   return s;
 }
 
+function parseInternalPath(path: string | null) {
+  const safe = safeInternalPath(path);
+  if (!safe) return null;
+  try {
+    const u = new URL(safe, 'https://internal.local');
+    return { pathname: u.pathname, searchParams: u.searchParams };
+  } catch {
+    return null;
+  }
+}
+
+function labelsFromPath(path: string | null) {
+  const parsed = parseInternalPath(path);
+  if (!parsed?.pathname) return [];
+  const parts = parsed.pathname.split('/').filter(Boolean);
+  const segs = parts[0] === 'dashboard' ? parts.slice(1) : parts;
+  const labels: string[] = [];
+  const map: Record<string, string> = {
+    engenharia: 'Engenharia',
+    obras: 'Obras',
+    cadastro: 'Cadastro',
+    contratos: 'Contratos',
+    rh: 'RH',
+    pessoas: 'Pessoas',
+    cadastros: 'Pessoas',
+    fiscalizacao: 'Fiscalização',
+    painel: 'Painel',
+  };
+  for (let i = 0; i < segs.length; i++) {
+    const seg = String(segs[i] || '');
+    const prev = String(segs[i - 1] || '').toLowerCase();
+    if (/^\d+$/.test(seg)) {
+      if (prev === 'obras') labels.push(`Obra #${seg}`);
+      else labels.push(`#${seg}`);
+      continue;
+    }
+    const lower = seg.toLowerCase();
+    labels.push(map[lower] || (seg.length ? seg[0].toUpperCase() + seg.slice(1) : seg));
+  }
+
+  if (parsed.pathname === '/dashboard/contratos') {
+    const id = parsed.searchParams.get('id');
+    if (id && /^\d+$/.test(id)) labels.push(`Contrato #${id}`);
+  }
+  if (parsed.pathname === '/dashboard/engenharia/obras/cadastro') {
+    const obraId = parsed.searchParams.get('obraId');
+    if (obraId && /^\d+$/.test(obraId)) labels.push(`Obra #${obraId}`);
+  }
+
+  return labels.filter(Boolean);
+}
+
 export default function ObrasDocumentosPage() {
   const router = useRouter();
   const sp = useSearchParams();
@@ -28,6 +80,8 @@ export default function ObrasDocumentosPage() {
   const [returnToStored, setReturnToStored] = useState<string | null>(null);
   const effectiveReturnTo = returnTo || returnToStored;
   const lockObraContext = initialTipo === 'OBRA' && Boolean(initialId);
+  const lockContratoContext = initialTipo === 'CONTRATO' && Boolean(initialId);
+  const lockTipoContext = lockObraContext || lockContratoContext;
 
   const [tipo, setTipo] = useState<'OBRA' | 'CONTRATO'>(initialTipo === 'CONTRATO' ? 'CONTRATO' : 'OBRA');
   const [idRef, setIdRef] = useState(initialId);
@@ -193,11 +247,11 @@ export default function ObrasDocumentosPage() {
   }, [categoriaPrefix, idRef, incluirObras, returnTo, router, tipo]);
 
   useEffect(() => {
-    if (!lockObraContext) return;
+    if (!lockTipoContext) return;
     const id = Number(idRef || 0);
     if (!id) return;
     carregar();
-  }, [carregar, idRef, lockObraContext]);
+  }, [carregar, idRef, lockTipoContext]);
 
   useEffect(() => {
     try {
@@ -293,14 +347,11 @@ export default function ObrasDocumentosPage() {
   }
 
   const breadcrumb = useMemo(() => {
+    const labels = labelsFromPath(effectiveReturnTo);
+    if (labels.length) return `${labels.join(' → ')} → Documentos`;
     if (tipo === 'CONTRATO') return 'Contratos → Documentos';
-    const rt = String(effectiveReturnTo || '').toLowerCase();
-    if (!rt) return 'Engenharia → Obras → Obra selecionada → Documentos';
-    if (rt.includes('/dashboard/engenharia/obras/ativa')) return 'Engenharia → Obras → Obra ativa → Obra selecionada → Documentos';
-    if (rt.includes('/dashboard/engenharia/obras')) return 'Engenharia → Obras → Obra selecionada → Documentos';
-    if (rt.includes('/dashboard/contratos')) return 'Contratos → Obra selecionada → Documentos';
-    return 'Engenharia → Obra selecionada → Documentos';
-  }, [tipo, effectiveReturnTo]);
+    return 'Engenharia → Obras → Obra selecionada → Documentos';
+  }, [effectiveReturnTo, tipo]);
 
   function voltar() {
     if (effectiveReturnTo) return router.push(effectiveReturnTo);
@@ -369,12 +420,10 @@ export default function ObrasDocumentosPage() {
           ) : null}
         </div>
         <div className="flex gap-2 flex-wrap">
-          {effectiveReturnTo ? (
-            <button className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2" type="button" onClick={voltar}>
-              <ArrowLeft className="h-4 w-4" />
-              Voltar
-            </button>
-          ) : null}
+          <button className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2" type="button" onClick={voltar}>
+            <ArrowLeft className="h-4 w-4" />
+            Voltar
+          </button>
           {tipo === 'OBRA' && Number(idRef || 0) > 0 ? (
             <button
               className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2"
@@ -420,13 +469,13 @@ export default function ObrasDocumentosPage() {
                           tipo === 'OBRA' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                         }`}
                         onClick={() => {
-                          if (lockObraContext) return;
+                          if (lockTipoContext) return;
                           setTipo('OBRA');
                           setCategoriaPrefix('OBRA:');
                           setRows([]);
                           limparCampos('OBRA');
                         }}
-                        disabled={lockObraContext}
+                        disabled={lockTipoContext}
                       >
                         Obra
                       </button>
@@ -436,13 +485,13 @@ export default function ObrasDocumentosPage() {
                           tipo === 'CONTRATO' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                         }`}
                         onClick={() => {
-                          if (lockObraContext) return;
+                          if (lockTipoContext) return;
                           setTipo('CONTRATO');
                           setCategoriaPrefix('CONTRATO:');
                           setRows([]);
                           limparCampos('CONTRATO');
                         }}
-                        disabled={lockObraContext}
+                        disabled={lockTipoContext}
                       >
                         Contrato
                       </button>
@@ -452,7 +501,7 @@ export default function ObrasDocumentosPage() {
                   <div>
                     <div className="text-xs text-slate-600">{tipo === 'OBRA' ? 'ID da Obra *' : 'ID do Contrato *'}</div>
                     {tipo === 'OBRA' ? (
-                      <input className="input bg-white" value={idRef} onChange={(e) => setIdRef(e.target.value)} placeholder="Ex.: 1250" disabled={lockObraContext} />
+                      <input className="input bg-white" value={idRef} onChange={(e) => setIdRef(e.target.value)} placeholder="Ex.: 1250" disabled={lockTipoContext} />
                     ) : (
                       <div className="relative">
                         <input
@@ -468,7 +517,7 @@ export default function ObrasDocumentosPage() {
                           onFocus={() => setContratoOpen(true)}
                           onBlur={() => window.setTimeout(() => setContratoOpen(false), 120)}
                           placeholder="#id - Nº do contrato - Objeto"
-                          disabled={lockObraContext}
+                          disabled={lockTipoContext}
                         />
                         {contratoOpen ? (
                           <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
