@@ -924,7 +924,6 @@ export default function ContratosClient() {
                 const qp = new URLSearchParams();
                 qp.set("tipo", "CONTRATO");
                 qp.set("id", String(contratoId));
-                qp.set("categoriaPrefix", "CONTRATO:");
                 qp.set("returnTo", currentPath());
                 router.push(`/dashboard/obras/documentos?${qp.toString()}`);
               }}

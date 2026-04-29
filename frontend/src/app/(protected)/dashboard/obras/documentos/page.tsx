@@ -8,6 +8,7 @@ import api from '@/lib/api';
 import { ArrowLeft, ExternalLink, FileText, Info, Pencil, RefreshCcw, Search, Trash2, Upload, X } from 'lucide-react';
 
 type ContratoOption = { id: number; numeroContrato: string; objeto: string | null };
+type ObraOption = { id: number; nome: string };
 
 function safeInternalPath(v: string | null) {
   const s = String(v || '').trim();
@@ -86,14 +87,18 @@ export default function ObrasDocumentosPage() {
   const [tipo, setTipo] = useState<'OBRA' | 'CONTRATO'>(initialTipo === 'CONTRATO' ? 'CONTRATO' : 'OBRA');
   const [idRef, setIdRef] = useState(initialId);
   const fixedCategoriaPrefix = useMemo(() => (tipo === 'CONTRATO' ? 'CONTRATO:' : 'OBRA:'), [tipo]);
-  const [categoriaPrefix, setCategoriaPrefix] = useState(() => {
-    const defaultPrefix = initialTipo === 'CONTRATO' ? 'CONTRATO:' : 'OBRA:';
-    return initialCategoria && initialCategoria.startsWith(defaultPrefix) ? defaultPrefix : defaultPrefix;
+  const [categoriaPrefixFiltro, setCategoriaPrefixFiltro] = useState<string>(() => {
+    if (initialCategoria.startsWith('OBRA:')) return 'OBRA:';
+    if (initialCategoria.startsWith('CONTRATO:')) return 'CONTRATO:';
+    return '';
   });
   const [incluirObras, setIncluirObras] = useState(true);
   const [contratos, setContratos] = useState<ContratoOption[]>([]);
   const [contratoBusca, setContratoBusca] = useState('');
   const [contratoOpen, setContratoOpen] = useState(false);
+  const [obras, setObras] = useState<ObraOption[]>([]);
+  const [obraBusca, setObraBusca] = useState('');
+  const [obraOpen, setObraOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -213,10 +218,32 @@ export default function ObrasDocumentosPage() {
   }, [tipo]);
 
   useEffect(() => {
-    setCategoriaPrefix(fixedCategoriaPrefix);
     setNovoCategoria((prev) => normalizeCategoriaForTipo(prev, tipo));
     setCategoriaFiltro('');
   }, [fixedCategoriaPrefix, tipo]);
+
+  useEffect(() => {
+    let active = true;
+    async function carregarObras() {
+      try {
+        const { data } = await api.get('/api/v1/dashboard/me/filtros');
+        const lista = Array.isArray((data as any)?.data?.obras) ? (data as any).data.obras : [];
+        const mapped: ObraOption[] = (lista as any[])
+          .map((o: any) => ({
+            id: Number(o.id),
+            nome: String(o.nome || o.name || `Obra #${o.id}`),
+          }))
+          .filter((o) => Number.isFinite(o.id) && o.id > 0);
+        if (active) setObras(mapped);
+      } catch {
+        if (active) setObras([]);
+      }
+    }
+    if (tipo === 'OBRA') carregarObras();
+    return () => {
+      active = false;
+    };
+  }, [tipo]);
 
   const carregar = useCallback(async () => {
     const id = Number(idRef || 0);
@@ -227,14 +254,14 @@ export default function ObrasDocumentosPage() {
       const qp = new URLSearchParams();
       qp.set('tipo', tipo);
       qp.set('id', String(id));
-      if (categoriaPrefix) qp.set('categoriaPrefix', categoriaPrefix);
+      if (categoriaPrefixFiltro) qp.set('categoriaPrefix', categoriaPrefixFiltro);
       if (returnTo) qp.set('returnTo', returnTo);
       router.replace(`/dashboard/obras/documentos?${qp.toString()}`);
       const data = await DocumentosApi.listar({
         limit: 200,
         entidadeTipo: tipo,
         entidadeId: id,
-        categoriaPrefix: categoriaPrefix || null,
+        categoriaPrefix: categoriaPrefixFiltro ? categoriaPrefixFiltro : null,
         incluirObrasDoContrato: tipo === 'CONTRATO' ? incluirObras : false,
       });
       setRows(Array.isArray(data) ? data : []);
@@ -244,7 +271,7 @@ export default function ObrasDocumentosPage() {
     } finally {
       setLoading(false);
     }
-  }, [categoriaPrefix, idRef, incluirObras, returnTo, router, tipo]);
+  }, [categoriaPrefixFiltro, idRef, incluirObras, returnTo, router, tipo]);
 
   useEffect(() => {
     if (!lockTipoContext) return;
@@ -271,17 +298,40 @@ export default function ObrasDocumentosPage() {
   }, [returnTo]);
 
   useEffect(() => {
+    const id = Number(idRef || 0);
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (lockTipoContext) {
+      carregar();
+      return;
+    }
+    if (rows.length) carregar();
+  }, [carregar, categoriaPrefixFiltro, incluirObras, idRef, lockTipoContext, rows.length, tipo]);
+
+  useEffect(() => {
     let active = true;
     async function carregarNomeObra() {
       const id = Number(idRef || 0);
       if (tipo !== 'OBRA' || !Number.isFinite(id) || id <= 0) {
-        if (active) setObraNome('');
+        if (active) {
+          setObraNome('');
+          setObraBusca('');
+        }
         return;
       }
       try {
         const res = await api.get(`/api/obras/${id}`);
         const name = String((res.data as any)?.name || '').trim();
-        if (active) setObraNome(name);
+        if (!active) return;
+        setObraNome(name);
+        const label = `#${id} - ${name || `Obra #${id}`}`;
+        setObraBusca((prev) => {
+          if (lockTipoContext) return label;
+          const p = String(prev || '').trim();
+          const onlyId = p.match(/^#?(\d+)\s*$/);
+          if (onlyId?.[1] && Number(onlyId[1]) === id) return label;
+          if (!p && String(idRef || '').trim() === String(id)) return label;
+          return prev;
+        });
       } catch {
         if (active) setObraNome('');
       }
@@ -291,6 +341,17 @@ export default function ObrasDocumentosPage() {
       active = false;
     };
   }, [tipo, idRef]);
+
+  const obrasFiltradas = useMemo(() => {
+    const q = obraBusca.trim().toLowerCase();
+    if (!q) return obras.slice(0, 10);
+    return obras
+      .filter((o) => {
+        const label = `#${o.id} ${o.nome || ''}`.toLowerCase();
+        return label.includes(q);
+      })
+      .slice(0, 10);
+  }, [obras, obraBusca]);
 
   useEffect(() => {
     if (tipo !== 'CONTRATO') return;
@@ -318,7 +379,7 @@ export default function ObrasDocumentosPage() {
     try {
       setLoading(true);
       setErro(null);
-      const categoriaDocumento = normalizeCategoriaForTipo(novoCategoria || categoriaPrefix || '');
+      const categoriaDocumento = normalizeCategoriaForTipo(novoCategoria || fixedCategoriaPrefix || '');
       const tituloDocumento = String(novoTitulo || '').trim();
       const descricaoDocumento = String(novoDescricao || '').trim();
       if (!categoriaDocumento || categoriaDocumento.endsWith(':')) throw new Error('Categoria obrigatória.');
@@ -501,11 +562,53 @@ export default function ObrasDocumentosPage() {
                   <div>
                     <div className="text-xs text-slate-600">{tipo === 'OBRA' ? 'ID da Obra *' : 'ID do Contrato *'}</div>
                     {tipo === 'OBRA' ? (
-                      <input className="input bg-white" value={idRef} onChange={(e) => setIdRef(e.target.value)} placeholder="Ex.: 1250" disabled={lockTipoContext} />
+                      <div className="relative">
+                        <input
+                          className="input bg-white h-11"
+                          value={obraBusca}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setObraBusca(v);
+                            setObraOpen(true);
+                            const onlyId = v.trim().match(/^#?(\d+)\b/);
+                            if (onlyId?.[1]) setIdRef(onlyId[1]);
+                          }}
+                          onFocus={() => setObraOpen(true)}
+                          onBlur={() => window.setTimeout(() => setObraOpen(false), 120)}
+                          placeholder="#id - Nome da obra"
+                          disabled={lockTipoContext}
+                        />
+                        {obraOpen ? (
+                          <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                            <div className="max-h-64 overflow-auto">
+                              {obrasFiltradas.map((o) => {
+                                const label = `#${o.id} - ${o.nome || '—'}`;
+                                return (
+                                  <button
+                                    key={o.id}
+                                    type="button"
+                                    className="w-full px-3 py-2 text-left text-sm text-slate-900 hover:bg-slate-50"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => {
+                                      setIdRef(String(o.id));
+                                      setObraBusca(label);
+                                      setObraOpen(false);
+                                      setRows([]);
+                                    }}
+                                  >
+                                    {label}
+                                  </button>
+                                );
+                              })}
+                              {!obrasFiltradas.length ? <div className="px-3 py-2 text-sm text-slate-500">Nenhuma obra encontrada.</div> : null}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
                     ) : (
                       <div className="relative">
                         <input
-                          className="input bg-white"
+                          className="input bg-white h-11"
                           value={contratoBusca}
                           onChange={(e) => {
                             const v = e.target.value;
@@ -728,11 +831,15 @@ export default function ObrasDocumentosPage() {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
               <div className="md:col-span-2">
                 <div className="text-xs text-slate-600">Categoria prefixo</div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{fixedCategoriaPrefix}</div>
+                <select className="input bg-white h-11" value={categoriaPrefixFiltro} onChange={(e) => setCategoriaPrefixFiltro(e.target.value)} disabled={loading}>
+                  <option value="">Todos</option>
+                  <option value="CONTRATO:">Contrato</option>
+                  <option value="OBRA:">Obra</option>
+                </select>
               </div>
               <div className="md:col-span-3">
                 <div className="text-xs text-slate-600">Filtrar categoria</div>
-                <select className="input bg-white" value={categoriaFiltro} onChange={(e) => setCategoriaFiltro(e.target.value)} disabled={loading}>
+                <select className="input bg-white h-11" value={categoriaFiltro} onChange={(e) => setCategoriaFiltro(e.target.value)} disabled={loading}>
                   <option value="">Todas</option>
                   {categoriasFiltroOptions.map((c) => (
                     <option key={c} value={c}>
@@ -745,7 +852,7 @@ export default function ObrasDocumentosPage() {
                 <div className="text-xs text-slate-600">Buscar documento</div>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input className="input bg-white pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por título, descrição, categoria ou número" />
+                  <input className="input bg-white pl-9 h-11" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por título, descrição, categoria ou número" />
                 </div>
               </div>
               <div className="md:col-span-2 flex items-end">

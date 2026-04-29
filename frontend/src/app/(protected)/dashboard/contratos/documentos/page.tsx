@@ -27,7 +27,6 @@ export default async function ContratosDocumentosPage(props: { searchParams?: Re
   const qp = new URLSearchParams();
   qp.set("tipo", "CONTRATO");
   if (id) qp.set("id", id);
-  qp.set("categoriaPrefix", "CONTRATO:");
   qp.set("returnTo", returnTo);
   redirect(`/dashboard/obras/documentos?${qp.toString()}`);
 }
