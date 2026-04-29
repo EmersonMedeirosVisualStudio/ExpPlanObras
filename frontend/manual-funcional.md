@@ -3110,6 +3110,7 @@ Navegação (padrão de usabilidade):
 
 - Botões **Voltar** e subtítulos (breadcrumb) usam `returnTo` para retornar à tela chamadora e exibir o **caminho real**.
 - Se `returnTo` não existir, o sistema volta para o padrão do módulo (ou usa `back()` do navegador quando aplicável).
+- Dentro do contexto de um contrato, existe uma barra fixa (sticky) de navegação: **Contrato**, **Documentos**, **Programação financeira**, **Aditivos**, **Medições** e **Eventos**. Ao navegar entre as telas, apenas o botão da tela atual fica em estado ativo.
 
 Menu (padrão):
 

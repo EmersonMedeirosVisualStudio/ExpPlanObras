@@ -210,7 +210,8 @@ O aditivo é o histórico de mudanças. O contrato “vigente” é sempre o con
 
 ### ETAPA 2 — O que clicar
 - Primeiro selecione o contrato
-- Use as abas: **Dashboard**, **Aditivos** (lista/CRUD) e **Novo aditivo**
+- Use a barra fixa do contrato e clique em **Aditivos**
+- Dentro de **Aditivos**, clique em **Novo aditivo**
 
 ### ETAPA 3 — O que preencher
 - Em **Novo aditivo**, preencha o que mudou (ex.: dias adicionados, **valor total após o aditivo**, motivo/observação do aditivo)
@@ -232,7 +233,7 @@ Use esta área para registrar justificativas do dia a dia e guardar evidências 
 
 ### ETAPA 1 — Onde acessar
 - Menu lateral → **Contratos (Engenharia) → Contratos → Aditivos (selecionar contrato)**
-- Selecione o contrato e abra a aba **Eventos**
+- Selecione o contrato e clique em **Eventos** (na barra fixa do contrato)
 
 ### ETAPA 2 — O que clicar
 - Use os filtros (Contrato/Aditivos/Obras/Documentos/Observações) para “enxergar só o que interessa”

@@ -498,6 +498,61 @@ export default function ObrasDocumentosPage() {
         </div>
       </div>
 
+      {tipo === 'CONTRATO' && Number(idRef || 0) > 0 ? (
+        <div className="sticky top-0 z-40 bg-[#f7f8fa] py-3 border-b border-slate-200">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                type="button"
+                onClick={() => router.push(`/dashboard/contratos?id=${Number(idRef || 0)}`)}
+              >
+                Contrato
+              </button>
+              <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white" type="button">
+                Documentos
+              </button>
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                type="button"
+                onClick={() =>
+                  router.push(
+                    `/dashboard/contratos/programacao-financeira?contratoId=${Number(idRef || 0)}&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${Number(idRef || 0)}`)}`
+                  )
+                }
+              >
+                Programação financeira
+              </button>
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                type="button"
+                onClick={() =>
+                  router.push(`/dashboard/contratos/aditivos?contratoId=${Number(idRef || 0)}&tab=lista&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${Number(idRef || 0)}`)}`)
+                }
+              >
+                Aditivos
+              </button>
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                type="button"
+                onClick={() => router.push(`/dashboard/contratos/medicoes?contratoId=${Number(idRef || 0)}&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${Number(idRef || 0)}`)}`)}
+              >
+                Medições
+              </button>
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                type="button"
+                onClick={() =>
+                  router.push(`/dashboard/contratos/aditivos?contratoId=${Number(idRef || 0)}&tab=eventos&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${Number(idRef || 0)}`)}`)
+                }
+              >
+                Eventos
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {erro ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{erro}</div> : null}
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-12">

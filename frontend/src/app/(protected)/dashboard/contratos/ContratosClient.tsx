@@ -876,6 +876,11 @@ export default function ContratosClient() {
   }
 
   if (contratoId) {
+    const navBtnClass = (active: boolean) =>
+      active
+        ? "rounded-lg bg-blue-600 px-3 py-2 text-sm text-white"
+        : "rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]";
+
     return (
       <div className="space-y-4 text-[#111827]">
         <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -884,59 +889,47 @@ export default function ContratosClient() {
             <h1 className="text-2xl font-semibold">Contrato #{contratoId}</h1>
             <div className="text-sm text-[#6B7280]">Detalhes, financeiro e vínculos com obras.</div>
           </div>
-          <div className="flex gap-2">
+          <button
+            className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
+            type="button"
+            onClick={() => {
+              if (effectiveReturnTo) router.push(effectiveReturnTo);
+              else router.back();
+            }}
+          >
+            Voltar
+          </button>
+        </div>
+
+        <div className="sticky top-0 z-40 py-3 bg-white border-b border-[#E5E7EB]">
+          <div className="flex flex-wrap gap-2">
+            <button className={navBtnClass(true)} type="button" onClick={() => router.push(`/dashboard/contratos?id=${contratoId}`)}>
+              Contrato
+            </button>
             <button
-              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
+              className={navBtnClass(false)}
               type="button"
               onClick={() => {
                 const qp = new URLSearchParams();
                 qp.set("tipo", "CONTRATO");
                 qp.set("id", String(contratoId));
-                qp.set("returnTo", currentPath());
+                qp.set("returnTo", `/dashboard/contratos?id=${contratoId}`);
                 router.push(`/dashboard/obras/documentos?${qp.toString()}`);
               }}
             >
-              Documentos do contrato
+              Documentos
             </button>
-            <button
-              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
-              type="button"
-              onClick={() => {
-                const returnTo = encodeURIComponent(`/dashboard/contratos?id=${contratoId}`);
-                router.push(`/dashboard/contratos/programacao-financeira?contratoId=${contratoId}&returnTo=${returnTo}`);
-              }}
-            >
+            <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos/programacao-financeira?contratoId=${contratoId}&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${contratoId}`)}`)}>
               Programação financeira
             </button>
-            <button
-              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
-              type="button"
-              onClick={() => {
-                const returnTo = encodeURIComponent(`/dashboard/contratos?id=${contratoId}`);
-                router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}&returnTo=${returnTo}`);
-              }}
-            >
+            <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}&tab=lista&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${contratoId}`)}`)}>
               Aditivos
             </button>
-            <button
-              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
-              type="button"
-              onClick={() => {
-                const returnTo = encodeURIComponent(`/dashboard/contratos?id=${contratoId}`);
-                router.push(`/dashboard/contratos/medicoes?contratoId=${contratoId}&returnTo=${returnTo}`);
-              }}
-            >
+            <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos/medicoes?contratoId=${contratoId}&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${contratoId}`)}`)}>
               Medições
             </button>
-            <button
-              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]"
-              type="button"
-              onClick={() => {
-                if (effectiveReturnTo) router.push(effectiveReturnTo);
-                else router.back();
-              }}
-            >
-              Voltar
+            <button className={navBtnClass(false)} type="button" onClick={() => router.push(`/dashboard/contratos/aditivos?contratoId=${contratoId}&tab=eventos&returnTo=${encodeURIComponent(`/dashboard/contratos?id=${contratoId}`)}`)}>
+              Eventos
             </button>
           </div>
         </div>
