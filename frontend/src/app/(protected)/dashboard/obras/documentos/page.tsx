@@ -532,7 +532,7 @@ export default function ObrasDocumentosPage() {
                         onClick={() => {
                           if (lockTipoContext) return;
                           setTipo('OBRA');
-                          setCategoriaPrefix('OBRA:');
+                          setCategoriaPrefixFiltro('');
                           setRows([]);
                           limparCampos('OBRA');
                         }}
@@ -548,7 +548,7 @@ export default function ObrasDocumentosPage() {
                         onClick={() => {
                           if (lockTipoContext) return;
                           setTipo('CONTRATO');
-                          setCategoriaPrefix('CONTRATO:');
+                          setCategoriaPrefixFiltro('');
                           setRows([]);
                           limparCampos('CONTRATO');
                         }}
