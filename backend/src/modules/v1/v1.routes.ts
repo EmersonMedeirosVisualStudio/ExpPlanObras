@@ -3800,12 +3800,26 @@ export default async function v1Routes(server: FastifyInstance) {
       const scope = (request.user as any)?.abrangencia as any;
       if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-      const obra = await prisma.obra.findFirst({ where: { tenantId: ctx.tenantId, id: idObra }, select: { id: true, status: true } }).catch(() => null);
+      const obra = await prisma.obra
+        .findFirst({
+          where: { tenantId: ctx.tenantId, id: idObra },
+          select: { id: true, status: true, name: true, type: true, valorPrevisto: true, contratoId: true, contrato: { select: { id: true, numeroContrato: true } } },
+        })
+        .catch(() => null);
       if (!obra) return fail(reply, 404, 'Obra não encontrada');
 
       await ensurePlanilhaOrcamentariaTables(prisma);
 
       const obraStatus = obra.status ? String(obra.status) : null;
+      const obraResumo = {
+        idObra: obra.id,
+        nome: obra.name ?? null,
+        status: obraStatus,
+        tipo: obra.type ? String(obra.type) : null,
+        contratoId: obra.contratoId ?? (obra.contrato?.id ?? null),
+        contratoNumero: obra.contrato?.numeroContrato ? String(obra.contrato.numeroContrato) : null,
+        valorPrevisto: obra.valorPrevisto == null ? null : Number(obra.valorPrevisto),
+      };
 
       if (view === 'versoes') {
         const rows = (await prisma.$queryRawUnsafe(
@@ -3833,6 +3847,7 @@ export default async function v1Routes(server: FastifyInstance) {
         return ok(reply, {
           idObra,
           obraStatus,
+          obra: obraResumo,
           versoes: (rows || []).map((r: any) => ({
             idPlanilha: Number(r.idPlanilha),
             numeroVersao: Number(r.numeroVersao),
@@ -3863,7 +3878,7 @@ export default async function v1Routes(server: FastifyInstance) {
         idPlanilha = rows?.[0]?.idPlanilha ? Number(rows[0].idPlanilha) : null;
       }
 
-      if (!idPlanilha) return ok(reply, { idObra, obraStatus, planilha: null });
+      if (!idPlanilha) return ok(reply, { idObra, obraStatus, obra: obraResumo, planilha: null });
 
       const versoes = (await prisma.$queryRawUnsafe(
         `
@@ -3893,7 +3908,7 @@ export default async function v1Routes(server: FastifyInstance) {
         idPlanilha
       )) as any[];
       const v = versoes?.[0] || null;
-      if (!v) return ok(reply, { idObra, obraStatus, planilha: null });
+      if (!v) return ok(reply, { idObra, obraStatus, obra: obraResumo, planilha: null });
 
       const linhas = (await prisma.$queryRawUnsafe(
         `
@@ -3921,6 +3936,7 @@ export default async function v1Routes(server: FastifyInstance) {
       return ok(reply, {
         idObra,
         obraStatus,
+        obra: obraResumo,
         planilha: {
           idPlanilha: Number(v.idPlanilha),
           numeroVersao: Number(v.numeroVersao),
@@ -3976,12 +3992,26 @@ export default async function v1Routes(server: FastifyInstance) {
       const scope = (request.user as any)?.abrangencia as any;
       if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-      const obra = await prisma.obra.findFirst({ where: { tenantId: ctx.tenantId, id: idObra }, select: { id: true, status: true } }).catch(() => null);
+      const obra = await prisma.obra
+        .findFirst({
+          where: { tenantId: ctx.tenantId, id: idObra },
+          select: { id: true, status: true, name: true, type: true, valorPrevisto: true, contratoId: true, contrato: { select: { id: true, numeroContrato: true } } },
+        })
+        .catch(() => null);
       if (!obra) return fail(reply, 404, 'Obra não encontrada');
 
       await ensurePlanilhaOrcamentariaTables(prisma);
 
       const obraStatus = obra.status ? String(obra.status) : null;
+      const obraResumo = {
+        idObra: obra.id,
+        nome: obra.name ?? null,
+        status: obraStatus,
+        tipo: obra.type ? String(obra.type) : null,
+        contratoId: obra.contratoId ?? (obra.contrato?.id ?? null),
+        contratoNumero: obra.contrato?.numeroContrato ? String(obra.contrato.numeroContrato) : null,
+        valorPrevisto: obra.valorPrevisto == null ? null : Number(obra.valorPrevisto),
+      };
       const isObraNaoIniciada = String(obraStatus || '').toUpperCase() === 'NAO_INICIADA';
 
       const isMultipart = typeof (request as any).isMultipart === 'function' ? (request as any).isMultipart() : false;

@@ -69,11 +69,22 @@ function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+type ObraResumo = {
+  idObra: number;
+  nome: string | null;
+  status: string | null;
+  tipo: string | null;
+  contratoId: number | null;
+  contratoNumero: string | null;
+  valorPrevisto: number | null;
+};
+
 export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: number; returnTo: string | null }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [obraStatus, setObraStatus] = useState<string | null>(null);
+  const [obraResumo, setObraResumo] = useState<ObraResumo | null>(null);
   const [versoes, setVersoes] = useState<VersaoRow[]>([]);
   const [planilha, setPlanilha] = useState<Planilha | null>(null);
   const [planilhaId, setPlanilhaId] = useState<number | null>(null);
@@ -125,6 +136,21 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     return `${base} → Obra selecionada → Planilha orçamentária`;
   }, [returnTo]);
 
+  async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
+    let token: string | null = null;
+    try {
+      if (typeof window !== "undefined") token = localStorage.getItem("token");
+    } catch {}
+    return fetch(input, {
+      ...init,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init?.headers || {}),
+      },
+      cache: "no-store",
+    });
+  }
+
   function baixarModeloCsv() {
     const sep = ";";
     const lines = [
@@ -149,11 +175,12 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     try {
       setLoading(true);
       setErr(null);
-      const res = await fetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes`, { cache: "no-store" });
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar versões");
       const data = json.data || {};
       setObraStatus(data.obraStatus ?? null);
+      setObraResumo((data.obra as any) || null);
       const list = Array.isArray(data.versoes) ? (data.versoes as any[]) : [];
       const normalized: VersaoRow[] = list.map((v) => ({
         idPlanilha: Number(v.idPlanilha),
@@ -182,11 +209,12 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     try {
       setLoading(true);
       setErr(null);
-      const res = await fetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${idPlanilha}`, { cache: "no-store" });
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${idPlanilha}`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar planilha");
       const data = json.data || {};
       setObraStatus(data.obraStatus ?? null);
+      setObraResumo((data.obra as any) || null);
       setPlanilha((data.planilha as any) || null);
       const p = (data.planilha?.parametros || {}) as any;
       setParametros({
@@ -210,7 +238,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
 
   async function carregarCentrosCusto() {
     try {
-      const res = await fetch(`/api/v1/engenharia/centros-custo?ativo=1`, { cache: "no-store" });
+      const res = await authFetch(`/api/v1/engenharia/centros-custo?ativo=1`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) {
         setCentrosCusto([]);
@@ -230,7 +258,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     }
     try {
       setErr(null);
-      const res = await fetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-itens`, { cache: "no-store" });
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-itens`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar composição do serviço");
       setComposicao({ codigoComposicao: json.data?.codigoComposicao || null, itens: Array.isArray(json.data?.itens) ? json.data.itens : [] });
@@ -246,7 +274,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       setLoading(true);
       setErr(null);
       const updates = composicao.itens.map((i) => ({ idItemBase: i.idItemBase, codigoCentroCusto: i.codigoCentroCusto }));
-      const res = await fetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(selecionado)}/composicao-itens`, {
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(selecionado)}/composicao-itens`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ updates }),
@@ -287,7 +315,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     try {
       setLoading(true);
       setErr(null);
-      const res = await fetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "NOVA_VERSAO", nome: `Versão ${Math.max(0, ...versoes.map((v) => v.numeroVersao)) + 1}` }),
@@ -309,7 +337,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     try {
       setLoading(true);
       setErr(null);
-      const res = await fetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -346,7 +374,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       setLoading(true);
       setErr(null);
       const ordem = Number(novo.ordem || 0) || ((planilha.linhas || []).reduce((m, l) => Math.max(m, Number(l.ordem || 0)), 0) + 1);
-      const res = await fetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -384,7 +412,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     try {
       setLoading(true);
       setErr(null);
-      const res = await fetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "EXCLUIR_LINHA", idPlanilha: planilha.idPlanilha, idLinha }),
@@ -408,7 +436,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       form.append("action", "IMPORTAR_CSV");
       form.append("nome", `Versão ${Math.max(0, ...versoes.map((v) => v.numeroVersao)) + 1} (CSV)`);
       form.append("file", file);
-      const res = await fetch(`/api/v1/engenharia/obras/${idObra}/planilha`, { method: "POST", body: form });
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, { method: "POST", body: form });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao importar CSV");
       const idPlanilhaNew = Number(json.data?.idPlanilha || 0);
@@ -425,12 +453,23 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   return (
     <div className="p-6 space-y-6 max-w-7xl text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
+        <div className="flex-1 min-w-[260px]">
           <div className="text-xs text-slate-500">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Planilha orçamentária — Obra #{idObra}</h1>
           <div className="text-sm text-slate-600">Versões do orçamento por obra (itens, subitens e serviços). A programação e apropriação usam os serviços da versão atual.</div>
+          {obraResumo ? (
+            <div className="mt-2 text-sm text-slate-700">
+              <span className="font-semibold">{obraResumo.nome ? obraResumo.nome : `Obra #${idObra}`}</span>
+              {" • "}
+              <span>Status: {obraResumo.status ? obraResumo.status : "—"}</span>
+              {" • "}
+              <span>Contrato: {obraResumo.contratoNumero ? obraResumo.contratoNumero : obraResumo.contratoId ? `#${obraResumo.contratoId}` : "—"}</span>
+              {" • "}
+              <span>Valor previsto: {obraResumo.valorPrevisto == null ? "—" : moeda(Number(obraResumo.valorPrevisto || 0))}</span>
+            </div>
+          ) : null}
         </div>
-        <div className="flex gap-2 flex-wrap items-center justify-end w-full sm:w-auto">
+        <div className="flex gap-2 flex-wrap items-center justify-end w-full lg:w-auto ml-auto">
           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push(returnTo || `/dashboard/engenharia/obras/${idObra}`)}>
             Voltar
           </button>
