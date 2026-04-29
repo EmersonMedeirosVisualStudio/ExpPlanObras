@@ -15,6 +15,12 @@ function onlyDigits(value: string) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function removeDiacritics(value: string) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
 function formatCpfCnpj(value: string) {
   const d = onlyDigits(value).slice(0, 14);
   if (!d) return "";
