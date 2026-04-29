@@ -34,8 +34,10 @@ const nextConfig: NextConfig = {
       { source: "/api/maintenance/:path*", destination: `${apiOrigin}/api/maintenance/:path*` },
     ];
 
+    const proxyRulesBeforeFiles = [{ source: "/api/v1/:path*", destination: `${apiOrigin}/api/v1/:path*` }];
+
     return {
-      beforeFiles: useNextApi ? [...localRules] : [...localRules],
+      beforeFiles: useNextApi ? [...localRules] : [...proxyRulesBeforeFiles],
       afterFiles: [],
       fallback: rules,
     };

@@ -280,6 +280,139 @@ function randomTempPassword() {
   return crypto.randomBytes(6).toString('base64url');
 }
 
+function canAccessObraId(obraId: number, scope: any) {
+  if (!scope || scope.empresa) return true;
+  const obras: number[] = Array.isArray(scope.obras) ? scope.obras.map((n: any) => Number(n)).filter((n: any) => Number.isInteger(n) && n > 0) : [];
+  return obras.includes(obraId);
+}
+
+function normalizeHeader(h: string) {
+  return String(h || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function parseCsvTextAuto(text: string) {
+  const cleaned = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = cleaned.split('\n').filter((l) => l.trim().length > 0);
+  if (!lines.length) return { headers: [] as string[], rows: [] as string[][] };
+  const first = lines[0];
+  const comma = (first.match(/,/g) || []).length;
+  const semi = (first.match(/;/g) || []).length;
+  const sep = semi > comma ? ';' : ',';
+  const split = (line: string) => {
+    const out: string[] = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          const next = line[i + 1];
+          if (next === '"') {
+            cur += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          cur += ch;
+        }
+        continue;
+      }
+      if (ch === '"') {
+        inQuotes = true;
+        continue;
+      }
+      if (ch === sep) {
+        out.push(cur);
+        cur = '';
+        continue;
+      }
+      cur += ch;
+    }
+    out.push(cur);
+    return out.map((v) => v.trim());
+  };
+  const headers = split(lines[0]);
+  const rows = lines.slice(1).map((l) => split(l));
+  return { headers, rows };
+}
+
+function toDec(v: unknown) {
+  const s = String(v ?? '').trim();
+  if (!s) return null;
+  const norm = s.replace(/\./g, '').replace(',', '.').replace(/[^\d.\-]/g, '');
+  if (!norm) return null;
+  const n = Number(norm);
+  return Number.isFinite(n) ? n : null;
+}
+
+function detectTipoLinha(item: string, und: string, quant: string, valorUnit: string) {
+  const hasServ = !!(und.trim() || quant.trim() || valorUnit.trim());
+  if (hasServ) return { tipo: 'SERVICO' as const, nivel: item.trim() ? Math.max(0, item.split('.').filter(Boolean).length) : 0 };
+  const parts = item.trim() ? item.split('.').filter(Boolean) : [];
+  if (parts.length <= 1) return { tipo: 'ITEM' as const, nivel: parts.length };
+  return { tipo: 'SUBITEM' as const, nivel: parts.length };
+}
+
+async function ensurePlanilhaOrcamentariaTables(tx: any) {
+  await tx.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS obras_planilhas_versoes (
+      id_planilha BIGSERIAL PRIMARY KEY,
+      tenant_id BIGINT NOT NULL,
+      id_obra BIGINT NOT NULL,
+      numero_versao INT NOT NULL,
+      nome VARCHAR(120) NOT NULL DEFAULT 'Planilha orçamentária',
+      atual BOOLEAN NOT NULL DEFAULT TRUE,
+      origem VARCHAR(16) NOT NULL DEFAULT 'MANUAL',
+      data_base_sbc VARCHAR(16) NULL,
+      data_base_sinapi VARCHAR(16) NULL,
+      bdi_servicos_sbc NUMERIC(10,4) NULL,
+      bdi_servicos_sinapi NUMERIC(10,4) NULL,
+      bdi_diferenciado_sbc NUMERIC(10,4) NULL,
+      bdi_diferenciado_sinapi NUMERIC(10,4) NULL,
+      enc_sociais_sem_des_sbc NUMERIC(10,4) NULL,
+      enc_sociais_sem_des_sinapi NUMERIC(10,4) NULL,
+      desconto_sbc NUMERIC(10,4) NULL,
+      desconto_sinapi NUMERIC(10,4) NULL,
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      id_usuario_criador BIGINT NOT NULL
+    )
+  `);
+  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_planilhas_versoes_uk_versao ON obras_planilhas_versoes (tenant_id, id_obra, numero_versao)`);
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_versoes_idx_atual ON obras_planilhas_versoes (tenant_id, id_obra, atual)`);
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_versoes_idx_obra ON obras_planilhas_versoes (tenant_id, id_obra)`);
+
+  await tx.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS obras_planilhas_linhas (
+      id_linha BIGSERIAL PRIMARY KEY,
+      tenant_id BIGINT NOT NULL,
+      id_planilha BIGINT NOT NULL,
+      ordem INT NOT NULL DEFAULT 0,
+      item VARCHAR(40) NULL,
+      codigo VARCHAR(80) NULL,
+      fonte VARCHAR(40) NULL,
+      servico VARCHAR(260) NULL,
+      und VARCHAR(16) NULL,
+      quantidade NUMERIC(14,4) NULL,
+      valor_unitario NUMERIC(14,6) NULL,
+      valor_parcial NUMERIC(14,6) NULL,
+      nivel INT NOT NULL DEFAULT 0,
+      tipo_linha VARCHAR(16) NOT NULL,
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_linhas_idx_planilha ON obras_planilhas_linhas (tenant_id, id_planilha, ordem, id_linha)`);
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_linhas_idx_tipo ON obras_planilhas_linhas (tenant_id, id_planilha, tipo_linha)`);
+}
+
 const ORGANOGRAMA_CARGOS_BASE = [
   'Servente',
   'Pedreiro',
@@ -3640,6 +3773,393 @@ export default async function v1Routes(server: FastifyInstance) {
 
     return ok(reply, { ok: true }, { message: 'Histórico registrado' });
   });
+
+  server.get(
+    '/engenharia/obras/:id/planilha',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        querystring: z
+          .object({
+            view: z.string().optional().nullable(),
+            planilhaId: z.coerce.number().int().positive().optional().nullable(),
+          })
+          .optional(),
+      },
+    },
+    async (request, reply) => {
+      const ctx = await requireTenantUser(request, reply);
+      if (!ctx || (ctx as any).success === false) return;
+
+      const params = request.params as any;
+      const q = (request.query || {}) as any;
+      const idObra = Number(params.id);
+      const view = String(q.view || '').trim().toLowerCase();
+      const planilhaIdParam = q.planilhaId != null ? Number(q.planilhaId) : null;
+
+      const scope = (request.user as any)?.abrangencia as any;
+      if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+      const obra = await prisma.obra.findFirst({ where: { tenantId: ctx.tenantId, id: idObra }, select: { id: true, status: true } }).catch(() => null);
+      if (!obra) return fail(reply, 404, 'Obra não encontrada');
+
+      await ensurePlanilhaOrcamentariaTables(prisma);
+
+      const obraStatus = obra.status ? String(obra.status) : null;
+
+      if (view === 'versoes') {
+        const rows = await prisma.$queryRawUnsafe<any[]>(
+          `
+          SELECT
+            v.id_planilha AS "idPlanilha",
+            v.numero_versao AS "numeroVersao",
+            v.nome AS "nome",
+            v.atual AS "atual",
+            v.origem AS "origem",
+            v.criado_em AS "criadoEm",
+            COALESCE(SUM(CASE WHEN l.tipo_linha = 'SERVICO' THEN COALESCE(l.valor_parcial, 0) ELSE 0 END), 0) AS "valorTotal",
+            SUM(CASE WHEN l.tipo_linha = 'SERVICO' THEN 1 ELSE 0 END) AS "totalServicos"
+          FROM obras_planilhas_versoes v
+          LEFT JOIN obras_planilhas_linhas l
+            ON l.tenant_id = v.tenant_id AND l.id_planilha = v.id_planilha
+          WHERE v.tenant_id = $1 AND v.id_obra = $2
+          GROUP BY v.id_planilha, v.numero_versao, v.nome, v.atual, v.origem, v.criado_em
+          ORDER BY v.numero_versao DESC, v.id_planilha DESC
+          `,
+          ctx.tenantId,
+          idObra
+        );
+
+        return ok(reply, {
+          idObra,
+          obraStatus,
+          versoes: (rows || []).map((r: any) => ({
+            idPlanilha: Number(r.idPlanilha),
+            numeroVersao: Number(r.numeroVersao),
+            nome: String(r.nome || ''),
+            atual: Boolean(r.atual),
+            origem: String(r.origem || 'MANUAL'),
+            criadoEm: r.criadoEm ? new Date(r.criadoEm).toISOString() : '',
+            valorTotal: r.valorTotal == null ? 0 : Number(r.valorTotal),
+            totalServicos: Number(r.totalServicos || 0),
+          })),
+        });
+      }
+
+      const idPlanilhaFromQuery = planilhaIdParam && Number.isFinite(planilhaIdParam) && planilhaIdParam > 0 ? planilhaIdParam : null;
+      let idPlanilha: number | null = idPlanilhaFromQuery;
+      if (!idPlanilha) {
+        const rows = await prisma.$queryRawUnsafe<any[]>(
+          `
+          SELECT id_planilha AS "idPlanilha"
+          FROM obras_planilhas_versoes
+          WHERE tenant_id = $1 AND id_obra = $2 AND atual = TRUE
+          ORDER BY numero_versao DESC, id_planilha DESC
+          LIMIT 1
+          `,
+          ctx.tenantId,
+          idObra
+        );
+        idPlanilha = rows?.[0]?.idPlanilha ? Number(rows[0].idPlanilha) : null;
+      }
+
+      if (!idPlanilha) return ok(reply, { idObra, obraStatus, planilha: null });
+
+      const versoes = await prisma.$queryRawUnsafe<any[]>(
+        `
+        SELECT
+          id_planilha AS "idPlanilha",
+          numero_versao AS "numeroVersao",
+          nome,
+          atual,
+          origem,
+          data_base_sbc AS "dataBaseSbc",
+          data_base_sinapi AS "dataBaseSinapi",
+          bdi_servicos_sbc AS "bdiServicosSbc",
+          bdi_servicos_sinapi AS "bdiServicosSinapi",
+          bdi_diferenciado_sbc AS "bdiDiferenciadoSbc",
+          bdi_diferenciado_sinapi AS "bdiDiferenciadoSinapi",
+          enc_sociais_sem_des_sbc AS "encSociaisSemDesSbc",
+          enc_sociais_sem_des_sinapi AS "encSociaisSemDesSinapi",
+          desconto_sbc AS "descontoSbc",
+          desconto_sinapi AS "descontoSinapi",
+          criado_em AS "criadoEm"
+        FROM obras_planilhas_versoes
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha
+      );
+      const v = versoes?.[0] || null;
+      if (!v) return ok(reply, { idObra, obraStatus, planilha: null });
+
+      const linhas = await prisma.$queryRawUnsafe<any[]>(
+        `
+        SELECT
+          id_linha AS "idLinha",
+          ordem,
+          item,
+          codigo,
+          fonte,
+          servico,
+          und,
+          quantidade,
+          valor_unitario AS "valorUnitario",
+          valor_parcial AS "valorParcial",
+          nivel,
+          tipo_linha AS "tipoLinha"
+        FROM obras_planilhas_linhas
+        WHERE tenant_id = $1 AND id_planilha = $2
+        ORDER BY ordem ASC, id_linha ASC
+        `,
+        ctx.tenantId,
+        idPlanilha
+      );
+
+      return ok(reply, {
+        idObra,
+        obraStatus,
+        planilha: {
+          idPlanilha: Number(v.idPlanilha),
+          numeroVersao: Number(v.numeroVersao),
+          nome: String(v.nome || ''),
+          atual: Boolean(v.atual),
+          origem: String(v.origem || 'MANUAL'),
+          criadoEm: v.criadoEm ? new Date(v.criadoEm).toISOString() : '',
+          parametros: {
+            dataBaseSbc: v.dataBaseSbc ? String(v.dataBaseSbc) : null,
+            dataBaseSinapi: v.dataBaseSinapi ? String(v.dataBaseSinapi) : null,
+            bdiServicosSbc: v.bdiServicosSbc == null ? null : Number(v.bdiServicosSbc),
+            bdiServicosSinapi: v.bdiServicosSinapi == null ? null : Number(v.bdiServicosSinapi),
+            bdiDiferenciadoSbc: v.bdiDiferenciadoSbc == null ? null : Number(v.bdiDiferenciadoSbc),
+            bdiDiferenciadoSinapi: v.bdiDiferenciadoSinapi == null ? null : Number(v.bdiDiferenciadoSinapi),
+            encSociaisSemDesSbc: v.encSociaisSemDesSbc == null ? null : Number(v.encSociaisSemDesSbc),
+            encSociaisSemDesSinapi: v.encSociaisSemDesSinapi == null ? null : Number(v.encSociaisSemDesSinapi),
+            descontoSbc: v.descontoSbc == null ? null : Number(v.descontoSbc),
+            descontoSinapi: v.descontoSinapi == null ? null : Number(v.descontoSinapi),
+          },
+          linhas: (linhas || []).map((r: any) => ({
+            idLinha: Number(r.idLinha),
+            ordem: Number(r.ordem || 0),
+            item: r.item ? String(r.item) : '',
+            codigo: r.codigo ? String(r.codigo) : '',
+            fonte: r.fonte ? String(r.fonte) : '',
+            servicos: r.servico ? String(r.servico) : '',
+            und: r.und ? String(r.und) : '',
+            quant: r.quantidade == null ? '' : String(r.quantidade),
+            valorUnitario: r.valorUnitario == null ? '' : String(r.valorUnitario),
+            valorParcial: r.valorParcial == null ? '' : String(r.valorParcial),
+            nivel: Number(r.nivel || 0),
+            tipoLinha: String(r.tipoLinha || 'ITEM'),
+          })),
+        },
+      });
+    }
+  );
+
+  server.post(
+    '/engenharia/obras/:id/planilha',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive() }),
+      },
+    },
+    async (request, reply) => {
+      const ctx = await requireTenantUser(request, reply);
+      if (!ctx || (ctx as any).success === false) return;
+
+      const params = request.params as any;
+      const idObra = Number(params.id);
+
+      const scope = (request.user as any)?.abrangencia as any;
+      if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+      const obra = await prisma.obra.findFirst({ where: { tenantId: ctx.tenantId, id: idObra }, select: { id: true, status: true } }).catch(() => null);
+      if (!obra) return fail(reply, 404, 'Obra não encontrada');
+
+      await ensurePlanilhaOrcamentariaTables(prisma);
+
+      const obraStatus = obra.status ? String(obra.status) : null;
+      const isObraNaoIniciada = String(obraStatus || '').toUpperCase() === 'NAO_INICIADA';
+
+      const isMultipart = typeof (request as any).isMultipart === 'function' ? (request as any).isMultipart() : false;
+
+      if (isMultipart) {
+        if (!isObraNaoIniciada) return fail(reply, 422, 'A obra precisa estar em status "Não iniciada" para alterar a planilha atual.');
+
+        const parts = (request as any).parts();
+        let action = '';
+        let nome = '';
+        let fileBuffer: Buffer | null = null;
+        for await (const part of parts) {
+          if (part.type === 'file') {
+            if (String(part.fieldname) === 'file') fileBuffer = await part.toBuffer();
+            continue;
+          }
+          const field = String(part.fieldname || '');
+          if (field === 'action') action = String(part.value || '').trim().toUpperCase();
+          if (field === 'nome') nome = String(part.value || '').trim();
+        }
+
+        if (action !== 'IMPORTAR_CSV') return fail(reply, 422, 'Ação inválida');
+        if (!fileBuffer) return fail(reply, 422, 'Arquivo CSV é obrigatório (campo "file")');
+
+        const csvText = fileBuffer.toString('utf8');
+        const { headers, rows } = parseCsvTextAuto(csvText);
+        if (!headers.length || !rows.length) return fail(reply, 422, 'CSV vazio ou inválido');
+
+        const idx: Record<string, number> = Object.fromEntries(headers.map((h, i) => [normalizeHeader(h), i]));
+        const get = (r: string[], key: string) => String(r[idx[key]] ?? '').trim();
+
+        const required = ['item', 'codigo', 'fonte', 'servicos', 'und', 'quant', 'valor_unitario', 'valor_parcial'];
+        const missing = required.filter((k) => idx[k] == null);
+        if (missing.length) return fail(reply, 422, `Colunas obrigatórias ausentes no CSV: ${missing.join(', ')}`);
+
+        const created = await prisma.$transaction(async (tx: any) => {
+          const maxRows = await tx.$queryRawUnsafe<any[]>(
+            `SELECT COALESCE(MAX(numero_versao),0) AS "maxVersao" FROM obras_planilhas_versoes WHERE tenant_id = $1 AND id_obra = $2`,
+            ctx.tenantId,
+            idObra
+          );
+          const nextVersao = Number(maxRows?.[0]?.maxVersao || 0) + 1;
+          const nomeFinal = String(nome || `Versão ${nextVersao}`).trim() || `Versão ${nextVersao}`;
+
+          const ins = await tx.$queryRawUnsafe<any[]>(
+            `
+            INSERT INTO obras_planilhas_versoes
+              (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador)
+            VALUES
+              ($1,$2,$3,$4,TRUE,'CSV',$5)
+            RETURNING id_planilha AS "idPlanilha"
+            `,
+            ctx.tenantId,
+            idObra,
+            nextVersao,
+            nomeFinal,
+            ctx.userId
+          );
+          const idPlanilha = Number(ins?.[0]?.idPlanilha || 0);
+          await tx.$executeRawUnsafe(`UPDATE obras_planilhas_versoes SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2`, ctx.tenantId, idObra);
+          await tx.$executeRawUnsafe(
+            `UPDATE obras_planilhas_versoes SET atual = TRUE WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+            ctx.tenantId,
+            idObra,
+            idPlanilha
+          );
+
+          for (let i = 0; i < rows.length; i++) {
+            const r = rows[i];
+            const item = get(r, 'item');
+            const codigo = get(r, 'codigo');
+            const fonte = get(r, 'fonte');
+            const servicos = get(r, 'servicos');
+            const und = get(r, 'und');
+            const quant = get(r, 'quant');
+            const valorUnit = get(r, 'valor_unitario');
+            const valorParcial = get(r, 'valor_parcial');
+            const det = detectTipoLinha(item, und, quant, valorUnit);
+            const quantidade = toDec(quant);
+            const vUnit = toDec(valorUnit);
+            const parcialCalc = quantidade != null && vUnit != null ? Number((quantidade * vUnit).toFixed(6)) : null;
+            const vParc = toDec(valorParcial) ?? parcialCalc;
+
+            await tx.$executeRawUnsafe(
+              `
+              INSERT INTO obras_planilhas_linhas
+                (tenant_id, id_planilha, ordem, item, codigo, fonte, servico, und, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha)
+              VALUES
+                ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+              `,
+              ctx.tenantId,
+              idPlanilha,
+              i + 1,
+              item || null,
+              codigo || null,
+              fonte || null,
+              servicos || null,
+              und || null,
+              quantidade == null ? null : quantidade,
+              vUnit == null ? null : vUnit,
+              vParc == null ? null : vParc,
+              det.nivel,
+              det.tipo
+            );
+          }
+
+          return { idPlanilha, numeroVersao: nextVersao };
+        });
+
+        return ok(reply, { idObra, idPlanilha: created.idPlanilha, numeroVersao: created.numeroVersao }, { message: 'CSV importado' });
+      }
+
+      const body = (request.body || {}) as any;
+      const action = String(body.action || '').trim().toUpperCase();
+
+      if (action === 'NOVA_VERSAO') {
+        if (!isObraNaoIniciada) return fail(reply, 422, 'A obra precisa estar em status "Não iniciada" para alterar a planilha atual.');
+        const created = await prisma.$transaction(async (tx: any) => {
+          const maxRows = await tx.$queryRawUnsafe<any[]>(
+            `SELECT COALESCE(MAX(numero_versao),0) AS "maxVersao" FROM obras_planilhas_versoes WHERE tenant_id = $1 AND id_obra = $2`,
+            ctx.tenantId,
+            idObra
+          );
+          const nextVersao = Number(maxRows?.[0]?.maxVersao || 0) + 1;
+          const nome = String(body.nome || `Versão ${nextVersao}`).trim() || `Versão ${nextVersao}`;
+          const copyFrom = body.copyFromPlanilhaId != null ? Number(body.copyFromPlanilhaId) : null;
+
+          const ins = await tx.$queryRawUnsafe<any[]>(
+            `
+            INSERT INTO obras_planilhas_versoes
+              (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador)
+            VALUES
+              ($1,$2,$3,$4,TRUE,'MANUAL',$5)
+            RETURNING id_planilha AS "idPlanilha"
+            `,
+            ctx.tenantId,
+            idObra,
+            nextVersao,
+            nome,
+            ctx.userId
+          );
+          const idPlanilha = Number(ins?.[0]?.idPlanilha || 0);
+          await tx.$executeRawUnsafe(`UPDATE obras_planilhas_versoes SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2`, ctx.tenantId, idObra);
+          await tx.$executeRawUnsafe(
+            `UPDATE obras_planilhas_versoes SET atual = TRUE WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+            ctx.tenantId,
+            idObra,
+            idPlanilha
+          );
+
+          if (copyFrom && Number.isFinite(copyFrom) && copyFrom > 0) {
+            await tx.$executeRawUnsafe(
+              `
+              INSERT INTO obras_planilhas_linhas
+                (tenant_id, id_planilha, ordem, item, codigo, fonte, servico, und, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha)
+              SELECT
+                $1 AS tenant_id,
+                $2 AS id_planilha,
+                ordem, item, codigo, fonte, servico, und, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha
+              FROM obras_planilhas_linhas
+              WHERE tenant_id = $1 AND id_planilha = $3
+              ORDER BY ordem ASC, id_linha ASC
+              `,
+              ctx.tenantId,
+              idPlanilha,
+              copyFrom
+            );
+          }
+
+          return { idPlanilha, numeroVersao: nextVersao };
+        });
+
+        return ok(reply, { idObra, idPlanilha: created.idPlanilha, numeroVersao: created.numeroVersao }, { message: 'Nova versão criada' });
+      }
+
+      return fail(reply, 422, 'Ação inválida');
+    }
+  );
 
   server.get('/engenharia/projetos', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
