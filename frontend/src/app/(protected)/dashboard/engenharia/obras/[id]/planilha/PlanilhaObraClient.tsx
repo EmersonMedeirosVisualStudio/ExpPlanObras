@@ -113,7 +113,8 @@ function parseCsvTextAuto(text: string) {
   const first = lines[0];
   const comma = (first.match(/,/g) || []).length;
   const semi = (first.match(/;/g) || []).length;
-  const sep = semi > comma ? ";" : ",";
+  const tab = (first.match(/\t/g) || []).length;
+  const sep = tab > semi && tab > comma ? "\t" : semi > comma ? ";" : ",";
   const split = (line: string) => {
     const out: string[] = [];
     let cur = "";
@@ -371,11 +372,11 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   }
 
   function baixarModeloComposicoesCsv() {
-    const sep = ";";
+    const sep = "\t";
     const lines = [
-      ["codigo_servico", "etapa", "tipo_item", "codigo_item", "descricao", "und", "quantidade", "perda_percentual", "codigo_centro_custo"].join(sep),
-      ["SER-0001", "PRELIMINARES", "INSUMO", "INS-0001", "Cimento CP-II", "kg", "100", "0", ""].join(sep),
-      ["SER-0001", "PRELIMINARES", "INSUMO", "INS-0002", "Areia média", "m³", "0,50", "5", ""].join(sep),
+      ["Serviço", "tipo", "codigo", "banco", "descricao", "und", "quantidade", "Valor Unit"].join(sep),
+      ["SER-0001", "Insumo", "INS-0001", "SINAPI", "Cimento CP-II", "kg", "100", "10,50"].join(sep),
+      ["SER-0001", "Composição Auxiliar", "AUX-0001", "SBC", "Argamassa (auxiliar)", "m³", "0,20", "350,00"].join(sep),
     ];
     const csv = `${lines.join("\n")}\n`;
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });

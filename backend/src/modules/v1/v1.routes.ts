@@ -303,7 +303,8 @@ function parseCsvTextAuto(text: string) {
   const first = lines[0];
   const comma = (first.match(/,/g) || []).length;
   const semi = (first.match(/;/g) || []).length;
-  const sep = semi > comma ? ';' : ',';
+  const tab = (first.match(/\t/g) || []).length;
+  const sep = tab > semi && tab > comma ? '\t' : semi > comma ? ';' : ',';
   const split = (line: string) => {
     const out: string[] = [];
     let cur = '';
@@ -429,9 +430,11 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
       etapa VARCHAR(120) NULL,
       tipo_item VARCHAR(16) NOT NULL DEFAULT 'INSUMO',
       codigo_item VARCHAR(80) NOT NULL,
+      banco VARCHAR(60) NULL,
       descricao VARCHAR(255) NULL,
       und VARCHAR(40) NULL,
       quantidade NUMERIC(14,6) NOT NULL DEFAULT 0,
+      valor_unitario NUMERIC(14,6) NULL,
       perda_percentual NUMERIC(10,4) NOT NULL DEFAULT 0,
       codigo_centro_custo VARCHAR(40) NULL,
       criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -443,6 +446,9 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
   );
   await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_composicoes_itens_idx_servico ON obras_planilhas_composicoes_itens (tenant_id, id_obra, codigo_servico)`);
   await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_composicoes_itens_idx_item ON obras_planilhas_composicoes_itens (tenant_id, id_obra, codigo_item)`);
+  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ALTER COLUMN tipo_item TYPE VARCHAR(32)`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ADD COLUMN IF NOT EXISTS banco VARCHAR(60) NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ADD COLUMN IF NOT EXISTS valor_unitario NUMERIC(14,6) NULL`).catch(() => null);
 }
 
 const ORGANOGRAMA_CARGOS_BASE = [
@@ -4451,34 +4457,57 @@ export default async function v1Routes(server: FastifyInstance) {
     const idx: Record<string, number> = Object.fromEntries(headers.map((h, i) => [normalizeHeader(h), i]));
     const get = (r: string[], key: string) => String(r[idx[key]] ?? '').trim();
 
-    const required = ['codigo_servico', 'codigo_item', 'quantidade'];
+    const hasOld = idx['codigo_servico'] != null || idx['codigo_item'] != null;
+    const hasNew = idx['servico'] != null || idx['tipo'] != null || idx['codigo'] != null;
+    if (!hasOld && !hasNew) return fail(reply, 422, 'Cabeçalho do CSV inválido');
+
+    const requiredOld = ['codigo_servico', 'codigo_item', 'quantidade'];
+    const requiredNew = ['servico', 'tipo', 'codigo', 'banco', 'descricao', 'und', 'quantidade', 'valor_unit'];
+    const required = hasOld ? requiredOld : requiredNew;
     const missing = required.filter((k) => idx[k] == null);
     if (missing.length) return fail(reply, 422, `Colunas obrigatórias ausentes no CSV: ${missing.join(', ')}`);
 
+    const mapTipo = (raw: string) => {
+      const v = String(raw || '').trim().toUpperCase();
+      if (!v) return 'INSUMO';
+      if (v.includes('AUXILIAR')) return 'COMPOSICAO_AUXILIAR';
+      if (v.includes('COMPOSICAO')) return 'COMPOSICAO';
+      if (v.includes('INSUMO')) return 'INSUMO';
+      if (v.includes('MAO')) return 'MAO_DE_OBRA';
+      if (v.includes('EQUIP')) return 'EQUIPAMENTO';
+      return null;
+    };
+
     const prepared = rows.map((r, i) => {
-      const codigoServico = get(r, 'codigo_servico');
+      const codigoServico = hasOld ? get(r, 'codigo_servico') : get(r, 'servico');
       const etapa = idx['etapa'] != null ? get(r, 'etapa') : '';
-      const tipoItem = idx['tipo_item'] != null ? get(r, 'tipo_item') : 'INSUMO';
-      const codigoItem = get(r, 'codigo_item');
-      const descricao = idx['descricao'] != null ? get(r, 'descricao') : '';
-      const und = idx['und'] != null ? get(r, 'und') : '';
+      const tipoRaw = hasOld ? (idx['tipo_item'] != null ? get(r, 'tipo_item') : 'INSUMO') : get(r, 'tipo');
+      const tipoItem = mapTipo(tipoRaw);
+      const codigoItem = hasOld ? get(r, 'codigo_item') : get(r, 'codigo');
+      const banco = hasOld ? (idx['banco'] != null ? get(r, 'banco') : '') : get(r, 'banco');
+      const descricao = hasOld ? (idx['descricao'] != null ? get(r, 'descricao') : '') : get(r, 'descricao');
+      const und = hasOld ? (idx['und'] != null ? get(r, 'und') : '') : get(r, 'und');
       const quantidade = toDec(get(r, 'quantidade'));
+      const valorUnit = idx['valor_unit'] != null ? toDec(get(r, 'valor_unit')) : idx['valor_unitario'] != null ? toDec(get(r, 'valor_unitario')) : null;
       const perda = idx['perda_percentual'] != null ? toDec(get(r, 'perda_percentual')) : 0;
       const cc = idx['codigo_centro_custo'] != null ? get(r, 'codigo_centro_custo') : '';
 
-      if (!codigoServico) return { ok: false as const, rowIndex: i, message: 'codigo_servico é obrigatório' };
-      if (!codigoItem) return { ok: false as const, rowIndex: i, message: 'codigo_item é obrigatório' };
+      if (!codigoServico) return { ok: false as const, rowIndex: i, message: 'serviço é obrigatório' };
+      if (!codigoItem) return { ok: false as const, rowIndex: i, message: 'codigo é obrigatório' };
+      if (!tipoItem) return { ok: false as const, rowIndex: i, message: 'tipo inválido' };
       if (quantidade == null) return { ok: false as const, rowIndex: i, message: 'quantidade inválida' };
 
       return {
         ok: true as const,
         codigoServico: String(codigoServico).trim().slice(0, 80),
         etapa: etapa ? String(etapa).trim().slice(0, 120) : null,
-        tipoItem: String(tipoItem || 'INSUMO').trim().toUpperCase().slice(0, 16) || 'INSUMO',
+        tipoItem: String(tipoItem).trim().toUpperCase().slice(0, 32) || 'INSUMO',
         codigoItem: String(codigoItem).trim().slice(0, 80),
+        banco: banco ? String(banco).trim().slice(0, 60) : null,
         descricao: descricao ? String(descricao).trim().slice(0, 255) : null,
         und: und ? String(und).trim().slice(0, 40) : null,
         quantidade,
+        valorUnitario: valorUnit == null ? null : Number(valorUnit),
         perda: perda == null ? 0 : Number(perda),
         codigoCentroCusto: cc ? String(cc).trim().slice(0, 40) : null,
       };
@@ -4504,9 +4533,11 @@ export default async function v1Routes(server: FastifyInstance) {
               r.etapa ?? '',
               r.tipoItem,
               r.codigoItem,
+              r.banco,
               r.descricao,
               r.und,
               r.quantidade,
+              r.valorUnitario,
               r.perda,
               r.codigoCentroCusto,
             ];
@@ -4519,14 +4550,16 @@ export default async function v1Routes(server: FastifyInstance) {
         await tx.$executeRawUnsafe(
           `
           INSERT INTO obras_planilhas_composicoes_itens
-            (tenant_id, id_obra, codigo_servico, etapa, tipo_item, codigo_item, descricao, und, quantidade, perda_percentual, codigo_centro_custo)
+            (tenant_id, id_obra, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo)
           VALUES
             ${values}
           ON CONFLICT (tenant_id, id_obra, codigo_servico, etapa, tipo_item, codigo_item)
           DO UPDATE SET
+            banco = EXCLUDED.banco,
             descricao = EXCLUDED.descricao,
             und = EXCLUDED.und,
             quantidade = EXCLUDED.quantidade,
+            valor_unitario = EXCLUDED.valor_unitario,
             perda_percentual = EXCLUDED.perda_percentual,
             codigo_centro_custo = EXCLUDED.codigo_centro_custo,
             atualizado_em = NOW()
@@ -4558,9 +4591,11 @@ export default async function v1Routes(server: FastifyInstance) {
         COALESCE(etapa,'') AS "etapa",
         tipo_item AS "tipoItem",
         codigo_item AS "codigoItem",
+        COALESCE(banco,'') AS "banco",
         descricao AS "descricao",
         und AS "und",
         quantidade AS "quantidade",
+        valor_unitario AS "valorUnitario",
         perda_percentual AS "perdaPercentual",
         codigo_centro_custo AS "codigoCentroCusto"
       FROM obras_planilhas_composicoes_itens
@@ -4601,11 +4636,13 @@ export default async function v1Routes(server: FastifyInstance) {
         const normalized = itens
           .map((i) => ({
             etapa: i.etapa ? String(i.etapa).trim().slice(0, 120) : '',
-            tipoItem: String(i.tipoItem || 'INSUMO').trim().toUpperCase().slice(0, 16) || 'INSUMO',
+            tipoItem: String(i.tipoItem || 'INSUMO').trim().toUpperCase().slice(0, 32) || 'INSUMO',
             codigoItem: String(i.codigoItem || '').trim().slice(0, 80),
+            banco: i.banco ? String(i.banco).trim().slice(0, 60) : null,
             descricao: i.descricao ? String(i.descricao).trim().slice(0, 255) : null,
             und: i.und ? String(i.und).trim().slice(0, 40) : null,
             quantidade: i.quantidade == null || i.quantidade === '' ? null : toDec(i.quantidade),
+            valorUnitario: i.valorUnitario == null || i.valorUnitario === '' ? null : toDec(i.valorUnitario),
             perda: i.perdaPercentual == null || i.perdaPercentual === '' ? 0 : toDec(i.perdaPercentual),
             codigoCentroCusto: i.codigoCentroCusto ? String(i.codigoCentroCusto).trim().slice(0, 40) : null,
           }))
@@ -4625,9 +4662,11 @@ export default async function v1Routes(server: FastifyInstance) {
                 r.etapa,
                 r.tipoItem,
                 r.codigoItem,
+                r.banco,
                 r.descricao,
                 r.und,
                 r.quantidade,
+                r.valorUnitario,
                 r.perda == null ? 0 : Number(r.perda),
                 r.codigoCentroCusto,
               ];
@@ -4640,7 +4679,7 @@ export default async function v1Routes(server: FastifyInstance) {
           await tx.$executeRawUnsafe(
             `
             INSERT INTO obras_planilhas_composicoes_itens
-              (tenant_id, id_obra, codigo_servico, etapa, tipo_item, codigo_item, descricao, und, quantidade, perda_percentual, codigo_centro_custo)
+              (tenant_id, id_obra, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo)
             VALUES
               ${values}
             `,
@@ -4709,31 +4748,54 @@ export default async function v1Routes(server: FastifyInstance) {
     const idx: Record<string, number> = Object.fromEntries(headers.map((h, i) => [normalizeHeader(h), i]));
     const get = (r: string[], key: string) => String(r[idx[key]] ?? '').trim();
 
-    const required = ['codigo_item', 'quantidade'];
+    const hasOld = idx['codigo_item'] != null || idx['tipo_item'] != null;
+    const hasNew = idx['codigo'] != null || idx['tipo'] != null || idx['servico'] != null;
+    if (!hasOld && !hasNew) return fail(reply, 422, 'Cabeçalho do CSV inválido');
+
+    const requiredOld = ['codigo_item', 'quantidade'];
+    const requiredNew = ['tipo', 'codigo', 'banco', 'descricao', 'und', 'quantidade', 'valor_unit'];
+    const required = hasOld ? requiredOld : requiredNew;
     const missing = required.filter((k) => idx[k] == null);
     if (missing.length) return fail(reply, 422, `Colunas obrigatórias ausentes no CSV: ${missing.join(', ')}`);
 
+    const mapTipo = (raw: string) => {
+      const v = String(raw || '').trim().toUpperCase();
+      if (!v) return 'INSUMO';
+      if (v.includes('AUXILIAR')) return 'COMPOSICAO_AUXILIAR';
+      if (v.includes('COMPOSICAO')) return 'COMPOSICAO';
+      if (v.includes('INSUMO')) return 'INSUMO';
+      if (v.includes('MAO')) return 'MAO_DE_OBRA';
+      if (v.includes('EQUIP')) return 'EQUIPAMENTO';
+      return null;
+    };
+
     const prepared = rows.map((r, i) => {
       const etapa = idx['etapa'] != null ? get(r, 'etapa') : '';
-      const tipoItem = idx['tipo_item'] != null ? get(r, 'tipo_item') : 'INSUMO';
-      const codigoItem = get(r, 'codigo_item');
+      const tipoRaw = hasOld ? (idx['tipo_item'] != null ? get(r, 'tipo_item') : 'INSUMO') : get(r, 'tipo');
+      const tipoItem = mapTipo(tipoRaw);
+      const codigoItem = hasOld ? get(r, 'codigo_item') : get(r, 'codigo');
+      const banco = idx['banco'] != null ? get(r, 'banco') : '';
       const descricao = idx['descricao'] != null ? get(r, 'descricao') : '';
       const und = idx['und'] != null ? get(r, 'und') : '';
       const quantidade = toDec(get(r, 'quantidade'));
+      const valorUnit = idx['valor_unit'] != null ? toDec(get(r, 'valor_unit')) : idx['valor_unitario'] != null ? toDec(get(r, 'valor_unitario')) : null;
       const perda = idx['perda_percentual'] != null ? toDec(get(r, 'perda_percentual')) : 0;
       const cc = idx['codigo_centro_custo'] != null ? get(r, 'codigo_centro_custo') : '';
 
-      if (!codigoItem) return { ok: false as const, rowIndex: i, message: 'codigo_item é obrigatório' };
+      if (!codigoItem) return { ok: false as const, rowIndex: i, message: 'codigo é obrigatório' };
+      if (!tipoItem) return { ok: false as const, rowIndex: i, message: 'tipo inválido' };
       if (quantidade == null) return { ok: false as const, rowIndex: i, message: 'quantidade inválida' };
 
       return {
         ok: true as const,
         etapa: etapa ? String(etapa).trim().slice(0, 120) : null,
-        tipoItem: String(tipoItem || 'INSUMO').trim().toUpperCase().slice(0, 16) || 'INSUMO',
+        tipoItem: String(tipoItem).trim().toUpperCase().slice(0, 32) || 'INSUMO',
         codigoItem: String(codigoItem).trim().slice(0, 80),
+        banco: banco ? String(banco).trim().slice(0, 60) : null,
         descricao: descricao ? String(descricao).trim().slice(0, 255) : null,
         und: und ? String(und).trim().slice(0, 40) : null,
         quantidade,
+        valorUnitario: valorUnit == null ? null : Number(valorUnit),
         perda: perda == null ? 0 : Number(perda),
         codigoCentroCusto: cc ? String(cc).trim().slice(0, 40) : null,
       };
@@ -4765,9 +4827,11 @@ export default async function v1Routes(server: FastifyInstance) {
               r.etapa ?? '',
               r.tipoItem,
               r.codigoItem,
+              r.banco,
               r.descricao,
               r.und,
               r.quantidade,
+              r.valorUnitario,
               r.perda,
               r.codigoCentroCusto,
             ];
@@ -4780,7 +4844,7 @@ export default async function v1Routes(server: FastifyInstance) {
         await tx.$executeRawUnsafe(
           `
           INSERT INTO obras_planilhas_composicoes_itens
-            (tenant_id, id_obra, codigo_servico, etapa, tipo_item, codigo_item, descricao, und, quantidade, perda_percentual, codigo_centro_custo)
+            (tenant_id, id_obra, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo)
           VALUES
             ${values}
           `,
@@ -4832,6 +4896,7 @@ export default async function v1Routes(server: FastifyInstance) {
       FROM servicos s
       JOIN obras_planilhas_composicoes_itens ci
         ON ci.tenant_id = $1 AND ci.id_obra = $2 AND UPPER(ci.codigo_servico) = s.codigo_servico
+      WHERE COALESCE(ci.tipo_item,'INSUMO') NOT IN ('COMPOSICAO', 'COMPOSICAO_AUXILIAR')
       GROUP BY ci.codigo_item, ci.descricao, ci.und, ci.codigo_centro_custo
       ORDER BY ci.codigo_item
       `,

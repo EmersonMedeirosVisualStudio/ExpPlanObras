@@ -8,9 +8,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
    etapa: string;
    tipoItem: string;
    codigoItem: string;
+  banco: string;
    descricao: string;
    und: string;
    quantidade: string;
+  valorUnitario: string;
    perdaPercentual: string;
    codigoCentroCusto: string;
   codigoCentroCustoBase: string;
@@ -25,6 +27,13 @@ type PrevistoPlanilhaRow = {
   quant: string;
   valorUnitario: string;
   valorParcial: string;
+};
+
+type PlanilhaParams = {
+  bdiServicosSbc: number | null;
+  bdiServicosSinapi: number | null;
+  encSociaisSemDesSbc: number | null;
+  encSociaisSemDesSinapi: number | null;
 };
 
  function toNum(v: string) {
@@ -75,6 +84,10 @@ function moeda(v: number) {
    const [itens, setItens] = useState<ItemRow[]>([]);
   const [centrosCusto, setCentrosCusto] = useState<CentroCustoOption[]>([]);
   const [previstoRows, setPrevistoRows] = useState<PrevistoPlanilhaRow[]>([]);
+  const [planilhaParams, setPlanilhaParams] = useState<PlanilhaParams | null>(null);
+  const [bancosCustom, setBancosCustom] = useState<string[]>([]);
+  const [editingBancoOutroIdx, setEditingBancoOutroIdx] = useState<number | null>(null);
+  const [bancoOutroValue, setBancoOutroValue] = useState("");
  
    const fileInputRef = useRef<HTMLInputElement | null>(null);
  
@@ -109,9 +122,11 @@ function moeda(v: number) {
            etapa: String(i.etapa || ""),
            tipoItem: String(i.tipoItem || "INSUMO"),
            codigoItem: String(i.codigoItem || ""),
+          banco: String(i.banco || ""),
            descricao: String(i.descricao || ""),
            und: String(i.und || ""),
            quantidade: i.quantidade == null ? "" : String(i.quantidade),
+          valorUnitario: i.valorUnitario == null ? "" : String(i.valorUnitario),
            perdaPercentual: i.perdaPercentual == null ? "" : String(i.perdaPercentual),
            codigoCentroCusto: String(i.codigoCentroCusto || ""),
           codigoCentroCustoBase: String(i.codigoCentroCustoBase || ""),
@@ -136,9 +151,11 @@ function moeda(v: number) {
            etapa: i.etapa,
            tipoItem: i.tipoItem,
            codigoItem: i.codigoItem,
+          banco: i.banco,
            descricao: i.descricao,
            und: i.und,
            quantidade: i.quantidade,
+          valorUnitario: i.valorUnitario,
            perdaPercentual: i.perdaPercentual,
            codigoCentroCusto: i.codigoCentroCusto,
          }))
@@ -213,6 +230,13 @@ function moeda(v: number) {
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${planilhaId}`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar planilha");
+      const p = (json.data?.planilha?.parametros || {}) as any;
+      setPlanilhaParams({
+        bdiServicosSbc: p.bdiServicosSbc == null ? null : Number(p.bdiServicosSbc),
+        bdiServicosSinapi: p.bdiServicosSinapi == null ? null : Number(p.bdiServicosSinapi),
+        encSociaisSemDesSbc: p.encSociaisSemDesSbc == null ? null : Number(p.encSociaisSemDesSbc),
+        encSociaisSemDesSinapi: p.encSociaisSemDesSinapi == null ? null : Number(p.encSociaisSemDesSinapi),
+      });
       const linhas = Array.isArray(json.data?.planilha?.linhas) ? json.data.planilha.linhas : [];
       const rows = linhas
         .filter((l: any) => String(l.tipoLinha || "").toUpperCase() === "SERVICO" && String(l.codigo || "").trim().toUpperCase() === codigoServico)
@@ -227,15 +251,16 @@ function moeda(v: number) {
       setPrevistoRows(rows);
     } catch {
       setPrevistoRows([]);
+      setPlanilhaParams(null);
     }
   }
 
   function baixarModeloComposicoesCsv() {
-    const sep = ";";
+    const sep = "\t";
     const lines = [
-      ["codigo_servico", "etapa", "tipo_item", "codigo_item", "descricao", "und", "quantidade", "perda_percentual", "codigo_centro_custo"].join(sep),
-      [`${codigoServico || "SER-0001"}`, "PRELIMINARES", "INSUMO", "INS-0001", "Cimento CP-II", "kg", "100", "0", ""].join(sep),
-      [`${codigoServico || "SER-0001"}`, "PRELIMINARES", "INSUMO", "INS-0002", "Areia média", "m³", "0,50", "5", ""].join(sep),
+      ["Serviço", "tipo", "codigo", "banco", "descricao", "und", "quantidade", "Valor Unit"].join(sep),
+      [`${codigoServico || "SER-0001"}`, "Insumo", "INS-0001", "SINAPI", "Cimento CP-II", "kg", "100", "10,50"].join(sep),
+      [`${codigoServico || "SER-0001"}`, "Insumo", "INS-0002", "Próprio", "Areia média", "m³", "0,50", "150,00"].join(sep),
     ];
     const csv = `${lines.join("\n")}\n`;
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -249,12 +274,42 @@ function moeda(v: number) {
     URL.revokeObjectURL(url);
   }
 
+  function getBancosKey() {
+    try {
+      const raw = localStorage.getItem("user");
+      const u = raw ? JSON.parse(raw) : null;
+      const id = Number(u?.id);
+      if (Number.isFinite(id) && id > 0) return `exp:composicao:bancos:${id}`;
+    } catch {}
+    return "exp:composicao:bancos";
+  }
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(getBancosKey());
+      const arr = raw ? (JSON.parse(raw) as any[]) : [];
+      const list = Array.isArray(arr) ? arr.map((x) => String(x || "").trim()).filter(Boolean) : [];
+      setBancosCustom(Array.from(new Set(list)));
+    } catch {
+      setBancosCustom([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(getBancosKey(), JSON.stringify(bancosCustom));
+    } catch {}
+  }, [bancosCustom]);
+
   useEffect(() => {
     if (!idObra || !codigoServico) return;
     carregarCentrosCusto();
     carregar();
     carregarPrevistoPlanilha();
   }, [idObra, codigoServico]);
+
+  const bancosBase = useMemo(() => ["SINAPI", "Próprio", "SBC", "SICRO3"], []);
+  const bancosOptions = useMemo(() => Array.from(new Set([...bancosBase, ...bancosCustom])), [bancosBase, bancosCustom]);
 
   const previstoTotal = useMemo(() => {
     let total = 0;
@@ -264,6 +319,61 @@ function moeda(v: number) {
     }
     return Number(total.toFixed(2));
   }, [previstoRows]);
+
+  const bdiPercent = useMemo(() => {
+    const sinapi = planilhaParams?.bdiServicosSinapi;
+    const sbc = planilhaParams?.bdiServicosSbc;
+    if (sinapi != null && Number.isFinite(sinapi) && sinapi > 0) return sinapi;
+    if (sbc != null && Number.isFinite(sbc) && sbc > 0) return sbc;
+    return 0;
+  }, [planilhaParams]);
+
+  const totalBase = useMemo(() => {
+    let total = 0;
+    for (const i of itens) {
+      const q = parseNumberLoose(i.quantidade);
+      const v = parseNumberLoose(i.valorUnitario);
+      if (q == null || v == null) continue;
+      total += q * v;
+    }
+    return Number(total.toFixed(2));
+  }, [itens]);
+
+  const totalComBDI = useMemo(() => {
+    const t = totalBase * (1 + Number(bdiPercent || 0) / 100);
+    return Number(t.toFixed(2));
+  }, [totalBase, bdiPercent]);
+
+  const totalMaoBase = useMemo(() => {
+    let total = 0;
+    for (const i of itens) {
+      if (String(i.tipoItem || "").toUpperCase() !== "MAO_DE_OBRA") continue;
+      const q = parseNumberLoose(i.quantidade);
+      const v = parseNumberLoose(i.valorUnitario);
+      if (q == null || v == null) continue;
+      total += q * v;
+    }
+    return Number(total.toFixed(2));
+  }, [itens]);
+
+  const lsPercent = useMemo(() => {
+    const sinapi = planilhaParams?.encSociaisSemDesSinapi;
+    const sbc = planilhaParams?.encSociaisSemDesSbc;
+    if (sinapi != null && Number.isFinite(sinapi) && sinapi > 0) return sinapi;
+    if (sbc != null && Number.isFinite(sbc) && sbc > 0) return sbc;
+    return 0;
+  }, [planilhaParams]);
+
+  const totalComLS = useMemo(() => {
+    const mao = totalMaoBase * (1 + Number(lsPercent || 0) / 100);
+    const total = (totalBase - totalMaoBase) + mao;
+    return Number(total.toFixed(2));
+  }, [totalBase, totalMaoBase, lsPercent]);
+
+  const totalComLSComBDI = useMemo(() => {
+    const t = totalComLS * (1 + Number(bdiPercent || 0) / 100);
+    return Number(t.toFixed(2));
+  }, [totalComLS, bdiPercent]);
  
    return (
      <div className="p-6 space-y-4 max-w-7xl text-slate-900">
@@ -369,110 +479,179 @@ function moeda(v: number) {
         </div>
       </section>
 
-       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-         <div className="flex items-center justify-between gap-3 flex-wrap">
-           <div className="text-lg font-semibold">Itens (insumos)</div>
-           <button
-             className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-             type="button"
-             onClick={() =>
-               setItens((p) => [
-                 ...p,
+      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="text-lg font-semibold">Itens (composição)</div>
+            <div className="text-sm text-slate-600">Total base: {moeda(Number(totalBase || 0))} • LS: {Number(lsPercent || 0).toFixed(2)}% • BDI: {Number(bdiPercent || 0).toFixed(2)}%</div>
+            <div className="text-sm text-slate-600">Total (com LS): {moeda(Number(totalComLS || 0))} • Total (com LS + BDI): {moeda(Number(totalComLSComBDI || 0))}</div>
+          </div>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() =>
+              setItens((p) => [
+                ...p,
                 {
                   idItemBase: Date.now(),
                   etapa: "",
                   tipoItem: "INSUMO",
                   codigoItem: "",
+                  banco: "",
                   descricao: "",
                   und: "",
                   quantidade: "",
+                  valorUnitario: "",
                   perdaPercentual: "",
                   codigoCentroCusto: "",
                   codigoCentroCustoBase: "",
                 },
-               ])
-             }
-             disabled={loading}
-           >
-             Adicionar item
-           </button>
-         </div>
- 
-         <div className="overflow-auto">
-           <table className="min-w-[1100px] w-full text-sm">
-             <thead className="bg-slate-50 text-left text-slate-700">
-               <tr>
-                 <th className="px-3 py-2">Etapa</th>
-                 <th className="px-3 py-2">Tipo</th>
-                 <th className="px-3 py-2">Código</th>
-                 <th className="px-3 py-2">Descrição</th>
-                 <th className="px-3 py-2">UND</th>
-                 <th className="px-3 py-2">Qtd</th>
-                 <th className="px-3 py-2">Perda%</th>
-                 <th className="px-3 py-2">Centro de custo</th>
-                 <th className="px-3 py-2">Ações</th>
-               </tr>
-             </thead>
-             <tbody>
-               {itens.map((r, idx) => (
-                 <tr key={idx} className="border-t">
-                   <td className="px-3 py-2">
-                     <input className="input bg-white" value={r.etapa} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, etapa: e.target.value } : x)))} />
-                   </td>
-                   <td className="px-3 py-2">
-                     <select className="input bg-white" value={r.tipoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, tipoItem: e.target.value } : x)))}>
-                       <option value="INSUMO">INSUMO</option>
-                       <option value="MAO_DE_OBRA">MAO_DE_OBRA</option>
-                       <option value="EQUIPAMENTO">EQUIPAMENTO</option>
-                     </select>
-                   </td>
-                   <td className="px-3 py-2">
-                     <input className="input bg-white" value={r.codigoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoItem: e.target.value } : x)))} />
-                   </td>
-                   <td className="px-3 py-2">
-                     <input className="input bg-white" value={r.descricao} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, descricao: e.target.value } : x)))} />
-                   </td>
-                   <td className="px-3 py-2">
-                     <input className="input bg-white" value={r.und} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, und: e.target.value } : x)))} />
-                   </td>
-                   <td className="px-3 py-2">
-                     <input className="input bg-white" value={r.quantidade} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, quantidade: e.target.value } : x)))} />
-                   </td>
-                   <td className="px-3 py-2">
-                     <input className="input bg-white" value={r.perdaPercentual} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, perdaPercentual: e.target.value } : x)))} />
-                   </td>
-                   <td className="px-3 py-2">
-                    <select
-                      className="input bg-white"
-                      value={r.codigoCentroCusto}
-                      onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoCentroCusto: e.target.value } : x)))}
-                    >
-                      <option value="">(sem CC)</option>
-                      {centrosCusto.map((c) => (
-                        <option key={c.codigo} value={c.codigo}>
-                          {c.codigo} — {c.descricao}
-                        </option>
-                      ))}
-                    </select>
-                   </td>
-                   <td className="px-3 py-2">
-                     <button className="rounded border px-2 py-1 text-xs text-red-700 disabled:opacity-60" type="button" onClick={() => setItens((p) => p.filter((_, i) => i !== idx))} disabled={loading}>
-                       Remover
-                     </button>
-                   </td>
-                 </tr>
-               ))}
-               {!itens.length ? (
-                 <tr>
-                   <td colSpan={9} className="px-3 py-6 text-center text-slate-500">
-                     Sem itens. Clique em Carregar, Importar CSV ou Adicionar item.
-                   </td>
-                 </tr>
-               ) : null}
-             </tbody>
-           </table>
-         </div>
-       </section>
+              ])
+            }
+            disabled={loading}
+          >
+            Adicionar item
+          </button>
+        </div>
+
+        <div className="overflow-auto">
+          <table className="min-w-[1500px] w-full text-sm">
+            <thead className="bg-slate-50 text-left text-slate-700">
+              <tr>
+                <th className="px-3 py-2">Etapa</th>
+                <th className="px-3 py-2">Tipo</th>
+                <th className="px-3 py-2">Código</th>
+                <th className="px-3 py-2">Banco</th>
+                <th className="px-3 py-2">Descrição</th>
+                <th className="px-3 py-2">UND</th>
+                <th className="px-3 py-2 text-right">Qtd</th>
+                <th className="px-3 py-2 text-right">Valor Unit</th>
+                <th className="px-3 py-2 text-right">Total</th>
+                <th className="px-3 py-2 text-right">Perda%</th>
+                <th className="px-3 py-2">Centro de custo</th>
+                <th className="px-3 py-2">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {itens.map((r, idx) => {
+                const q = parseNumberLoose(r.quantidade);
+                const v = parseNumberLoose(r.valorUnitario);
+                const total = q != null && v != null ? q * v : null;
+                const bancoInOptions = !r.banco || bancosOptions.includes(r.banco);
+                const selectBancoValue = bancoInOptions ? r.banco : "__OUTRO__";
+                return (
+                  <tr key={idx} className="border-t">
+                    <td className="px-3 py-2">
+                      <input className="input bg-white" value={r.etapa} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, etapa: e.target.value } : x)))} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <select className="input bg-white" value={r.tipoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, tipoItem: e.target.value } : x)))}>
+                        <option value="INSUMO">Insumo</option>
+                        <option value="COMPOSICAO">Composição</option>
+                        <option value="COMPOSICAO_AUXILIAR">Composição Auxiliar</option>
+                        <option value="MAO_DE_OBRA">Mão de obra</option>
+                        <option value="EQUIPAMENTO">Equipamento</option>
+                      </select>
+                    </td>
+                    <td className="px-3 py-2">
+                      <input className="input bg-white" value={r.codigoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoItem: e.target.value } : x)))} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <select
+                          className="input bg-white"
+                          value={selectBancoValue}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "__OUTRO__") {
+                              setEditingBancoOutroIdx(idx);
+                              setBancoOutroValue("");
+                              setItens((p) => p.map((x, i) => (i === idx ? { ...x, banco: "" } : x)));
+                              return;
+                            }
+                            setEditingBancoOutroIdx((cur) => (cur === idx ? null : cur));
+                            setItens((p) => p.map((x, i) => (i === idx ? { ...x, banco: v } : x)));
+                          }}
+                        >
+                          <option value="">(sem banco)</option>
+                          {bancosOptions.map((b) => (
+                            <option key={b} value={b}>
+                              {b}
+                            </option>
+                          ))}
+                          <option value="__OUTRO__">Outro…</option>
+                        </select>
+                        {editingBancoOutroIdx === idx ? (
+                          <input
+                            className="input bg-white"
+                            placeholder="Digite outro banco"
+                            value={bancoOutroValue}
+                            onChange={(e) => setBancoOutroValue(e.target.value)}
+                            onBlur={() => {
+                              const v = String(bancoOutroValue || "").trim();
+                              if (!v) {
+                                setEditingBancoOutroIdx(null);
+                                setBancoOutroValue("");
+                                return;
+                              }
+                              setBancosCustom((p) => (p.includes(v) ? p : [...p, v]));
+                              setItens((p) => p.map((x, i) => (i === idx ? { ...x, banco: v } : x)));
+                              setEditingBancoOutroIdx(null);
+                              setBancoOutroValue("");
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <input className="input bg-white" value={r.descricao} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, descricao: e.target.value } : x)))} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input className="input bg-white" value={r.und} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, und: e.target.value } : x)))} />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <input className="input bg-white text-right" value={r.quantidade} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, quantidade: e.target.value } : x)))} />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <input className="input bg-white text-right" value={r.valorUnitario} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, valorUnitario: e.target.value } : x)))} />
+                    </td>
+                    <td className="px-3 py-2 text-right">{total == null ? "" : moeda(Number(total))}</td>
+                    <td className="px-3 py-2 text-right">
+                      <input className="input bg-white text-right" value={r.perdaPercentual} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, perdaPercentual: e.target.value } : x)))} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <select
+                        className="input bg-white"
+                        value={r.codigoCentroCusto}
+                        onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoCentroCusto: e.target.value } : x)))}
+                      >
+                        <option value="">(sem CC)</option>
+                        {centrosCusto.map((c) => (
+                          <option key={c.codigo} value={c.codigo}>
+                            {c.codigo} — {c.descricao}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2">
+                      <button className="rounded border px-2 py-1 text-xs text-red-700 disabled:opacity-60" type="button" onClick={() => setItens((p) => p.filter((_, i) => i !== idx))} disabled={loading}>
+                        Remover
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!itens.length ? (
+                <tr>
+                  <td colSpan={12} className="px-3 py-6 text-center text-slate-500">
+                    Sem itens. Clique em Carregar, Importar CSV ou Adicionar item.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
      </div>
    );
  }
