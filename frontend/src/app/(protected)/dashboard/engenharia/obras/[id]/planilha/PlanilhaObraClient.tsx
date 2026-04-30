@@ -80,7 +80,10 @@ function normalizeHeader(h: string) {
 }
 
 function parseCsvTextAuto(text: string) {
-  const cleaned = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const cleaned = String(text || "")
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
   const lines = cleaned
     .split("\n")
     .map((l) => l.trimEnd())
@@ -127,6 +130,15 @@ function parseCsvTextAuto(text: string) {
   const headers = split(lines[0]);
   const rows = lines.slice(1).map((l) => split(l));
   return { headers, rows };
+}
+
+async function readTextSmart(file: File) {
+  const buf = await file.arrayBuffer();
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buf);
+  } catch {
+    return new TextDecoder("windows-1252").decode(buf);
+  }
 }
 
 function toDec(v: unknown) {
@@ -548,7 +560,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   async function prepararImportacaoCsv(file: File) {
     try {
       setErr(null);
-      const text = await file.text();
+      const text = await readTextSmart(file);
       const { headers, rows } = parseCsvTextAuto(text);
       if (!headers.length || !rows.length) {
         setImportPreview({ file: null, nomeVersao: "", rows: [], missingColumns: [] });

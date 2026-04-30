@@ -4033,7 +4033,11 @@ export default async function v1Routes(server: FastifyInstance) {
         if (action !== 'IMPORTAR_CSV') return fail(reply, 422, 'Ação inválida');
         if (!fileBuffer) return fail(reply, 422, 'Arquivo CSV é obrigatório (campo "file")');
 
-        const csvText = fileBuffer.toString('utf8');
+        let csvText = fileBuffer.toString('utf8');
+        if (csvText.includes('\uFFFD')) {
+          csvText = fileBuffer.toString('latin1');
+        }
+        csvText = csvText.replace(/^\uFEFF/, '');
         const { headers, rows } = parseCsvTextAuto(csvText);
         if (!headers.length || !rows.length) return fail(reply, 422, 'CSV vazio ou inválido');
 
