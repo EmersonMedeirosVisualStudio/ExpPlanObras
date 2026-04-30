@@ -253,6 +253,14 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     valorParcial: "",
   });
 
+  const [editingLinhaId, setEditingLinhaId] = useState<number | null>(null);
+
+  const composicaoFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [composicaoServicoCodes, setComposicaoServicoCodes] = useState<Set<string>>(new Set());
+  const [insumosConsolidados, setInsumosConsolidados] = useState<
+    Array<{ codigoItem: string; descricao: string; und: string; quantidadeTotal: number; codigoCentroCusto: string | null }>
+  >([]);
+
   const [parametros, setParametros] = useState({
     dataBaseSbc: "",
     dataBaseSinapi: "",
@@ -267,9 +275,8 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   });
 
   const podeEditar = useMemo(() => {
-    if (!planilha) return true;
-    return Boolean(planilha.atual);
-  }, [planilha, obraStatus]);
+    return true;
+  }, []);
 
   useEffect(() => {
     try {
@@ -419,6 +426,44 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     }
   }
 
+  async function carregarComposicaoStatus() {
+    try {
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/status`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        setComposicaoServicoCodes(new Set());
+        return;
+      }
+      const codes = Array.isArray(json.data?.codes) ? json.data.codes : [];
+      setComposicaoServicoCodes(new Set(codes.map((c: any) => String(c || "").trim().toUpperCase()).filter(Boolean)));
+    } catch {
+      setComposicaoServicoCodes(new Set());
+    }
+  }
+
+  async function carregarInsumosConsolidados() {
+    try {
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/insumos/consolidado`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        setInsumosConsolidados([]);
+        return;
+      }
+      const rows = Array.isArray(json.data?.rows) ? json.data.rows : [];
+      setInsumosConsolidados(
+        rows.map((r: any) => ({
+          codigoItem: String(r.codigoItem || ""),
+          descricao: String(r.descricao || ""),
+          und: String(r.und || ""),
+          quantidadeTotal: Number(r.quantidadeTotal || 0),
+          codigoCentroCusto: r.codigoCentroCusto == null ? null : String(r.codigoCentroCusto),
+        }))
+      );
+    } catch {
+      setInsumosConsolidados([]);
+    }
+  }
+
   async function carregarComposicaoItens(codigoServico: string) {
     if (!codigoServico) {
       setComposicao({ codigoComposicao: null, itens: [] });
@@ -466,10 +511,13 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     if (!idObra) return;
     carregarVersoes();
     carregarCentrosCusto();
+    carregarComposicaoStatus();
+    carregarInsumosConsolidados();
   }, [idObra]);
 
   useEffect(() => {
     if (planilhaId) carregarPlanilha(planilhaId);
+    carregarInsumosConsolidados();
   }, [planilhaId]);
 
   useEffect(() => {
@@ -549,6 +597,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
           action: "UPSERT_LINHA",
           idPlanilha: planilha.idPlanilha,
           linha: {
+            idLinha: editingLinhaId,
             ordem,
             item: novo.item,
             codigo: novo.codigo,
@@ -565,6 +614,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao salvar linha");
       setNovo({ tipoLinha: "SERVICO", ordem: "", item: "", codigo: "", fonte: "", servicos: "", und: "", quant: "", valorUnitario: "", valorParcial: "" });
+      setEditingLinhaId(null);
       await carregarPlanilha(planilha.idPlanilha);
       await carregarVersoes();
     } catch (e: any) {
@@ -587,6 +637,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao excluir linha");
+      setEditingLinhaId((cur) => (cur === idLinha ? null : cur));
       await carregarPlanilha(planilha.idPlanilha);
       await carregarVersoes();
     } catch (e: any) {
@@ -594,6 +645,23 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     } finally {
       setLoading(false);
     }
+  }
+
+  function iniciarEdicaoLinha(l: any) {
+    if (!l) return;
+    setEditingLinhaId(Number(l.idLinha));
+    setNovo({
+      tipoLinha: (l.tipoLinha as any) || "SERVICO",
+      ordem: l.ordem == null ? "" : String(l.ordem),
+      item: String(l.item || ""),
+      codigo: String(l.codigo || ""),
+      fonte: String(l.fonte || ""),
+      servicos: String(l.servicos || ""),
+      und: String(l.und || ""),
+      quant: String(l.quant || ""),
+      valorUnitario: String(l.valorUnitario || ""),
+      valorParcial: String(l.valorParcial || ""),
+    });
   }
 
   async function importarCsv(file: File, nomeVersao?: string) {
@@ -615,6 +683,25 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     } finally {
       setLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function importarComposicoesCsv(file: File) {
+    try {
+      setLoading(true);
+      setErr(null);
+      const form = new FormData();
+      form.append("file", file);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/importar-csv`, { method: "POST", body: form });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao importar composições (CSV)");
+      await carregarComposicaoStatus();
+      await carregarInsumosConsolidados();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao importar composições (CSV)");
+    } finally {
+      setLoading(false);
+      if (composicaoFileInputRef.current) composicaoFileInputRef.current.value = "";
     }
   }
 
@@ -745,6 +832,11 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
               <span>Contrato: {obraResumo.contratoNumero ? obraResumo.contratoNumero : obraResumo.contratoId ? `#${obraResumo.contratoId}` : "—"}</span>
               {" • "}
               <span>Valor previsto: {obraResumo.valorPrevisto == null ? "—" : moeda(Number(obraResumo.valorPrevisto || 0))}</span>
+              {" • "}
+              <span>
+                Diferença (previsto - planilha):{" "}
+                {obraResumo.valorPrevisto == null || !planilha ? "—" : moeda(Number((obraResumo.valorPrevisto || 0) - valorTotalPlanilha))}
+              </span>
             </div>
           ) : null}
         </div>
@@ -770,9 +862,22 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={loading || !podeEditar}
-            title={!podeEditar ? "Importar somente na versão atual" : "Importar CSV"}
+            title="Importar CSV"
           >
             Importar CSV
+          </button>
+          <input
+            ref={composicaoFileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const f = (e.target.files || [])[0] || null;
+              if (f) importarComposicoesCsv(f);
+            }}
+          />
+          <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => composicaoFileInputRef.current?.click()} disabled={loading}>
+            Importar composições CSV
           </button>
           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2" type="button" onClick={baixarModeloCsv} disabled={loading}>
             <Download className="h-4 w-4" />
@@ -1083,9 +1188,24 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                   <input className="input bg-white" value={novo.valorParcial} onChange={(e) => setNovo((p) => ({ ...p, valorParcial: e.target.value }))} disabled={!podeEditar} />
                 </div>
                 <div className="md:col-span-4 flex items-end justify-end">
-                  <button className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white disabled:opacity-60" type="button" onClick={salvarLinha} disabled={loading || !podeEditar}>
-                    Salvar linha
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {editingLinhaId ? (
+                      <button
+                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-800 disabled:opacity-60"
+                        type="button"
+                        onClick={() => {
+                          setEditingLinhaId(null);
+                          setNovo({ tipoLinha: "SERVICO", ordem: "", item: "", codigo: "", fonte: "", servicos: "", und: "", quant: "", valorUnitario: "", valorParcial: "" });
+                        }}
+                        disabled={loading}
+                      >
+                        Cancelar edição
+                      </button>
+                    ) : null}
+                    <button className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white disabled:opacity-60" type="button" onClick={salvarLinha} disabled={loading || !podeEditar}>
+                      {editingLinhaId ? "Atualizar linha" : "Salvar linha"}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1113,9 +1233,24 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                       style={{
                         backgroundColor: l.tipoLinha === "ITEM" ? uiPrefs.itemBg : l.tipoLinha === "SUBITEM" ? uiPrefs.subitemBg : undefined,
                       }}
+                      onDoubleClick={() => {
+                        if (l.tipoLinha !== "SERVICO") return;
+                        const code = String(l.codigo || "").trim();
+                        if (!code) return;
+                        router.push(
+                          `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}?returnTo=${encodeURIComponent(`/dashboard/engenharia/obras/${idObra}/planilha`)}`
+                        );
+                      }}
                     >
                       <td className="px-3 py-2">{l.item || ""}</td>
-                      <td className="px-3 py-2">{l.codigo || ""}</td>
+                      <td className="px-3 py-2">
+                        <span className="inline-flex items-center gap-2">
+                          <span>{l.codigo || ""}</span>
+                          {l.tipoLinha === "SERVICO" && composicaoServicoCodes.has(String(l.codigo || "").trim().toUpperCase()) ? (
+                            <Check className="h-4 w-4 text-green-600" />
+                          ) : null}
+                        </span>
+                      </td>
                       <td className="px-3 py-2">{l.fonte || ""}</td>
                       <td className="px-3 py-2">{l.servicos || ""}</td>
                       <td className="px-3 py-2">{l.und || ""}</td>
@@ -1134,9 +1269,14 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                             })()}
                       </td>
                       <td className="px-3 py-2">
-                        <button className="rounded border px-2 py-1 text-xs text-red-700 disabled:opacity-60" type="button" onClick={() => excluirLinha(l.idLinha)} disabled={!podeEditar || loading}>
-                          Excluir
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button className="rounded border px-2 py-1 text-xs text-slate-800 disabled:opacity-60" type="button" onClick={() => iniciarEdicaoLinha(l)} disabled={!podeEditar || loading}>
+                            Editar
+                          </button>
+                          <button className="rounded border px-2 py-1 text-xs text-red-700 disabled:opacity-60" type="button" onClick={() => excluirLinha(l.idLinha)} disabled={!podeEditar || loading}>
+                            Excluir
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1250,6 +1390,50 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                 </div>
               </div>
             ) : null}
+          </section>
+
+          <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <div className="text-lg font-semibold">Insumos consolidados</div>
+                <div className="text-sm text-slate-600">Cálculo baseado na planilha atual e nas composições importadas/cadastradas.</div>
+              </div>
+              <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregarInsumosConsolidados} disabled={loading}>
+                Atualizar
+              </button>
+            </div>
+
+            <div className="overflow-auto">
+              <table className="min-w-[900px] w-full text-sm">
+                <thead className="bg-slate-50 text-left text-slate-700">
+                  <tr>
+                    <th className="px-3 py-2">INSUMO</th>
+                    <th className="px-3 py-2">DESCRIÇÃO</th>
+                    <th className="px-3 py-2">UND</th>
+                    <th className="px-3 py-2 text-right">QUANTIDADE TOTAL</th>
+                    <th className="px-3 py-2">CENTRO DE CUSTO</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {insumosConsolidados.map((r) => (
+                    <tr key={`${r.codigoItem}`} className="border-t">
+                      <td className="px-3 py-2">{r.codigoItem}</td>
+                      <td className="px-3 py-2">{r.descricao}</td>
+                      <td className="px-3 py-2">{r.und}</td>
+                      <td className="px-3 py-2 text-right">{Number(r.quantidadeTotal || 0).toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</td>
+                      <td className="px-3 py-2">{r.codigoCentroCusto || ""}</td>
+                    </tr>
+                  ))}
+                  {!insumosConsolidados.length ? (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-6 text-center text-slate-500">
+                        Sem dados. Importe/cadastre composições e clique em Atualizar.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
           </section>
         </>
       ) : null}

@@ -419,6 +419,32 @@ async function ensurePlanilhaOrcamentariaTables(tx: any) {
   await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_linhas ALTER COLUMN und TYPE VARCHAR(40)`).catch(() => null);
 }
 
+async function ensurePlanilhaComposicaoTables(tx: any) {
+  await tx.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS obras_planilhas_composicoes_itens (
+      id_item BIGSERIAL PRIMARY KEY,
+      tenant_id BIGINT NOT NULL,
+      id_obra BIGINT NOT NULL,
+      codigo_servico VARCHAR(80) NOT NULL,
+      etapa VARCHAR(120) NULL,
+      tipo_item VARCHAR(16) NOT NULL DEFAULT 'INSUMO',
+      codigo_item VARCHAR(80) NOT NULL,
+      descricao VARCHAR(255) NULL,
+      und VARCHAR(40) NULL,
+      quantidade NUMERIC(14,6) NOT NULL DEFAULT 0,
+      perda_percentual NUMERIC(10,4) NOT NULL DEFAULT 0,
+      codigo_centro_custo VARCHAR(40) NULL,
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await tx.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS obras_planilhas_composicoes_itens_uk ON obras_planilhas_composicoes_itens (tenant_id, id_obra, codigo_servico, COALESCE(etapa,''), tipo_item, codigo_item)`
+  );
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_composicoes_itens_idx_servico ON obras_planilhas_composicoes_itens (tenant_id, id_obra, codigo_servico)`);
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_composicoes_itens_idx_item ON obras_planilhas_composicoes_itens (tenant_id, id_obra, codigo_item)`);
+}
+
 const ORGANOGRAMA_CARGOS_BASE = [
   'Servente',
   'Pedreiro',
@@ -4239,9 +4265,594 @@ export default async function v1Routes(server: FastifyInstance) {
         return ok(reply, { idObra, idPlanilha: created.idPlanilha, numeroVersao: created.numeroVersao }, { message: 'Nova versão criada' });
       }
 
+      if (action === 'ATUALIZAR_PARAMETROS') {
+        const idPlanilha = body.idPlanilha != null ? Number(body.idPlanilha) : NaN;
+        if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
+        const p = (body.parametros || {}) as any;
+        const dataBaseSbc = p.dataBaseSbc ? String(p.dataBaseSbc).trim().slice(0, 16) : null;
+        const dataBaseSinapi = p.dataBaseSinapi ? String(p.dataBaseSinapi).trim().slice(0, 16) : null;
+
+        await prisma.$executeRawUnsafe(
+          `
+          UPDATE obras_planilhas_versoes
+          SET
+            data_base_sbc = $4,
+            data_base_sinapi = $5,
+            bdi_servicos_sbc = $6,
+            bdi_servicos_sinapi = $7,
+            bdi_diferenciado_sbc = $8,
+            bdi_diferenciado_sinapi = $9,
+            enc_sociais_sem_des_sbc = $10,
+            enc_sociais_sem_des_sinapi = $11,
+            desconto_sbc = $12,
+            desconto_sinapi = $13,
+            atualizado_em = NOW()
+          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+          `,
+          ctx.tenantId,
+          idObra,
+          idPlanilha,
+          dataBaseSbc,
+          dataBaseSinapi,
+          p.bdiServicosSbc == null || p.bdiServicosSbc === '' ? null : toDec(p.bdiServicosSbc),
+          p.bdiServicosSinapi == null || p.bdiServicosSinapi === '' ? null : toDec(p.bdiServicosSinapi),
+          p.bdiDiferenciadoSbc == null || p.bdiDiferenciadoSbc === '' ? null : toDec(p.bdiDiferenciadoSbc),
+          p.bdiDiferenciadoSinapi == null || p.bdiDiferenciadoSinapi === '' ? null : toDec(p.bdiDiferenciadoSinapi),
+          p.encSociaisSemDesSbc == null || p.encSociaisSemDesSbc === '' ? null : toDec(p.encSociaisSemDesSbc),
+          p.encSociaisSemDesSinapi == null || p.encSociaisSemDesSinapi === '' ? null : toDec(p.encSociaisSemDesSinapi),
+          p.descontoSbc == null || p.descontoSbc === '' ? null : toDec(p.descontoSbc),
+          p.descontoSinapi == null || p.descontoSinapi === '' ? null : toDec(p.descontoSinapi)
+        );
+
+        return ok(reply, { idObra, obraStatus, obra: obraResumo }, { message: 'Parâmetros atualizados' });
+      }
+
+      if (action === 'UPSERT_LINHA') {
+        const idPlanilha = body.idPlanilha != null ? Number(body.idPlanilha) : NaN;
+        if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
+        const linha = (body.linha || {}) as any;
+        const idLinha = linha.idLinha != null && String(linha.idLinha) !== '' ? Number(linha.idLinha) : null;
+        const ordem = linha.ordem != null ? Number(linha.ordem) : 0;
+        const item = linha.item ? String(linha.item).trim().slice(0, 80) : null;
+        const codigo = linha.codigo ? String(linha.codigo).trim().slice(0, 80) : null;
+        const fonte = linha.fonte ? String(linha.fonte).trim().slice(0, 80) : null;
+        const servico = linha.servicos ? String(linha.servicos).trim().slice(0, 800) : null;
+        const und = linha.und ? String(linha.und).trim().slice(0, 40) : null;
+        const quantidade = linha.quant == null || linha.quant === '' ? null : toDec(linha.quant);
+        const valorUnitario = linha.valorUnitario == null || linha.valorUnitario === '' ? null : toDec(linha.valorUnitario);
+        const valorParcialBody = linha.valorParcial == null || linha.valorParcial === '' ? null : toDec(linha.valorParcial);
+        const valorParcial = valorParcialBody != null ? valorParcialBody : quantidade != null && valorUnitario != null ? Number((quantidade * valorUnitario).toFixed(6)) : null;
+        const tipoLinha = String(linha.tipoLinha || '').trim().toUpperCase() || 'ITEM';
+        const nivel = item ? item.split('.').filter(Boolean).length : 0;
+
+        if (idLinha && Number.isFinite(idLinha) && idLinha > 0) {
+          await prisma.$executeRawUnsafe(
+            `
+            UPDATE obras_planilhas_linhas
+            SET
+              ordem = $4,
+              item = $5,
+              codigo = $6,
+              fonte = $7,
+              servico = $8,
+              und = $9,
+              quantidade = $10,
+              valor_unitario = $11,
+              valor_parcial = $12,
+              nivel = $13,
+              tipo_linha = $14,
+              atualizado_em = NOW()
+            WHERE tenant_id = $1 AND id_planilha = $2 AND id_linha = $3
+            `,
+            ctx.tenantId,
+            idPlanilha,
+            idLinha,
+            ordem,
+            item,
+            codigo,
+            fonte,
+            servico,
+            und,
+            quantidade,
+            valorUnitario,
+            valorParcial,
+            nivel,
+            tipoLinha
+          );
+        } else {
+          await prisma.$executeRawUnsafe(
+            `
+            INSERT INTO obras_planilhas_linhas
+              (tenant_id, id_planilha, ordem, item, codigo, fonte, servico, und, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha)
+            VALUES
+              ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+            `,
+            ctx.tenantId,
+            idPlanilha,
+            ordem,
+            item,
+            codigo,
+            fonte,
+            servico,
+            und,
+            quantidade,
+            valorUnitario,
+            valorParcial,
+            nivel,
+            tipoLinha
+          );
+        }
+
+        return ok(reply, { ok: true }, { message: 'Linha salva' });
+      }
+
+      if (action === 'EXCLUIR_LINHA') {
+        const idPlanilha = body.idPlanilha != null ? Number(body.idPlanilha) : NaN;
+        const idLinha = body.idLinha != null ? Number(body.idLinha) : NaN;
+        if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
+        if (!Number.isFinite(idLinha) || idLinha <= 0) return fail(reply, 422, 'idLinha inválido');
+
+        await prisma.$executeRawUnsafe(`DELETE FROM obras_planilhas_linhas WHERE tenant_id = $1 AND id_planilha = $2 AND id_linha = $3`, ctx.tenantId, idPlanilha, idLinha);
+        return ok(reply, { ok: true }, { message: 'Linha excluída' });
+      }
+
       return fail(reply, 422, 'Ação inválida');
     }
   );
+
+  server.get('/engenharia/obras/:id/planilha/composicoes/status', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensurePlanilhaComposicaoTables(prisma);
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      SELECT DISTINCT UPPER(codigo_servico) AS "codigoServico"
+      FROM obras_planilhas_composicoes_itens
+      WHERE tenant_id = $1 AND id_obra = $2
+      `,
+      ctx.tenantId,
+      idObra
+    )) as any[];
+    return ok(reply, { codes: (rows || []).map((r: any) => String(r.codigoServico || '').trim()).filter(Boolean) });
+  });
+
+  server.post('/engenharia/obras/:id/planilha/composicoes/importar-csv', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensurePlanilhaComposicaoTables(prisma);
+    const isMultipart = typeof (request as any).isMultipart === 'function' ? (request as any).isMultipart() : false;
+    if (!isMultipart) return fail(reply, 422, 'Envie multipart/form-data com arquivo no campo "file"');
+
+    const parts = (request as any).parts();
+    let fileBuffer: Buffer | null = null;
+    for await (const part of parts) {
+      if (part.type === 'file' && String(part.fieldname) === 'file') fileBuffer = await part.toBuffer();
+    }
+    if (!fileBuffer) return fail(reply, 422, 'Arquivo CSV é obrigatório (campo "file")');
+
+    let csvText = fileBuffer.toString('utf8');
+    if (csvText.includes('\uFFFD')) csvText = fileBuffer.toString('latin1');
+    csvText = csvText.replace(/^\uFEFF/, '');
+    const { headers, rows } = parseCsvTextAuto(csvText);
+    if (!headers.length || !rows.length) return fail(reply, 422, 'CSV vazio ou inválido');
+
+    const idx: Record<string, number> = Object.fromEntries(headers.map((h, i) => [normalizeHeader(h), i]));
+    const get = (r: string[], key: string) => String(r[idx[key]] ?? '').trim();
+
+    const required = ['codigo_servico', 'codigo_item', 'quantidade'];
+    const missing = required.filter((k) => idx[k] == null);
+    if (missing.length) return fail(reply, 422, `Colunas obrigatórias ausentes no CSV: ${missing.join(', ')}`);
+
+    const prepared = rows.map((r, i) => {
+      const codigoServico = get(r, 'codigo_servico');
+      const etapa = idx['etapa'] != null ? get(r, 'etapa') : '';
+      const tipoItem = idx['tipo_item'] != null ? get(r, 'tipo_item') : 'INSUMO';
+      const codigoItem = get(r, 'codigo_item');
+      const descricao = idx['descricao'] != null ? get(r, 'descricao') : '';
+      const und = idx['und'] != null ? get(r, 'und') : '';
+      const quantidade = toDec(get(r, 'quantidade'));
+      const perda = idx['perda_percentual'] != null ? toDec(get(r, 'perda_percentual')) : 0;
+      const cc = idx['codigo_centro_custo'] != null ? get(r, 'codigo_centro_custo') : '';
+
+      if (!codigoServico) return { ok: false as const, rowIndex: i, message: 'codigo_servico é obrigatório' };
+      if (!codigoItem) return { ok: false as const, rowIndex: i, message: 'codigo_item é obrigatório' };
+      if (quantidade == null) return { ok: false as const, rowIndex: i, message: 'quantidade inválida' };
+
+      return {
+        ok: true as const,
+        codigoServico: String(codigoServico).trim().slice(0, 80),
+        etapa: etapa ? String(etapa).trim().slice(0, 120) : null,
+        tipoItem: String(tipoItem || 'INSUMO').trim().toUpperCase().slice(0, 16) || 'INSUMO',
+        codigoItem: String(codigoItem).trim().slice(0, 80),
+        descricao: descricao ? String(descricao).trim().slice(0, 255) : null,
+        und: und ? String(und).trim().slice(0, 40) : null,
+        quantidade,
+        perda: perda == null ? 0 : Number(perda),
+        codigoCentroCusto: cc ? String(cc).trim().slice(0, 40) : null,
+      };
+    });
+
+    const invalid = prepared.find((p) => !p.ok);
+    if (invalid && !invalid.ok) return fail(reply, 422, `Erro no CSV (linha ${invalid.rowIndex + 2}): ${invalid.message}`);
+    const preparedOk = prepared.filter((p): p is Extract<(typeof prepared)[number], { ok: true }> => p.ok);
+
+    const chunkSize = 500;
+    let upserted = 0;
+    await prisma.$transaction(async (tx: any) => {
+      for (let start = 0; start < preparedOk.length; start += chunkSize) {
+        const chunk = preparedOk.slice(start, start + chunkSize);
+        const params: any[] = [];
+        let p = 1;
+        const values = chunk
+          .map((r) => {
+            const base = [
+              ctx.tenantId,
+              idObra,
+              r.codigoServico,
+              r.etapa ?? '',
+              r.tipoItem,
+              r.codigoItem,
+              r.descricao,
+              r.und,
+              r.quantidade,
+              r.perda,
+              r.codigoCentroCusto,
+            ];
+            for (const v of base) params.push(v);
+            const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+            return `(${placeholders})`;
+          })
+          .join(',');
+
+        await tx.$executeRawUnsafe(
+          `
+          INSERT INTO obras_planilhas_composicoes_itens
+            (tenant_id, id_obra, codigo_servico, etapa, tipo_item, codigo_item, descricao, und, quantidade, perda_percentual, codigo_centro_custo)
+          VALUES
+            ${values}
+          ON CONFLICT (tenant_id, id_obra, codigo_servico, etapa, tipo_item, codigo_item)
+          DO UPDATE SET
+            descricao = EXCLUDED.descricao,
+            und = EXCLUDED.und,
+            quantidade = EXCLUDED.quantidade,
+            perda_percentual = EXCLUDED.perda_percentual,
+            codigo_centro_custo = EXCLUDED.codigo_centro_custo,
+            atualizado_em = NOW()
+          `,
+          ...params
+        );
+        upserted += chunk.length;
+      }
+    }, { timeout: 120000, maxWait: 20000 });
+
+    return ok(reply, { upserted }, { message: 'Composições importadas' });
+  });
+
+  server.get('/engenharia/obras/:id/planilha/servicos/:codigo/composicao-itens', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id, codigo } = z.object({ id: z.coerce.number().int().positive(), codigo: z.string().min(1) }).parse(request.params || {});
+    const idObra = Number(id);
+    const codigoServico = String(codigo).trim().toUpperCase();
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensurePlanilhaComposicaoTables(prisma);
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        id_item AS "idItemBase",
+        COALESCE(etapa,'') AS "etapa",
+        tipo_item AS "tipoItem",
+        codigo_item AS "codigoItem",
+        descricao AS "descricao",
+        und AS "und",
+        quantidade AS "quantidade",
+        perda_percentual AS "perdaPercentual",
+        codigo_centro_custo AS "codigoCentroCusto"
+      FROM obras_planilhas_composicoes_itens
+      WHERE tenant_id = $1 AND id_obra = $2 AND UPPER(codigo_servico) = $3
+      ORDER BY COALESCE(etapa,''), tipo_item, codigo_item, id_item
+      `,
+      ctx.tenantId,
+      idObra,
+      codigoServico
+    )) as any[];
+
+    return ok(reply, { codigoComposicao: null, itens: (rows || []).map((r: any) => ({ ...r, codigoCentroCustoBase: null })) });
+  });
+
+  server.put('/engenharia/obras/:id/planilha/servicos/:codigo/composicao-itens', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id, codigo } = z.object({ id: z.coerce.number().int().positive(), codigo: z.string().min(1) }).parse(request.params || {});
+    const idObra = Number(id);
+    const codigoServico = String(codigo).trim().toUpperCase();
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensurePlanilhaComposicaoTables(prisma);
+    const body = (request.body || {}) as any;
+
+    if (Array.isArray(body.itens)) {
+      const itens = body.itens as any[];
+      await prisma.$transaction(async (tx: any) => {
+        await tx.$executeRawUnsafe(
+          `DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND UPPER(codigo_servico) = $3`,
+          ctx.tenantId,
+          idObra,
+          codigoServico
+        );
+
+        const normalized = itens
+          .map((i) => ({
+            etapa: i.etapa ? String(i.etapa).trim().slice(0, 120) : '',
+            tipoItem: String(i.tipoItem || 'INSUMO').trim().toUpperCase().slice(0, 16) || 'INSUMO',
+            codigoItem: String(i.codigoItem || '').trim().slice(0, 80),
+            descricao: i.descricao ? String(i.descricao).trim().slice(0, 255) : null,
+            und: i.und ? String(i.und).trim().slice(0, 40) : null,
+            quantidade: i.quantidade == null || i.quantidade === '' ? null : toDec(i.quantidade),
+            perda: i.perdaPercentual == null || i.perdaPercentual === '' ? 0 : toDec(i.perdaPercentual),
+            codigoCentroCusto: i.codigoCentroCusto ? String(i.codigoCentroCusto).trim().slice(0, 40) : null,
+          }))
+          .filter((i) => i.codigoItem && i.quantidade != null);
+
+        const chunkSize = 500;
+        for (let start = 0; start < normalized.length; start += chunkSize) {
+          const chunk = normalized.slice(start, start + chunkSize);
+          const params: any[] = [];
+          let p = 1;
+          const values = chunk
+            .map((r) => {
+              const base = [
+                ctx.tenantId,
+                idObra,
+                codigoServico,
+                r.etapa,
+                r.tipoItem,
+                r.codigoItem,
+                r.descricao,
+                r.und,
+                r.quantidade,
+                r.perda == null ? 0 : Number(r.perda),
+                r.codigoCentroCusto,
+              ];
+              for (const v of base) params.push(v);
+              const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+              return `(${placeholders})`;
+            })
+            .join(',');
+
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO obras_planilhas_composicoes_itens
+              (tenant_id, id_obra, codigo_servico, etapa, tipo_item, codigo_item, descricao, und, quantidade, perda_percentual, codigo_centro_custo)
+            VALUES
+              ${values}
+            `,
+            ...params
+          );
+        }
+      }, { timeout: 120000, maxWait: 20000 });
+
+      return ok(reply, { ok: true }, { message: 'Composição atualizada' });
+    }
+
+    if (Array.isArray(body.updates)) {
+      const updates = body.updates as any[];
+      await prisma.$transaction(async (tx: any) => {
+        for (const u of updates) {
+          const idItemBase = u.idItemBase != null ? Number(u.idItemBase) : NaN;
+          const codigoCentroCusto = u.codigoCentroCusto ? String(u.codigoCentroCusto).trim().slice(0, 40) : null;
+          if (!Number.isFinite(idItemBase) || idItemBase <= 0) continue;
+          await tx.$executeRawUnsafe(
+            `
+            UPDATE obras_planilhas_composicoes_itens
+            SET codigo_centro_custo = $4, atualizado_em = NOW()
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_item = $3
+            `,
+            ctx.tenantId,
+            idObra,
+            idItemBase,
+            codigoCentroCusto
+          );
+        }
+      });
+
+      return ok(reply, { ok: true }, { message: 'Composição salva' });
+    }
+
+    return fail(reply, 422, 'Payload inválido');
+  });
+
+  server.post('/engenharia/obras/:id/planilha/servicos/:codigo/composicao-importar-csv', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id, codigo } = z.object({ id: z.coerce.number().int().positive(), codigo: z.string().min(1) }).parse(request.params || {});
+    const idObra = Number(id);
+    const codigoServico = String(codigo).trim().toUpperCase();
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensurePlanilhaComposicaoTables(prisma);
+    const isMultipart = typeof (request as any).isMultipart === 'function' ? (request as any).isMultipart() : false;
+    if (!isMultipart) return fail(reply, 422, 'Envie multipart/form-data com arquivo no campo "file"');
+
+    const parts = (request as any).parts();
+    let fileBuffer: Buffer | null = null;
+    for await (const part of parts) {
+      if (part.type === 'file' && String(part.fieldname) === 'file') fileBuffer = await part.toBuffer();
+    }
+    if (!fileBuffer) return fail(reply, 422, 'Arquivo CSV é obrigatório (campo "file")');
+
+    let csvText = fileBuffer.toString('utf8');
+    if (csvText.includes('\uFFFD')) csvText = fileBuffer.toString('latin1');
+    csvText = csvText.replace(/^\uFEFF/, '');
+    const { headers, rows } = parseCsvTextAuto(csvText);
+    if (!headers.length || !rows.length) return fail(reply, 422, 'CSV vazio ou inválido');
+
+    const idx: Record<string, number> = Object.fromEntries(headers.map((h, i) => [normalizeHeader(h), i]));
+    const get = (r: string[], key: string) => String(r[idx[key]] ?? '').trim();
+
+    const required = ['codigo_item', 'quantidade'];
+    const missing = required.filter((k) => idx[k] == null);
+    if (missing.length) return fail(reply, 422, `Colunas obrigatórias ausentes no CSV: ${missing.join(', ')}`);
+
+    const prepared = rows.map((r, i) => {
+      const etapa = idx['etapa'] != null ? get(r, 'etapa') : '';
+      const tipoItem = idx['tipo_item'] != null ? get(r, 'tipo_item') : 'INSUMO';
+      const codigoItem = get(r, 'codigo_item');
+      const descricao = idx['descricao'] != null ? get(r, 'descricao') : '';
+      const und = idx['und'] != null ? get(r, 'und') : '';
+      const quantidade = toDec(get(r, 'quantidade'));
+      const perda = idx['perda_percentual'] != null ? toDec(get(r, 'perda_percentual')) : 0;
+      const cc = idx['codigo_centro_custo'] != null ? get(r, 'codigo_centro_custo') : '';
+
+      if (!codigoItem) return { ok: false as const, rowIndex: i, message: 'codigo_item é obrigatório' };
+      if (quantidade == null) return { ok: false as const, rowIndex: i, message: 'quantidade inválida' };
+
+      return {
+        ok: true as const,
+        etapa: etapa ? String(etapa).trim().slice(0, 120) : null,
+        tipoItem: String(tipoItem || 'INSUMO').trim().toUpperCase().slice(0, 16) || 'INSUMO',
+        codigoItem: String(codigoItem).trim().slice(0, 80),
+        descricao: descricao ? String(descricao).trim().slice(0, 255) : null,
+        und: und ? String(und).trim().slice(0, 40) : null,
+        quantidade,
+        perda: perda == null ? 0 : Number(perda),
+        codigoCentroCusto: cc ? String(cc).trim().slice(0, 40) : null,
+      };
+    });
+
+    const invalid = prepared.find((p) => !p.ok);
+    if (invalid && !invalid.ok) return fail(reply, 422, `Erro no CSV (linha ${invalid.rowIndex + 2}): ${invalid.message}`);
+    const preparedOk = prepared.filter((p): p is Extract<(typeof prepared)[number], { ok: true }> => p.ok);
+
+    await prisma.$transaction(async (tx: any) => {
+      await tx.$executeRawUnsafe(
+        `DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND UPPER(codigo_servico) = $3`,
+        ctx.tenantId,
+        idObra,
+        codigoServico
+      );
+
+      const chunkSize = 500;
+      for (let start = 0; start < preparedOk.length; start += chunkSize) {
+        const chunk = preparedOk.slice(start, start + chunkSize);
+        const params: any[] = [];
+        let p = 1;
+        const values = chunk
+          .map((r) => {
+            const base = [
+              ctx.tenantId,
+              idObra,
+              codigoServico,
+              r.etapa ?? '',
+              r.tipoItem,
+              r.codigoItem,
+              r.descricao,
+              r.und,
+              r.quantidade,
+              r.perda,
+              r.codigoCentroCusto,
+            ];
+            for (const v of base) params.push(v);
+            const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+            return `(${placeholders})`;
+          })
+          .join(',');
+
+        await tx.$executeRawUnsafe(
+          `
+          INSERT INTO obras_planilhas_composicoes_itens
+            (tenant_id, id_obra, codigo_servico, etapa, tipo_item, codigo_item, descricao, und, quantidade, perda_percentual, codigo_centro_custo)
+          VALUES
+            ${values}
+          `,
+          ...params
+        );
+      }
+    }, { timeout: 120000, maxWait: 20000 });
+
+    return ok(reply, { ok: true }, { message: 'Composição importada' });
+  });
+
+  server.get('/engenharia/obras/:id/planilha/insumos/consolidado', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensurePlanilhaOrcamentariaTables(prisma);
+    await ensurePlanilhaComposicaoTables(prisma);
+
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      WITH planilha_atual AS (
+        SELECT id_planilha
+        FROM obras_planilhas_versoes
+        WHERE tenant_id = $1 AND id_obra = $2 AND atual = TRUE
+        ORDER BY numero_versao DESC, id_planilha DESC
+        LIMIT 1
+      ),
+      servicos AS (
+        SELECT
+          UPPER(COALESCE(codigo,'')) AS codigo_servico,
+          COALESCE(quantidade, 0) AS quant_servico
+        FROM obras_planilhas_linhas l
+        WHERE l.tenant_id = $1
+          AND l.id_planilha = (SELECT id_planilha FROM planilha_atual)
+          AND l.tipo_linha = 'SERVICO'
+          AND COALESCE(l.codigo,'') <> ''
+      )
+      SELECT
+        ci.codigo_item AS "codigoItem",
+        COALESCE(ci.descricao,'') AS "descricao",
+        COALESCE(ci.und,'') AS "und",
+        COALESCE(ci.codigo_centro_custo, '') AS "codigoCentroCusto",
+        SUM(s.quant_servico * ci.quantidade * (1 + (ci.perda_percentual / 100.0))) AS "quantidadeTotal"
+      FROM servicos s
+      JOIN obras_planilhas_composicoes_itens ci
+        ON ci.tenant_id = $1 AND ci.id_obra = $2 AND UPPER(ci.codigo_servico) = s.codigo_servico
+      GROUP BY ci.codigo_item, ci.descricao, ci.und, ci.codigo_centro_custo
+      ORDER BY ci.codigo_item
+      `,
+      ctx.tenantId,
+      idObra
+    )) as any[];
+
+    return ok(
+      reply,
+      {
+        rows: (rows || []).map((r: any) => ({
+          codigoItem: String(r.codigoItem || ''),
+          descricao: String(r.descricao || ''),
+          und: String(r.und || ''),
+          codigoCentroCusto: String(r.codigoCentroCusto || '').trim() ? String(r.codigoCentroCusto || '').trim() : null,
+          quantidadeTotal: r.quantidadeTotal == null ? 0 : Number(r.quantidadeTotal),
+        })),
+      },
+      { message: 'Insumos consolidados' }
+    );
+  });
 
   server.get('/engenharia/projetos', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
