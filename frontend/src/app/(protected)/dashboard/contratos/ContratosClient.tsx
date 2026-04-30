@@ -1473,6 +1473,7 @@ export default function ContratosClient() {
           </div>
         ) : null}
       </div>
+    </div>
     );
   }
 
