@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 type ValidacaoRow = {
@@ -32,6 +32,7 @@ export default function Page() {
   const [planilhaId, setPlanilhaId] = useState<number | null>(null);
   const [rows, setRows] = useState<ValidacaoRow[]>([]);
   const [refs, setRefs] = useState<RefRow[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     let token: string | null = null;
@@ -58,9 +59,11 @@ export default function Page() {
       const atual = versoes.find((v: any) => Boolean(v.atual)) || versoes[0] || null;
       const pid = atual?.idPlanilha != null ? Number(atual.idPlanilha) : null;
       setPlanilhaId(pid);
+      return pid;
     } catch (e: any) {
       setErr(e?.message || "Erro ao carregar versões");
       setPlanilhaId(null);
+      return null;
     }
   }
 
@@ -110,8 +113,9 @@ export default function Page() {
     try {
       setLoading(true);
       setErr(null);
-      await carregarPlanilhaAtual();
+      const pid = await carregarPlanilhaAtual();
       await carregarReferencias();
+      if (pid) await carregarValidacao(pid);
     } finally {
       setLoading(false);
     }
@@ -121,23 +125,50 @@ export default function Page() {
     carregarTudo();
   }, [idObra]);
 
-  useEffect(() => {
-    if (!planilhaId) return;
-    carregarValidacao(planilhaId);
-  }, [planilhaId]);
+  function baixarModeloComposicoesCsv() {
+    const sep = "\t";
+    const lines = [
+      ["Serviço", "tipo", "codigo", "banco", "descricao", "und", "quantidade", "Valor Unit"].join(sep),
+      ["SER-0001", "Insumo", "INS-0001", "SINAPI", "Cimento CP-II", "kg", "100", "10,50"].join(sep),
+      ["SER-0001", "Composição Auxiliar", "AUX-0001", "SBC", "Argamassa (auxiliar)", "m³", "0,20", "350,00"].join(sep),
+      ["SER-0001", "Composição", "COMP-0001", "Próprio", "Concreto usinado (composição)", "m³", "1", "0"].join(sep),
+    ];
+    const csv = `${lines.join("\n")}\n`;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `composicoes_obra_${idObra}_modelo.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importarComposicoesCsv(file: File) {
+    try {
+      setLoading(true);
+      setErr(null);
+      const form = new FormData();
+      form.append("file", file);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/importar-csv`, { method: "POST", body: form });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao importar composições (CSV)");
+      await carregarTudo();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao importar composições (CSV)");
+    } finally {
+      setLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
 
   return (
     <div className="p-6 space-y-4 max-w-7xl text-slate-900">
-      <div>
-        <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Composições</div>
-        <h1 className="text-2xl font-semibold">Composições da obra — Obra #{idObra}</h1>
-        <div className="text-sm text-slate-600">As composições são da obra (valem para qualquer versão da planilha). Esta tela ajuda a ver faltantes e divergências.</div>
-      </div>
-
-      <div className="rounded-xl border bg-white p-3 shadow-sm">
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="inline-flex items-center gap-1 rounded-lg border bg-white p-1">
           <button
-            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+            className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             type="button"
             onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha?returnTo=${encodeURIComponent(returnTo || "")}`)}
             disabled={loading}
@@ -145,7 +176,7 @@ export default function Page() {
             Planilha
           </button>
           <button
-            className="rounded-lg border px-3 py-2 text-sm bg-blue-600 text-white border-blue-600"
+            className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-60"
             type="button"
             onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(returnTo || "")}`)}
             disabled={loading}
@@ -153,23 +184,48 @@ export default function Page() {
             Composições
           </button>
           <button
-            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+            className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             type="button"
             onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(returnTo || "")}`)}
             disabled={loading}
           >
             Insumos
           </button>
-          <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push(returnTo || `/dashboard/engenharia/obras/${idObra}/planilha`)} disabled={loading}>
+          <button
+            className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => router.push(returnTo || `/dashboard/engenharia/obras/${idObra}/planilha`)}
+            disabled={loading}
+          >
             Voltar
           </button>
         </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregarTudo} disabled={loading}>
+            Atualizar
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const f = (e.target.files || [])[0] || null;
+              if (f) importarComposicoesCsv(f);
+            }}
+          />
+          <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => fileInputRef.current?.click()} disabled={loading}>
+            Importar CSV (composições)
+          </button>
+          <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={baixarModeloComposicoesCsv} disabled={loading}>
+            Modelo CSV (composições)
+          </button>
+        </div>
       </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregarTudo} disabled={loading}>
-          Atualizar
-        </button>
+      <div>
+        <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Composições</div>
+        <h1 className="text-2xl font-semibold">Composições da obra — Obra #{idObra}</h1>
+        <div className="text-sm text-slate-600">As composições são da obra (valem para qualquer versão da planilha). Esta tela ajuda a ver faltantes e divergências.</div>
       </div>
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}

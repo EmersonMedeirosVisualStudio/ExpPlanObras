@@ -64,16 +64,10 @@ export default function Page() {
 
   return (
     <div className="p-6 space-y-4 max-w-7xl text-slate-900">
-      <div>
-        <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Insumos</div>
-        <h1 className="text-2xl font-semibold">Insumos consolidados — Obra #{idObra}</h1>
-        <div className="text-sm text-slate-600">Cálculo baseado na planilha atual e nas composições importadas/cadastradas.</div>
-      </div>
-
-      <div className="rounded-xl border bg-white p-3 shadow-sm">
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="inline-flex items-center gap-1 rounded-lg border bg-white p-1">
           <button
-            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+            className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             type="button"
             onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha?returnTo=${encodeURIComponent(returnTo || "")}`)}
             disabled={loading}
@@ -81,7 +75,7 @@ export default function Page() {
             Planilha
           </button>
           <button
-            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+            className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             type="button"
             onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(returnTo || "")}`)}
             disabled={loading}
@@ -89,23 +83,31 @@ export default function Page() {
             Composições
           </button>
           <button
-            className="rounded-lg border px-3 py-2 text-sm bg-blue-600 text-white border-blue-600"
+            className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-60"
             type="button"
             onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(returnTo || "")}`)}
             disabled={loading}
           >
             Insumos
           </button>
-          <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push(returnTo || `/dashboard/engenharia/obras/${idObra}/planilha`)} disabled={loading}>
+          <button
+            className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => router.push(returnTo || `/dashboard/engenharia/obras/${idObra}/planilha`)}
+            disabled={loading}
+          >
             Voltar
           </button>
         </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregar} disabled={loading}>
+        <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregar} disabled={loading}>
           Atualizar
         </button>
+      </div>
+
+      <div>
+        <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Insumos</div>
+        <h1 className="text-2xl font-semibold">Insumos consolidados — Obra #{idObra}</h1>
+        <div className="text-sm text-slate-600">Cálculo baseado na planilha atual e nas composições importadas/cadastradas.</div>
       </div>
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}

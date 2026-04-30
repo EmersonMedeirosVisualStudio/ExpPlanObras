@@ -344,6 +344,17 @@ function parseCsvTextAuto(text: string) {
   return { headers, rows };
 }
 
+function decodeCsvBuffer(buf: Buffer) {
+  const utf8 = buf.toString('utf8');
+  const latin1 = buf.toString('latin1');
+  const score = (t: string) => {
+    const replacement = (t.match(/\uFFFD/g) || []).length;
+    const mojibake = (t.match(/[ÃÂ]/g) || []).length;
+    return replacement * 10 + mojibake;
+  };
+  return score(utf8) <= score(latin1) ? utf8 : latin1;
+}
+
 function toDec(v: unknown) {
   const s = String(v ?? '').trim();
   if (!s) return null;
@@ -4071,10 +4082,7 @@ export default async function v1Routes(server: FastifyInstance) {
         if (action !== 'IMPORTAR_CSV') return fail(reply, 422, 'Ação inválida');
         if (!fileBuffer) return fail(reply, 422, 'Arquivo CSV é obrigatório (campo "file")');
 
-        let csvText = fileBuffer.toString('utf8');
-        if (csvText.includes('\uFFFD')) {
-          csvText = fileBuffer.toString('latin1');
-        }
+        let csvText = decodeCsvBuffer(fileBuffer);
         csvText = csvText.replace(/^\uFEFF/, '');
         const { headers, rows } = parseCsvTextAuto(csvText);
         if (!headers.length || !rows.length) return fail(reply, 422, 'CSV vazio ou inválido');
@@ -4603,8 +4611,7 @@ export default async function v1Routes(server: FastifyInstance) {
     }
     if (!fileBuffer) return fail(reply, 422, 'Arquivo CSV é obrigatório (campo "file")');
 
-    let csvText = fileBuffer.toString('utf8');
-    if (csvText.includes('\uFFFD')) csvText = fileBuffer.toString('latin1');
+    let csvText = decodeCsvBuffer(fileBuffer);
     csvText = csvText.replace(/^\uFEFF/, '');
     const { headers, rows } = parseCsvTextAuto(csvText);
     if (!headers.length || !rows.length) return fail(reply, 422, 'CSV vazio ou inválido');
@@ -4894,8 +4901,7 @@ export default async function v1Routes(server: FastifyInstance) {
     }
     if (!fileBuffer) return fail(reply, 422, 'Arquivo CSV é obrigatório (campo "file")');
 
-    let csvText = fileBuffer.toString('utf8');
-    if (csvText.includes('\uFFFD')) csvText = fileBuffer.toString('latin1');
+    let csvText = decodeCsvBuffer(fileBuffer);
     csvText = csvText.replace(/^\uFEFF/, '');
     const { headers, rows } = parseCsvTextAuto(csvText);
     if (!headers.length || !rows.length) return fail(reply, 422, 'CSV vazio ou inválido');
