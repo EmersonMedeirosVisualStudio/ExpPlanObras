@@ -1757,7 +1757,12 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                             if (!code) return null;
                             const v = composicaoValidacaoByCodigo[code];
                             if (!v) return composicaoServicoCodes.has(code) ? <Check className="h-4 w-4 text-green-600" /> : null;
-                            if (v.status === "SEM_COMPOSICAO") return <XCircle className="h-4 w-4 text-red-600" title="Sem composição" />;
+                            if (v.status === "SEM_COMPOSICAO")
+                              return (
+                                <span title="Sem composição">
+                                  <XCircle className="h-4 w-4 text-red-600" />
+                                </span>
+                              );
                             if (v.status === "DIVERGENTE")
                               return (
                                 <span
