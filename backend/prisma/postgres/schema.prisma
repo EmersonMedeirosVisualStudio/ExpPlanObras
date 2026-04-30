@@ -341,6 +341,7 @@ model Contrato {
   contratoPrincipal Contrato? @relation("ContratoSubcontrato", fields: [contratoPrincipalId], references: [id])
   subcontratos    Contrato[] @relation("ContratoSubcontrato")
   obras          Obra[]
+  documentos     Documento[]
   planilhas      ObraPlanilhaContratada[]
   servicos       ContratoServico[]
   cronogramaItens ContratoCronogramaItem[]
@@ -691,15 +692,24 @@ model Documento {
   name      String
   url       String
   type      String
-  obraId    Int
-  obra      Obra     @relation(fields: [obraId], references: [id])
+  obraId    Int?
+  obra      Obra?     @relation(fields: [obraId], references: [id], onDelete: SetNull)
+  contratoId Int?
+  contrato   Contrato? @relation(fields: [contratoId], references: [id], onDelete: SetNull)
   tenantId  Int
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
   uploadedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  categoriaDocumento String @default("OBRA:OUTROS")
+  tituloDocumento String @default("")
+  descricaoDocumento String?
+  statusDocumento String @default("ATIVO")
+  idVersaoAtual Int?
   versoes   DocumentoVersao[]
   solicitacoesAssinatura DocumentoAssinaturaSolicitacao[]
   @@index([tenantId])
   @@index([obraId])
+  @@index([contratoId])
 }
 
 model DocumentoVersao {
@@ -711,10 +721,22 @@ model DocumentoVersao {
   urlAssinado                 String?
   hashSha256Original          String?
   hashSha256Assinado          String?
+  hashSha256PdfCarimbado      String?
   tipoAssinaturaFinal         String?
   assinaturaQualificadaConcluida Boolean @default(false)
   verificacaoAssinaturaStatus String?
   verificacaoAssinaturaEm     DateTime?
+  nomeArquivoOriginal         String   @default("")
+  mimeType                    String   @default("application/octet-stream")
+  tamanhoBytes                Int      @default(0)
+  conteudoOriginal            Bytes?
+  conteudoPdfCarimbado        Bytes?
+  statusVersao                String   @default("ATIVA")
+  finalizadaEm                DateTime?
+  verificacaoToken            String?  @unique
+  fluxoJson                   Json?
+  assinaturasJson             Json?
+  historicoJson               Json?
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
 

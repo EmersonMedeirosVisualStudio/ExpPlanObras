@@ -1006,10 +1006,28 @@ export default function EngenhariaObraHomePage() {
     (async () => {
       try {
         setCarregandoContrato(true);
-        const res = await api.get(`/api/v1/engenharia/obras/${idObra}/contrato`);
-        const json: any = res?.data;
-        if (!json?.success) throw new Error(json?.message || "Erro ao carregar contrato.");
-        if (active) setContrato((json.data || null) as ContratoDaObra | null);
+        const contratoId =
+          (obra?.contratoId != null && Number(obra.contratoId) > 0 ? Number(obra.contratoId) : 0) ||
+          (Number.isFinite(contratoIdParam) && contratoIdParam > 0 ? Number(contratoIdParam) : 0);
+
+        if (!contratoId) {
+          if (active && !contratoNumeroParam) setContrato(null);
+          return;
+        }
+
+        const res = await api.get(`/api/contratos/${contratoId}`);
+        const row: any = res?.data;
+        const mapped: ContratoDaObra = {
+          idObra,
+          nomeObra: (obra?.name || "").trim() || obraNomeParam || `Obra #${idObra}`,
+          idContrato: contratoId,
+          numeroContrato: String(row?.numeroContrato || row?.numero || row?.id || "-"),
+          statusContrato: row?.statusCalculado != null ? String(row.statusCalculado) : row?.status != null ? String(row.status) : null,
+          valorContratado: Number(row?.valorTotalAtual || 0),
+          valorExecutado: Number(row?.indicadores?.valorExecutado || 0),
+          valorPago: Number(row?.indicadores?.valorPago || 0),
+        };
+        if (active) setContrato(mapped);
       } catch (e: any) {
         if (!active) return;
         if (!contratoIdParam && !contratoNumeroParam) setContrato(null);
@@ -1020,7 +1038,7 @@ export default function EngenhariaObraHomePage() {
     return () => {
       active = false;
     };
-  }, [idObra, contratoIdParam, contratoNumeroParam]);
+  }, [idObra, obra?.contratoId, obra?.name, contratoIdParam, contratoNumeroParam, obraNomeParam]);
 
   const janelas = useMemo<Janela[]>(
     () => [
@@ -1086,6 +1104,20 @@ export default function EngenhariaObraHomePage() {
         desc: "ART, projetos, revisões, laudos, pareceres, relatórios e evidências.",
         href: (id) =>
           `/dashboard/obras/documentos?tipo=OBRA&id=${id}&categoriaPrefix=${encodeURIComponent("OBRA:")}&returnTo=${encodeURIComponent(selfHref)}`,
+        nivel: "CADASTRO",
+      },
+      {
+        key: "eventos-observacoes",
+        titulo: "Eventos / Observações",
+        desc: "Eventos e observações do contrato desta obra (ocorrências, registros e notas).",
+        href: () => {
+          const contratoId =
+            (contrato?.idContrato != null && Number(contrato.idContrato) > 0 ? Number(contrato.idContrato) : 0) ||
+            (obra?.contratoId != null && Number(obra.contratoId) > 0 ? Number(obra.contratoId) : 0) ||
+            (Number.isFinite(contratoIdParam) && contratoIdParam > 0 ? Number(contratoIdParam) : 0);
+          if (!contratoId) return selfHref;
+          return `/dashboard/contratos/aditivos?contratoId=${contratoId}&tab=eventos&returnTo=${encodeURIComponent(selfHref)}`;
+        },
         nivel: "CADASTRO",
       },
       {
@@ -1173,7 +1205,7 @@ export default function EngenhariaObraHomePage() {
         nivel: "CADASTRO",
       },
     ],
-    [selfHref]
+    [selfHref, contrato?.idContrato, obra?.contratoId, contratoIdParam]
   );
 
   if (!idObra) {

@@ -37,7 +37,7 @@ function isAxiosHeaders(value: unknown): value is AxiosHeaders {
 // Intercept requests to add token
 api.interceptors.request.use((config) => {
   const url = typeof config.url === 'string' ? config.url : '';
-  if (typeof window !== 'undefined' && (url.startsWith('/api/v1/') || url === '/api/v1')) {
+  if (typeof window !== 'undefined' && (url.startsWith('/api/v1/') || url === '/api/v1') && !url.startsWith('/api/v1/documentos')) {
     config.baseURL = '';
   }
   if (typeof window !== 'undefined') {

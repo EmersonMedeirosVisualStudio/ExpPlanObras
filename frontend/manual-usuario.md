@@ -68,6 +68,7 @@ Depois que você define a obra ativa, o menu de **Engenharia → Obras** passa a
 - **Dashboard da Obra**
 - **Resumo do Contrato**
 - **Documentos da Obra**
+- **Eventos / Observações (do contrato)**
 - **Planejamento**
 - **Execução**
 
@@ -83,7 +84,7 @@ O contrato é uma informação associada à obra. Para ver:
 - Abra **Obra #ID** (janelas da obra)
 
 ### ETAPA 2 — O que clicar
-- No bloco **Dados principais da obra**, clique em **Ver detalhes** (Contrato)
+- No bloco **Dados principais da obra**, clique em **Abrir contrato**
 
 ### ETAPA 3 — O que esperar
 - Você verá:
@@ -95,6 +96,23 @@ O contrato é uma informação associada à obra. Para ver:
 - Confirme se o número do contrato exibido confere com o contrato principal da obra
 
 ---
+
+## 4.2 Eventos / Observações do contrato (a partir da obra)
+
+Use quando você está “dentro” de uma obra e quer registrar/consultar histórico do contrato sem precisar procurar o contrato na lista.
+
+### ETAPA 1 — Onde acessar
+- Abra **Obra #ID** (janelas da obra)
+
+### ETAPA 2 — O que clicar
+- Na seção **Cadastro**, clique em **Eventos / Observações**
+
+### ETAPA 3 — O que esperar
+- Abre a aba **Eventos / Observações** do contrato vinculado à obra
+- Você consegue registrar observações e anexar evidências (PDF/imagem)
+
+### ETAPA 4 — Como validar
+- Salve uma observação e confira se ela aparece na linha do tempo
 
 ## 4.1 Documentos (Obra e Contrato)
 

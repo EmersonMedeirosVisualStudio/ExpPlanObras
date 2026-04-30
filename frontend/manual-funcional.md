@@ -3086,6 +3086,7 @@ Observação importante:
 - Algumas APIs legadas ainda podem rodar como **API do Next** (server runtime) enquanto o módulo não for migrado para o backend. Isso mantém o sistema funcionando sem “quebrar produção” e permite migração por etapas.
 - No estado atual do código, essas APIs do Next usam um banco **MySQL** (variáveis `MYSQL_URL` ou `DB_HOST/DB_USER/DB_PASSWORD/DB_NAME`) e rodam na **Vercel**.
 - O módulo de **Contratos** (regras de negócio) roda no **Backend (Render)** e persiste no **Neon/Postgres** (via Prisma).
+- O módulo de **Documentos (Obra/Contrato)** roda no **Backend (Render)** e persiste no **Neon/Postgres** (via Prisma), com upload/download via API.
 
 ### 21.1 Contratos (módulo de Engenharia)
 
@@ -3107,6 +3108,11 @@ Telas:
 
 - Lista/Detalhe (contratos principais): `/dashboard/contratos`
 - Novo contrato: `/dashboard/contratos/novo`
+
+Integração com Obras (Menu Diversos):
+
+- Na tela **Obra selecionada (Menu Diversos)**, o bloco **Contrato** busca os dados do contrato no backend (`/api/contratos/:id`) e exibe **Valor contratado / executado / pago** de forma consistente com o Neon.
+- Na seção **Cadastro** dessa mesma tela, existe o atalho **Eventos / Observações**, que abre diretamente o histórico do contrato vinculado à obra.
 
 Navegação (padrão de usabilidade):
 

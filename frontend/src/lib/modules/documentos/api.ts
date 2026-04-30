@@ -61,14 +61,16 @@ export const DocumentosApi = {
 
   criarVersaoUpload: async (documentoId: number, file: File) => {
     const token = getToken();
-    const res = await fetch(`/api/v1/documentos/${documentoId}/versoes`, {
+    const apiBase = String(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/+$/, '');
+    const url = apiBase ? `${apiBase}/api/v1/documentos/${documentoId}/versoes` : `/api/v1/documentos/${documentoId}/versoes`;
+    const form = new FormData();
+    form.append('file', file, file.name);
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
-        'Content-Type': file.type || 'application/octet-stream',
-        'X-Filename': file.name,
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: file,
+      body: form,
       cache: 'no-store',
     });
     const json = (await res.json().catch(() => null)) as ApiResponse<{ id: number; token: string }> | null;
