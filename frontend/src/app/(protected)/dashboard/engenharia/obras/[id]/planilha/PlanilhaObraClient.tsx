@@ -210,10 +210,6 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   const [planilha, setPlanilha] = useState<Planilha | null>(null);
   const [planilhaId, setPlanilhaId] = useState<number | null>(null);
 
-  const [selecionado, setSelecionado] = useState<string>("");
-  const [composicao, setComposicao] = useState<{ codigoComposicao: string | null; itens: ComposicaoItem[] }>({ codigoComposicao: null, itens: [] });
-  const [centrosCusto, setCentrosCusto] = useState<CentroCustoOption[]>([]);
-
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importPreview, setImportPreview] = useState<{
     file: File | null;
@@ -258,9 +254,6 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
 
   const composicaoFileInputRef = useRef<HTMLInputElement | null>(null);
   const [composicaoServicoCodes, setComposicaoServicoCodes] = useState<Set<string>>(new Set());
-  const [insumosConsolidados, setInsumosConsolidados] = useState<
-    Array<{ codigoItem: string; descricao: string; und: string; quantidadeTotal: number; codigoCentroCusto: string | null }>
-  >([]);
 
   const [parametros, setParametros] = useState({
     dataBaseSbc: "",
@@ -292,7 +285,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     return true;
   }, []);
 
-  function scrollToRef(ref: React.RefObject<HTMLDivElement | null>) {
+  function scrollToRef(ref: { current: HTMLDivElement | null }) {
     window.requestAnimationFrame(() => {
       ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
@@ -377,6 +370,25 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     URL.revokeObjectURL(url);
   }
 
+  function baixarModeloComposicoesCsv() {
+    const sep = ";";
+    const lines = [
+      ["codigo_servico", "etapa", "tipo_item", "codigo_item", "descricao", "und", "quantidade", "perda_percentual", "codigo_centro_custo"].join(sep),
+      ["SER-0001", "PRELIMINARES", "INSUMO", "INS-0001", "Cimento CP-II", "kg", "100", "0", ""].join(sep),
+      ["SER-0001", "PRELIMINARES", "INSUMO", "INS-0002", "Areia média", "m³", "0,50", "5", ""].join(sep),
+    ];
+    const csv = `${lines.join("\n")}\n`;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `composicoes_obra_${idObra}_modelo.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   async function carregarVersoes() {
     try {
       setLoading(true);
@@ -442,21 +454,6 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     }
   }
 
-  async function carregarCentrosCusto() {
-    try {
-      const res = await authFetch(`/api/v1/engenharia/centros-custo?ativo=1`);
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) {
-        setCentrosCusto([]);
-        return;
-      }
-      const lista = Array.isArray(json.data) ? json.data : [];
-      setCentrosCusto(lista.map((c: any) => ({ codigo: String(c.codigo), descricao: String(c.descricao || "") })));
-    } catch {
-      setCentrosCusto([]);
-    }
-  }
-
   async function carregarComposicaoStatus() {
     try {
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/status`);
@@ -472,89 +469,15 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     }
   }
 
-  async function carregarInsumosConsolidados() {
-    try {
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/insumos/consolidado`);
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) {
-        setInsumosConsolidados([]);
-        return;
-      }
-      const rows = Array.isArray(json.data?.rows) ? json.data.rows : [];
-      setInsumosConsolidados(
-        rows.map((r: any) => ({
-          codigoItem: String(r.codigoItem || ""),
-          descricao: String(r.descricao || ""),
-          und: String(r.und || ""),
-          quantidadeTotal: Number(r.quantidadeTotal || 0),
-          codigoCentroCusto: r.codigoCentroCusto == null ? null : String(r.codigoCentroCusto),
-        }))
-      );
-    } catch {
-      setInsumosConsolidados([]);
-    }
-  }
-
-  async function carregarComposicaoItens(codigoServico: string) {
-    if (!codigoServico) {
-      setComposicao({ codigoComposicao: null, itens: [] });
-      return;
-    }
-    try {
-      setErr(null);
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-itens`);
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar composição do serviço");
-      setComposicao({ codigoComposicao: json.data?.codigoComposicao || null, itens: Array.isArray(json.data?.itens) ? json.data.itens : [] });
-    } catch (e: any) {
-      setErr(e?.message || "Erro ao carregar composição do serviço");
-      setComposicao({ codigoComposicao: null, itens: [] });
-    }
-  }
-
-  async function salvarComposicaoItens() {
-    if (!selecionado) return;
-    try {
-      setLoading(true);
-      setErr(null);
-      const updates = composicao.itens.map((i) => ({ idItemBase: i.idItemBase, codigoCentroCusto: i.codigoCentroCusto }));
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(selecionado)}/composicao-itens`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ updates }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao salvar composição do serviço");
-      await carregarComposicaoItens(selecionado);
-    } catch (e: any) {
-      setErr(e?.message || "Erro ao salvar composição do serviço");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const servicosOptions = useMemo(() => {
-    const list = (planilha?.linhas || []).filter((l) => l.tipoLinha === "SERVICO" && l.codigo.trim()).map((l) => l.codigo.trim().toUpperCase());
-    return Array.from(new Set(list)).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [planilha]);
-
   useEffect(() => {
     if (!idObra) return;
     carregarVersoes();
-    carregarCentrosCusto();
     carregarComposicaoStatus();
-    carregarInsumosConsolidados();
   }, [idObra]);
 
   useEffect(() => {
     if (planilhaId) carregarPlanilha(planilhaId);
-    carregarInsumosConsolidados();
   }, [planilhaId]);
-
-  useEffect(() => {
-    if (!selecionado) return;
-    carregarComposicaoItens(selecionado);
-  }, [selecionado]);
 
   if (!idObra) return <div className="p-6 rounded-xl border bg-white">Obra inválida.</div>;
 
@@ -762,6 +685,9 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     });
     setLinhaErrors({});
     setOkMsg(null);
+    setShowPlanilhaCard(true);
+    setShowAdicionarCard(true);
+    scrollToRef(adicionarLinhaRef);
   }
 
   async function importarCsv(file: File, nomeVersao?: string) {
@@ -796,7 +722,6 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao importar composições (CSV)");
       await carregarComposicaoStatus();
-      await carregarInsumosConsolidados();
     } catch (e: any) {
       setErr(e?.message || "Erro ao importar composições (CSV)");
     } finally {
@@ -1042,9 +967,13 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => composicaoFileInputRef.current?.click()} disabled={loading}>
             Importar composições CSV
           </button>
-          <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2" type="button" onClick={baixarModeloCsv} disabled={loading}>
-            <Download className="h-4 w-4" />
-            Modelo CSV
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
+            type="button"
+            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(`/dashboard/engenharia/obras/${idObra}/planilha`)}`)}
+            disabled={loading}
+          >
+            Insumos
           </button>
           <button
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
@@ -1056,6 +985,17 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             Nova planilha
           </button>
         </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2" type="button" onClick={baixarModeloCsv} disabled={loading}>
+          <Download className="h-4 w-4" />
+          Modelo CSV (planilha)
+        </button>
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2" type="button" onClick={baixarModeloComposicoesCsv} disabled={loading}>
+          <Download className="h-4 w-4" />
+          Modelo CSV (composições)
+        </button>
       </div>
 
       <div className="rounded-xl border bg-white p-3 shadow-sm">
@@ -1673,150 +1613,6 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             ) : null}
           </section>
           </div>
-
-          <section className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div>
-                <div className="text-lg font-semibold">Centro de custos por insumo (composição do serviço)</div>
-                <div className="text-sm text-slate-600">Selecione um serviço para ajustar centro de custo em cada item da composição.</div>
-              </div>
-              <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60" type="button" onClick={salvarComposicaoItens} disabled={!selecionado || loading}>
-                Salvar composição
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <div>
-                <div className="text-sm text-slate-600">Serviço</div>
-                <select className="input bg-white" value={selecionado} onChange={(e) => setSelecionado(e.target.value)}>
-                  <option value="">Selecione</option>
-                  {servicosOptions.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {!selecionado ? <div className="text-sm text-slate-500">Selecione um serviço.</div> : null}
-
-            {selecionado ? (
-              <div className="space-y-3">
-                {composicao.codigoComposicao ? (
-                  <div className="text-sm text-slate-600">
-                    Composição: <span className="font-medium">{composicao.codigoComposicao}</span>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">⚠️ Serviço sem composição vinculada na base corporativa.</div>
-                )}
-
-                {composicao.itens.some((i) => !i.codigoCentroCusto) ? (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">⚠️ Existem insumos sem centro de custo definido.</div>
-                ) : null}
-
-                <div className="overflow-auto">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 text-left">
-                      <tr>
-                        <th className="px-3 py-2">Etapa</th>
-                        <th className="px-3 py-2">Tipo</th>
-                        <th className="px-3 py-2">Insumo</th>
-                        <th className="px-3 py-2">Qtd</th>
-                        <th className="px-3 py-2">Perda%</th>
-                        <th className="px-3 py-2">Centro de custo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {composicao.itens.map((i) => (
-                        <tr key={i.idItemBase} className="border-t">
-                          <td className="px-3 py-2">{i.etapa || "-"}</td>
-                          <td className="px-3 py-2">{i.tipoItem}</td>
-                          <td className="px-3 py-2">{i.codigoItem}</td>
-                          <td className="px-3 py-2">{i.quantidade == null ? "-" : Number(i.quantidade).toFixed(4)}</td>
-                          <td className="px-3 py-2">{Number(i.perdaPercentual || 0).toFixed(2)}</td>
-                          <td className="px-3 py-2">
-                            <select
-                              className="input bg-white"
-                              value={i.codigoCentroCusto || ""}
-                              onChange={(e) => {
-                                const v = e.target.value || null;
-                                setComposicao((p) => ({
-                                  ...p,
-                                  itens: p.itens.map((x) => (x.idItemBase === i.idItemBase ? { ...x, codigoCentroCusto: v } : x)),
-                                }));
-                              }}
-                            >
-                              <option value="">(sem CC)</option>
-                              {centrosCusto.map((c) => (
-                                <option key={c.codigo} value={c.codigo}>
-                                  {c.codigo} — {c.descricao}
-                                </option>
-                              ))}
-                            </select>
-                            {i.codigoCentroCustoBase && i.codigoCentroCusto !== i.codigoCentroCustoBase ? (
-                              <div className="mt-1 text-xs text-slate-500">Base: {i.codigoCentroCustoBase}</div>
-                            ) : null}
-                          </td>
-                        </tr>
-                      ))}
-                      {!composicao.itens.length ? (
-                        <tr>
-                          <td colSpan={6} className="px-3 py-6 text-center text-slate-500">
-                            Sem itens de composição.
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : null}
-          </section>
-
-          <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div>
-                <div className="text-lg font-semibold">Insumos consolidados</div>
-                <div className="text-sm text-slate-600">Cálculo baseado na planilha atual e nas composições importadas/cadastradas.</div>
-              </div>
-              <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregarInsumosConsolidados} disabled={loading}>
-                Atualizar
-              </button>
-            </div>
-
-            <div className="overflow-auto">
-              <table className="min-w-[900px] w-full text-sm">
-                <thead className="bg-slate-50 text-left text-slate-700">
-                  <tr>
-                    <th className="px-3 py-2">INSUMO</th>
-                    <th className="px-3 py-2">DESCRIÇÃO</th>
-                    <th className="px-3 py-2">UND</th>
-                    <th className="px-3 py-2 text-right">QUANTIDADE TOTAL</th>
-                    <th className="px-3 py-2">CENTRO DE CUSTO</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {insumosConsolidados.map((r) => (
-                    <tr key={`${r.codigoItem}`} className="border-t">
-                      <td className="px-3 py-2">{r.codigoItem}</td>
-                      <td className="px-3 py-2">{r.descricao}</td>
-                      <td className="px-3 py-2">{r.und}</td>
-                      <td className="px-3 py-2 text-right">{Number(r.quantidadeTotal || 0).toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</td>
-                      <td className="px-3 py-2">{r.codigoCentroCusto || ""}</td>
-                    </tr>
-                  ))}
-                  {!insumosConsolidados.length ? (
-                    <tr>
-                      <td colSpan={5} className="px-3 py-6 text-center text-slate-500">
-                        Sem dados. Importe/cadastre composições e clique em Atualizar.
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
-          </section>
         </>
       ) : null}
     </div>
