@@ -278,10 +278,36 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   const [paramErrors, setParamErrors] = useState<Partial<Record<keyof typeof parametros, string>>>({});
   const [linhaErrors, setLinhaErrors] = useState<Partial<Record<keyof typeof novo, string>>>({});
   const [somenteItens, setSomenteItens] = useState(false);
+  const [collapsedPrefixes, setCollapsedPrefixes] = useState<Set<string>>(new Set());
+
+  const [showParamsCard, setShowParamsCard] = useState(true);
+  const [showPlanilhaCard, setShowPlanilhaCard] = useState(true);
+  const [showAdicionarCard, setShowAdicionarCard] = useState(true);
+
+  const paramsSectionRef = useRef<HTMLDivElement | null>(null);
+  const planilhaSectionRef = useRef<HTMLDivElement | null>(null);
+  const adicionarLinhaRef = useRef<HTMLDivElement | null>(null);
 
   const podeEditar = useMemo(() => {
     return true;
   }, []);
+
+  function scrollToRef(ref: React.RefObject<HTMLDivElement | null>) {
+    window.requestAnimationFrame(() => {
+      ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  function toggleCollapsedPrefix(prefix: string) {
+    const key = String(prefix || "").trim();
+    if (!key) return;
+    setCollapsedPrefixes((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   useEffect(() => {
     try {
@@ -897,11 +923,52 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     return Number(total.toFixed(2));
   }, [importPreview]);
 
+  const expandablePrefixes = useMemo(() => {
+    const set = new Set<string>();
+    const rows = planilha?.linhas || [];
+    for (const l of rows) {
+      if (l.tipoLinha !== "SERVICO") continue;
+      const itemStr = String(l.item || "").trim();
+      if (!itemStr) continue;
+      const parts = itemStr.split(".").map((p) => p.trim()).filter(Boolean);
+      if (!parts.length) continue;
+      const ancestorsCount = Math.max(1, parts.length - 1);
+      for (let i = 1; i <= ancestorsCount; i++) {
+        set.add(parts.slice(0, i).join("."));
+      }
+    }
+    return set;
+  }, [planilha]);
+
   const linhasVisiveis = useMemo(() => {
     const rows = planilha?.linhas || [];
-    if (!somenteItens) return rows;
-    return rows.filter((l) => l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM");
-  }, [planilha, somenteItens]);
+    return rows.filter((l) => {
+      const tipo = String(l.tipoLinha || "").toUpperCase();
+      const itemStr = String(l.item || "").trim();
+      const parts = itemStr ? itemStr.split(".").map((p) => p.trim()).filter(Boolean) : [];
+      const parentItem = parts.length ? parts[0] : "";
+
+      if (tipo === "ITEM") return true;
+
+      if (tipo === "SUBITEM") {
+        if (parentItem && collapsedPrefixes.has(parentItem)) return false;
+        return true;
+      }
+
+      if (tipo === "SERVICO") {
+        if (somenteItens) return false;
+        if (!parts.length) return true;
+        const ancestorsCount = Math.max(1, parts.length - 1);
+        for (let i = 1; i <= ancestorsCount; i++) {
+          const prefix = parts.slice(0, i).join(".");
+          if (collapsedPrefixes.has(prefix)) return false;
+        }
+        return true;
+      }
+
+      return true;
+    });
+  }, [planilha, somenteItens, collapsedPrefixes]);
 
   return (
     <div className="p-6 space-y-6 max-w-7xl text-slate-900">
@@ -987,6 +1054,43 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             title={!podeEditar ? "Criar nova versão somente na versão atual" : "Nova planilha"}
           >
             Nova planilha
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-xl border bg-white p-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <div className="text-slate-600">Navegação</div>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 hover:bg-slate-50"
+            type="button"
+            onClick={() => {
+              setShowParamsCard((v) => !v);
+              scrollToRef(paramsSectionRef);
+            }}
+          >
+            {showParamsCard ? "⯆" : "⯈"} Parâmetros
+          </button>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 hover:bg-slate-50"
+            type="button"
+            onClick={() => {
+              setShowPlanilhaCard((v) => !v);
+              scrollToRef(planilhaSectionRef);
+            }}
+          >
+            {showPlanilhaCard ? "⯆" : "⯈"} Planilha
+          </button>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 hover:bg-slate-50"
+            type="button"
+            onClick={() => {
+              setShowPlanilhaCard(true);
+              setShowAdicionarCard((v) => !v);
+              scrollToRef(adicionarLinhaRef);
+            }}
+          >
+            {showAdicionarCard ? "⯆" : "⯈"} Adicionar linha
           </button>
         </div>
       </div>
@@ -1149,83 +1253,102 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             </div>
           </section>
 
-          <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="text-lg font-semibold">Parâmetros (Obra pública)</div>
-              <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60" type="button" onClick={salvarParametros} disabled={loading || !podeEditar}>
-                Salvar parâmetros
-              </button>
-            </div>
-            <div className="overflow-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-left text-slate-700">
-                  <tr>
-                    <th className="px-3 py-2">Parâmetros</th>
-                    <th className="px-3 py-2">SBC</th>
-                    <th className="px-3 py-2">SINAPI</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    ["Data-base", "dataBaseSbc", "dataBaseSinapi"],
-                    ["BDI de Serviços (%)", "bdiServicosSbc", "bdiServicosSinapi"],
-                    ["BDI Diferenciado (%)", "bdiDiferenciadoSbc", "bdiDiferenciadoSinapi"],
-                    ["Enc. Sociais SEM Desoneração (%)", "encSociaisSemDesSbc", "encSociaisSemDesSinapi"],
-                    ["Desconto (%)", "descontoSbc", "descontoSinapi"],
-                  ].map(([label, a, b]) => (
-                    <tr key={label} className="border-t">
-                      <td className="px-3 py-2">{label}</td>
-                      <td className="px-3 py-2">
-                        <input
-                          className={`input bg-white ${paramErrors[a as keyof typeof parametros] ? "border-red-300 bg-red-50" : ""}`}
-                          value={(parametros as any)[a]}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setParametros((p) => ({ ...p, [a]: v } as any));
-                            setParamErrors((p) => {
-                              if (!(a in p)) return p;
-                              const { [a]: _, ...rest } = p as any;
-                              return rest;
-                            });
-                          }}
-                          disabled={!podeEditar}
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input
-                          className={`input bg-white ${paramErrors[b as keyof typeof parametros] ? "border-red-300 bg-red-50" : ""}`}
-                          value={(parametros as any)[b]}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setParametros((p) => ({ ...p, [b]: v } as any));
-                            setParamErrors((p) => {
-                              if (!(b in p)) return p;
-                              const { [b]: _, ...rest } = p as any;
-                              return rest;
-                            });
-                          }}
-                          disabled={!podeEditar}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          <div ref={paramsSectionRef}>
+            <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <button className="rounded border bg-white px-2 py-1 text-sm hover:bg-slate-50" type="button" onClick={() => setShowParamsCard((v) => !v)}>
+                    {showParamsCard ? "⯆" : "⯈"}
+                  </button>
+                  <div className="text-lg font-semibold">Parâmetros (Obra pública)</div>
+                </div>
+                {showParamsCard ? (
+                  <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60" type="button" onClick={salvarParametros} disabled={loading || !podeEditar}>
+                    Salvar parâmetros
+                  </button>
+                ) : null}
+              </div>
+              {showParamsCard ? (
+                <div className="overflow-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-700">
+                      <tr>
+                        <th className="px-3 py-2">Parâmetros</th>
+                        <th className="px-3 py-2">SBC</th>
+                        <th className="px-3 py-2">SINAPI</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        ["Data-base", "dataBaseSbc", "dataBaseSinapi"],
+                        ["BDI de Serviços (%)", "bdiServicosSbc", "bdiServicosSinapi"],
+                        ["BDI Diferenciado (%)", "bdiDiferenciadoSbc", "bdiDiferenciadoSinapi"],
+                        ["Enc. Sociais SEM Desoneração (%)", "encSociaisSemDesSbc", "encSociaisSemDesSinapi"],
+                        ["Desconto (%)", "descontoSbc", "descontoSinapi"],
+                      ].map(([label, a, b]) => (
+                        <tr key={label} className="border-t">
+                          <td className="px-3 py-2">{label}</td>
+                          <td className="px-3 py-2">
+                            <input
+                              className={`input bg-white ${paramErrors[a as keyof typeof parametros] ? "border-red-300 bg-red-50" : ""}`}
+                              value={(parametros as any)[a]}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setParametros((p) => ({ ...p, [a]: v } as any));
+                                setParamErrors((p) => {
+                                  if (!(a in p)) return p;
+                                  const { [a]: _, ...rest } = p as any;
+                                  return rest;
+                                });
+                              }}
+                              disabled={!podeEditar}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              className={`input bg-white ${paramErrors[b as keyof typeof parametros] ? "border-red-300 bg-red-50" : ""}`}
+                              value={(parametros as any)[b]}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setParametros((p) => ({ ...p, [b]: v } as any));
+                                setParamErrors((p) => {
+                                  if (!(b in p)) return p;
+                                  const { [b]: _, ...rest } = p as any;
+                                  return rest;
+                                });
+                              }}
+                              disabled={!podeEditar}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </section>
+          </div>
 
-          <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="text-lg font-semibold">Planilha orçamentária (itens)</div>
+          <div ref={planilhaSectionRef}>
+            <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <button className="rounded border bg-white px-2 py-1 text-sm hover:bg-slate-50" type="button" onClick={() => setShowPlanilhaCard((v) => !v)}>
+                    {showPlanilhaCard ? "⯆" : "⯈"}
+                  </button>
+                  <div className="text-lg font-semibold">Planilha orçamentária</div>
+                </div>
               <div className="flex items-center gap-3 flex-wrap text-sm text-slate-600">
                 <div>{linhasVisiveis.length} linha(s)</div>
                 <div>Valor total: <span className="font-semibold text-slate-900">{moeda(Number(valorTotalPlanilha || 0))}</span></div>
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-3 flex-wrap rounded-lg border bg-white p-3">
-              <div className="text-sm font-semibold">Visual</div>
-              <div className="flex items-center gap-3 flex-wrap">
+            {showPlanilhaCard ? (
+              <>
+                <div className="flex items-center justify-between gap-3 flex-wrap rounded-lg border bg-white p-3">
+                  <div className="text-sm font-semibold">Visual</div>
+                  <div className="flex items-center gap-3 flex-wrap">
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={somenteItens} onChange={(e) => setSomenteItens(Boolean(e.target.checked))} />
                   <span className="text-slate-600">Somente itens</span>
@@ -1252,14 +1375,23 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                   <span className="text-slate-600">Fundo Subitem</span>
                   <input type="color" value={uiPrefs.subitemBg} onChange={(e) => setUiPrefs((p) => ({ ...p, subitemBg: e.target.value }))} />
                 </label>
-              </div>
-            </div>
+                  </div>
+                </div>
 
-            <div className="rounded-lg border bg-slate-50 p-3 space-y-3">
-              <div className="text-sm font-semibold">
-                {editingLinhaId ? (novo.tipoLinha === "SERVICO" ? "Editar serviço" : "Editar linha") : novo.tipoLinha === "SERVICO" ? "Adicionar serviço" : "Adicionar linha"}
+            <div ref={adicionarLinhaRef} className="rounded-lg border bg-slate-50 p-3 space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <button className="rounded border bg-white px-2 py-1 text-sm hover:bg-slate-50" type="button" onClick={() => setShowAdicionarCard((v) => !v)}>
+                    {showAdicionarCard ? "⯆" : "⯈"}
+                  </button>
+                  <div className="text-sm font-semibold">
+                    {editingLinhaId ? (novo.tipoLinha === "SERVICO" ? "Editar serviço" : "Editar linha") : novo.tipoLinha === "SERVICO" ? "Adicionar serviço" : "Adicionar linha"}
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-10">
+              {showAdicionarCard ? (
+                <>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-10">
                 <div className="md:col-span-2">
                   <div className="text-sm text-slate-600">Tipo</div>
                   <select
@@ -1397,7 +1529,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
                 <div className="md:col-span-2">
                   <div className="text-sm text-slate-600">VALOR PARCIAL</div>
                   <input
@@ -1429,7 +1561,9 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                     </button>
                   </div>
                 </div>
-              </div>
+                  </div>
+                </>
+              ) : null}
             </div>
 
             <div className="overflow-auto">
@@ -1464,7 +1598,30 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                         );
                       }}
                     >
-                      <td className="px-3 py-2">{l.item || ""}</td>
+                      <td className="px-3 py-2">
+                        <span className="inline-flex items-center gap-2">
+                          {l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM" ? (
+                            expandablePrefixes.has(String(l.item || "").trim()) ? (
+                              <button
+                                className="rounded border bg-white px-2 py-0.5 text-xs hover:bg-slate-50"
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  toggleCollapsedPrefix(String(l.item || "").trim());
+                                }}
+                              >
+                                {collapsedPrefixes.has(String(l.item || "").trim()) ? "⯈" : "⯆"}
+                              </button>
+                            ) : (
+                              <span className="inline-block w-[30px]" />
+                            )
+                          ) : (
+                            <span className="inline-block w-[30px]" />
+                          )}
+                          <span>{l.item || ""}</span>
+                        </span>
+                      </td>
                       <td className="px-3 py-2">
                         <span className="inline-flex items-center gap-2">
                           <span>{l.codigo || ""}</span>
@@ -1512,7 +1669,10 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                 </tbody>
               </table>
             </div>
+              </>
+            ) : null}
           </section>
+          </div>
 
           <section className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
             <div className="flex items-start justify-between gap-3 flex-wrap">
