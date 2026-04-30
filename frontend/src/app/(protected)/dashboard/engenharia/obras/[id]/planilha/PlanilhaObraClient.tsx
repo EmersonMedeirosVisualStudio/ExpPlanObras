@@ -69,6 +69,27 @@ function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function parseNumberLoose(v: unknown) {
+  const raw = String(v ?? "").trim();
+  if (!raw) return null;
+  const cleaned = raw.replace(/[^\d,.\-]/g, "");
+  if (!cleaned) return null;
+  if (cleaned.includes(",") && cleaned.includes(".")) {
+    if (cleaned.lastIndexOf(",") > cleaned.lastIndexOf(".")) {
+      const n = Number(cleaned.replace(/\./g, "").replace(",", "."));
+      return Number.isFinite(n) ? n : null;
+    }
+    const n = Number(cleaned.replace(/,/g, ""));
+    return Number.isFinite(n) ? n : null;
+  }
+  if (cleaned.includes(",")) {
+    const n = Number(cleaned.replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
 function normalizeHeader(h: string) {
   return String(h || "")
     .trim()
@@ -673,12 +694,40 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     let total = 0;
     for (const l of rows) {
       if (String(l.tipoLinha || "").toUpperCase() !== "SERVICO") continue;
-      const s = String(l.valorParcial || "").trim().replace(",", ".");
-      const n = Number(s);
-      if (Number.isFinite(n)) total += n;
+      const n = parseNumberLoose(l.valorParcial);
+      if (n != null) total += n;
     }
     return Number(total.toFixed(2));
   }, [planilha]);
+
+  const subtotalByItemKey = useMemo(() => {
+    const map = new Map<string, number>();
+    const rows = planilha?.linhas || [];
+    for (const l of rows) {
+      if (String(l.tipoLinha || "").toUpperCase() !== "SERVICO") continue;
+      const itemStr = String(l.item || "").trim();
+      if (!itemStr) continue;
+      const v = parseNumberLoose(l.valorParcial);
+      if (v == null) continue;
+      const parts = itemStr.split(".").map((p) => p.trim()).filter(Boolean);
+      if (parts.length <= 1) continue;
+      for (let i = 1; i <= parts.length - 1; i++) {
+        const prefix = parts.slice(0, i).join(".");
+        map.set(prefix, Number(((map.get(prefix) || 0) + v).toFixed(6)));
+      }
+    }
+    return map;
+  }, [planilha]);
+
+  const valorTotalPreview = useMemo(() => {
+    if (!importPreview.file) return 0;
+    let total = 0;
+    for (const r of importPreview.rows || []) {
+      if (r.tipoLinha !== "SERVICO") continue;
+      if (typeof r.valorParcialCalc === "number" && Number.isFinite(r.valorParcialCalc)) total += r.valorParcialCalc;
+    }
+    return Number(total.toFixed(2));
+  }, [importPreview]);
 
   return (
     <div className="p-6 space-y-6 max-w-7xl text-slate-900">
@@ -750,6 +799,9 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
               <div className="text-lg font-semibold">Prévia da importação (CSV)</div>
               <div className="text-sm text-slate-600">
                 Arquivo: <span className="font-medium">{importPreview.file.name}</span> • Nova versão: <span className="font-medium">{importPreview.nomeVersao}</span>
+              </div>
+              <div className="mt-1 text-sm text-slate-700">
+                Total consolidado (serviços): <span className="font-semibold">{moeda(Number(valorTotalPreview || 0))}</span>
               </div>
               {importPreview.missingColumns.length ? (
                 <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -1069,7 +1121,18 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                       <td className="px-3 py-2">{l.und || ""}</td>
                       <td className="px-3 py-2 text-right">{l.quant || ""}</td>
                       <td className="px-3 py-2 text-right">{l.valorUnitario || ""}</td>
-                      <td className="px-3 py-2 text-right">{l.valorParcial || ""}</td>
+                      <td className="px-3 py-2 text-right">
+                        {l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM"
+                          ? (() => {
+                              const k = String(l.item || "").trim();
+                              const sum = k ? subtotalByItemKey.get(k) : null;
+                              return typeof sum === "number" && Number.isFinite(sum) && sum > 0 ? moeda(Number(sum)) : "";
+                            })()
+                          : (() => {
+                              const n = parseNumberLoose(l.valorParcial);
+                              return n == null ? "" : moeda(n);
+                            })()}
+                      </td>
                       <td className="px-3 py-2">
                         <button className="rounded border px-2 py-1 text-xs text-red-700 disabled:opacity-60" type="button" onClick={() => excluirLinha(l.idLinha)} disabled={!podeEditar || loading}>
                           Excluir
