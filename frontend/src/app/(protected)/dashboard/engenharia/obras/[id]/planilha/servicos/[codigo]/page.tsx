@@ -85,6 +85,7 @@ function moeda(v: number) {
   const [centrosCusto, setCentrosCusto] = useState<CentroCustoOption[]>([]);
   const [previstoRows, setPrevistoRows] = useState<PrevistoPlanilhaRow[]>([]);
   const [planilhaParams, setPlanilhaParams] = useState<PlanilhaParams | null>(null);
+  const [definedComposicoesCodes, setDefinedComposicoesCodes] = useState<Set<string>>(new Set());
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
   const [editingBancoOutroIdx, setEditingBancoOutroIdx] = useState<number | null>(null);
   const [bancoOutroValue, setBancoOutroValue] = useState("");
@@ -255,6 +256,22 @@ function moeda(v: number) {
     }
   }
 
+  async function carregarComposicoesDefinidas() {
+    if (!idObra) return;
+    try {
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/status`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        setDefinedComposicoesCodes(new Set());
+        return;
+      }
+      const codes = Array.isArray(json.data?.codes) ? json.data.codes : [];
+      setDefinedComposicoesCodes(new Set(codes.map((c: any) => String(c || "").trim().toUpperCase()).filter(Boolean)));
+    } catch {
+      setDefinedComposicoesCodes(new Set());
+    }
+  }
+
   function baixarModeloComposicoesCsv() {
     const sep = "\t";
     const lines = [
@@ -306,6 +323,7 @@ function moeda(v: number) {
     carregarCentrosCusto();
     carregar();
     carregarPrevistoPlanilha();
+    carregarComposicoesDefinidas();
   }, [idObra, codigoServico]);
 
   const bancosBase = useMemo(() => ["SINAPI", "Próprio", "SBC", "SICRO3"], []);
@@ -554,7 +572,38 @@ function moeda(v: number) {
                       </select>
                     </td>
                     <td className="px-3 py-2">
-                      <input className="input bg-white" value={r.codigoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoItem: e.target.value } : x)))} />
+                      <div className="flex items-center gap-2">
+                        <input className="input bg-white" value={r.codigoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoItem: e.target.value } : x)))} />
+                        {String(r.tipoItem || "").toUpperCase() === "COMPOSICAO" || String(r.tipoItem || "").toUpperCase() === "COMPOSICAO_AUXILIAR" ? (
+                          (() => {
+                            const codigo = String(r.codigoItem || "").trim().toUpperCase();
+                            if (!codigo) return null;
+                            const definida = definedComposicoesCodes.has(codigo);
+                            return (
+                              <div className="flex items-center gap-2">
+                                {definida ? (
+                                  <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Definida</span>
+                                ) : (
+                                  <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Não definida</span>
+                                )}
+                                <button
+                                  className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                                  type="button"
+                                  onClick={() =>
+                                    router.push(
+                                      `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigo)}?returnTo=${encodeURIComponent(
+                                        `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}`
+                                      )}`
+                                    )
+                                  }
+                                >
+                                  Abrir
+                                </button>
+                              </div>
+                            );
+                          })()
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">

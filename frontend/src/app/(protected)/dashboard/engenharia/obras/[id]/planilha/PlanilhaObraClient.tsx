@@ -65,6 +65,16 @@ type Planilha = {
   linhas: PlanilhaLinha[];
 };
 
+type ComposicaoValidacaoRow = {
+  codigoServico: string;
+  servico: string;
+  totalPlanilha: number;
+  totalComposicao: number;
+  diff: number;
+  status: "SEM_COMPOSICAO" | "DIVERGENTE" | "OK";
+  qtdItens: number;
+};
+
 function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
@@ -255,6 +265,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
 
   const composicaoFileInputRef = useRef<HTMLInputElement | null>(null);
   const [composicaoServicoCodes, setComposicaoServicoCodes] = useState<Set<string>>(new Set());
+  const [composicaoValidacaoByCodigo, setComposicaoValidacaoByCodigo] = useState<Record<string, ComposicaoValidacaoRow>>({});
 
   const [parametros, setParametros] = useState({
     dataBaseSbc: "",
@@ -470,6 +481,40 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     }
   }
 
+  async function carregarComposicaoValidacao(pid?: number | null) {
+    try {
+      const planilhaIdQuery = pid != null ? Number(pid) : planilhaId != null ? Number(planilhaId) : 0;
+      if (!planilhaIdQuery) {
+        setComposicaoValidacaoByCodigo({});
+        return;
+      }
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/validacao?planilhaId=${planilhaIdQuery}`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        setComposicaoValidacaoByCodigo({});
+        return;
+      }
+      const rows = Array.isArray(json.data?.rows) ? (json.data.rows as any[]) : [];
+      const map: Record<string, ComposicaoValidacaoRow> = {};
+      for (const r of rows) {
+        const code = String(r.codigoServico || "").trim().toUpperCase();
+        if (!code) continue;
+        map[code] = {
+          codigoServico: code,
+          servico: String(r.servico || ""),
+          totalPlanilha: Number(r.totalPlanilha || 0),
+          totalComposicao: Number(r.totalComposicao || 0),
+          diff: Number(r.diff || 0),
+          status: String(r.status || "OK") as any,
+          qtdItens: Number(r.qtdItens || 0),
+        };
+      }
+      setComposicaoValidacaoByCodigo(map);
+    } catch {
+      setComposicaoValidacaoByCodigo({});
+    }
+  }
+
   useEffect(() => {
     if (!idObra) return;
     carregarVersoes();
@@ -478,6 +523,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
 
   useEffect(() => {
     if (planilhaId) carregarPlanilha(planilhaId);
+    carregarComposicaoValidacao(planilhaId);
   }, [planilhaId]);
 
   if (!idObra) return <div className="p-6 rounded-xl border bg-white">Obra inválida.</div>;
@@ -723,6 +769,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao importar composições (CSV)");
       await carregarComposicaoStatus();
+      await carregarComposicaoValidacao(planilhaId);
     } catch (e: any) {
       setErr(e?.message || "Erro ao importar composições (CSV)");
     } finally {
@@ -903,6 +950,26 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
           <div className="text-xs text-slate-500">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Planilha orçamentária — Obra #{idObra}</h1>
           <div className="text-sm text-slate-600">Versões do orçamento por obra (itens, subitens e serviços). A programação e apropriação usam os serviços da versão atual.</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+              type="button"
+              onClick={() =>
+                router.push(`/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(`/dashboard/engenharia/obras/${idObra}/planilha`)}`)
+              }
+              disabled={loading}
+            >
+              Composições
+            </button>
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+              type="button"
+              onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(`/dashboard/engenharia/obras/${idObra}/planilha`)}`)}
+              disabled={loading}
+            >
+              Insumos
+            </button>
+          </div>
           {obraResumo ? (
             <div className="mt-2 text-sm text-slate-700">
               <span className="font-semibold">{obraResumo.nome ? obraResumo.nome : `Obra #${idObra}`}</span>
@@ -967,14 +1034,6 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
           />
           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => composicaoFileInputRef.current?.click()} disabled={loading}>
             Importar composições CSV
-          </button>
-          <button
-            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
-            type="button"
-            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(`/dashboard/engenharia/obras/${idObra}/planilha`)}`)}
-            disabled={loading}
-          >
-            Insumos
           </button>
           <button
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
@@ -1566,9 +1625,25 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                       <td className="px-3 py-2">
                         <span className="inline-flex items-center gap-2">
                           <span>{l.codigo || ""}</span>
-                          {l.tipoLinha === "SERVICO" && composicaoServicoCodes.has(String(l.codigo || "").trim().toUpperCase()) ? (
-                            <Check className="h-4 w-4 text-green-600" />
-                          ) : null}
+                          {(() => {
+                            if (l.tipoLinha !== "SERVICO") return null;
+                            const code = String(l.codigo || "").trim().toUpperCase();
+                            if (!code) return null;
+                            const v = composicaoValidacaoByCodigo[code];
+                            if (!v) return composicaoServicoCodes.has(code) ? <Check className="h-4 w-4 text-green-600" /> : null;
+                            if (v.status === "SEM_COMPOSICAO")
+                              return <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Sem composição</span>;
+                            if (v.status === "DIVERGENTE")
+                              return (
+                                <span
+                                  className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800"
+                                  title={`Planilha: ${moeda(Number(v.totalPlanilha || 0))} | Composição: ${moeda(Number(v.totalComposicao || 0))} | Dif.: ${moeda(Number(v.diff || 0))}`}
+                                >
+                                  Divergente
+                                </span>
+                              );
+                            return <Check className="h-4 w-4 text-green-600" />;
+                          })()}
                         </span>
                       </td>
                       <td className="px-3 py-2">{l.fonte || ""}</td>

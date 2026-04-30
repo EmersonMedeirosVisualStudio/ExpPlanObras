@@ -4428,6 +4428,161 @@ export default async function v1Routes(server: FastifyInstance) {
     return ok(reply, { codes: (rows || []).map((r: any) => String(r.codigoServico || '').trim()).filter(Boolean) });
   });
 
+  server.get('/engenharia/obras/:id/planilha/composicoes/referencias', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensurePlanilhaComposicaoTables(prisma);
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      WITH refs AS (
+        SELECT
+          UPPER(COALESCE(codigo_item,'')) AS codigo,
+          MAX(tipo_item) AS tipo
+        FROM obras_planilhas_composicoes_itens
+        WHERE tenant_id = $1
+          AND id_obra = $2
+          AND COALESCE(tipo_item,'') IN ('COMPOSICAO', 'COMPOSICAO_AUXILIAR')
+          AND COALESCE(codigo_item,'') <> ''
+        GROUP BY UPPER(COALESCE(codigo_item,''))
+      ),
+      defs AS (
+        SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS codigo
+        FROM obras_planilhas_composicoes_itens
+        WHERE tenant_id = $1 AND id_obra = $2 AND COALESCE(codigo_servico,'') <> ''
+      )
+      SELECT
+        r.codigo AS "codigo",
+        r.tipo AS "tipo",
+        (d.codigo IS NOT NULL) AS "definida"
+      FROM refs r
+      LEFT JOIN defs d ON d.codigo = r.codigo
+      ORDER BY r.codigo
+      `,
+      ctx.tenantId,
+      idObra
+    )) as any[];
+
+    return ok(reply, {
+      referencias: (rows || []).map((r: any) => ({
+        codigo: String(r.codigo || '').trim(),
+        tipo: String(r.tipo || '').trim(),
+        definida: Boolean(r.definida),
+      })),
+    });
+  });
+
+  server.get('/engenharia/obras/:id/planilha/composicoes/validacao', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const q = z.object({ planilhaId: z.coerce.number().int().positive().optional() }).parse(request.query || {});
+    const idObra = Number(id);
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensurePlanilhaOrcamentariaTables(prisma);
+    await ensurePlanilhaComposicaoTables(prisma);
+
+    let idPlanilha = q.planilhaId != null ? Number(q.planilhaId) : 0;
+    if (!idPlanilha) {
+      const row = (await prisma.$queryRawUnsafe(
+        `
+        SELECT id_planilha AS "idPlanilha"
+        FROM obras_planilhas_versoes
+        WHERE tenant_id = $1 AND id_obra = $2 AND atual = TRUE
+        ORDER BY numero_versao DESC, id_planilha DESC
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        idObra
+      )) as any[];
+      idPlanilha = row?.[0]?.idPlanilha != null ? Number(row[0].idPlanilha) : 0;
+    }
+    if (!idPlanilha) return ok(reply, { planilhaId: null, bdiPercent: 0, lsPercent: 0, rows: [] });
+
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      WITH planilha_params AS (
+        SELECT
+          COALESCE(bdi_servicos_sinapi, bdi_servicos_sbc, 0) AS bdi,
+          COALESCE(enc_sociais_sem_des_sinapi, enc_sociais_sem_des_sbc, 0) AS ls
+        FROM obras_planilhas_versoes
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+        LIMIT 1
+      ),
+      planilha_servicos AS (
+        SELECT
+          UPPER(COALESCE(codigo,'')) AS codigo_servico,
+          COALESCE(MAX(servico), '') AS servico,
+          SUM(COALESCE(valor_parcial, 0)) AS total_planilha
+        FROM obras_planilhas_linhas
+        WHERE tenant_id = $1
+          AND id_planilha = $3
+          AND tipo_linha = 'SERVICO'
+          AND COALESCE(codigo,'') <> ''
+        GROUP BY UPPER(COALESCE(codigo,''))
+      ),
+      comps AS (
+        SELECT
+          UPPER(COALESCE(codigo_servico,'')) AS codigo_servico,
+          COUNT(*) AS qtd_itens,
+          SUM(COALESCE(quantidade,0) * COALESCE(valor_unitario,0)) FILTER (WHERE COALESCE(tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
+          SUM(COALESCE(quantidade,0) * COALESCE(valor_unitario,0)) FILTER (WHERE COALESCE(tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
+        FROM obras_planilhas_composicoes_itens
+        WHERE tenant_id = $1 AND id_obra = $2
+        GROUP BY UPPER(COALESCE(codigo_servico,''))
+      )
+      SELECT
+        s.codigo_servico AS "codigoServico",
+        s.servico AS "servico",
+        s.total_planilha AS "totalPlanilha",
+        COALESCE(c.qtd_itens, 0) AS "qtdItens",
+        COALESCE(c.total_base, 0) AS "totalBase",
+        COALESCE(c.total_mao_base, 0) AS "totalMaoBase",
+        (SELECT bdi FROM planilha_params) AS "bdiPercent",
+        (SELECT ls FROM planilha_params) AS "lsPercent"
+      FROM planilha_servicos s
+      LEFT JOIN comps c ON c.codigo_servico = s.codigo_servico
+      ORDER BY s.codigo_servico
+      `,
+      ctx.tenantId,
+      idObra,
+      idPlanilha
+    )) as any[];
+
+    const bdiPercent = rows?.[0]?.bdiPercent == null ? 0 : Number(rows[0].bdiPercent);
+    const lsPercent = rows?.[0]?.lsPercent == null ? 0 : Number(rows[0].lsPercent);
+
+    const out = (rows || []).map((r: any) => {
+      const totalPlanilha = r.totalPlanilha == null ? 0 : Number(r.totalPlanilha);
+      const totalBase = r.totalBase == null ? 0 : Number(r.totalBase);
+      const totalMaoBase = r.totalMaoBase == null ? 0 : Number(r.totalMaoBase);
+      const totalComLS = (totalBase - totalMaoBase) + totalMaoBase * (1 + (lsPercent || 0) / 100);
+      const totalComLSComBDI = totalComLS * (1 + (bdiPercent || 0) / 100);
+      const diff = totalPlanilha - totalComLSComBDI;
+      const hasComposicao = Number(r.qtdItens || 0) > 0;
+      const status = !hasComposicao ? 'SEM_COMPOSICAO' : Math.abs(diff) > 0.01 ? 'DIVERGENTE' : 'OK';
+      return {
+        codigoServico: String(r.codigoServico || '').trim(),
+        servico: String(r.servico || ''),
+        totalPlanilha,
+        totalComposicao: Number(totalComLSComBDI.toFixed(6)),
+        diff: Number(diff.toFixed(6)),
+        status,
+        qtdItens: Number(r.qtdItens || 0),
+      };
+    });
+
+    return ok(reply, { planilhaId: idPlanilha, bdiPercent, lsPercent, rows: out });
+  });
+
   server.post('/engenharia/obras/:id/planilha/composicoes/importar-csv', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
