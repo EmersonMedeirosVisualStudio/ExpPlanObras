@@ -203,6 +203,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
   const [obraStatus, setObraStatus] = useState<string | null>(null);
   const [obraResumo, setObraResumo] = useState<ObraResumo | null>(null);
   const [versoes, setVersoes] = useState<VersaoRow[]>([]);
@@ -273,6 +274,10 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     descontoSbc: "",
     descontoSinapi: "",
   });
+
+  const [paramErrors, setParamErrors] = useState<Partial<Record<keyof typeof parametros, string>>>({});
+  const [linhaErrors, setLinhaErrors] = useState<Partial<Record<keyof typeof novo, string>>>({});
+  const [somenteItens, setSomenteItens] = useState(false);
 
   const podeEditar = useMemo(() => {
     return true;
@@ -551,6 +556,28 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   async function salvarParametros() {
     if (!planilha) return;
     try {
+      setOkMsg(null);
+      const nextErrors: Partial<Record<keyof typeof parametros, string>> = {};
+      const numericKeys: Array<keyof typeof parametros> = [
+        "bdiServicosSbc",
+        "bdiServicosSinapi",
+        "bdiDiferenciadoSbc",
+        "bdiDiferenciadoSinapi",
+        "encSociaisSemDesSbc",
+        "encSociaisSemDesSinapi",
+        "descontoSbc",
+        "descontoSinapi",
+      ];
+      for (const k of numericKeys) {
+        const v = String((parametros as any)[k] ?? "").trim();
+        if (!v) continue;
+        if (parseNumberLoose(v) == null) nextErrors[k] = "Número inválido";
+      }
+      setParamErrors(nextErrors);
+      if (Object.keys(nextErrors).length) {
+        setErr("Corrija os campos destacados antes de salvar.");
+        return;
+      }
       setLoading(true);
       setErr(null);
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
@@ -577,6 +604,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao salvar parâmetros");
       await carregarPlanilha(planilha.idPlanilha);
       await carregarVersoes();
+      setOkMsg("Parâmetros salvos com sucesso.");
     } catch (e: any) {
       setErr(e?.message || "Erro ao salvar parâmetros");
     } finally {
@@ -584,12 +612,55 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     }
   }
 
+  function calcValorParcialLinha(quant: string, valorUnitario: string) {
+    const q = parseNumberLoose(quant);
+    const v = parseNumberLoose(valorUnitario);
+    if (q == null || v == null) return null;
+    if (!(q > 0) || !(v >= 0)) return null;
+    const parcial = Number((q * v).toFixed(2));
+    if (!Number.isFinite(parcial)) return null;
+    return parcial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function applyValorParcialAuto(next: typeof novo) {
+    if (next.tipoLinha !== "SERVICO") return { ...next, valorParcial: "" };
+    const calc = calcValorParcialLinha(next.quant, next.valorUnitario);
+    return { ...next, valorParcial: calc ?? "" };
+  }
+
+  function validateLinha(next: typeof novo) {
+    const errors: Partial<Record<keyof typeof novo, string>> = {};
+    if (!String(next.item || "").trim()) errors.item = "Obrigatório";
+    if (!String(next.servicos || "").trim()) errors.servicos = "Obrigatório";
+    if (next.tipoLinha === "SERVICO") {
+      if (!String(next.codigo || "").trim()) errors.codigo = "Obrigatório";
+      if (!String(next.und || "").trim()) errors.und = "Obrigatório";
+      const q = parseNumberLoose(next.quant);
+      if (q == null || !(q > 0)) errors.quant = "Inválido";
+      const v = parseNumberLoose(next.valorUnitario);
+      if (v == null || !(v >= 0)) errors.valorUnitario = "Inválido";
+      const vp = calcValorParcialLinha(next.quant, next.valorUnitario);
+      if (!vp) errors.valorParcial = "Inválido";
+    }
+    return errors;
+  }
+
   async function salvarLinha() {
     if (!planilha) return;
     try {
+      setOkMsg(null);
       setLoading(true);
       setErr(null);
-      const ordem = Number(novo.ordem || 0) || ((planilha.linhas || []).reduce((m, l) => Math.max(m, Number(l.ordem || 0)), 0) + 1);
+      setLinhaErrors({});
+      const normalized = applyValorParcialAuto({ ...novo });
+      const nextErrors = validateLinha(normalized);
+      setLinhaErrors(nextErrors);
+      if (Object.keys(nextErrors).length) {
+        setErr("Corrija os campos destacados antes de salvar.");
+        setLoading(false);
+        return;
+      }
+      const ordem = Number(normalized.ordem || 0) || ((planilha.linhas || []).reduce((m, l) => Math.max(m, Number(l.ordem || 0)), 0) + 1);
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -599,15 +670,15 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
           linha: {
             idLinha: editingLinhaId,
             ordem,
-            item: novo.item,
-            codigo: novo.codigo,
-            fonte: novo.fonte,
-            servicos: novo.servicos,
-            und: novo.und,
-            quant: novo.quant,
-            valorUnitario: novo.valorUnitario,
-            valorParcial: novo.valorParcial,
-            tipoLinha: novo.tipoLinha,
+            item: normalized.item,
+            codigo: normalized.codigo,
+            fonte: normalized.fonte,
+            servicos: normalized.servicos,
+            und: normalized.und,
+            quant: normalized.quant,
+            valorUnitario: normalized.valorUnitario,
+            valorParcial: normalized.valorParcial,
+            tipoLinha: normalized.tipoLinha,
           },
         }),
       });
@@ -617,6 +688,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       setEditingLinhaId(null);
       await carregarPlanilha(planilha.idPlanilha);
       await carregarVersoes();
+      setOkMsg(editingLinhaId ? "Serviço atualizado com sucesso." : "Linha salva com sucesso.");
     } catch (e: any) {
       setErr(e?.message || "Erro ao salvar linha");
     } finally {
@@ -662,6 +734,8 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       valorUnitario: String(l.valorUnitario || ""),
       valorParcial: String(l.valorParcial || ""),
     });
+    setLinhaErrors({});
+    setOkMsg(null);
   }
 
   async function importarCsv(file: File, nomeVersao?: string) {
@@ -787,6 +861,13 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     return Number(total.toFixed(2));
   }, [planilha]);
 
+  const diffPrevistoPlanilha = useMemo(() => {
+    if (!obraResumo || obraResumo.valorPrevisto == null) return null;
+    if (!planilha) return null;
+    const diff = Number((obraResumo.valorPrevisto || 0) - (valorTotalPlanilha || 0));
+    return Number.isFinite(diff) ? diff : null;
+  }, [obraResumo, planilha, valorTotalPlanilha]);
+
   const subtotalByItemKey = useMemo(() => {
     const map = new Map<string, number>();
     const rows = planilha?.linhas || [];
@@ -816,6 +897,12 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     return Number(total.toFixed(2));
   }, [importPreview]);
 
+  const linhasVisiveis = useMemo(() => {
+    const rows = planilha?.linhas || [];
+    if (!somenteItens) return rows;
+    return rows.filter((l) => l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM");
+  }, [planilha, somenteItens]);
+
   return (
     <div className="p-6 space-y-6 max-w-7xl text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -830,13 +917,22 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
               <span>Status: {obraResumo.status ? obraResumo.status : "—"}</span>
               {" • "}
               <span>Contrato: {obraResumo.contratoNumero ? obraResumo.contratoNumero : obraResumo.contratoId ? `#${obraResumo.contratoId}` : "—"}</span>
-              {" • "}
-              <span>Valor previsto: {obraResumo.valorPrevisto == null ? "—" : moeda(Number(obraResumo.valorPrevisto || 0))}</span>
-              {" • "}
-              <span>
-                Diferença (previsto - planilha):{" "}
-                {obraResumo.valorPrevisto == null || !planilha ? "—" : moeda(Number((obraResumo.valorPrevisto || 0) - valorTotalPlanilha))}
-              </span>
+              {(obraResumo.valorPrevisto != null || (diffPrevistoPlanilha != null && Math.abs(diffPrevistoPlanilha) >= 0.01)) ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {obraResumo.valorPrevisto != null ? (
+                    <div className="rounded-lg border bg-white px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Valor previsto</div>
+                      <div className="text-sm font-semibold text-slate-900">{moeda(Number(obraResumo.valorPrevisto || 0))}</div>
+                    </div>
+                  ) : null}
+                  {diffPrevistoPlanilha != null && Math.abs(diffPrevistoPlanilha) >= 0.01 ? (
+                    <div className="rounded-lg border bg-white px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Diferença (previsto - planilha)</div>
+                      <div className="text-sm font-semibold text-red-700">{moeda(Number(diffPrevistoPlanilha || 0))}</div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -895,6 +991,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
         </div>
       </div>
 
+      {okMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{okMsg}</div> : null}
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
 
       {importPreview.file ? (
@@ -1080,17 +1177,33 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                       <td className="px-3 py-2">{label}</td>
                       <td className="px-3 py-2">
                         <input
-                          className="input bg-white"
+                          className={`input bg-white ${paramErrors[a as keyof typeof parametros] ? "border-red-300 bg-red-50" : ""}`}
                           value={(parametros as any)[a]}
-                          onChange={(e) => setParametros((p) => ({ ...p, [a]: e.target.value } as any))}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setParametros((p) => ({ ...p, [a]: v } as any));
+                            setParamErrors((p) => {
+                              if (!(a in p)) return p;
+                              const { [a]: _, ...rest } = p as any;
+                              return rest;
+                            });
+                          }}
                           disabled={!podeEditar}
                         />
                       </td>
                       <td className="px-3 py-2">
                         <input
-                          className="input bg-white"
+                          className={`input bg-white ${paramErrors[b as keyof typeof parametros] ? "border-red-300 bg-red-50" : ""}`}
                           value={(parametros as any)[b]}
-                          onChange={(e) => setParametros((p) => ({ ...p, [b]: e.target.value } as any))}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setParametros((p) => ({ ...p, [b]: v } as any));
+                            setParamErrors((p) => {
+                              if (!(b in p)) return p;
+                              const { [b]: _, ...rest } = p as any;
+                              return rest;
+                            });
+                          }}
                           disabled={!podeEditar}
                         />
                       </td>
@@ -1105,7 +1218,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="text-lg font-semibold">Planilha orçamentária (itens)</div>
               <div className="flex items-center gap-3 flex-wrap text-sm text-slate-600">
-                <div>{planilha.linhas.length} linha(s)</div>
+                <div>{linhasVisiveis.length} linha(s)</div>
                 <div>Valor total: <span className="font-semibold text-slate-900">{moeda(Number(valorTotalPlanilha || 0))}</span></div>
               </div>
             </div>
@@ -1113,6 +1226,10 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             <div className="flex items-center justify-between gap-3 flex-wrap rounded-lg border bg-white p-3">
               <div className="text-sm font-semibold">Visual</div>
               <div className="flex items-center gap-3 flex-wrap">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={somenteItens} onChange={(e) => setSomenteItens(Boolean(e.target.checked))} />
+                  <span className="text-slate-600">Somente itens</span>
+                </label>
                 <label className="flex items-center gap-2 text-sm">
                   <span className="text-slate-600">Fonte</span>
                   <select
@@ -1139,11 +1256,26 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             </div>
 
             <div className="rounded-lg border bg-slate-50 p-3 space-y-3">
-              <div className="text-sm font-semibold">Adicionar linha</div>
+              <div className="text-sm font-semibold">
+                {editingLinhaId ? (novo.tipoLinha === "SERVICO" ? "Editar serviço" : "Editar linha") : novo.tipoLinha === "SERVICO" ? "Adicionar serviço" : "Adicionar linha"}
+              </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-10">
                 <div className="md:col-span-2">
                   <div className="text-sm text-slate-600">Tipo</div>
-                  <select className="input bg-white" value={novo.tipoLinha} onChange={(e) => setNovo((p) => ({ ...p, tipoLinha: e.target.value as any }))} disabled={!podeEditar}>
+                  <select
+                    className={`input bg-white ${linhaErrors.tipoLinha ? "border-red-300 bg-red-50" : ""}`}
+                    value={novo.tipoLinha}
+                    onChange={(e) => {
+                      const tipoLinha = e.target.value as any;
+                      setNovo((p) => applyValorParcialAuto({ ...p, tipoLinha }));
+                      setLinhaErrors((p) => {
+                        if (!("tipoLinha" in p)) return p;
+                        const { tipoLinha: _, ...rest } = p as any;
+                        return rest;
+                      });
+                    }}
+                    disabled={!podeEditar}
+                  >
                     <option value="ITEM">Item</option>
                     <option value="SUBITEM">Subitem</option>
                     <option value="SERVICO">Serviço</option>
@@ -1155,11 +1287,39 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                 </div>
                 <div>
                   <div className="text-sm text-slate-600">ITEM</div>
-                  <input className="input bg-white" value={novo.item} onChange={(e) => setNovo((p) => ({ ...p, item: e.target.value }))} disabled={!podeEditar} placeholder="1.1" />
+                  <input
+                    className={`input bg-white ${linhaErrors.item ? "border-red-300 bg-red-50" : ""}`}
+                    value={novo.item}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setNovo((p) => ({ ...p, item: v }));
+                      setLinhaErrors((p) => {
+                        if (!("item" in p)) return p;
+                        const { item: _, ...rest } = p as any;
+                        return rest;
+                      });
+                    }}
+                    disabled={!podeEditar}
+                    placeholder="1.1"
+                  />
                 </div>
                 <div>
                   <div className="text-sm text-slate-600">CÓDIGO</div>
-                  <input className="input bg-white" value={novo.codigo} onChange={(e) => setNovo((p) => ({ ...p, codigo: e.target.value }))} disabled={!podeEditar} placeholder="SER-0001" />
+                  <input
+                    className={`input bg-white ${linhaErrors.codigo ? "border-red-300 bg-red-50" : ""}`}
+                    value={novo.codigo}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setNovo((p) => ({ ...p, codigo: v }));
+                      setLinhaErrors((p) => {
+                        if (!("codigo" in p)) return p;
+                        const { codigo: _, ...rest } = p as any;
+                        return rest;
+                      });
+                    }}
+                    disabled={!podeEditar}
+                    placeholder="SER-0001"
+                  />
                 </div>
                 <div>
                   <div className="text-sm text-slate-600">FONTE</div>
@@ -1167,25 +1327,85 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                 </div>
                 <div className="md:col-span-2">
                   <div className="text-sm text-slate-600">SERVIÇOS</div>
-                  <input className="input bg-white" value={novo.servicos} onChange={(e) => setNovo((p) => ({ ...p, servicos: e.target.value }))} disabled={!podeEditar} />
+                  <input
+                    className={`input bg-white ${linhaErrors.servicos ? "border-red-300 bg-red-50" : ""}`}
+                    value={novo.servicos}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setNovo((p) => ({ ...p, servicos: v }));
+                      setLinhaErrors((p) => {
+                        if (!("servicos" in p)) return p;
+                        const { servicos: _, ...rest } = p as any;
+                        return rest;
+                      });
+                    }}
+                    disabled={!podeEditar}
+                  />
                 </div>
                 <div>
                   <div className="text-sm text-slate-600">UND</div>
-                  <input className="input bg-white" value={novo.und} onChange={(e) => setNovo((p) => ({ ...p, und: e.target.value }))} disabled={!podeEditar} placeholder="m²" />
+                  <input
+                    className={`input bg-white ${linhaErrors.und ? "border-red-300 bg-red-50" : ""}`}
+                    value={novo.und}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setNovo((p) => ({ ...p, und: v }));
+                      setLinhaErrors((p) => {
+                        if (!("und" in p)) return p;
+                        const { und: _, ...rest } = p as any;
+                        return rest;
+                      });
+                    }}
+                    disabled={!podeEditar}
+                    placeholder="m²"
+                  />
                 </div>
                 <div>
                   <div className="text-sm text-slate-600">QUANT.</div>
-                  <input className="input bg-white" value={novo.quant} onChange={(e) => setNovo((p) => ({ ...p, quant: e.target.value }))} disabled={!podeEditar} />
+                  <input
+                    className={`input bg-white ${linhaErrors.quant ? "border-red-300 bg-red-50" : ""}`}
+                    value={novo.quant}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setNovo((p) => applyValorParcialAuto({ ...p, quant: v }));
+                      setLinhaErrors((p) => {
+                        if (!("quant" in p) && !("valorParcial" in p)) return p;
+                        const { quant: _q, valorParcial: _vp, ...rest } = p as any;
+                        return rest;
+                      });
+                    }}
+                    onBlur={() => setNovo((p) => applyValorParcialAuto({ ...p }))}
+                    disabled={!podeEditar}
+                  />
                 </div>
                 <div>
                   <div className="text-sm text-slate-600">VALOR UNIT.</div>
-                  <input className="input bg-white" value={novo.valorUnitario} onChange={(e) => setNovo((p) => ({ ...p, valorUnitario: e.target.value }))} disabled={!podeEditar} />
+                  <input
+                    className={`input bg-white ${linhaErrors.valorUnitario ? "border-red-300 bg-red-50" : ""}`}
+                    value={novo.valorUnitario}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setNovo((p) => applyValorParcialAuto({ ...p, valorUnitario: v }));
+                      setLinhaErrors((p) => {
+                        if (!("valorUnitario" in p) && !("valorParcial" in p)) return p;
+                        const { valorUnitario: _vu, valorParcial: _vp, ...rest } = p as any;
+                        return rest;
+                      });
+                    }}
+                    onBlur={() => setNovo((p) => applyValorParcialAuto({ ...p }))}
+                    disabled={!podeEditar}
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
                 <div className="md:col-span-2">
                   <div className="text-sm text-slate-600">VALOR PARCIAL</div>
-                  <input className="input bg-white" value={novo.valorParcial} onChange={(e) => setNovo((p) => ({ ...p, valorParcial: e.target.value }))} disabled={!podeEditar} />
+                  <input
+                    className={`input bg-white ${linhaErrors.valorParcial ? "border-red-300 bg-red-50" : ""}`}
+                    value={novo.valorParcial}
+                    readOnly={novo.tipoLinha === "SERVICO"}
+                    disabled={!podeEditar}
+                  />
                 </div>
                 <div className="md:col-span-4 flex items-end justify-end">
                   <div className="flex items-center gap-2">
@@ -1196,6 +1416,8 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                         onClick={() => {
                           setEditingLinhaId(null);
                           setNovo({ tipoLinha: "SERVICO", ordem: "", item: "", codigo: "", fonte: "", servicos: "", und: "", quant: "", valorUnitario: "", valorParcial: "" });
+                          setLinhaErrors({});
+                          setOkMsg(null);
                         }}
                         disabled={loading}
                       >
@@ -1226,7 +1448,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                   </tr>
                 </thead>
                 <tbody>
-                  {planilha.linhas.map((l) => (
+                  {linhasVisiveis.map((l) => (
                     <tr
                       key={l.idLinha}
                       className={`border-t ${l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM" ? "font-bold" : ""}`}
