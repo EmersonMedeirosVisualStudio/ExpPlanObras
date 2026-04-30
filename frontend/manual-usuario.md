@@ -102,6 +102,9 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 - A grade mostra as linhas do CSV antes de gravar
 - Campos com erro ficam destacados (ex.: item vazio, serviço sem código, quant inválida)
 - O sistema calcula o **valor parcial** automaticamente (quant × valor_unitario)
+- Itens e subitens ficam em **negrito** para facilitar leitura
+- Você pode ajustar o **tamanho da fonte** e as **cores de fundo** de Item/Subitem (essas preferências ficam salvas no seu usuário)
+- A tela mostra o **Valor total** da planilha
 
 ### ETAPA 5 — Como validar
 - Clique em **Confirmar importação**

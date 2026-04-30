@@ -1669,6 +1669,8 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 - Importação e criação de versões não são bloqueadas pelo status da obra; a edição é permitida apenas na versão atual
 - Importação CSV com **prévia**: antes de gravar, o sistema mostra uma grade de conferência e destaca campos inválidos
 - Colunas importadas (CSV): `item`, `codigo`, `fonte`, `servicos`, `und`, `quant`, `valor_unitario` (o **valor parcial** é calculado automaticamente)
+- Visual da planilha: linhas do tipo **Item** e **Subitem** são exibidas em negrito; o usuário pode definir **tamanho da fonte** e **cor de fundo** (Item/Subitem) e essas preferências ficam salvas para o usuário
+- A planilha exibe o **Valor total** (soma dos serviços)
 
 #### Validação
 

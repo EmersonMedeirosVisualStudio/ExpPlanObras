@@ -168,6 +168,16 @@ type ObraResumo = {
   valorPrevisto: number | null;
 };
 
+function getUserPrefKey() {
+  try {
+    const raw = localStorage.getItem("user");
+    const u = raw ? (JSON.parse(raw) as any) : null;
+    const id = u?.id != null ? Number(u.id) : NaN;
+    if (Number.isFinite(id) && id > 0) return `exp:planilha:prefs:${id}`;
+  } catch {}
+  return "exp:planilha:prefs";
+}
+
 export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: number; returnTo: string | null }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -203,6 +213,12 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     missingColumns: string[];
   }>({ file: null, nomeVersao: "", rows: [], missingColumns: [] });
 
+  const [uiPrefs, setUiPrefs] = useState<{ fontSizePx: number; itemBg: string; subitemBg: string }>({
+    fontSizePx: 14,
+    itemBg: "#F8FAFC",
+    subitemBg: "#FFFFFF",
+  });
+
   const [novo, setNovo] = useState({
     tipoLinha: "SERVICO" as "ITEM" | "SUBITEM" | "SERVICO",
     ordem: "",
@@ -233,6 +249,30 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     if (!planilha) return true;
     return Boolean(planilha.atual);
   }, [planilha, obraStatus]);
+
+  useEffect(() => {
+    try {
+      const key = getUserPrefKey();
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as any;
+      const fontSizePx = parsed?.fontSizePx != null ? Number(parsed.fontSizePx) : NaN;
+      const itemBg = typeof parsed?.itemBg === "string" ? String(parsed.itemBg) : "";
+      const subitemBg = typeof parsed?.subitemBg === "string" ? String(parsed.subitemBg) : "";
+      setUiPrefs((p) => ({
+        fontSizePx: Number.isFinite(fontSizePx) && fontSizePx >= 10 && fontSizePx <= 22 ? fontSizePx : p.fontSizePx,
+        itemBg: itemBg && itemBg.startsWith("#") ? itemBg : p.itemBg,
+        subitemBg: subitemBg && subitemBg.startsWith("#") ? subitemBg : p.subitemBg,
+      }));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      const key = getUserPrefKey();
+      localStorage.setItem(key, JSON.stringify(uiPrefs));
+    } catch {}
+  }, [uiPrefs]);
 
   const breadcrumb = useMemo(() => {
     const base = "Engenharia";
@@ -628,6 +668,18 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     return importPreview.rows.some((r) => Object.keys(r.errors || {}).length > 0);
   }, [importPreview]);
 
+  const valorTotalPlanilha = useMemo(() => {
+    const rows = planilha?.linhas || [];
+    let total = 0;
+    for (const l of rows) {
+      if (String(l.tipoLinha || "").toUpperCase() !== "SERVICO") continue;
+      const s = String(l.valorParcial || "").trim().replace(",", ".");
+      const n = Number(s);
+      if (Number.isFinite(n)) total += n;
+    }
+    return Number(total.toFixed(2));
+  }, [planilha]);
+
   return (
     <div className="p-6 space-y-6 max-w-7xl text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -895,7 +947,38 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
           <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="text-lg font-semibold">Planilha orçamentária (itens)</div>
-              <div className="text-sm text-slate-600">{planilha.linhas.length} linha(s)</div>
+              <div className="flex items-center gap-3 flex-wrap text-sm text-slate-600">
+                <div>{planilha.linhas.length} linha(s)</div>
+                <div>Valor total: <span className="font-semibold text-slate-900">{moeda(Number(valorTotalPlanilha || 0))}</span></div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 flex-wrap rounded-lg border bg-white p-3">
+              <div className="text-sm font-semibold">Visual</div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-slate-600">Fonte</span>
+                  <select
+                    className="input bg-white"
+                    value={String(uiPrefs.fontSizePx)}
+                    onChange={(e) => setUiPrefs((p) => ({ ...p, fontSizePx: Number(e.target.value || 14) }))}
+                  >
+                    <option value="12">12</option>
+                    <option value="14">14</option>
+                    <option value="16">16</option>
+                    <option value="18">18</option>
+                    <option value="20">20</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-slate-600">Fundo Item</span>
+                  <input type="color" value={uiPrefs.itemBg} onChange={(e) => setUiPrefs((p) => ({ ...p, itemBg: e.target.value }))} />
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-slate-600">Fundo Subitem</span>
+                  <input type="color" value={uiPrefs.subitemBg} onChange={(e) => setUiPrefs((p) => ({ ...p, subitemBg: e.target.value }))} />
+                </label>
+              </div>
             </div>
 
             <div className="rounded-lg border bg-slate-50 p-3 space-y-3">
@@ -956,7 +1039,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             </div>
 
             <div className="overflow-auto">
-              <table className="min-w-[1100px] w-full text-sm">
+              <table className="min-w-[1100px] w-full" style={{ fontSize: `${uiPrefs.fontSizePx}px` }}>
                 <thead className="bg-slate-50 text-left text-slate-700">
                   <tr>
                     <th className="px-3 py-2">ITEM</th>
@@ -972,15 +1055,21 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                 </thead>
                 <tbody>
                   {planilha.linhas.map((l) => (
-                    <tr key={l.idLinha} className="border-t">
-                      <td className="px-3 py-2">{l.item || "-"}</td>
-                      <td className="px-3 py-2">{l.codigo || "-"}</td>
-                      <td className="px-3 py-2">{l.fonte || "-"}</td>
-                      <td className="px-3 py-2">{l.servicos || "-"}</td>
-                      <td className="px-3 py-2">{l.und || "-"}</td>
-                      <td className="px-3 py-2 text-right">{l.quant || "-"}</td>
-                      <td className="px-3 py-2 text-right">{l.valorUnitario || "-"}</td>
-                      <td className="px-3 py-2 text-right">{l.valorParcial || "-"}</td>
+                    <tr
+                      key={l.idLinha}
+                      className={`border-t ${l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM" ? "font-bold" : ""}`}
+                      style={{
+                        backgroundColor: l.tipoLinha === "ITEM" ? uiPrefs.itemBg : l.tipoLinha === "SUBITEM" ? uiPrefs.subitemBg : undefined,
+                      }}
+                    >
+                      <td className="px-3 py-2">{l.item || ""}</td>
+                      <td className="px-3 py-2">{l.codigo || ""}</td>
+                      <td className="px-3 py-2">{l.fonte || ""}</td>
+                      <td className="px-3 py-2">{l.servicos || ""}</td>
+                      <td className="px-3 py-2">{l.und || ""}</td>
+                      <td className="px-3 py-2 text-right">{l.quant || ""}</td>
+                      <td className="px-3 py-2 text-right">{l.valorUnitario || ""}</td>
+                      <td className="px-3 py-2 text-right">{l.valorParcial || ""}</td>
                       <td className="px-3 py-2">
                         <button className="rounded border px-2 py-1 text-xs text-red-700 disabled:opacity-60" type="button" onClick={() => excluirLinha(l.idLinha)} disabled={!podeEditar || loading}>
                           Excluir
