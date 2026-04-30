@@ -395,11 +395,11 @@ async function ensurePlanilhaOrcamentariaTables(tx: any) {
       tenant_id BIGINT NOT NULL,
       id_planilha BIGINT NOT NULL,
       ordem INT NOT NULL DEFAULT 0,
-      item VARCHAR(40) NULL,
+      item VARCHAR(80) NULL,
       codigo VARCHAR(80) NULL,
-      fonte VARCHAR(40) NULL,
-      servico VARCHAR(260) NULL,
-      und VARCHAR(16) NULL,
+      fonte VARCHAR(80) NULL,
+      servico VARCHAR(800) NULL,
+      und VARCHAR(40) NULL,
       quantidade NUMERIC(14,4) NULL,
       valor_unitario NUMERIC(14,6) NULL,
       valor_parcial NUMERIC(14,6) NULL,
@@ -411,6 +411,12 @@ async function ensurePlanilhaOrcamentariaTables(tx: any) {
   `);
   await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_linhas_idx_planilha ON obras_planilhas_linhas (tenant_id, id_planilha, ordem, id_linha)`);
   await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_linhas_idx_tipo ON obras_planilhas_linhas (tenant_id, id_planilha, tipo_linha)`);
+
+  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_linhas ALTER COLUMN item TYPE VARCHAR(80)`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_linhas ALTER COLUMN codigo TYPE VARCHAR(80)`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_linhas ALTER COLUMN fonte TYPE VARCHAR(80)`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_linhas ALTER COLUMN servico TYPE VARCHAR(800)`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_linhas ALTER COLUMN und TYPE VARCHAR(40)`).catch(() => null);
 }
 
 const ORGANOGRAMA_CARGOS_BASE = [
@@ -4074,11 +4080,11 @@ export default async function v1Routes(server: FastifyInstance) {
           return {
             ok: true as const,
             ordem: i + 1,
-            item: item ? String(item).slice(0, 40) : null,
+            item: item ? String(item).slice(0, 80) : null,
             codigo: codigo ? String(codigo).slice(0, 80) : null,
-            fonte: fonte ? String(fonte).slice(0, 40) : null,
-            servico: servicos ? String(servicos).slice(0, 260) : null,
-            und: und ? String(und).slice(0, 16) : null,
+            fonte: fonte ? String(fonte).slice(0, 80) : null,
+            servico: servicos ? String(servicos).slice(0, 800) : null,
+            und: und ? String(und).slice(0, 40) : null,
             quantidade: quantidade == null ? null : quantidade,
             valorUnitario: vUnit == null ? null : vUnit,
             valorParcial: valorParcialCalc,
