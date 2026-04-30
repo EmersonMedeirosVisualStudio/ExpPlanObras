@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Check } from "lucide-react";
+import { Download, Check, Printer, FileText, FileSpreadsheet, Pencil, Trash2, XCircle, TriangleAlert } from "lucide-react";
 
 type ComposicaoItem = {
   idItemBase: number;
@@ -243,7 +243,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   }>({ file: null, nomeVersao: "", rows: [], missingColumns: [] });
 
   const [uiPrefs, setUiPrefs] = useState<{ fontSizePx: number; itemBg: string; subitemBg: string }>({
-    fontSizePx: 14,
+    fontSizePx: 12,
     itemBg: "#F8FAFC",
     subitemBg: "#FFFFFF",
   });
@@ -399,6 +399,108 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  }
+
+  function exportarCsvPlanilha() {
+    if (!planilha) return;
+    const sep = ";";
+    const headers = ["item", "codigo", "fonte", "servicos", "und", "quant", "valor_unitario", "valor_parcial", "tipo_linha"];
+    const lines = [headers.join(sep)];
+    for (const l of planilha.linhas || []) {
+      lines.push(
+        [
+          String(l.item || ""),
+          String(l.codigo || ""),
+          String(l.fonte || ""),
+          String(l.servicos || ""),
+          String(l.und || ""),
+          String(l.quant || ""),
+          String(l.valorUnitario || ""),
+          String(l.valorParcial || ""),
+          String(l.tipoLinha || ""),
+        ]
+          .map((v) => (String(v).includes(sep) || String(v).includes('"') || String(v).includes("\n") ? `"${String(v).replace(/"/g, '""')}"` : String(v)))
+          .join(sep)
+      );
+    }
+    const csv = `${lines.join("\n")}\n`;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `planilha_obra_${idObra}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function imprimirOuPdf(modo: "IMPRIMIR" | "PDF") {
+    if (!planilha) return;
+    const w = window.open("", "_blank");
+    if (!w) {
+      window.print();
+      return;
+    }
+    const title = modo === "PDF" ? `Planilha orçamentária (PDF) — Obra #${idObra}` : `Planilha orçamentária — Obra #${idObra}`;
+    const rowsHtml = (planilha.linhas || [])
+      .map((l) => {
+        const tipo = String(l.tipoLinha || "");
+        const isBold = tipo === "ITEM" || tipo === "SUBITEM";
+        const style = isBold ? "font-weight:700;" : "";
+        return `<tr style="${style}">
+          <td>${String(l.item || "")}</td>
+          <td>${String(l.codigo || "")}</td>
+          <td>${String(l.fonte || "")}</td>
+          <td>${String(l.servicos || "")}</td>
+          <td>${String(l.und || "")}</td>
+          <td style="text-align:right">${String(l.quant || "")}</td>
+          <td style="text-align:right">${String(l.valorUnitario || "")}</td>
+          <td style="text-align:right">${String(l.valorParcial || "")}</td>
+        </tr>`;
+      })
+      .join("");
+
+    w.document.open();
+    w.document.write(`<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${title}</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 16px; color: #0f172a; }
+      h1 { font-size: 18px; margin: 0 0 12px 0; }
+      table { width: 100%; border-collapse: collapse; font-size: 11px; }
+      th, td { border: 1px solid #e2e8f0; padding: 6px 8px; vertical-align: top; }
+      th { background: #f8fafc; text-align: left; }
+    </style>
+  </head>
+  <body>
+    <h1>${title}</h1>
+    <table>
+      <thead>
+        <tr>
+          <th>ITEM</th>
+          <th>CÓDIGO</th>
+          <th>FONTE</th>
+          <th>SERVIÇOS</th>
+          <th>UND</th>
+          <th style="text-align:right">QUANT.</th>
+          <th style="text-align:right">VALOR UNIT.</th>
+          <th style="text-align:right">VALOR PARCIAL</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+    </table>
+  </body>
+</html>`);
+    w.document.close();
+    w.focus();
+    w.print();
+    w.close();
   }
 
   async function carregarVersoes() {
@@ -950,26 +1052,6 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
           <div className="text-xs text-slate-500">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Planilha orçamentária — Obra #{idObra}</h1>
           <div className="text-sm text-slate-600">Versões do orçamento por obra (itens, subitens e serviços). A programação e apropriação usam os serviços da versão atual.</div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-              type="button"
-              onClick={() =>
-                router.push(`/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(`/dashboard/engenharia/obras/${idObra}/planilha`)}`)
-              }
-              disabled={loading}
-            >
-              Composições
-            </button>
-            <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-              type="button"
-              onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(`/dashboard/engenharia/obras/${idObra}/planilha`)}`)}
-              disabled={loading}
-            >
-              Insumos
-            </button>
-          </div>
           {obraResumo ? (
             <div className="mt-2 text-sm text-slate-700">
               <span className="font-semibold">{obraResumo.nome ? obraResumo.nome : `Obra #${idObra}`}</span>
@@ -996,55 +1078,99 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             </div>
           ) : null}
         </div>
-        <div className="flex gap-2 flex-wrap items-center justify-end w-full lg:w-auto ml-auto">
-          <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push(returnTo || `/dashboard/engenharia/obras/${idObra}`)}>
+      </div>
+
+      <div className="rounded-xl border bg-white p-3 shadow-sm">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          <button
+            className={`rounded-lg border px-3 py-2 text-sm ${true ? "bg-blue-600 text-white border-blue-600" : "bg-white hover:bg-slate-50"}`}
+            type="button"
+            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha?returnTo=${encodeURIComponent(returnTo || "")}`)}
+            disabled={loading}
+          >
+            Planilha
+          </button>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+            type="button"
+            onClick={() =>
+              router.push(`/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(returnTo || `/dashboard/engenharia/obras/${idObra}`)}`)
+            }
+            disabled={loading}
+          >
+            Composições
+          </button>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+            type="button"
+            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(returnTo || `/dashboard/engenharia/obras/${idObra}`)}`)}
+            disabled={loading}
+          >
+            Insumos
+          </button>
+          <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push(returnTo || `/dashboard/engenharia/obras/${idObra}`)} disabled={loading}>
             Voltar
           </button>
-          <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={carregarVersoes} disabled={loading}>
-            Atualizar
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => {
-              const f = (e.target.files || [])[0] || null;
-              if (f) prepararImportacaoCsv(f);
-            }}
-          />
-          <button
-            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={loading || !podeEditar}
-            title="Importar CSV"
-          >
-            Importar CSV
-          </button>
-          <input
-            ref={composicaoFileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => {
-              const f = (e.target.files || [])[0] || null;
-              if (f) importarComposicoesCsv(f);
-            }}
-          />
-          <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => composicaoFileInputRef.current?.click()} disabled={loading}>
-            Importar composições CSV
-          </button>
-          <button
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
-            type="button"
-            onClick={criarNovaVersao}
-            disabled={loading || !podeEditar}
-            title={!podeEditar ? "Criar nova versão somente na versão atual" : "Nova planilha"}
-          >
-            Nova planilha
-          </button>
         </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregarVersoes} disabled={loading}>
+          Atualizar
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={(e) => {
+            const f = (e.target.files || [])[0] || null;
+            if (f) prepararImportacaoCsv(f);
+          }}
+        />
+        <button
+          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={loading || !podeEditar}
+          title="Importar CSV"
+        >
+          Importar CSV
+        </button>
+        <input
+          ref={composicaoFileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={(e) => {
+            const f = (e.target.files || [])[0] || null;
+            if (f) importarComposicoesCsv(f);
+          }}
+        />
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => composicaoFileInputRef.current?.click()} disabled={loading}>
+          Importar composições CSV
+        </button>
+        <button
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+          type="button"
+          onClick={criarNovaVersao}
+          disabled={loading || !podeEditar}
+          title={!podeEditar ? "Criar nova versão somente na versão atual" : "Nova planilha"}
+        >
+          Nova planilha
+        </button>
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2" type="button" onClick={() => imprimirOuPdf("IMPRIMIR")} disabled={loading || !planilha}>
+          <Printer className="h-4 w-4" />
+          Imprimir
+        </button>
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2" type="button" onClick={() => imprimirOuPdf("PDF")} disabled={loading || !planilha}>
+          <FileText className="h-4 w-4" />
+          PDF
+        </button>
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2" type="button" onClick={exportarCsvPlanilha} disabled={loading || !planilha}>
+          <FileSpreadsheet className="h-4 w-4" />
+          Excel
+        </button>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -1571,9 +1697,9 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                 <thead className="bg-slate-50 text-left text-slate-700">
                   <tr>
                     <th className="px-3 py-2">ITEM</th>
-                    <th className="px-3 py-2">CÓDIGO</th>
+                    <th className="px-3 py-2 text-[11px] w-[110px]">CÓDIGO</th>
                     <th className="px-3 py-2">FONTE</th>
-                    <th className="px-3 py-2">SERVIÇOS</th>
+                    <th className="px-3 py-2 min-w-[520px]">SERVIÇOS</th>
                     <th className="px-3 py-2">UND</th>
                     <th className="px-3 py-2 text-right">QUANT.</th>
                     <th className="px-3 py-2 text-right">VALOR UNIT.</th>
@@ -1624,22 +1750,22 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                       </td>
                       <td className="px-3 py-2">
                         <span className="inline-flex items-center gap-2">
-                          <span>{l.codigo || ""}</span>
+                          <span className="text-[11px]">{l.codigo || ""}</span>
                           {(() => {
                             if (l.tipoLinha !== "SERVICO") return null;
                             const code = String(l.codigo || "").trim().toUpperCase();
                             if (!code) return null;
                             const v = composicaoValidacaoByCodigo[code];
                             if (!v) return composicaoServicoCodes.has(code) ? <Check className="h-4 w-4 text-green-600" /> : null;
-                            if (v.status === "SEM_COMPOSICAO")
-                              return <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Sem composição</span>;
+                            if (v.status === "SEM_COMPOSICAO") return <XCircle className="h-4 w-4 text-red-600" title="Sem composição" />;
                             if (v.status === "DIVERGENTE")
                               return (
                                 <span
-                                  className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800"
+                                  className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800"
                                   title={`Planilha: ${moeda(Number(v.totalPlanilha || 0))} | Composição: ${moeda(Number(v.totalComposicao || 0))} | Dif.: ${moeda(Number(v.diff || 0))}`}
                                 >
-                                  Divergente
+                                  <TriangleAlert className="h-3.5 w-3.5" />
+                                  Diverg.
                                 </span>
                               );
                             return <Check className="h-4 w-4 text-green-600" />;
@@ -1647,7 +1773,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                         </span>
                       </td>
                       <td className="px-3 py-2">{l.fonte || ""}</td>
-                      <td className="px-3 py-2">{l.servicos || ""}</td>
+                      <td className="px-3 py-2 min-w-[520px]">{l.servicos || ""}</td>
                       <td className="px-3 py-2">{l.und || ""}</td>
                       <td className="px-3 py-2 text-right">{l.quant || ""}</td>
                       <td className="px-3 py-2 text-right">{l.valorUnitario || ""}</td>
@@ -1665,11 +1791,11 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
-                          <button className="rounded border px-2 py-1 text-xs text-slate-800 disabled:opacity-60" type="button" onClick={() => iniciarEdicaoLinha(l)} disabled={!podeEditar || loading}>
-                            Editar
+                          <button className="rounded border bg-white p-2 text-slate-800 hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => iniciarEdicaoLinha(l)} disabled={!podeEditar || loading} title="Editar">
+                            <Pencil className="h-4 w-4" />
                           </button>
-                          <button className="rounded border px-2 py-1 text-xs text-red-700 disabled:opacity-60" type="button" onClick={() => excluirLinha(l.idLinha)} disabled={!podeEditar || loading}>
-                            Excluir
+                          <button className="rounded border bg-white p-2 text-red-700 hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => excluirLinha(l.idLinha)} disabled={!podeEditar || loading} title="Excluir">
+                            <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                       </td>
