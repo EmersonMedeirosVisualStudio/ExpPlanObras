@@ -69,6 +69,83 @@ function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function normalizeHeader(h: string) {
+  return String(h || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function parseCsvTextAuto(text: string) {
+  const cleaned = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lines = cleaned
+    .split("\n")
+    .map((l) => l.trimEnd())
+    .filter((l) => l.trim().length > 0);
+  if (!lines.length) return { headers: [] as string[], rows: [] as string[][] };
+  const first = lines[0];
+  const comma = (first.match(/,/g) || []).length;
+  const semi = (first.match(/;/g) || []).length;
+  const sep = semi > comma ? ";" : ",";
+  const split = (line: string) => {
+    const out: string[] = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          const next = line[i + 1];
+          if (next === '"') {
+            cur += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          cur += ch;
+        }
+        continue;
+      }
+      if (ch === '"') {
+        inQuotes = true;
+        continue;
+      }
+      if (ch === sep) {
+        out.push(cur);
+        cur = "";
+        continue;
+      }
+      cur += ch;
+    }
+    out.push(cur);
+    return out.map((v) => v.trim());
+  };
+  const headers = split(lines[0]);
+  const rows = lines.slice(1).map((l) => split(l));
+  return { headers, rows };
+}
+
+function toDec(v: unknown) {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  const norm = s.replace(/\./g, "").replace(",", ".").replace(/[^\d.\-]/g, "");
+  if (!norm) return null;
+  const n = Number(norm);
+  return Number.isFinite(n) ? n : null;
+}
+
+function detectTipoLinha(item: string, und: string, quant: string, valorUnit: string) {
+  const hasServ = !!(und.trim() || quant.trim() || valorUnit.trim());
+  if (hasServ) return { tipo: "SERVICO" as const, nivel: item.trim() ? Math.max(0, item.split(".").filter(Boolean).length) : 0 };
+  const parts = item.trim() ? item.split(".").filter(Boolean) : [];
+  if (parts.length <= 1) return { tipo: "ITEM" as const, nivel: parts.length };
+  return { tipo: "SUBITEM" as const, nivel: parts.length };
+}
+
 type ObraResumo = {
   idObra: number;
   nome: string | null;
@@ -94,6 +171,25 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   const [centrosCusto, setCentrosCusto] = useState<CentroCustoOption[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [importPreview, setImportPreview] = useState<{
+    file: File | null;
+    nomeVersao: string;
+    rows: Array<{
+      rowIndex: number;
+      item: string;
+      codigo: string;
+      fonte: string;
+      servicos: string;
+      und: string;
+      quant: string;
+      valorUnitario: string;
+      valorParcialCalc: number | null;
+      tipoLinha: "ITEM" | "SUBITEM" | "SERVICO";
+      nivel: number;
+      errors: Partial<Record<"item" | "codigo" | "fonte" | "servicos" | "und" | "quant" | "valorUnitario", string>>;
+    }>;
+    missingColumns: string[];
+  }>({ file: null, nomeVersao: "", rows: [], missingColumns: [] });
 
   const [novo, setNovo] = useState({
     tipoLinha: "SERVICO" as "ITEM" | "SUBITEM" | "SERVICO",
@@ -153,10 +249,10 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   function baixarModeloCsv() {
     const sep = ";";
     const lines = [
-      ["item", "codigo", "fonte", "servicos", "und", "quant", "valor_unitario", "valor_parcial"].join(sep),
-      ["1", "", "", "SERVIÇOS PRELIMINARES", "", "", "", ""].join(sep),
-      ["1.1", "", "", "Terraplenagem", "", "", "", ""].join(sep),
-      ["1.1.1", "SER-0001", "SINAPI", "Escavação manual", "m³", "10", "100,00", "1000,00"].join(sep),
+      ["item", "codigo", "fonte", "servicos", "und", "quant", "valor_unitario"].join(sep),
+      ["1", "", "", "SERVIÇOS PRELIMINARES", "", "", ""].join(sep),
+      ["1.1", "", "", "Terraplenagem", "", "", ""].join(sep),
+      ["1.1.1", "SER-0001", "SINAPI", "Escavação manual", "m³", "10", "100,00"].join(sep),
     ];
     const csv = `${lines.join("\n")}\n`;
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -427,13 +523,13 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     }
   }
 
-  async function importarCsv(file: File) {
+  async function importarCsv(file: File, nomeVersao?: string) {
     try {
       setLoading(true);
       setErr(null);
       const form = new FormData();
       form.append("action", "IMPORTAR_CSV");
-      form.append("nome", `Versão ${Math.max(0, ...versoes.map((v) => v.numeroVersao)) + 1} (CSV)`);
+      form.append("nome", String(nomeVersao || `Versão ${Math.max(0, ...versoes.map((v) => v.numeroVersao)) + 1} (CSV)`));
       form.append("file", file);
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, { method: "POST", body: form });
       const json = await res.json().catch(() => null);
@@ -448,6 +544,77 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
+
+  async function prepararImportacaoCsv(file: File) {
+    try {
+      setErr(null);
+      const text = await file.text();
+      const { headers, rows } = parseCsvTextAuto(text);
+      if (!headers.length || !rows.length) {
+        setImportPreview({ file: null, nomeVersao: "", rows: [], missingColumns: [] });
+        setErr("CSV vazio ou inválido.");
+        return;
+      }
+      const idx: Record<string, number> = Object.fromEntries(headers.map((h, i) => [normalizeHeader(h), i]));
+      const required = ["item", "codigo", "fonte", "servicos", "und", "quant", "valor_unitario"];
+      const missingColumns = required.filter((k) => idx[k] == null);
+      const get = (r: string[], key: string) => String(r[idx[key]] ?? "").trim();
+      const nomeVersao = `Versão ${Math.max(0, ...versoes.map((v) => v.numeroVersao)) + 1} (CSV)`;
+
+      const mapped = rows.map((r, i) => {
+        const item = get(r, "item");
+        const codigo = get(r, "codigo");
+        const fonte = get(r, "fonte");
+        const servicos = get(r, "servicos");
+        const und = get(r, "und");
+        const quant = get(r, "quant");
+        const valorUnitario = get(r, "valor_unitario");
+        const det = detectTipoLinha(item, und, quant, valorUnitario);
+        const quantidade = toDec(quant);
+        const vUnit = toDec(valorUnitario);
+        const valorParcialCalc = quantidade != null && vUnit != null ? Number((quantidade * vUnit).toFixed(6)) : null;
+
+        const errors: any = {};
+        if (!item.trim()) errors.item = "Obrigatório";
+        if (!servicos.trim()) errors.servicos = "Obrigatório";
+
+        if (det.tipo === "SERVICO") {
+          if (!codigo.trim()) errors.codigo = "Obrigatório (serviço)";
+          if (!und.trim()) errors.und = "Obrigatório (serviço)";
+          if (quantidade == null || !(quantidade > 0)) errors.quant = "Inválido (serviço)";
+          if (vUnit == null || !(vUnit >= 0)) errors.valorUnitario = "Inválido (serviço)";
+        }
+
+        return {
+          rowIndex: i,
+          item,
+          codigo,
+          fonte,
+          servicos,
+          und,
+          quant,
+          valorUnitario,
+          valorParcialCalc,
+          tipoLinha: det.tipo,
+          nivel: det.nivel,
+          errors,
+        };
+      });
+
+      setImportPreview({ file, nomeVersao, rows: mapped, missingColumns });
+    } catch (e: any) {
+      setImportPreview({ file: null, nomeVersao: "", rows: [], missingColumns: [] });
+      setErr(e?.message || "Erro ao ler CSV.");
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  const importHasBlockingErrors = useMemo(() => {
+    if (!importPreview.file) return false;
+    if (importPreview.missingColumns.length) return true;
+    return importPreview.rows.some((r) => Object.keys(r.errors || {}).length > 0);
+  }, [importPreview]);
 
   return (
     <div className="p-6 space-y-6 max-w-7xl text-slate-900">
@@ -482,7 +649,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             className="hidden"
             onChange={(e) => {
               const f = (e.target.files || [])[0] || null;
-              if (f) importarCsv(f);
+              if (f) prepararImportacaoCsv(f);
             }}
           />
           <button
@@ -511,6 +678,92 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       </div>
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
+
+      {importPreview.file ? (
+        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-lg font-semibold">Prévia da importação (CSV)</div>
+              <div className="text-sm text-slate-600">
+                Arquivo: <span className="font-medium">{importPreview.file.name}</span> • Nova versão: <span className="font-medium">{importPreview.nomeVersao}</span>
+              </div>
+              {importPreview.missingColumns.length ? (
+                <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  Colunas obrigatórias ausentes: {importPreview.missingColumns.join(", ")}
+                </div>
+              ) : (
+                <div className="mt-2 text-xs text-slate-500">Campos importados: item, codigo, fonte, servicos, und, quant, valor_unitario. Valor parcial é calculado automaticamente.</div>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                type="button"
+                onClick={() => setImportPreview({ file: null, nomeVersao: "", rows: [], missingColumns: [] })}
+                disabled={loading}
+              >
+                Cancelar
+              </button>
+              <button
+                className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                type="button"
+                onClick={async () => {
+                  if (!importPreview.file) return;
+                  await importarCsv(importPreview.file, importPreview.nomeVersao);
+                  setImportPreview({ file: null, nomeVersao: "", rows: [], missingColumns: [] });
+                }}
+                disabled={loading || importHasBlockingErrors || !podeEditar}
+                title={importHasBlockingErrors ? "Corrija os campos destacados antes de importar" : "Confirmar importação"}
+              >
+                Confirmar importação
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-auto rounded-lg border">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-left text-slate-700">
+                <tr>
+                  <th className="px-3 py-2">Linha</th>
+                  <th className="px-3 py-2">Item</th>
+                  <th className="px-3 py-2">Código</th>
+                  <th className="px-3 py-2">Fonte</th>
+                  <th className="px-3 py-2">Serviços</th>
+                  <th className="px-3 py-2">Und</th>
+                  <th className="px-3 py-2 text-right">Quant</th>
+                  <th className="px-3 py-2 text-right">Valor unitário</th>
+                  <th className="px-3 py-2 text-right">Valor parcial (calc.)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {importPreview.rows.slice(0, 2000).map((r) => {
+                  const cellClass = (key: keyof typeof r.errors) => (r.errors?.[key] ? "bg-red-50 text-red-700" : "");
+                  return (
+                    <tr key={r.rowIndex} className="border-t">
+                      <td className="px-3 py-2 text-xs text-slate-500">{r.rowIndex + 2}</td>
+                      <td className={`px-3 py-2 ${cellClass("item")}`}>{r.item || "—"}</td>
+                      <td className={`px-3 py-2 ${cellClass("codigo")}`}>{r.codigo || "—"}</td>
+                      <td className={`px-3 py-2 ${cellClass("fonte")}`}>{r.fonte || "—"}</td>
+                      <td className={`px-3 py-2 ${cellClass("servicos")}`}>{r.servicos || "—"}</td>
+                      <td className={`px-3 py-2 ${cellClass("und")}`}>{r.und || "—"}</td>
+                      <td className={`px-3 py-2 text-right ${cellClass("quant")}`}>{r.quant || "—"}</td>
+                      <td className={`px-3 py-2 text-right ${cellClass("valorUnitario")}`}>{r.valorUnitario || "—"}</td>
+                      <td className="px-3 py-2 text-right">{r.valorParcialCalc == null ? "—" : moeda(Number(r.valorParcialCalc || 0))}</td>
+                    </tr>
+                  );
+                })}
+                {importPreview.rows.length > 2000 ? (
+                  <tr className="border-t">
+                    <td colSpan={9} className="px-3 py-3 text-xs text-slate-500">
+                      Mostrando as primeiras 2000 linhas para prévia. Total no arquivo: {importPreview.rows.length}.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="text-lg font-semibold">Versões cadastradas</div>

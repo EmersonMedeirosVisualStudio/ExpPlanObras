@@ -69,12 +69,43 @@ Depois que você define a obra ativa, o menu de **Engenharia → Obras** passa a
 - **Resumo do Contrato**
 - **Documentos da Obra**
 - **Eventos / Observações (do contrato)**
+- **Planilha orçamentária**
 - **Planejamento**
 - **Execução**
 
 Isso evita bagunça e garante que você está trabalhando na obra certa.
 
 ---
+
+## 3.1 Planilha orçamentária (importar CSV com prévia)
+
+Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens, subitens e serviços).
+
+### ETAPA 1 — Onde acessar
+- Abra **Obra #ID** → clique em **Planilha orçamentária**
+
+### ETAPA 2 — O que clicar
+- Clique em **Importar CSV**
+- O sistema abre uma **prévia** com uma grade de conferência
+
+### ETAPA 3 — O que preencher
+- O CSV deve ter estas colunas (nesta ordem ou com estes nomes):
+  - `item`
+  - `codigo`
+  - `fonte`
+  - `servicos`
+  - `und`
+  - `quant`
+  - `valor_unitario`
+
+### ETAPA 4 — O que esperar
+- A grade mostra as linhas do CSV antes de gravar
+- Campos com erro ficam destacados (ex.: item vazio, serviço sem código, quant inválida)
+- O sistema calcula o **valor parcial** automaticamente (quant × valor_unitario)
+
+### ETAPA 5 — Como validar
+- Clique em **Confirmar importação**
+- A nova versão aparece na lista de versões e pode ser selecionada
 
 ## 4. Contrato da obra (ver detalhes)
 

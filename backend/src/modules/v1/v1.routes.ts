@@ -4040,9 +4040,55 @@ export default async function v1Routes(server: FastifyInstance) {
         const idx: Record<string, number> = Object.fromEntries(headers.map((h, i) => [normalizeHeader(h), i]));
         const get = (r: string[], key: string) => String(r[idx[key]] ?? '').trim();
 
-        const required = ['item', 'codigo', 'fonte', 'servicos', 'und', 'quant', 'valor_unitario', 'valor_parcial'];
+        const required = ['item', 'codigo', 'fonte', 'servicos', 'und', 'quant', 'valor_unitario'];
         const missing = required.filter((k) => idx[k] == null);
         if (missing.length) return fail(reply, 422, `Colunas obrigatórias ausentes no CSV: ${missing.join(', ')}`);
+
+        const prepared = rows.map((r, i) => {
+          const item = get(r, 'item');
+          const codigo = get(r, 'codigo');
+          const fonte = get(r, 'fonte');
+          const servicos = get(r, 'servicos');
+          const und = get(r, 'und');
+          const quant = get(r, 'quant');
+          const valorUnit = get(r, 'valor_unitario');
+          const det = detectTipoLinha(item, und, quant, valorUnit);
+          const quantidade = toDec(quant);
+          const vUnit = toDec(valorUnit);
+          const valorParcialCalc = quantidade != null && vUnit != null ? Number((quantidade * vUnit).toFixed(6)) : null;
+
+          if (!item.trim()) return { ok: false as const, rowIndex: i, message: 'Campo "item" é obrigatório', field: 'item' as const };
+          if (!servicos.trim()) return { ok: false as const, rowIndex: i, message: 'Campo "servicos" é obrigatório', field: 'servicos' as const };
+
+          if (det.tipo === 'SERVICO') {
+            if (!codigo.trim()) return { ok: false as const, rowIndex: i, message: 'Campo "codigo" é obrigatório para serviço', field: 'codigo' as const };
+            if (!und.trim()) return { ok: false as const, rowIndex: i, message: 'Campo "und" é obrigatório para serviço', field: 'und' as const };
+            if (quantidade == null || !(quantidade > 0)) return { ok: false as const, rowIndex: i, message: 'Campo "quant" inválido para serviço', field: 'quant' as const };
+            if (vUnit == null || !(vUnit >= 0)) return { ok: false as const, rowIndex: i, message: 'Campo "valor_unitario" inválido para serviço', field: 'valor_unitario' as const };
+          }
+
+          return {
+            ok: true as const,
+            ordem: i + 1,
+            item: item || null,
+            codigo: codigo || null,
+            fonte: fonte || null,
+            servico: servicos || null,
+            und: und || null,
+            quantidade: quantidade == null ? null : quantidade,
+            valorUnitario: vUnit == null ? null : vUnit,
+            valorParcial: valorParcialCalc,
+            nivel: det.nivel,
+            tipoLinha: det.tipo,
+          };
+        });
+
+        const invalid = prepared.find((p) => !p.ok);
+        if (invalid && !invalid.ok) {
+          return fail(reply, 422, `Erro no CSV (linha ${invalid.rowIndex + 2}): ${invalid.message}`);
+        }
+
+        const preparedOk = prepared.filter((p): p is Extract<(typeof prepared)[number], { ok: true }> => p.ok);
 
         const created = await prisma.$transaction(async (tx: any) => {
           const maxRows = (await tx.$queryRawUnsafe(
@@ -4076,47 +4122,47 @@ export default async function v1Routes(server: FastifyInstance) {
             idPlanilha
           );
 
-          for (let i = 0; i < rows.length; i++) {
-            const r = rows[i];
-            const item = get(r, 'item');
-            const codigo = get(r, 'codigo');
-            const fonte = get(r, 'fonte');
-            const servicos = get(r, 'servicos');
-            const und = get(r, 'und');
-            const quant = get(r, 'quant');
-            const valorUnit = get(r, 'valor_unitario');
-            const valorParcial = get(r, 'valor_parcial');
-            const det = detectTipoLinha(item, und, quant, valorUnit);
-            const quantidade = toDec(quant);
-            const vUnit = toDec(valorUnit);
-            const parcialCalc = quantidade != null && vUnit != null ? Number((quantidade * vUnit).toFixed(6)) : null;
-            const vParc = toDec(valorParcial) ?? parcialCalc;
+          const chunkSize = 600;
+          for (let start = 0; start < preparedOk.length; start += chunkSize) {
+            const chunk = preparedOk.slice(start, start + chunkSize);
+            const params: any[] = [];
+            let p = 1;
+            const values = chunk
+              .map((r) => {
+                const base = [
+                  ctx.tenantId,
+                  idPlanilha,
+                  r.ordem,
+                  r.item,
+                  r.codigo,
+                  r.fonte,
+                  r.servico,
+                  r.und,
+                  r.quantidade,
+                  r.valorUnitario,
+                  r.valorParcial,
+                  r.nivel,
+                  r.tipoLinha,
+                ];
+                for (const v of base) params.push(v);
+                const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+                return `(${placeholders})`;
+              })
+              .join(',');
 
             await tx.$executeRawUnsafe(
               `
               INSERT INTO obras_planilhas_linhas
                 (tenant_id, id_planilha, ordem, item, codigo, fonte, servico, und, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha)
               VALUES
-                ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+                ${values}
               `,
-              ctx.tenantId,
-              idPlanilha,
-              i + 1,
-              item || null,
-              codigo || null,
-              fonte || null,
-              servicos || null,
-              und || null,
-              quantidade == null ? null : quantidade,
-              vUnit == null ? null : vUnit,
-              vParc == null ? null : vParc,
-              det.nivel,
-              det.tipo
+              ...params
             );
           }
 
           return { idPlanilha, numeroVersao: nextVersao };
-        });
+        }, { timeout: 120000, maxWait: 20000 });
 
         return ok(reply, { idObra, idPlanilha: created.idPlanilha, numeroVersao: created.numeroVersao }, { message: 'CSV importado' });
       }
