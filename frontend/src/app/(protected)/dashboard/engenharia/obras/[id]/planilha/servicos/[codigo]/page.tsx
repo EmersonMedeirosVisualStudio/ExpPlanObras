@@ -621,7 +621,7 @@ async function readTextSmart(file: File) {
         encSociaisSemDesSinapi: p.encSociaisSemDesSinapi == null ? null : Number(p.encSociaisSemDesSinapi),
       });
       const linhas = Array.isArray(json.data?.planilha?.linhas) ? json.data.planilha.linhas : [];
-      const navList = linhas
+      const navList: Array<{ item: string; codigo: string; servicos: string }> = linhas
         .filter((l: any) => String(l.tipoLinha || "").toUpperCase() === "SERVICO" && String(l.codigo || "").trim())
         .map((l: any) => ({
           item: String(l.item || ""),
@@ -629,7 +629,7 @@ async function readTextSmart(file: File) {
           servicos: String(l.servicos || ""),
         }));
       setNavPlanilhaServicos(navList);
-      setNavIdx(navList.findIndex((x) => x.codigo === codigoServico));
+      setNavIdx(navList.findIndex((x: { codigo: string }) => x.codigo === codigoServico));
       const rows = linhas
         .filter((l: any) => String(l.tipoLinha || "").toUpperCase() === "SERVICO" && String(l.codigo || "").trim().toUpperCase() === codigoServico)
         .map((l: any) => ({
@@ -2210,35 +2210,7 @@ async function readTextSmart(file: File) {
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="text-lg font-semibold">Itens (composição)</div>
-              <button
-                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-                type="button"
-                onClick={() =>
-                  setItens((p) => [
-                    ...p,
-                    {
-                      idItemBase: Date.now(),
-                      etapa: "",
-                      tipoItem: "INSUMO",
-                      codigoItem: "",
-                      banco: "",
-                      descricao: "",
-                      und: "",
-                      quantidade: "",
-                      valorUnitario: "",
-                      perdaPercentual: "",
-                      codigoCentroCusto: "",
-                      codigoCentroCustoBase: "",
-                    },
-                  ])
-                }
-                disabled={loading}
-              >
-                Adicionar item
-              </button>
-            </div>
+            <div className="text-lg font-semibold">Itens (composição)</div>
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-lg border bg-white p-3">
                 <div className="text-[11px] text-slate-500">Materiais</div>
@@ -2307,6 +2279,32 @@ async function readTextSmart(file: File) {
               </div>
             </div>
           </div>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() =>
+              setItens((p) => [
+                ...p,
+                {
+                  idItemBase: Date.now(),
+                  etapa: "",
+                  tipoItem: "INSUMO",
+                  codigoItem: "",
+                  banco: "",
+                  descricao: "",
+                  und: "",
+                  quantidade: "",
+                  valorUnitario: "",
+                  perdaPercentual: "",
+                  codigoCentroCusto: "",
+                  codigoCentroCustoBase: "",
+                },
+              ])
+            }
+            disabled={loading}
+          >
+            Adicionar item
+          </button>
         </div>
 
         <div className="space-y-4">
