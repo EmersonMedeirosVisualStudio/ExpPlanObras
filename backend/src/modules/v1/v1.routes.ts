@@ -4936,7 +4936,14 @@ export default async function v1Routes(server: FastifyInstance) {
       codigoServico
     )) as any[];
 
-    return ok(reply, { codigoComposicao: null, itens: (rows || []).map((r: any) => ({ ...r, codigoCentroCustoBase: null })) });
+    return ok(reply, {
+      codigoComposicao: null,
+      itens: (rows || []).map((r: any) => ({
+        ...r,
+        idItemBase: typeof r.idItemBase === 'bigint' ? Number(r.idItemBase) : Number(r.idItemBase || 0),
+        codigoCentroCustoBase: null,
+      })),
+    });
   });
 
   server.put('/engenharia/obras/:id/planilha/servicos/:codigo/composicao-itens', async (request, reply) => {

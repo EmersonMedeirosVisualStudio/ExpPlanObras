@@ -69,6 +69,72 @@ function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function normalizeHeader(h: string) {
+  return String(h || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function parseCsvTextAuto(text: string) {
+  const cleaned = String(text || "")
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+  const lines = cleaned
+    .split("\n")
+    .map((l) => l.trimEnd())
+    .filter((l) => l.trim().length > 0);
+  if (!lines.length) return { headers: [] as string[], rows: [] as string[][] };
+  const first = lines[0];
+  const comma = (first.match(/,/g) || []).length;
+  const semi = (first.match(/;/g) || []).length;
+  const tab = (first.match(/\t/g) || []).length;
+  const sep = tab >= comma && tab >= semi ? "\t" : semi >= comma ? ";" : ",";
+
+  const split = (line: string) => {
+    const out: string[] = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          const next = line[i + 1];
+          if (next === '"') {
+            cur += '"';
+            i++;
+          } else inQuotes = false;
+        } else cur += ch;
+      } else {
+        if (ch === '"') inQuotes = true;
+        else if (ch === sep) {
+          out.push(cur);
+          cur = "";
+        } else cur += ch;
+      }
+    }
+    out.push(cur);
+    return out.map((s) => s.trim());
+  };
+
+  const headers = split(lines[0]);
+  const rows = lines.slice(1).map(split);
+  return { headers, rows };
+}
+
+async function readTextSmart(file: File) {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  const win1252 = new TextDecoder("windows-1252", { fatal: false }).decode(bytes);
+  const score = (t: string) => (t.match(/\uFFFD/g) || []).length * 10 + (t.match(/[ÃÂ]/g) || []).length;
+  return score(utf8) <= score(win1252) ? utf8 : win1252;
+}
+
  export default function Page() {
    const router = useRouter();
    const params = useParams();
@@ -89,6 +155,25 @@ function moeda(v: number) {
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
   const [editingBancoOutroIdx, setEditingBancoOutroIdx] = useState<number | null>(null);
   const [bancoOutroValue, setBancoOutroValue] = useState("");
+  const [importPreview, setImportPreview] = useState<{
+    file: File | null;
+    rows: Array<{
+      rowIndex: number;
+      etapa: string;
+      tipoItem: string;
+      codigoItem: string;
+      banco: string;
+      descricao: string;
+      und: string;
+      quantidade: string;
+      valorUnitario: string;
+      perdaPercentual: string;
+      codigoCentroCusto: string;
+      errors: Partial<Record<"tipoItem" | "codigoItem" | "descricao" | "und" | "quantidade", string>>;
+    }>;
+  }>({ file: null, rows: [] });
+  const [importChoiceOpen, setImportChoiceOpen] = useState(false);
+  const [importChoiceInfo, setImportChoiceInfo] = useState<{ existingCount: number; incomingCount: number } | null>(null);
  
    const fileInputRef = useRef<HTMLInputElement | null>(null);
  
@@ -107,12 +192,12 @@ function moeda(v: number) {
      });
    }
  
-   async function carregar() {
+  async function carregar(silent?: boolean) {
      if (!idObra || !codigoServico) return;
      try {
        setLoading(true);
        setErr(null);
-      setOkMsg(null);
+      if (!silent) setOkMsg(null);
        const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-itens`);
        const json = await res.json().catch(() => null);
        if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar composição");
@@ -133,6 +218,7 @@ function moeda(v: number) {
           codigoCentroCustoBase: String(i.codigoCentroCustoBase || ""),
          }))
        );
+      if (!silent) setOkMsg("Composição carregada.");
      } catch (e: any) {
        setErr(e?.message || "Erro ao carregar composição");
        setItens([]);
@@ -178,26 +264,201 @@ function moeda(v: number) {
      }
    }
  
-   async function importarCsv(file: File) {
-     if (!idObra || !codigoServico) return;
+  async function salvarItens(payload: Array<any>, successMsg: string) {
      try {
        setLoading(true);
        setErr(null);
       setOkMsg(null);
-       const form = new FormData();
-       form.append("file", file);
-       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-importar-csv`, { method: "POST", body: form });
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-itens`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itens: payload }),
+      });
        const json = await res.json().catch(() => null);
-       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao importar CSV");
-       await carregar();
-      setOkMsg("CSV importado com sucesso.");
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao salvar composição");
+      await carregar(true);
+      setOkMsg(successMsg);
      } catch (e: any) {
-       setErr(e?.message || "Erro ao importar CSV");
+      setErr(e?.message || "Erro ao salvar composição");
      } finally {
        setLoading(false);
-       if (fileInputRef.current) fileInputRef.current.value = "";
      }
    }
+
+  function mergeImport(existing: ItemRow[], incoming: ItemRow[]) {
+    const keyOf = (i: ItemRow) =>
+      [
+        String(i.etapa || "").trim().toUpperCase(),
+        String(i.tipoItem || "").trim().toUpperCase(),
+        String(i.codigoItem || "").trim().toUpperCase(),
+        String(i.banco || "").trim().toUpperCase(),
+        String(i.descricao || "").trim().toUpperCase(),
+        String(i.und || "").trim().toUpperCase(),
+        String(i.codigoCentroCusto || "").trim().toUpperCase(),
+      ].join("|");
+    const map = new Map<string, ItemRow>();
+    for (const e of existing) map.set(keyOf(e), { ...e });
+    for (const i of incoming) {
+      const k = keyOf(i);
+      if (!map.has(k)) {
+        map.set(k, { ...i });
+        continue;
+      }
+      const cur = map.get(k)!;
+      const qCur = parseNumberLoose(cur.quantidade);
+      const qInc = parseNumberLoose(i.quantidade);
+      const nextQ = (qCur == null ? 0 : qCur) + (qInc == null ? 0 : qInc);
+      const vu = String(i.valorUnitario || "").trim() ? i.valorUnitario : cur.valorUnitario;
+      const perda = String(i.perdaPercentual || "").trim() ? i.perdaPercentual : cur.perdaPercentual;
+      map.set(k, { ...cur, quantidade: nextQ ? String(nextQ) : cur.quantidade, valorUnitario: vu, perdaPercentual: perda });
+    }
+    return Array.from(map.values());
+  }
+
+  async function prepararImportacaoCsv(file: File) {
+    if (!idObra || !codigoServico) return;
+    try {
+      setErr(null);
+      setOkMsg(null);
+      const text = await readTextSmart(file);
+      const { headers, rows } = parseCsvTextAuto(text);
+      if (!headers.length || !rows.length) throw new Error("CSV vazio ou inválido");
+      const idx: Record<string, number> = Object.fromEntries(headers.map((h, i) => [normalizeHeader(h), i]));
+      const get = (r: string[], key: string) => String(r[idx[key]] ?? "").trim();
+
+      const hasOld = idx["codigo_item"] != null || idx["tipo_item"] != null;
+      const hasNew = idx["codigo"] != null || idx["tipo"] != null || idx["servico"] != null;
+      if (!hasOld && !hasNew) throw new Error("Cabeçalho do CSV inválido");
+
+      const mapTipo = (raw: string) => {
+        const v = String(raw || "").trim().toUpperCase();
+        if (!v) return "INSUMO";
+        if (v.includes("AUXILIAR")) return "COMPOSICAO_AUXILIAR";
+        if (v.includes("COMPOSICAO")) return "COMPOSICAO";
+        if (v.includes("INSUMO")) return "INSUMO";
+        if (v.includes("MAO")) return "MAO_DE_OBRA";
+        if (v.includes("EQUIP")) return "EQUIPAMENTO";
+        return "";
+      };
+
+      const previewRows: (typeof importPreview.rows) = [];
+      const incoming: ItemRow[] = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const servicoIn = idx["servico"] != null ? get(r, "servico").toUpperCase() : "";
+        if (servicoIn && servicoIn !== codigoServico) continue;
+        const etapa = idx["etapa"] != null ? get(r, "etapa") : "";
+        const tipoRaw = hasOld ? (idx["tipo_item"] != null ? get(r, "tipo_item") : "INSUMO") : get(r, "tipo");
+        const tipoItem = mapTipo(tipoRaw);
+        const codigoItem = hasOld ? get(r, "codigo_item") : get(r, "codigo");
+        const banco = idx["banco"] != null ? get(r, "banco") : "";
+        const descricao = idx["descricao"] != null ? get(r, "descricao") : "";
+        const und = idx["und"] != null ? get(r, "und") : "";
+        const quantidade = get(r, "quantidade");
+        const valorUnitario = idx["valor_unit"] != null ? get(r, "valor_unit") : idx["valor_unitario"] != null ? get(r, "valor_unitario") : "";
+        const perdaPercentual = idx["perda_percentual"] != null ? get(r, "perda_percentual") : "";
+        const codigoCentroCusto = idx["codigo_centro_custo"] != null ? get(r, "codigo_centro_custo") : "";
+
+        const errors: any = {};
+        if (!codigoItem) errors.codigoItem = "Obrigatório";
+        if (!tipoItem) errors.tipoItem = "Tipo inválido";
+        if (!String(descricao || "").trim()) errors.descricao = "Obrigatório";
+        if (!String(und || "").trim()) errors.und = "Obrigatório";
+        const q = parseNumberLoose(quantidade);
+        if (q == null || !(q > 0)) errors.quantidade = "Inválida";
+
+        previewRows.push({
+          rowIndex: i,
+          etapa,
+          tipoItem: tipoItem || "",
+          codigoItem,
+          banco,
+          descricao,
+          und,
+          quantidade,
+          valorUnitario,
+          perdaPercentual,
+          codigoCentroCusto,
+          errors,
+        });
+
+        if (Object.keys(errors).length === 0) {
+          incoming.push({
+            idItemBase: Date.now() + i,
+            etapa,
+            tipoItem,
+            codigoItem,
+            banco,
+            descricao,
+            und,
+            quantidade,
+            valorUnitario,
+            perdaPercentual,
+            codigoCentroCusto,
+            codigoCentroCustoBase: "",
+          });
+        }
+      }
+
+      if (!previewRows.length) throw new Error("Nenhuma linha aplicável para este serviço no CSV.");
+      setImportPreview({ file, rows: previewRows });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setOkMsg(`Prévia carregada: ${incoming.length} linha(s) válida(s) para importação.`);
+    } catch (e: any) {
+      setImportPreview({ file: null, rows: [] });
+      setErr(e?.message || "Erro ao preparar importação");
+    }
+  }
+
+  async function confirmarImportacao(mode: "REPLACE" | "MERGE") {
+    const file = importPreview.file;
+    if (!file) return;
+    const valid = importPreview.rows.filter((r) => Object.keys(r.errors || {}).length === 0);
+    const incoming: ItemRow[] = valid.map((r, i) => ({
+      idItemBase: Date.now() + i,
+      etapa: r.etapa,
+      tipoItem: r.tipoItem,
+      codigoItem: r.codigoItem,
+      banco: r.banco,
+      descricao: r.descricao,
+      und: r.und,
+      quantidade: r.quantidade,
+      valorUnitario: r.valorUnitario,
+      perdaPercentual: r.perdaPercentual,
+      codigoCentroCusto: r.codigoCentroCusto,
+      codigoCentroCustoBase: "",
+    }));
+    if (!incoming.length) {
+      setErr("Não há linhas válidas para importar. Corrija o CSV.");
+      return;
+    }
+
+    let base = itens;
+    if (!base.length) await carregar(true);
+    base = itens;
+
+    const finalList = mode === "MERGE" ? mergeImport(base, incoming) : incoming;
+    const payload = finalList
+      .map((i) => ({
+        etapa: i.etapa,
+        tipoItem: i.tipoItem,
+        codigoItem: i.codigoItem,
+        banco: i.banco,
+        descricao: i.descricao,
+        und: i.und,
+        quantidade: i.quantidade,
+        valorUnitario: i.valorUnitario,
+        perdaPercentual: i.perdaPercentual,
+        codigoCentroCusto: i.codigoCentroCusto,
+      }))
+      .filter((i) => String(i.codigoItem || "").trim() && toNum(i.quantidade) != null);
+
+    await salvarItens(payload, mode === "MERGE" ? "CSV importado e mesclado com a composição existente." : "CSV importado substituindo a composição existente.");
+    setImportPreview({ file: null, rows: [] });
+    setImportChoiceOpen(false);
+    setImportChoiceInfo(null);
+  }
 
   async function carregarCentrosCusto() {
     try {
@@ -321,7 +582,7 @@ function moeda(v: number) {
   useEffect(() => {
     if (!idObra || !codigoServico) return;
     carregarCentrosCusto();
-    carregar();
+    carregar(true);
     carregarPrevistoPlanilha();
     carregarComposicoesDefinidas();
   }, [idObra, codigoServico]);
@@ -422,7 +683,7 @@ function moeda(v: number) {
              className="hidden"
              onChange={(e) => {
                const f = (e.target.files || [])[0] || null;
-               if (f) importarCsv(f);
+               if (f) prepararImportacaoCsv(f);
              }}
            />
            <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => fileInputRef.current?.click()} disabled={loading}>
@@ -441,7 +702,137 @@ function moeda(v: number) {
       </div>
 
       {okMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{okMsg}</div> : null}
-       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
+      {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
+
+      {importPreview.file ? (
+        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-lg font-semibold">Prévia da importação (CSV)</div>
+              <div className="text-sm text-slate-600">
+                Arquivo: <span className="font-medium">{importPreview.file.name}</span> • Válidas:{" "}
+                <span className="font-medium">{importPreview.rows.filter((r) => !Object.keys(r.errors || {}).length).length}</span> • Com erros:{" "}
+                <span className="font-medium">{importPreview.rows.filter((r) => Object.keys(r.errors || {}).length).length}</span>
+              </div>
+              {importPreview.rows.some((r) => Object.keys(r.errors || {}).length) ? (
+                <div className="mt-2 text-xs text-slate-500">Linhas com erro não serão importadas. Ajuste o CSV se precisar.</div>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                type="button"
+                onClick={() => setImportPreview({ file: null, rows: [] })}
+                disabled={loading}
+              >
+                Cancelar
+              </button>
+              <button
+                className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                type="button"
+                onClick={() => {
+                  const incomingCount = importPreview.rows.filter((r) => !Object.keys(r.errors || {}).length).length;
+                  const existingCount = itens.filter((i) => String(i.codigoItem || "").trim()).length;
+                  if (existingCount > 0) {
+                    setImportChoiceInfo({ existingCount, incomingCount });
+                    setImportChoiceOpen(true);
+                    return;
+                  }
+                  confirmarImportacao("REPLACE");
+                }}
+                disabled={loading || !importPreview.rows.filter((r) => !Object.keys(r.errors || {}).length).length}
+              >
+                Confirmar importação
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-auto rounded-lg border">
+            <table className="min-w-[1100px] w-full text-sm">
+              <thead className="bg-slate-50 text-left text-slate-700">
+                <tr>
+                  <th className="px-3 py-2">Linha</th>
+                  <th className="px-3 py-2">Etapa</th>
+                  <th className="px-3 py-2">Tipo</th>
+                  <th className="px-3 py-2">Código</th>
+                  <th className="px-3 py-2">Banco</th>
+                  <th className="px-3 py-2">Descrição</th>
+                  <th className="px-3 py-2">UND</th>
+                  <th className="px-3 py-2 text-right">Qtd</th>
+                  <th className="px-3 py-2 text-right">Valor Unit</th>
+                  <th className="px-3 py-2">CC</th>
+                </tr>
+              </thead>
+              <tbody>
+                {importPreview.rows.slice(0, 200).map((r) => {
+                  const cell = (k: keyof typeof r.errors) => (r.errors?.[k] ? "bg-red-50 text-red-700" : "");
+                  return (
+                    <tr key={r.rowIndex} className="border-t">
+                      <td className="px-3 py-2 text-xs text-slate-500">{r.rowIndex + 2}</td>
+                      <td className="px-3 py-2">{r.etapa || "—"}</td>
+                      <td className={`px-3 py-2 ${cell("tipoItem")}`}>{r.tipoItem || "—"}</td>
+                      <td className={`px-3 py-2 ${cell("codigoItem")}`}>{r.codigoItem || "—"}</td>
+                      <td className="px-3 py-2">{r.banco || "—"}</td>
+                      <td className={`px-3 py-2 ${cell("descricao")}`}>{r.descricao || "—"}</td>
+                      <td className={`px-3 py-2 ${cell("und")}`}>{r.und || "—"}</td>
+                      <td className={`px-3 py-2 text-right ${cell("quantidade")}`}>{r.quantidade || "—"}</td>
+                      <td className="px-3 py-2 text-right">{r.valorUnitario || "—"}</td>
+                      <td className="px-3 py-2">{r.codigoCentroCusto || "—"}</td>
+                    </tr>
+                  );
+                })}
+                {importPreview.rows.length > 200 ? (
+                  <tr className="border-t">
+                    <td colSpan={10} className="px-3 py-3 text-xs text-slate-500">
+                      Mostrando as primeiras 200 linhas. Total no arquivo: {importPreview.rows.length}.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
+      {importChoiceOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-xl rounded-xl border bg-white p-4 shadow-sm space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold">Este serviço já tem composição cadastrada</div>
+                <div className="text-sm text-slate-600">
+                  Atual: <span className="font-medium">{importChoiceInfo?.existingCount ?? itens.length}</span> itens • CSV:{" "}
+                  <span className="font-medium">{importChoiceInfo?.incomingCount ?? 0}</span> itens válidos
+                </div>
+              </div>
+              <button className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setImportChoiceOpen(false)} disabled={loading}>
+                Fechar
+              </button>
+            </div>
+
+            <div className="text-sm text-slate-700">Como você quer importar?</div>
+
+            <div className="flex flex-wrap gap-2 justify-end">
+              <button
+                className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                type="button"
+                onClick={() => confirmarImportacao("MERGE")}
+                disabled={loading}
+              >
+                Mesclar (somar)
+              </button>
+              <button
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-500 disabled:opacity-60"
+                type="button"
+                onClick={() => confirmarImportacao("REPLACE")}
+                disabled={loading}
+              >
+                Apagar e importar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
  
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
