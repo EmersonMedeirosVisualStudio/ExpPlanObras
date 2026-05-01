@@ -669,9 +669,11 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     <style>
       body { font-family: Arial, sans-serif; margin: 0; color: #0f172a; font-size: 9px; line-height: 1.12; }
       @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-      .print-header { position: fixed; top: ${topToHeaderPx}px; left: 0; right: 0; background: #ffffff; padding: 6px 10px; font-family: ${escapeHtml(pp.headerFontFamily)}; font-size: ${Number(pp.headerFontSizePx || 11)}px; }
+      :root { --print-header-offset: 0px; }
+      .print-header { position: fixed; top: ${topToHeaderPx}px; left: 0; right: 0; background: #ffffff; padding: 6px 10px; font-family: ${escapeHtml(pp.headerFontFamily)}; font-size: ${Number(pp.headerFontSizePx || 11)}px; z-index: 20; }
       .print-header, .print-header * { line-height: 1.12; }
-      .print-content { padding: 6px 10px; }
+      .print-content { padding: 6px 10px; position: relative; z-index: 1; }
+      .print-spacer { height: var(--print-header-offset); }
       .empresa-cabecalho { width: 100%; }
       .empresa-rodape { width: 100%; margin-top: 14px; }
       .cabecalho-planilha { width: 100%; }
@@ -707,6 +709,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       ${cabecalhoTabelaHtml}
     </div>
     <div class="print-content">
+    <div class="print-spacer"></div>
     <table class="planilha-table">
       ${colgroupHtml}
       <tbody>
@@ -720,18 +723,36 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
 </html>`);
     w.document.close();
     const doPrint = () => {
-      try {
-        const headerEl = w.document.querySelector(".print-header") as HTMLElement | null;
-        const contentEl = w.document.querySelector(".print-content") as HTMLElement | null;
-        const headerHeight = headerEl ? headerEl.offsetHeight : 0;
-        if (contentEl) contentEl.style.paddingTop = `${headerHeight + topToHeaderPx + dadosToTabelaPx}px`;
-      } catch {}
-      w.focus();
-      w.print();
-      w.close();
+      let tries = 0;
+      let lastH = -1;
+      let stableCount = 0;
+
+      const measure = () => {
+        tries++;
+        try {
+          const headerEl = w.document.querySelector(".print-header") as HTMLElement | null;
+          const headerHeight = headerEl ? Math.ceil(headerEl.getBoundingClientRect().height) : 0;
+          if (headerHeight === lastH) stableCount++;
+          else stableCount = 0;
+          lastH = headerHeight;
+
+          const offset = Math.max(0, headerHeight + topToHeaderPx + dadosToTabelaPx);
+          w.document.documentElement.style.setProperty("--print-header-offset", `${offset}px`);
+        } catch {}
+
+        if (stableCount >= 2 || tries >= 20) {
+          w.focus();
+          w.print();
+          w.close();
+          return;
+        }
+        w.requestAnimationFrame(measure);
+      };
+
+      w.requestAnimationFrame(measure);
     };
-    w.addEventListener("load", doPrint, { once: true });
-    window.setTimeout(doPrint, 250);
+
+    window.setTimeout(doPrint, 50);
   }
 
   async function carregarVersoes() {
