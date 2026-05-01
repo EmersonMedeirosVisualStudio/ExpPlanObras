@@ -478,6 +478,18 @@ async function ensureInsumosPrecosTables(tx: any) {
   await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_insumos_precos_idx_obra ON obras_insumos_precos (tenant_id, id_obra)`);
 }
 
+async function ensureEmpresaDocumentosLayoutTables(tx: any) {
+  await tx.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS empresa_documentos_layout (
+      tenant_id BIGINT PRIMARY KEY,
+      logo_data_url TEXT NULL,
+      cabecalho_texto TEXT NULL,
+      rodape_texto TEXT NULL,
+      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+}
+
 const ORGANOGRAMA_CARGOS_BASE = [
   'Servente',
   'Pedreiro',
@@ -833,11 +845,35 @@ export default async function v1Routes(server: FastifyInstance) {
       ? await sanitizeResourceObject(representativeData, { tenantId: ctx.tenantId, userId: ctx.userId, resource: 'EMPRESA_REPRESENTANTE', action: 'VIEW', entityId: representativeData.id, exportacao: false }, subject)
       : null;
 
+    await ensureEmpresaDocumentosLayoutTables(prisma);
+    const layoutRows = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        logo_data_url AS "logoDataUrl",
+        cabecalho_texto AS "cabecalho",
+        rodape_texto AS "rodape",
+        atualizado_em AS "atualizadoEm"
+      FROM empresa_documentos_layout
+      WHERE tenant_id = $1
+      LIMIT 1
+      `,
+      ctx.tenantId
+    )) as any[];
+    const layout = layoutRows && layoutRows.length
+      ? {
+          logoDataUrl: layoutRows[0].logoDataUrl ? String(layoutRows[0].logoDataUrl) : null,
+          cabecalho: layoutRows[0].cabecalho ? String(layoutRows[0].cabecalho) : null,
+          rodape: layoutRows[0].rodape ? String(layoutRows[0].rodape) : null,
+          atualizadoEm: layoutRows[0].atualizadoEm ? new Date(layoutRows[0].atualizadoEm).toISOString() : null,
+        }
+      : { logoDataUrl: null, cabecalho: null, rodape: null, atualizadoEm: null };
+
     return ok(reply, {
       representante: safeRepresentative,
       encarregadoSistema: encarregadoData,
       ceo: ceoTitular ? { roleCode: 'CEO', idFuncionario: ceoTitular.funcionarioId, nome: ceoTitular.funcionario.nomeCompleto } : null,
       gerenteRh: rhTitular ? { roleCode: 'GERENTE_RH', idFuncionario: rhTitular.funcionarioId, nome: rhTitular.funcionario.nomeCompleto } : null,
+      documentosLayout: layout,
       historico: historico.map((h) => ({
         id: h.id,
         source: h.source,
@@ -848,6 +884,64 @@ export default async function v1Routes(server: FastifyInstance) {
       haSolicitacaoSaida: Boolean(encarregado?.solicitouSaida),
     });
   });
+
+  server.put(
+    '/empresa/documentos-layout',
+    {
+      schema: {
+        body: z.object({
+          logoDataUrl: z.string().optional().nullable(),
+          cabecalho: z.string().optional().nullable(),
+          rodape: z.string().optional().nullable(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const ctx = await requireRepresentative(request, reply);
+      if (!ctx || (ctx as any).success === false) return;
+
+      const body = request.body as any;
+      const logoDataUrl = body.logoDataUrl == null ? null : String(body.logoDataUrl || '').trim();
+      const cabecalho = body.cabecalho == null ? null : String(body.cabecalho || '');
+      const rodape = body.rodape == null ? null : String(body.rodape || '');
+
+      if (logoDataUrl) {
+        if (!logoDataUrl.startsWith('data:image/')) return fail(reply, 422, 'Logo inválida. Envie uma imagem (data:image/...).');
+        if (logoDataUrl.length > 800_000) return fail(reply, 422, 'Logo muito grande. Use uma imagem menor.');
+      }
+      if (cabecalho && cabecalho.length > 5000) return fail(reply, 422, 'Cabeçalho muito grande.');
+      if (rodape && rodape.length > 5000) return fail(reply, 422, 'Rodapé muito grande.');
+
+      await ensureEmpresaDocumentosLayoutTables(prisma);
+      await prisma.$executeRawUnsafe(
+        `
+        INSERT INTO empresa_documentos_layout (tenant_id, logo_data_url, cabecalho_texto, rodape_texto, atualizado_em)
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (tenant_id)
+        DO UPDATE SET
+          logo_data_url = EXCLUDED.logo_data_url,
+          cabecalho_texto = EXCLUDED.cabecalho_texto,
+          rodape_texto = EXCLUDED.rodape_texto,
+          atualizado_em = NOW()
+        `,
+        ctx.tenantId,
+        logoDataUrl,
+        cabecalho,
+        rodape
+      );
+
+      await audit({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        entidade: 'empresa_documentos_layout',
+        idRegistro: String(ctx.tenantId),
+        acao: 'UPDATE',
+        dadosNovos: { logo: Boolean(logoDataUrl), cabecalho: Boolean(cabecalho), rodape: Boolean(rodape) } as any,
+      });
+
+      return ok(reply, { ok: true }, { message: 'Layout de documentos atualizado' });
+    }
+  );
 
   server.put(
     '/empresa/representante',

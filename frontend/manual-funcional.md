@@ -449,6 +449,16 @@ Regras:
 - após delegar um papel para outro funcionário, o Representante perde a autonomia de criação/alteração dentro das telas respectivas e passa a operar nelas em modo de visualização;
 - o Representante mantém autoridade máxima para redefinir os titulares a qualquer momento.
 
+#### Identidade e padrão de documentos (empresa)
+
+No menu **Painéis → Representante → Configurações**, o Representante pode definir:
+
+- **Logo da empresa** (imagem) para uso em documentos;
+- **Cabeçalho** padrão (texto);
+- **Rodapé** padrão (texto).
+
+Essas informações ficam salvas por empresa e podem ser reutilizadas pelos módulos de geração/visualização de documentos.
+
 #### Cadastro inicial de funcionários (mínimo viável)
 
 Para viabilizar a delegação:

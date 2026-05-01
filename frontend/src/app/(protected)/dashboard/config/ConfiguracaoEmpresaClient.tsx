@@ -16,6 +16,7 @@ export default function ConfiguracaoEmpresaClient({ modo = 'REPRESENTANTE' }: { 
   const [savingRole, setSavingRole] = useState<null | 'CEO' | 'ENCARREGADO' | 'GERENTE_RH'>(null);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [savingDocLayout, setSavingDocLayout] = useState(false);
 
   const [config, setConfig] = useState<ConfiguracaoEmpresaDTO>({
     representante: null,
@@ -24,6 +25,11 @@ export default function ConfiguracaoEmpresaClient({ modo = 'REPRESENTANTE' }: { 
     gerenteRh: null,
   });
   const [funcionarios, setFuncionarios] = useState<FuncionarioSelectDTO[]>([]);
+  const [docLayout, setDocLayout] = useState<{ logoDataUrl: string | null; cabecalho: string; rodape: string }>({
+    logoDataUrl: null,
+    cabecalho: '',
+    rodape: '',
+  });
 
   const [modalFuncionario, setModalFuncionario] = useState<null | { target: 'CEO' | 'ENCARREGADO' | 'GERENTE_RH' }>(null);
 
@@ -41,6 +47,12 @@ export default function ConfiguracaoEmpresaClient({ modo = 'REPRESENTANTE' }: { 
 
       setConfig(cfg);
       setFuncionarios(funcs);
+      const dl = (cfg as any)?.documentosLayout as any;
+      setDocLayout({
+        logoDataUrl: dl?.logoDataUrl ? String(dl.logoDataUrl) : null,
+        cabecalho: dl?.cabecalho ? String(dl.cabecalho) : '',
+        rodape: dl?.rodape ? String(dl.rodape) : '',
+      });
     } catch (e: any) {
       setError(e.message || 'Erro ao carregar configuração.');
     } finally {
@@ -92,6 +104,33 @@ export default function ConfiguracaoEmpresaClient({ modo = 'REPRESENTANTE' }: { 
     const created = await EmpresaConfigApi.criarFuncionarioSimples(payload);
     await carregar();
     return created;
+  }
+
+  async function toDataUrl(file: File) {
+    const blob = file;
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Falha ao ler arquivo.'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function salvarDocumentosLayout() {
+    try {
+      setActionError(null);
+      setSavingDocLayout(true);
+      await EmpresaConfigApi.atualizarDocumentosLayout({
+        logoDataUrl: docLayout.logoDataUrl || null,
+        cabecalho: docLayout.cabecalho || null,
+        rodape: docLayout.rodape || null,
+      });
+      await carregar();
+    } catch (e: any) {
+      setActionError(e.message || 'Erro ao salvar layout de documentos.');
+    } finally {
+      setSavingDocLayout(false);
+    }
   }
 
   if (loading) {
@@ -243,6 +282,103 @@ export default function ConfiguracaoEmpresaClient({ modo = 'REPRESENTANTE' }: { 
               )}
             </div>
         </div>
+
+      {modo === 'REPRESENTANTE' ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-900">Documentos da empresa</h2>
+            <div className="text-sm text-slate-500">Logo, cabeçalho e rodapé.</div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-sm font-semibold text-slate-800">Logo</div>
+              <div className="mt-1 text-xs text-slate-500">Usado no cabeçalho de documentos.</div>
+              {docLayout.logoDataUrl ? (
+                <div className="mt-3 rounded-lg border bg-white p-3">
+                  <img src={docLayout.logoDataUrl} alt="Logo" className="max-h-16 w-auto" />
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <button
+                      className="rounded-lg border bg-white px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 disabled:text-slate-400"
+                      type="button"
+                      onClick={() => setDocLayout((p) => ({ ...p, logoDataUrl: null }))}
+                      disabled={savingDocLayout}
+                    >
+                      Remover
+                    </button>
+                    <label className="rounded-lg border bg-white px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer">
+                      Trocar
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={savingDocLayout}
+                        onChange={async (e) => {
+                          const f = (e.target.files || [])[0] || null;
+                          if (!f) return;
+                          try {
+                            const dataUrl = await toDataUrl(f);
+                            setDocLayout((p) => ({ ...p, logoDataUrl: dataUrl }));
+                          } catch (err: any) {
+                            setActionError(err?.message || 'Erro ao carregar logo.');
+                          } finally {
+                            e.currentTarget.value = '';
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3">
+                  <label className="inline-flex rounded-lg border bg-white px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 cursor-pointer">
+                    Enviar logo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={savingDocLayout}
+                      onChange={async (e) => {
+                        const f = (e.target.files || [])[0] || null;
+                        if (!f) return;
+                        try {
+                          const dataUrl = await toDataUrl(f);
+                          setDocLayout((p) => ({ ...p, logoDataUrl: dataUrl }));
+                        } catch (err: any) {
+                          setActionError(err?.message || 'Erro ao carregar logo.');
+                        } finally {
+                          e.currentTarget.value = '';
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-800">Cabeçalho</div>
+                <textarea className="input min-h-[88px]" value={docLayout.cabecalho} onChange={(e) => setDocLayout((p) => ({ ...p, cabecalho: e.target.value }))} disabled={savingDocLayout} />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-800">Rodapé</div>
+                <textarea className="input min-h-[88px]" value={docLayout.rodape} onChange={(e) => setDocLayout((p) => ({ ...p, rodape: e.target.value }))} disabled={savingDocLayout} />
+              </div>
+              <div className="flex justify-end">
+                <button
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60"
+                  type="button"
+                  onClick={salvarDocumentosLayout}
+                  disabled={savingDocLayout}
+                >
+                  {savingDocLayout ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {modalFuncionario && (
         <Modal titulo="Cadastrar funcionário (mínimo)" onClose={() => setModalFuncionario(null)}>

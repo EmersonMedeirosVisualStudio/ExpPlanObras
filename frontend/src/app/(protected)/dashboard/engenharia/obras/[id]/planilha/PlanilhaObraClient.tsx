@@ -1285,7 +1285,6 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                 </div>
                 <div className="text-sm text-slate-600">Somente a versão atual pode ser editada, e apenas quando a obra estiver "Não iniciada".</div>
               </div>
-              <div className="text-sm text-slate-600">Status da obra: {obraStatus || "—"}</div>
             </div>
           </section>
 
