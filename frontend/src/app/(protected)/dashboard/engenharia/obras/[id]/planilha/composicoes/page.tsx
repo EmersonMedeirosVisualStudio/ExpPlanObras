@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 type ValidacaoRow = {
+  item: string;
   codigoServico: string;
   servico: string;
   totalPlanilha: number;
@@ -31,6 +32,11 @@ export default function Page() {
   const [err, setErr] = useState<string | null>(null);
   const [planilhaId, setPlanilhaId] = useState<number | null>(null);
   const [rows, setRows] = useState<ValidacaoRow[]>([]);
+  const [statusFilter, setStatusFilter] = useState<{ OK: boolean; SEM_COMPOSICAO: boolean; DIVERGENTE: boolean }>({
+    OK: true,
+    SEM_COMPOSICAO: true,
+    DIVERGENTE: true,
+  });
   const [refs, setRefs] = useState<RefRow[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -75,6 +81,7 @@ export default function Page() {
       const list = Array.isArray(json.data?.rows) ? (json.data.rows as any[]) : [];
       setRows(
         list.map((r) => ({
+          item: String(r.item || "").trim(),
           codigoServico: String(r.codigoServico || "").trim().toUpperCase(),
           servico: String(r.servico || ""),
           totalPlanilha: Number(r.totalPlanilha || 0),
@@ -124,6 +131,8 @@ export default function Page() {
   useEffect(() => {
     carregarTudo();
   }, [idObra]);
+
+  const filteredRows = useMemo(() => rows.filter((r) => Boolean(statusFilter[r.status])), [rows, statusFilter]);
 
   function baixarModeloComposicoesCsv() {
     const sep = "\t";
@@ -240,10 +249,31 @@ export default function Page() {
           <div className="text-sm text-slate-600">Planilha: {planilhaId ? `#${planilhaId}` : "—"}</div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={statusFilter.SEM_COMPOSICAO}
+              onChange={(e) => setStatusFilter((p) => ({ ...p, SEM_COMPOSICAO: Boolean(e.target.checked) }))}
+            />
+            <span className="text-slate-700">Sem composição</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={statusFilter.DIVERGENTE} onChange={(e) => setStatusFilter((p) => ({ ...p, DIVERGENTE: Boolean(e.target.checked) }))} />
+            <span className="text-slate-700">Divergente</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={statusFilter.OK} onChange={(e) => setStatusFilter((p) => ({ ...p, OK: Boolean(e.target.checked) }))} />
+            <span className="text-slate-700">OK</span>
+          </label>
+          <div className="text-slate-500">Mostrando: {filteredRows.length} / {rows.length}</div>
+        </div>
+
         <div className="overflow-auto">
-          <table className="min-w-[1100px] w-full text-sm">
+          <table className="min-w-[1180px] w-full text-sm">
             <thead className="bg-slate-50 text-left text-slate-700">
               <tr>
+                <th className="px-3 py-2">ITEM</th>
                 <th className="px-3 py-2">CÓDIGO</th>
                 <th className="px-3 py-2">SERVIÇO</th>
                 <th className="px-3 py-2 text-right">PLANILHA</th>
@@ -254,8 +284,9 @@ export default function Page() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {filteredRows.map((r) => (
                 <tr key={r.codigoServico} className="border-t">
+                  <td className="px-3 py-2 font-medium">{r.item || "—"}</td>
                   <td className="px-3 py-2 font-medium">{r.codigoServico}</td>
                   <td className="px-3 py-2">{r.servico}</td>
                   <td className="px-3 py-2 text-right">{moeda(Number(r.totalPlanilha || 0))}</td>
@@ -287,9 +318,9 @@ export default function Page() {
                   </td>
                 </tr>
               ))}
-              {!rows.length ? (
+              {!filteredRows.length ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={8} className="px-3 py-6 text-center text-slate-500">
                     Sem dados.
                   </td>
                 </tr>

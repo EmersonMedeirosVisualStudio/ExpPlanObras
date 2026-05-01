@@ -1245,7 +1245,7 @@ async function readTextSmart(file: File) {
        <div className="flex items-start justify-between gap-3 flex-wrap">
          <div>
            <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Serviço</div>
-           <h1 className="text-2xl font-semibold">Composição do serviço {codigoServico || "—"}</h1>
+          <h1 className="text-2xl font-semibold">Análise de composição — {codigoServico || "—"}</h1>
            <div className="text-sm text-slate-600">Importe por CSV ou cadastre manualmente os insumos do serviço.</div>
          </div>
          <div className="flex items-center gap-2 flex-wrap">

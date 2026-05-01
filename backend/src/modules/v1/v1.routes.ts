@@ -4695,6 +4695,7 @@ export default async function v1Routes(server: FastifyInstance) {
       planilha_servicos AS (
         SELECT
           UPPER(COALESCE(codigo,'')) AS codigo_servico,
+          COALESCE(MIN(item) FILTER (WHERE COALESCE(item,'') <> ''), '') AS item,
           COALESCE(MAX(servico), '') AS servico,
           SUM(COALESCE(valor_parcial, 0)) AS total_planilha
         FROM obras_planilhas_linhas
@@ -4716,6 +4717,7 @@ export default async function v1Routes(server: FastifyInstance) {
       )
       SELECT
         s.codigo_servico AS "codigoServico",
+        s.item AS "item",
         s.servico AS "servico",
         s.total_planilha AS "totalPlanilha",
         COALESCE(c.qtd_itens, 0) AS "qtdItens",
@@ -4746,6 +4748,7 @@ export default async function v1Routes(server: FastifyInstance) {
       const status = !hasComposicao ? 'SEM_COMPOSICAO' : Math.abs(diff) > 0.01 ? 'DIVERGENTE' : 'OK';
       return {
         codigoServico: String(r.codigoServico || '').trim(),
+        item: String(r.item || '').trim(),
         servico: String(r.servico || ''),
         totalPlanilha,
         totalComposicao: Number(totalComLSComBDI.toFixed(6)),
