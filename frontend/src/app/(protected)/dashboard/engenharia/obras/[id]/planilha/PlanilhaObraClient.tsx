@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Check, Printer, FileSpreadsheet, Pencil, Trash2, XCircle, TriangleAlert } from "lucide-react";
+import { Download, Check, Printer, FileSpreadsheet, Pencil, Trash2, XCircle, TriangleAlert, Image } from "lucide-react";
 
 type ComposicaoItem = {
   idItemBase: number;
@@ -242,6 +242,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   const [versoes, setVersoes] = useState<VersaoRow[]>([]);
   const [planilha, setPlanilha] = useState<Planilha | null>(null);
   const [planilhaId, setPlanilhaId] = useState<number | null>(null);
+  const [showPrintConfig, setShowPrintConfig] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importPreview, setImportPreview] = useState<{
@@ -565,6 +566,39 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
           </div>`
         : "";
 
+    const colgroupHtml = `
+      <colgroup>
+        <col style="width:44px" />
+        <col style="width:96px" />
+        <col style="width:68px" />
+        <col />
+        <col style="width:50px" />
+        <col style="width:64px" />
+        <col style="width:74px" />
+        <col style="width:86px" />
+      </colgroup>
+    `;
+
+    const cabecalhoTabelaHtml = `
+      <div class="cabecalho-tabela" style="margin-top:10px;">
+        <table class="planilha-head-table">
+          ${colgroupHtml}
+          <thead>
+            <tr>
+              <th>ITEM</th>
+              <th>CÓDIGO</th>
+              <th>FONTE</th>
+              <th>SERVIÇOS</th>
+              <th>UND</th>
+              <th style="text-align:right">QUANT.</th>
+              <th style="text-align:right">VALOR UNIT.</th>
+              <th style="text-align:right">VALOR PARCIAL</th>
+            </tr>
+          </thead>
+        </table>
+      </div>
+    `;
+
     const cabecalhoPlanilhaHtml = `
       <div class="cabecalho-planilha" style="margin-top:${headerToDadosPx}px;">
         <div class="cab-outer">
@@ -641,6 +675,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       .empresa-cabecalho { width: 100%; }
       .empresa-rodape { width: 100%; margin-top: 14px; }
       .cabecalho-planilha { width: 100%; }
+      .cabecalho-tabela { width: 100%; }
       .cab-outer { display: grid; grid-template-columns: 1fr 1fr; border: 2px solid #0f172a; }
       .cab-left { padding: 6px 8px; }
       .cab-right { border-left: 2px solid #0f172a; padding: 6px 8px; }
@@ -660,8 +695,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       table { width: 100%; border-collapse: collapse; font-size: 9px; line-height: 1.1; }
       th, td { border: 1px solid #e2e8f0; padding: 4px 6px; vertical-align: top; }
       th { background: #f8fafc; text-align: left; padding: 6px 6px; }
-      thead { display: table-header-group; }
-      .planilha-table th:nth-child(2), .planilha-table td:nth-child(2) { width: 56px; max-width: 56px; }
+      .planilha-head-table th { border: 1px solid #e2e8f0; }
       .planilha-table td:nth-child(2) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .planilha-table td:nth-child(2) { padding-top: 1px; padding-bottom: 1px; line-height: 1.0; }
     </style>
@@ -670,21 +704,11 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     <div class="print-header">
       ${cabecalhoEmpresaHtml}
       ${cabecalhoPlanilhaHtml}
+      ${cabecalhoTabelaHtml}
     </div>
     <div class="print-content">
     <table class="planilha-table">
-      <thead>
-        <tr>
-          <th>ITEM</th>
-          <th>CÓDIGO</th>
-          <th>FONTE</th>
-          <th>SERVIÇOS</th>
-          <th>UND</th>
-          <th style="text-align:right">QUANT.</th>
-          <th style="text-align:right">VALOR UNIT.</th>
-          <th style="text-align:right">VALOR PARCIAL</th>
-        </tr>
-      </thead>
+      ${colgroupHtml}
       <tbody>
         ${rowsHtml}
       </tbody>
@@ -1652,6 +1676,15 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                       <Printer className="h-4 w-4" />
                       Imprimir
                     </button>
+                  <button
+                    className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2 disabled:opacity-60"
+                    type="button"
+                    onClick={() => setShowPrintConfig((v) => !v)}
+                    disabled={loading || !planilha}
+                    title="Configurar impressão"
+                  >
+                    <Image className="h-4 w-4" />
+                  </button>
                     <button
                       className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 inline-flex items-center gap-2 disabled:opacity-60"
                       type="button"
@@ -1699,7 +1732,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                   </div>
                 </div>
 
-                <div className="rounded-lg border bg-white p-3 space-y-3">
+                {showPrintConfig ? <div className="rounded-lg border bg-white p-3 space-y-3">
                   <div className="text-sm font-semibold">Impressão — ajustes finos</div>
 
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
@@ -1853,7 +1886,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                       </div>
                     </div>
                   </div>
-                </div>
+                </div> : null}
 
             <div ref={adicionarLinhaRef} className="rounded-lg border bg-slate-50 p-3 space-y-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -2047,10 +2080,10 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
               <table className="min-w-[1100px] w-full" style={{ fontSize: `${uiPrefs.fontSizePx}px` }}>
                 <thead className="bg-slate-50 text-left text-slate-700">
                   <tr>
-                    <th className="px-3 py-2 w-[52px] border-r border-slate-200">ITEM</th>
-                    <th className="px-3 py-2 w-[98px] border-r border-slate-200">CÓDIGO</th>
+                    <th className="px-3 py-2 w-[36px] border-r border-slate-200">ITEM</th>
+                    <th className="px-3 py-2 w-[118px] border-r border-slate-200">CÓDIGO</th>
                     <th className="px-3 py-2 border-r border-slate-200">FONTE</th>
-                    <th className="px-3 py-2 min-w-[468px] border-r border-slate-200">SERVIÇOS</th>
+                    <th className="px-3 py-2 min-w-[374px] border-r border-slate-200">SERVIÇOS</th>
                     <th className="px-3 py-2 border-r border-slate-200">UND</th>
                     <th className="px-3 py-2 text-right border-r border-slate-200">QUANT.</th>
                     <th className="px-3 py-2 text-right border-r border-slate-200">VALOR UNIT.</th>
@@ -2075,7 +2108,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                         );
                       }}
                     >
-                      <td className="px-3 py-2 w-[52px] border-r border-slate-200">
+                      <td className="px-3 py-2 w-[36px] border-r border-slate-200">
                         <span className="inline-flex items-center gap-2">
                           {l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM" ? (
                             expandablePrefixes.has(String(l.item || "").trim()) ? (
@@ -2099,7 +2132,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                           <span>{l.item || ""}</span>
                         </span>
                       </td>
-                      <td className="px-3 py-2 w-[98px] max-w-[98px] whitespace-nowrap overflow-hidden text-ellipsis border-r border-slate-200">
+                      <td className="px-3 py-2 w-[118px] max-w-[118px] whitespace-nowrap overflow-hidden text-ellipsis border-r border-slate-200">
                         <span className="inline-flex items-center gap-2">
                           <span className="text-[11px]">{l.codigo || ""}</span>
                           {(() => {
@@ -2129,7 +2162,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                         </span>
                       </td>
                       <td className="px-3 py-2 border-r border-slate-200">{l.fonte || ""}</td>
-                      <td className="px-3 py-2 min-w-[468px] border-r border-slate-200">{l.servicos || ""}</td>
+                      <td className="px-3 py-2 min-w-[374px] border-r border-slate-200">{l.servicos || ""}</td>
                       <td className="px-3 py-2 border-r border-slate-200">{l.und || ""}</td>
                       <td className="px-3 py-2 text-right border-r border-slate-200">{l.quant || ""}</td>
                       <td className="px-3 py-2 text-right border-r border-slate-200">{l.valorUnitario || ""}</td>
