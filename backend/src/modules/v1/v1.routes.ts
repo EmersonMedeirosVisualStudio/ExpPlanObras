@@ -462,6 +462,22 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
   await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ADD COLUMN IF NOT EXISTS valor_unitario NUMERIC(14,6) NULL`).catch(() => null);
 }
 
+async function ensureInsumosPrecosTables(tx: any) {
+  await tx.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS obras_insumos_precos (
+      id_preco BIGSERIAL PRIMARY KEY,
+      tenant_id BIGINT NOT NULL,
+      id_obra BIGINT NOT NULL,
+      codigo_item VARCHAR(80) NOT NULL,
+      valor_unitario NUMERIC(14,6) NOT NULL,
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_insumos_precos_uk ON obras_insumos_precos (tenant_id, id_obra, codigo_item)`);
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_insumos_precos_idx_obra ON obras_insumos_precos (tenant_id, id_obra)`);
+}
+
 const ORGANOGRAMA_CARGOS_BASE = [
   'Servente',
   'Pedreiro',
@@ -5078,6 +5094,165 @@ export default async function v1Routes(server: FastifyInstance) {
       },
       { message: 'Insumos consolidados' }
     );
+  });
+
+  server.get('/engenharia/obras/:id/planilha/insumos/precos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensureInsumosPrecosTables(prisma);
+
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      SELECT codigo_item AS "codigoItem", valor_unitario AS "valorUnitario", atualizado_em AS "atualizadoEm"
+      FROM obras_insumos_precos
+      WHERE tenant_id = $1 AND id_obra = $2
+      ORDER BY codigo_item
+      `,
+      ctx.tenantId,
+      idObra
+    )) as any[];
+
+    return ok(reply, {
+      rows: (rows || []).map((r: any) => ({
+        codigoItem: String(r.codigoItem || '').trim(),
+        valorUnitario: r.valorUnitario == null ? 0 : Number(r.valorUnitario),
+        atualizadoEm: r.atualizadoEm ? new Date(r.atualizadoEm).toISOString() : null,
+      })),
+    });
+  });
+
+  server.post('/engenharia/obras/:id/planilha/insumos/precos', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    const body = z
+      .object({
+        codigoItem: z.string().min(1),
+        valorUnitario: z.coerce.number(),
+      })
+      .parse(request.body || {});
+
+    const codigoItem = String(body.codigoItem || '').trim().toUpperCase();
+    const valorUnitario = Number(body.valorUnitario);
+    if (!codigoItem) return fail(reply, 422, 'codigoItem é obrigatório');
+    if (!Number.isFinite(valorUnitario) || valorUnitario < 0) return fail(reply, 422, 'valorUnitario inválido');
+
+    await ensureInsumosPrecosTables(prisma);
+
+    await prisma.$executeRawUnsafe(
+      `
+      INSERT INTO obras_insumos_precos (tenant_id, id_obra, codigo_item, valor_unitario)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (tenant_id, id_obra, codigo_item)
+      DO UPDATE SET valor_unitario = EXCLUDED.valor_unitario, atualizado_em = NOW()
+      `,
+      ctx.tenantId,
+      idObra,
+      codigoItem,
+      valorUnitario
+    );
+
+    return ok(reply, { ok: true }, { message: 'Preço salvo' });
+  });
+
+  server.post('/engenharia/obras/:id/planilha/insumos/precos/importar-csv', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensureInsumosPrecosTables(prisma);
+
+    const isMultipart = typeof (request as any).isMultipart === 'function' ? (request as any).isMultipart() : false;
+    if (!isMultipart) return fail(reply, 422, 'Envie multipart/form-data com arquivo no campo "file"');
+
+    const parts = (request as any).parts();
+    let fileBuffer: Buffer | null = null;
+    for await (const part of parts) {
+      if (part.type === 'file' && String(part.fieldname) === 'file') fileBuffer = await part.toBuffer();
+    }
+    if (!fileBuffer) return fail(reply, 422, 'Arquivo CSV é obrigatório (campo "file")');
+
+    let csvText = decodeCsvBuffer(fileBuffer);
+    csvText = csvText.replace(/^\uFEFF/, '');
+    const { headers, rows } = parseCsvTextAuto(csvText);
+    if (!headers.length || !rows.length) return fail(reply, 422, 'CSV vazio ou inválido');
+
+    const idx: Record<string, number> = Object.fromEntries(headers.map((h, i) => [normalizeHeader(h), i]));
+    const get = (r: string[], key: string) => String(r[idx[key]] ?? '').trim();
+
+    const codigoKey = idx['codigo'] != null ? 'codigo' : idx['codigo_item'] != null ? 'codigo_item' : idx['insumo'] != null ? 'insumo' : '';
+    if (!codigoKey) return fail(reply, 422, 'Coluna obrigatória ausente: codigo (ou codigo_item)');
+
+    const valorKey =
+      idx['valor_unitario'] != null
+        ? 'valor_unitario'
+        : idx['valor_unit'] != null
+          ? 'valor_unit'
+          : idx['valorunit'] != null
+            ? 'valorunit'
+            : idx['valor'] != null
+              ? 'valor'
+              : '';
+    if (!valorKey) return fail(reply, 422, 'Coluna obrigatória ausente: valor_unitario (ou valor_unit)');
+
+    const preparedAll = rows.map((r, i) => {
+        const codigo = String(get(r, codigoKey) || '').trim().toUpperCase();
+        const v = toDec(get(r, valorKey));
+        if (!codigo) return { ok: false as const, rowIndex: i, message: 'Código vazio' };
+        if (v == null || !(v >= 0)) return { ok: false as const, rowIndex: i, message: 'Valor unitário inválido' };
+        return { ok: true as const, codigo, valor: v };
+      });
+
+    const invalid = preparedAll.find((x) => !x.ok);
+    if (invalid && !invalid.ok) return fail(reply, 422, `Erro no CSV (linha ${invalid.rowIndex + 2}): ${invalid.message}`);
+
+    const prepared = preparedAll.filter((x): x is Extract<(typeof preparedAll)[number], { ok: true }> => x.ok);
+
+    if (!prepared.length) return fail(reply, 422, 'Nenhuma linha válida para importar');
+
+    await prisma.$transaction(async (tx: any) => {
+      const chunkSize = 500;
+      for (let start = 0; start < prepared.length; start += chunkSize) {
+        const chunk = prepared.slice(start, start + chunkSize);
+        const params: any[] = [];
+        let p = 1;
+        const values = chunk
+          .map((r) => {
+            const base = [ctx.tenantId, idObra, r.codigo, r.valor];
+            for (const v of base) params.push(v);
+            const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+            return `(${placeholders})`;
+          })
+          .join(',');
+
+        await tx.$executeRawUnsafe(
+          `
+          INSERT INTO obras_insumos_precos (tenant_id, id_obra, codigo_item, valor_unitario)
+          VALUES ${values}
+          ON CONFLICT (tenant_id, id_obra, codigo_item)
+          DO UPDATE SET valor_unitario = EXCLUDED.valor_unitario, atualizado_em = NOW()
+          `,
+          ...params
+        );
+      }
+    });
+
+    return ok(reply, { imported: prepared.length }, { message: 'Preços importados' });
   });
 
   server.get('/engenharia/projetos', async (request, reply) => {

@@ -1665,14 +1665,21 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 #### Implementação (no sistema)
 
 - Engenharia → Obras → Planilha contratada / Planilha orçamentária
-- Importação/edição: serviços, composições, insumos, quantitativos e custos
-- Importação e criação de versões não são bloqueadas pelo status da obra; a edição é permitida apenas na versão atual
-- Importação CSV com **prévia**: antes de gravar, o sistema mostra uma grade de conferência e destaca campos inválidos
-- Colunas importadas (CSV): `item`, `codigo`, `fonte`, `servicos`, `und`, `quant`, `valor_unitario` (o **valor parcial** é calculado automaticamente)
-- Visual da planilha: linhas do tipo **Item** e **Subitem** são exibidas em negrito; o usuário pode definir **tamanho da fonte** e **cor de fundo** (Item/Subitem) e essas preferências ficam salvas para o usuário
-- A planilha exibe o **Valor total** (soma dos serviços)
-- A planilha exibe **subtotal** (valor parcial consolidado) por **Item** e por **Subitem**
-- A prévia da importação exibe o **total consolidado** antes de confirmar
+- Navegação (UI): as telas **Planilha orçamentária**, **Composições da obra** e **Insumos consolidados** possuem botões de navegação no **canto superior direito**, alinhados ao título da página (Planilha/Composições/Insumos/Voltar). Os botões específicos de cada tela ficam logo abaixo desses botões principais.
+- Versões: ao entrar na tela, o sistema **não abre automaticamente** nenhuma planilha. O usuário deve selecionar a versão desejada no card **Versões cadastradas**.
+  - Ações no card **Versões cadastradas**: **Atualizar**, **Importar CSV**, **Modelo CSV** e **Nova planilha**.
+- Importação CSV (planilha) com **prévia**: antes de gravar, o sistema mostra uma grade de conferência e destaca campos inválidos.
+  - Colunas importadas (CSV): `item`, `codigo`, `fonte`, `servicos`, `und`, `quant`, `valor_unitario` (o **valor parcial** é calculado automaticamente).
+  - Observação de compatibilidade: leitura “smart” de encoding (UTF-8 / Windows-1252) para reduzir erros de acentuação no texto importado.
+- Após selecionar uma versão, o sistema exibe o card **Visualizando** e, em seguida, o card **Navegação** (visível apenas com planilha selecionada) para abrir/fechar e rolar até: **Parâmetros**, **Planilha** e **Adicionar linha**.
+- Planilha (visual): linhas do tipo **Item** e **Subitem** são exibidas em negrito; o usuário pode definir **tamanho da fonte** e **cor de fundo** (Item/Subitem) e essas preferências ficam salvas para o usuário.
+- Planilha (exportação): no card **Planilha orçamentária**, os botões **Imprimir**, **PDF** e **CSV** ficam no canto superior direito do card.
+- Composições da obra:
+  - Importação e modelo de CSV de composições ficam na própria tela **Composições da obra**.
+  - A tela marca serviços **sem composição** e **divergentes** comparando total da planilha x total calculado por composição.
+- Insumos consolidados:
+  - Além do consolidado, existe o card **Preço dos insumos**, com cadastro **manual** e importação via **CSV (cód + valor unitário)**.
+  - A tabela passa a exibir **Valor unit** e **Total (QTD × VALOR)** quando existir preço cadastrado/importado.
 
 #### Validação
 

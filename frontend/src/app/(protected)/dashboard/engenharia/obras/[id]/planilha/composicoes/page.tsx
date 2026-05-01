@@ -165,10 +165,15 @@ export default function Page() {
 
   return (
     <div className="p-6 space-y-4 max-w-7xl text-slate-900">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="inline-flex items-center gap-1 rounded-lg border bg-white p-1">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Composições</div>
+          <h1 className="text-2xl font-semibold">Composições da obra — Obra #{idObra}</h1>
+          <div className="text-sm text-slate-600">As composições são da obra (valem para qualquer versão da planilha). Esta tela ajuda a ver faltantes e divergências.</div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
           <button
-            className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
             onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha?returnTo=${encodeURIComponent(returnTo || "")}`)}
             disabled={loading}
@@ -176,7 +181,7 @@ export default function Page() {
             Planilha
           </button>
           <button
-            className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-60"
+            className="rounded-lg border bg-blue-600 px-4 py-2 text-sm text-white border-blue-600 hover:bg-blue-500 disabled:opacity-60"
             type="button"
             onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(returnTo || "")}`)}
             disabled={loading}
@@ -184,7 +189,7 @@ export default function Page() {
             Composições
           </button>
           <button
-            className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
             onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(returnTo || "")}`)}
             disabled={loading}
@@ -192,7 +197,7 @@ export default function Page() {
             Insumos
           </button>
           <button
-            className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
             onClick={() => router.push(returnTo || `/dashboard/engenharia/obras/${idObra}/planilha`)}
             disabled={loading}
@@ -200,32 +205,28 @@ export default function Page() {
             Voltar
           </button>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregarTudo} disabled={loading}>
-            Atualizar
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => {
-              const f = (e.target.files || [])[0] || null;
-              if (f) importarComposicoesCsv(f);
-            }}
-          />
-          <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => fileInputRef.current?.click()} disabled={loading}>
-            Importar CSV (composições)
-          </button>
-          <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={baixarModeloComposicoesCsv} disabled={loading}>
-            Modelo CSV (composições)
-          </button>
-        </div>
       </div>
-      <div>
-        <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Composições</div>
-        <h1 className="text-2xl font-semibold">Composições da obra — Obra #{idObra}</h1>
-        <div className="text-sm text-slate-600">As composições são da obra (valem para qualquer versão da planilha). Esta tela ajuda a ver faltantes e divergências.</div>
+
+      <div className="flex items-center justify-end gap-2 flex-wrap">
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregarTudo} disabled={loading}>
+          Atualizar
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={(e) => {
+            const f = (e.target.files || [])[0] || null;
+            if (f) importarComposicoesCsv(f);
+          }}
+        />
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => fileInputRef.current?.click()} disabled={loading}>
+          Importar CSV (composições)
+        </button>
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={baixarModeloComposicoesCsv} disabled={loading}>
+          Modelo CSV (composições)
+        </button>
       </div>
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}

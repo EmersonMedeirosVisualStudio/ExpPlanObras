@@ -1010,50 +1010,10 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
 
   return (
     <div className="p-6 space-y-6 max-w-7xl text-slate-900">
-      <div className="flex items-center justify-start">
-        <div className="inline-flex items-center gap-1 rounded-lg border bg-white p-1">
-          <button
-            className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-60"
-            type="button"
-            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha?returnTo=${encodeURIComponent(returnTo || "")}`)}
-            disabled={loading}
-          >
-            Planilha
-          </button>
-          <button
-            className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            type="button"
-            onClick={() =>
-              router.push(`/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(returnTo || `/dashboard/engenharia/obras/${idObra}`)}`)
-            }
-            disabled={loading}
-          >
-            Composições
-          </button>
-          <button
-            className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            type="button"
-            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(returnTo || `/dashboard/engenharia/obras/${idObra}`)}`)}
-            disabled={loading}
-          >
-            Insumos
-          </button>
-          <button
-            className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            type="button"
-            onClick={() => router.push(returnTo || `/dashboard/engenharia/obras/${idObra}`)}
-            disabled={loading}
-          >
-            Voltar
-          </button>
-        </div>
-      </div>
-
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex-1 min-w-[260px]">
           <div className="text-xs text-slate-500">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Planilha orçamentária — Obra #{idObra}</h1>
-          <div className="text-sm text-slate-600">Versões do orçamento por obra (itens, subitens e serviços). A programação e apropriação usam os serviços da versão atual.</div>
           {obraResumo ? (
             <div className="mt-2 text-sm text-slate-700">
               <span className="font-semibold">{obraResumo.nome ? obraResumo.nome : `Obra #${idObra}`}</span>
@@ -1080,41 +1040,40 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             </div>
           ) : null}
         </div>
-      </div>
-
-      <div className="rounded-xl border bg-white p-3 shadow-sm">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <div className="text-slate-600">Navegação</div>
+        <div className="flex items-center gap-2 flex-wrap">
           <button
-            className="rounded-lg border bg-white px-3 py-2 hover:bg-slate-50"
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() => {
-              setShowParamsCard((v) => !v);
-              scrollToRef(paramsSectionRef);
-            }}
+            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha?returnTo=${encodeURIComponent(returnTo || "")}`)}
+            disabled={loading}
           >
-            {showParamsCard ? "⯆" : "⯈"} Parâmetros
+            Planilha
           </button>
           <button
-            className="rounded-lg border bg-white px-3 py-2 hover:bg-slate-50"
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() => {
-              setShowPlanilhaCard((v) => !v);
-              scrollToRef(planilhaSectionRef);
-            }}
+            onClick={() =>
+              router.push(`/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(returnTo || `/dashboard/engenharia/obras/${idObra}`)}`)
+            }
+            disabled={loading}
           >
-            {showPlanilhaCard ? "⯆" : "⯈"} Planilha
+            Composições
           </button>
           <button
-            className="rounded-lg border bg-white px-3 py-2 hover:bg-slate-50"
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() => {
-              setShowPlanilhaCard(true);
-              setShowAdicionarCard((v) => !v);
-              scrollToRef(adicionarLinhaRef);
-            }}
+            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(returnTo || `/dashboard/engenharia/obras/${idObra}`)}`)}
+            disabled={loading}
           >
-            {showAdicionarCard ? "⯆" : "⯈"} Adicionar linha
+            Insumos
+          </button>
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => router.push(returnTo || `/dashboard/engenharia/obras/${idObra}`)}
+            disabled={loading}
+          >
+            Voltar
           </button>
         </div>
       </div>
@@ -1329,6 +1288,43 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
               <div className="text-sm text-slate-600">Status da obra: {obraStatus || "—"}</div>
             </div>
           </section>
+
+          <div className="rounded-xl border bg-white p-3 shadow-sm">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <div className="text-slate-600">Navegação</div>
+              <button
+                className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
+                type="button"
+                onClick={() => {
+                  setShowParamsCard((v) => !v);
+                  scrollToRef(paramsSectionRef);
+                }}
+              >
+                {showParamsCard ? "⯆" : "⯈"} Parâmetros
+              </button>
+              <button
+                className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
+                type="button"
+                onClick={() => {
+                  setShowPlanilhaCard((v) => !v);
+                  scrollToRef(planilhaSectionRef);
+                }}
+              >
+                {showPlanilhaCard ? "⯆" : "⯈"} Planilha
+              </button>
+              <button
+                className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50"
+                type="button"
+                onClick={() => {
+                  setShowPlanilhaCard(true);
+                  setShowAdicionarCard((v) => !v);
+                  scrollToRef(adicionarLinhaRef);
+                }}
+              >
+                {showAdicionarCard ? "⯆" : "⯈"} Adicionar linha
+              </button>
+            </div>
+          </div>
 
           <div ref={paramsSectionRef}>
             <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
