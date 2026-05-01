@@ -1062,7 +1062,7 @@ async function readTextSmart(file: File) {
     return (
       <div className="overflow-auto">
         <table className="w-full text-sm" style={{ minWidth: "1100px" }}>
-          <thead className="bg-slate-50 text-left text-slate-700">
+          <thead className="bg-slate-50 text-center text-slate-700">
             <tr>
               {displayPrefs.colTipo ? (
                 <th className="px-3 py-2" style={cellW(w.tipo)}>
@@ -1090,17 +1090,17 @@ async function readTextSmart(file: File) {
                 </th>
               ) : null}
               {displayPrefs.colQtd ? (
-                <th className="px-3 py-2 text-right" style={cellW(w.qtd)}>
+                <th className="px-3 py-2" style={cellW(w.qtd)}>
                   Qtd
                 </th>
               ) : null}
               {displayPrefs.colValorUnit ? (
-                <th className="px-3 py-2 text-right" style={cellW(w.valorUnit)}>
+                <th className="px-3 py-2" style={cellW(w.valorUnit)}>
                   Valor Unit
                 </th>
               ) : null}
               {displayPrefs.colTotal ? (
-                <th className="px-3 py-2 text-right" style={cellW(w.total)}>
+                <th className="px-3 py-2" style={cellW(w.total)}>
                   Total
                 </th>
               ) : null}
@@ -1456,7 +1456,7 @@ async function readTextSmart(file: File) {
       .g-title { margin: 10px 0 6px 0; padding: 6px 8px; border: 1px solid #e2e8f0; font-weight: 700; }
       .t { width: 100%; border-collapse: collapse; }
       th, td { border: 1px solid #e2e8f0; padding: 4px 6px; vertical-align: top; }
-      th { background: #f8fafc; text-align: left; padding: 6px 6px; }
+      th { background: #f8fafc; text-align: center; padding: 6px 6px; }
     </style>
   </head>
   <body>
@@ -1781,7 +1781,7 @@ async function readTextSmart(file: File) {
             <div className="text-sm font-semibold text-slate-800">Largura e fonte (px)</div>
             <div className="mt-2 overflow-auto">
               <table className="min-w-[900px] w-full text-sm">
-                <thead className="text-left text-slate-600">
+                <thead className="text-center text-slate-600">
                   <tr>
                     <th className="py-2 pr-3">Coluna</th>
                     <th className="py-2 pr-3">Largura</th>
@@ -1974,16 +1974,16 @@ async function readTextSmart(file: File) {
 
             <div className="overflow-auto rounded-lg border">
               <table className="min-w-[1100px] w-full text-sm">
-                <thead className="bg-slate-50 text-left text-slate-700">
+                <thead className="bg-slate-50 text-center text-slate-700">
                   <tr>
                     <th className="px-3 py-2">Tipo</th>
                     <th className="px-3 py-2">Código</th>
                     <th className="px-3 py-2">Banco</th>
                     <th className="px-3 py-2">Descrição</th>
                     <th className="px-3 py-2">UND</th>
-                    <th className="px-3 py-2 text-right">Qtd total</th>
-                    <th className="px-3 py-2 text-right">Valor unit</th>
-                    <th className="px-3 py-2 text-right">Total</th>
+                    <th className="px-3 py-2">Qtd total</th>
+                    <th className="px-3 py-2">Valor unit</th>
+                    <th className="px-3 py-2">Total</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2058,7 +2058,7 @@ async function readTextSmart(file: File) {
 
           <div className="overflow-auto rounded-lg border">
             <table className="min-w-[1100px] w-full text-sm">
-              <thead className="bg-slate-50 text-left text-slate-700">
+              <thead className="bg-slate-50 text-center text-slate-700">
                 <tr>
                   <th className="px-3 py-2">Linha</th>
                   <th className="px-3 py-2">Etapa</th>
@@ -2067,8 +2067,8 @@ async function readTextSmart(file: File) {
                   <th className="px-3 py-2">Banco</th>
                   <th className="px-3 py-2">Descrição</th>
                   <th className="px-3 py-2">UND</th>
-                  <th className="px-3 py-2 text-right">Qtd</th>
-                  <th className="px-3 py-2 text-right">Valor Unit</th>
+                  <th className="px-3 py-2">Qtd</th>
+                  <th className="px-3 py-2">Valor Unit</th>
                   <th className="px-3 py-2">CC</th>
                 </tr>
               </thead>
@@ -2156,14 +2156,14 @@ async function readTextSmart(file: File) {
 
         <div className="overflow-auto">
           <table className="min-w-[900px] w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-700">
+            <thead className="bg-slate-50 text-center text-slate-700">
               <tr>
                 <th className="px-3 py-2">ITEM</th>
                 <th className="px-3 py-2">SERVIÇO</th>
                 <th className="px-3 py-2">UND</th>
-                <th className="px-3 py-2 text-right">QUANT.</th>
-                <th className="px-3 py-2 text-right">VALOR UNIT.</th>
-                <th className="px-3 py-2 text-right">TOTAL</th>
+                <th className="px-3 py-2">QUANT.</th>
+                <th className="px-3 py-2">VALOR UNIT.</th>
+                <th className="px-3 py-2">TOTAL</th>
               </tr>
             </thead>
             <tbody>
