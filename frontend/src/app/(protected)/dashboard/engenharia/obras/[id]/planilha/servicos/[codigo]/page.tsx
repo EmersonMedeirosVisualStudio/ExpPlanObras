@@ -2,6 +2,7 @@
  
 import { useEffect, useMemo, useRef, useState } from "react";
  import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Trash2 } from "lucide-react";
  
  type ItemRow = {
   idItemBase: number;
@@ -618,6 +619,43 @@ async function readTextSmart(file: File) {
     return Number(total.toFixed(2));
   }, [itens]);
 
+  const totalMateriaisBase = useMemo(() => {
+    let total = 0;
+    for (const i of itens) {
+      if (String(i.tipoItem || "").toUpperCase() !== "INSUMO") continue;
+      const q = parseNumberLoose(i.quantidade);
+      const v = parseNumberLoose(i.valorUnitario);
+      if (q == null || v == null) continue;
+      total += q * v;
+    }
+    return Number(total.toFixed(2));
+  }, [itens]);
+
+  const totalEquipBase = useMemo(() => {
+    let total = 0;
+    for (const i of itens) {
+      if (String(i.tipoItem || "").toUpperCase() !== "EQUIPAMENTO") continue;
+      const q = parseNumberLoose(i.quantidade);
+      const v = parseNumberLoose(i.valorUnitario);
+      if (q == null || v == null) continue;
+      total += q * v;
+    }
+    return Number(total.toFixed(2));
+  }, [itens]);
+
+  const totalComposicoesBase = useMemo(() => {
+    let total = 0;
+    for (const i of itens) {
+      const t = String(i.tipoItem || "").toUpperCase();
+      if (t !== "COMPOSICAO" && t !== "COMPOSICAO_AUXILIAR") continue;
+      const q = parseNumberLoose(i.quantidade);
+      const v = parseNumberLoose(i.valorUnitario);
+      if (q == null || v == null) continue;
+      total += q * v;
+    }
+    return Number(total.toFixed(2));
+  }, [itens]);
+
   const totalComBDI = useMemo(() => {
     const t = totalBase * (1 + Number(bdiPercent || 0) / 100);
     return Number(t.toFixed(2));
@@ -653,6 +691,179 @@ async function readTextSmart(file: File) {
     const t = totalComLS * (1 + Number(bdiPercent || 0) / 100);
     return Number(t.toFixed(2));
   }, [totalComLS, bdiPercent]);
+
+  const itensIdx = useMemo(() => itens.map((r, idx) => ({ r, idx })), [itens]);
+  const itensComposicoes = useMemo(() => itensIdx.filter(({ r }) => ["COMPOSICAO", "COMPOSICAO_AUXILIAR"].includes(String(r.tipoItem || "").toUpperCase())), [itensIdx]);
+  const itensMateriais = useMemo(() => itensIdx.filter(({ r }) => String(r.tipoItem || "").toUpperCase() === "INSUMO"), [itensIdx]);
+  const itensEquip = useMemo(() => itensIdx.filter(({ r }) => String(r.tipoItem || "").toUpperCase() === "EQUIPAMENTO"), [itensIdx]);
+  const itensMao = useMemo(() => itensIdx.filter(({ r }) => String(r.tipoItem || "").toUpperCase() === "MAO_DE_OBRA"), [itensIdx]);
+
+  function renderItensTabela(list: Array<{ r: ItemRow; idx: number }>) {
+    return (
+      <div className="overflow-auto">
+        <table className="min-w-[1400px] w-full text-sm">
+          <thead className="bg-slate-50 text-left text-slate-700">
+            <tr>
+              <th className="px-3 py-2">Tipo</th>
+              <th className="px-3 py-2">Código</th>
+              <th className="px-3 py-2">Banco</th>
+              <th className="px-3 py-2">Descrição</th>
+              <th className="px-3 py-2">UND</th>
+              <th className="px-3 py-2 text-right">Qtd</th>
+              <th className="px-3 py-2 text-right">Valor Unit</th>
+              <th className="px-3 py-2 text-right">Total</th>
+              <th className="px-3 py-2">Centro de custo</th>
+              <th className="px-3 py-2">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map(({ r, idx }) => {
+              const q = parseNumberLoose(r.quantidade);
+              const v = parseNumberLoose(r.valorUnitario);
+              const total = q != null && v != null ? q * v : null;
+              const bancoInOptions = !r.banco || bancosOptions.includes(r.banco);
+              const selectBancoValue = bancoInOptions ? r.banco : "__OUTRO__";
+              return (
+                <tr key={idx} className="border-t">
+                  <td className="px-3 py-2">
+                    <select className="input bg-white" value={r.tipoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, tipoItem: e.target.value } : x)))}>
+                      <option value="COMPOSICAO">Composição</option>
+                      <option value="COMPOSICAO_AUXILIAR">Composição Auxiliar</option>
+                      <option value="INSUMO">Material</option>
+                      <option value="EQUIPAMENTO">Equipamento</option>
+                      <option value="MAO_DE_OBRA">Mão de obra</option>
+                    </select>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <input className="input bg-white" value={r.codigoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoItem: e.target.value } : x)))} />
+                      {String(r.tipoItem || "").toUpperCase() === "COMPOSICAO" || String(r.tipoItem || "").toUpperCase() === "COMPOSICAO_AUXILIAR" ? (
+                        (() => {
+                          const codigo = String(r.codigoItem || "").trim().toUpperCase();
+                          if (!codigo) return null;
+                          const definida = definedComposicoesCodes.has(codigo);
+                          return (
+                            <div className="flex items-center gap-2">
+                              {definida ? (
+                                <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Definida</span>
+                              ) : (
+                                <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Não definida</span>
+                              )}
+                              <button
+                                className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50"
+                                type="button"
+                                onClick={() =>
+                                  router.push(
+                                    `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigo)}?returnTo=${encodeURIComponent(
+                                      `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}`
+                                    )}`
+                                  )
+                                }
+                              >
+                                Abrir
+                              </button>
+                            </div>
+                          );
+                        })()
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <select
+                        className="input bg-white"
+                        value={selectBancoValue}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === "__OUTRO__") {
+                            setEditingBancoOutroIdx(idx);
+                            setBancoOutroValue("");
+                            setItens((p) => p.map((x, i) => (i === idx ? { ...x, banco: "" } : x)));
+                            return;
+                          }
+                          setEditingBancoOutroIdx((cur) => (cur === idx ? null : cur));
+                          setItens((p) => p.map((x, i) => (i === idx ? { ...x, banco: v } : x)));
+                        }}
+                      >
+                        <option value="">(sem banco)</option>
+                        {bancosOptions.map((b) => (
+                          <option key={b} value={b}>
+                            {b}
+                          </option>
+                        ))}
+                        <option value="__OUTRO__">Outro…</option>
+                      </select>
+                      {editingBancoOutroIdx === idx ? (
+                        <input
+                          className="input bg-white"
+                          placeholder="Digite outro banco"
+                          value={bancoOutroValue}
+                          onChange={(e) => setBancoOutroValue(e.target.value)}
+                          onBlur={() => {
+                            const v = String(bancoOutroValue || "").trim();
+                            if (!v) {
+                              setEditingBancoOutroIdx(null);
+                              setBancoOutroValue("");
+                              return;
+                            }
+                            setBancosCustom((p) => (p.includes(v) ? p : [...p, v]));
+                            setItens((p) => p.map((x, i) => (i === idx ? { ...x, banco: v } : x)));
+                            setEditingBancoOutroIdx(null);
+                            setBancoOutroValue("");
+                          }}
+                        />
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <input className="input bg-white" value={r.descricao} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, descricao: e.target.value } : x)))} />
+                  </td>
+                  <td className="px-3 py-2">
+                    <input className="input bg-white" value={r.und} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, und: e.target.value } : x)))} />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <input className="input bg-white text-right" value={r.quantidade} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, quantidade: e.target.value } : x)))} />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <input className="input bg-white text-right" value={r.valorUnitario} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, valorUnitario: e.target.value } : x)))} />
+                  </td>
+                  <td className="px-3 py-2 text-right">{total == null ? "" : moeda(Number(total))}</td>
+                  <td className="px-3 py-2">
+                    <select className="input bg-white" value={r.codigoCentroCusto} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoCentroCusto: e.target.value } : x)))}>
+                      <option value="">(sem CC)</option>
+                      {centrosCusto.map((c) => (
+                        <option key={c.codigo} value={c.codigo}>
+                          {c.codigo} — {c.descricao}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2">
+                    <button
+                      className="rounded border bg-white p-2 text-red-700 hover:bg-slate-50 disabled:opacity-60"
+                      type="button"
+                      title="Remover"
+                      onClick={() => setItens((p) => p.filter((_, i) => i !== idx))}
+                      disabled={loading}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+            {!list.length ? (
+              <tr>
+                <td colSpan={10} className="px-3 py-6 text-center text-slate-500">
+                  Sem itens.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
  
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-7xl text-slate-900">
@@ -892,8 +1103,14 @@ async function readTextSmart(file: File) {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="text-lg font-semibold">Itens (composição)</div>
-            <div className="text-sm text-slate-600">Total base: {moeda(Number(totalBase || 0))} • LS: {Number(lsPercent || 0).toFixed(2)}% • BDI: {Number(bdiPercent || 0).toFixed(2)}%</div>
-            <div className="text-sm text-slate-600">Total (com LS): {moeda(Number(totalComLS || 0))} • Total (com LS + BDI): {moeda(Number(totalComLSComBDI || 0))}</div>
+            <div className="text-sm text-slate-600">
+              Base: {moeda(Number(totalBase || 0))} • Materiais: {moeda(Number(totalMateriaisBase || 0))} • Equipamentos: {moeda(Number(totalEquipBase || 0))} • Composições:{" "}
+              {moeda(Number(totalComposicoesBase || 0))} • Mão de obra: {moeda(Number(totalMaoBase || 0))}
+            </div>
+            <div className="text-sm text-slate-600">
+              LS: {Number(lsPercent || 0).toFixed(2)}% • BDI: {Number(bdiPercent || 0).toFixed(2)}% • Total (com LS): {moeda(Number(totalComLS || 0))} • Total (com LS + BDI):{" "}
+              {moeda(Number(totalComLSComBDI || 0))}
+            </div>
           </div>
           <button
             className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
@@ -923,173 +1140,23 @@ async function readTextSmart(file: File) {
           </button>
         </div>
 
-        <div className="overflow-auto">
-          <table className="min-w-[1500px] w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-700">
-              <tr>
-                <th className="px-3 py-2">Etapa</th>
-                <th className="px-3 py-2">Tipo</th>
-                <th className="px-3 py-2">Código</th>
-                <th className="px-3 py-2">Banco</th>
-                <th className="px-3 py-2">Descrição</th>
-                <th className="px-3 py-2">UND</th>
-                <th className="px-3 py-2 text-right">Qtd</th>
-                <th className="px-3 py-2 text-right">Valor Unit</th>
-                <th className="px-3 py-2 text-right">Total</th>
-                <th className="px-3 py-2 text-right">Perda%</th>
-                <th className="px-3 py-2">Centro de custo</th>
-                <th className="px-3 py-2">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {itens.map((r, idx) => {
-                const q = parseNumberLoose(r.quantidade);
-                const v = parseNumberLoose(r.valorUnitario);
-                const total = q != null && v != null ? q * v : null;
-                const bancoInOptions = !r.banco || bancosOptions.includes(r.banco);
-                const selectBancoValue = bancoInOptions ? r.banco : "__OUTRO__";
-                return (
-                  <tr key={idx} className="border-t">
-                    <td className="px-3 py-2">
-                      <input className="input bg-white" value={r.etapa} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, etapa: e.target.value } : x)))} />
-                    </td>
-                    <td className="px-3 py-2">
-                      <select className="input bg-white" value={r.tipoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, tipoItem: e.target.value } : x)))}>
-                        <option value="INSUMO">Insumo</option>
-                        <option value="COMPOSICAO">Composição</option>
-                        <option value="COMPOSICAO_AUXILIAR">Composição Auxiliar</option>
-                        <option value="MAO_DE_OBRA">Mão de obra</option>
-                        <option value="EQUIPAMENTO">Equipamento</option>
-                      </select>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <input className="input bg-white" value={r.codigoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoItem: e.target.value } : x)))} />
-                        {String(r.tipoItem || "").toUpperCase() === "COMPOSICAO" || String(r.tipoItem || "").toUpperCase() === "COMPOSICAO_AUXILIAR" ? (
-                          (() => {
-                            const codigo = String(r.codigoItem || "").trim().toUpperCase();
-                            if (!codigo) return null;
-                            const definida = definedComposicoesCodes.has(codigo);
-                            return (
-                              <div className="flex items-center gap-2">
-                                {definida ? (
-                                  <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Definida</span>
-                                ) : (
-                                  <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Não definida</span>
-                                )}
-                                <button
-                                  className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                                  type="button"
-                                  onClick={() =>
-                                    router.push(
-                                      `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigo)}?returnTo=${encodeURIComponent(
-                                        `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}`
-                                      )}`
-                                    )
-                                  }
-                                >
-                                  Abrir
-                                </button>
-                              </div>
-                            );
-                          })()
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <select
-                          className="input bg-white"
-                          value={selectBancoValue}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            if (v === "__OUTRO__") {
-                              setEditingBancoOutroIdx(idx);
-                              setBancoOutroValue("");
-                              setItens((p) => p.map((x, i) => (i === idx ? { ...x, banco: "" } : x)));
-                              return;
-                            }
-                            setEditingBancoOutroIdx((cur) => (cur === idx ? null : cur));
-                            setItens((p) => p.map((x, i) => (i === idx ? { ...x, banco: v } : x)));
-                          }}
-                        >
-                          <option value="">(sem banco)</option>
-                          {bancosOptions.map((b) => (
-                            <option key={b} value={b}>
-                              {b}
-                            </option>
-                          ))}
-                          <option value="__OUTRO__">Outro…</option>
-                        </select>
-                        {editingBancoOutroIdx === idx ? (
-                          <input
-                            className="input bg-white"
-                            placeholder="Digite outro banco"
-                            value={bancoOutroValue}
-                            onChange={(e) => setBancoOutroValue(e.target.value)}
-                            onBlur={() => {
-                              const v = String(bancoOutroValue || "").trim();
-                              if (!v) {
-                                setEditingBancoOutroIdx(null);
-                                setBancoOutroValue("");
-                                return;
-                              }
-                              setBancosCustom((p) => (p.includes(v) ? p : [...p, v]));
-                              setItens((p) => p.map((x, i) => (i === idx ? { ...x, banco: v } : x)));
-                              setEditingBancoOutroIdx(null);
-                              setBancoOutroValue("");
-                            }}
-                          />
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <input className="input bg-white" value={r.descricao} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, descricao: e.target.value } : x)))} />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input className="input bg-white" value={r.und} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, und: e.target.value } : x)))} />
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <input className="input bg-white text-right" value={r.quantidade} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, quantidade: e.target.value } : x)))} />
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <input className="input bg-white text-right" value={r.valorUnitario} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, valorUnitario: e.target.value } : x)))} />
-                    </td>
-                    <td className="px-3 py-2 text-right">{total == null ? "" : moeda(Number(total))}</td>
-                    <td className="px-3 py-2 text-right">
-                      <input className="input bg-white text-right" value={r.perdaPercentual} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, perdaPercentual: e.target.value } : x)))} />
-                    </td>
-                    <td className="px-3 py-2">
-                      <select
-                        className="input bg-white"
-                        value={r.codigoCentroCusto}
-                        onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoCentroCusto: e.target.value } : x)))}
-                      >
-                        <option value="">(sem CC)</option>
-                        {centrosCusto.map((c) => (
-                          <option key={c.codigo} value={c.codigo}>
-                            {c.codigo} — {c.descricao}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-3 py-2">
-                      <button className="rounded border px-2 py-1 text-xs text-red-700 disabled:opacity-60" type="button" onClick={() => setItens((p) => p.filter((_, i) => i !== idx))} disabled={loading}>
-                        Remover
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {!itens.length ? (
-                <tr>
-                  <td colSpan={12} className="px-3 py-6 text-center text-slate-500">
-                    Sem itens. Clique em Carregar, Importar CSV ou Adicionar item.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-slate-800">Composições</div>
+            {renderItensTabela(itensComposicoes)}
+          </div>
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-slate-800">Material</div>
+            {renderItensTabela(itensMateriais)}
+          </div>
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-slate-800">Equipamento</div>
+            {renderItensTabela(itensEquip)}
+          </div>
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-slate-800">Mão de obra</div>
+            {renderItensTabela(itensMao)}
+          </div>
         </div>
       </section>
      </div>
