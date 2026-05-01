@@ -161,6 +161,8 @@ async function readTextSmart(file: File) {
    const [itens, setItens] = useState<ItemRow[]>([]);
   const [centrosCusto, setCentrosCusto] = useState<CentroCustoOption[]>([]);
   const [previstoRows, setPrevistoRows] = useState<PrevistoPlanilhaRow[]>([]);
+  const [navPlanilhaServicos, setNavPlanilhaServicos] = useState<Array<{ item: string; codigo: string; servicos: string }>>([]);
+  const [navIdx, setNavIdx] = useState<number>(-1);
   const [planilhaParams, setPlanilhaParams] = useState<PlanilhaParams | null>(null);
   const [definedComposicoesCodes, setDefinedComposicoesCodes] = useState<Set<string>>(new Set());
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
@@ -272,6 +274,7 @@ async function readTextSmart(file: File) {
   const [importChoiceInfo, setImportChoiceInfo] = useState<{ existingCount: number; incomingCount: number } | null>(null);
  
    const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const compTotalCacheRef = useRef<Map<string, number>>(new Map());
 
   function getUserKeyBase() {
     try {
@@ -618,6 +621,15 @@ async function readTextSmart(file: File) {
         encSociaisSemDesSinapi: p.encSociaisSemDesSinapi == null ? null : Number(p.encSociaisSemDesSinapi),
       });
       const linhas = Array.isArray(json.data?.planilha?.linhas) ? json.data.planilha.linhas : [];
+      const navList = linhas
+        .filter((l: any) => String(l.tipoLinha || "").toUpperCase() === "SERVICO" && String(l.codigo || "").trim())
+        .map((l: any) => ({
+          item: String(l.item || ""),
+          codigo: String(l.codigo || "").trim().toUpperCase(),
+          servicos: String(l.servicos || ""),
+        }));
+      setNavPlanilhaServicos(navList);
+      setNavIdx(navList.findIndex((x) => x.codigo === codigoServico));
       const rows = linhas
         .filter((l: any) => String(l.tipoLinha || "").toUpperCase() === "SERVICO" && String(l.codigo || "").trim().toUpperCase() === codigoServico)
         .map((l: any) => ({
@@ -632,6 +644,8 @@ async function readTextSmart(file: File) {
     } catch {
       setPrevistoRows([]);
       setPlanilhaParams(null);
+      setNavPlanilhaServicos([]);
+      setNavIdx(-1);
     }
   }
 
@@ -812,6 +826,10 @@ async function readTextSmart(file: File) {
     router.push(`/dashboard/engenharia/obras/${idObra}/planilha`);
   }
 
+  function getBackTargetUrl() {
+    return String(returnTo || "").trim() || String(returnToMem || "").trim() || `/dashboard/engenharia/obras/${idObra}/planilha`;
+  }
+
   const bancosBase = useMemo(() => ["SINAPI", "Próprio", "SBC", "SICRO3"], []);
   const bancosOptions = useMemo(() => Array.from(new Set([...bancosBase, ...bancosCustom])), [bancosBase, bancosCustom]);
 
@@ -915,6 +933,68 @@ async function readTextSmart(file: File) {
     const t = totalComLS * (1 + Number(bdiPercent || 0) / 100);
     return Number(t.toFixed(2));
   }, [totalComLS, bdiPercent]);
+
+  async function calcularTotalComLSDeComposicao(codigo: string) {
+    const code = String(codigo || "").trim().toUpperCase();
+    if (!code) return null;
+    const cached = compTotalCacheRef.current.get(code);
+    if (cached != null) return cached;
+    const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}/composicao-itens`);
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.success) throw new Error(json?.message || `Erro ao carregar composição ${code}`);
+    const list = Array.isArray(json.data?.itens) ? json.data.itens : [];
+    let totalBaseLocal = 0;
+    let totalMaoLocal = 0;
+    for (const it of list) {
+      const tipo = String(it.tipoItem || "").toUpperCase();
+      const q = parseNumberLoose(it.quantidade);
+      const v = parseNumberLoose(it.valorUnitario);
+      if (q == null || v == null) continue;
+      const t = q * v;
+      totalBaseLocal += t;
+      if (tipo === "MAO_DE_OBRA") totalMaoLocal += t;
+    }
+    totalBaseLocal = Number(totalBaseLocal.toFixed(2));
+    totalMaoLocal = Number(totalMaoLocal.toFixed(2));
+    const maoComLS = totalMaoLocal * (1 + Number(lsPercent || 0) / 100);
+    const totalComLSLocal = Number(((totalBaseLocal - totalMaoLocal) + maoComLS).toFixed(2));
+    compTotalCacheRef.current.set(code, totalComLSLocal);
+    return totalComLSLocal;
+  }
+
+  async function atualizarValorComposicaoNoItem(rowIdx: number, codigo: string) {
+    try {
+      if (!idObra) return;
+      const code = String(codigo || "").trim().toUpperCase();
+      if (!code) return;
+      const totalComLSLocal = await calcularTotalComLSDeComposicao(code);
+      if (totalComLSLocal == null) return;
+      setItens((p) => {
+        const row = p[rowIdx];
+        if (!row) return p;
+        const curVu = parseNumberLoose(row.valorUnitario);
+        const shouldAsk = curVu != null && Math.abs(curVu - totalComLSLocal) > 0.005;
+        if (shouldAsk) {
+          const ok = window.confirm(`Atualizar o valor unitário da composição "${code}" para ${moeda(totalComLSLocal)} (sem BDI)?`);
+          if (!ok) return p;
+        }
+        return p.map((x, i) => (i === rowIdx ? { ...x, valorUnitario: totalComLSLocal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) } : x));
+      });
+      setOkMsg(`Valor da composição ${code} atualizado (Total com LS, sem BDI).`);
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao atualizar valor da composição");
+    }
+  }
+
+  function navegarParaIndice(next: number) {
+    if (!navPlanilhaServicos.length) return;
+    const idx = Math.max(0, Math.min(navPlanilhaServicos.length - 1, next));
+    const alvo = navPlanilhaServicos[idx];
+    if (!alvo?.codigo) return;
+    router.push(
+      `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(alvo.codigo)}?returnTo=${encodeURIComponent(getBackTargetUrl())}`
+    );
+  }
 
   const itensIdx = useMemo(() => itens.map((r, idx) => ({ r, idx })), [itens]);
   const itensComposicoes = useMemo(() => itensIdx.filter(({ r }) => ["COMPOSICAO", "COMPOSICAO_AUXILIAR"].includes(String(r.tipoItem || "").toUpperCase())), [itensIdx]);
@@ -1073,6 +1153,11 @@ async function readTextSmart(file: File) {
                           className="input bg-white flex-1 min-w-0"
                           value={r.codigoItem}
                           onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoItem: e.target.value } : x)))}
+                          onBlur={() => {
+                            const isComp = isComposicao;
+                            const code = String(r.codigoItem || "").trim().toUpperCase();
+                            if (isComp && code) atualizarValorComposicaoNoItem(idx, code);
+                          }}
                           style={{ fontSize: px(fs.codigo) }}
                         />
                         {isComposicao && codigoComposicao ? (
@@ -1562,16 +1647,53 @@ async function readTextSmart(file: File) {
          </div>
        </div>
  
-      <div className="flex flex-wrap gap-2">
-        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={baixarModeloComposicoesCsv} disabled={loading}>
-          Modelo CSV (composição)
-        </button>
-        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => setShowDisplayConfig((v) => !v)} disabled={loading}>
-          {showDisplayConfig ? "⯆" : "⯈"} Configurações de exibição
-        </button>
-        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={abrirComposicaoPrimitiva} disabled={loading || primitiveLoading}>
-          Composição primitiva
-        </button>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex flex-wrap gap-2">
+          <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={baixarModeloComposicoesCsv} disabled={loading}>
+            Modelo CSV (composição)
+          </button>
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => setShowDisplayConfig((v) => !v)}
+            disabled={loading}
+          >
+            {showDisplayConfig ? "⯆" : "⯈"} Configurações de exibição
+          </button>
+        </div>
+        <div className="flex items-center justify-end gap-2 flex-wrap">
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={abrirComposicaoPrimitiva}
+            disabled={loading || primitiveLoading}
+          >
+            Composição primitiva
+          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+              type="button"
+              disabled={loading || navIdx <= 0}
+              title="Ir para o item anterior"
+              onClick={() => navegarParaIndice(navIdx - 1)}
+            >
+              ‹
+            </button>
+            <div className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700">
+              Item {navIdx >= 0 ? navPlanilhaServicos[navIdx]?.item || "—" : "—"}
+            </div>
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+              type="button"
+              disabled={loading || navIdx < 0 || navIdx >= navPlanilhaServicos.length - 1}
+              title="Ir para o próximo item"
+              onClick={() => navegarParaIndice(navIdx + 1)}
+            >
+              ›
+            </button>
+          </div>
+        </div>
       </div>
 
       {okMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{okMsg}</div> : null}
