@@ -153,6 +153,7 @@ async function readTextSmart(file: File) {
    const idObra = useMemo(() => Number((params as any)?.id || 0), [params]);
    const codigoServico = useMemo(() => decodeURIComponent(String((params as any)?.codigo || "")).trim().toUpperCase(), [params]);
    const returnTo = search.get("returnTo");
+  const [returnToMem, setReturnToMem] = useState<string | null>(null);
  
    const [loading, setLoading] = useState(false);
    const [err, setErr] = useState<string | null>(null);
@@ -288,6 +289,10 @@ async function readTextSmart(file: File) {
 
   function getPrintPrefsKey() {
     return `${getUserKeyBase()}:print`;
+  }
+
+  function getReturnToKey() {
+    return `${getUserKeyBase()}:returnTo:${idObra || 0}`;
   }
  
    async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
@@ -778,6 +783,35 @@ async function readTextSmart(file: File) {
     carregarComposicoesDefinidas();
   }, [idObra, codigoServico]);
 
+  useEffect(() => {
+    try {
+      const key = getReturnToKey();
+      const rt = String(returnTo || "").trim();
+      if (rt) {
+        sessionStorage.setItem(key, rt);
+        setReturnToMem(rt);
+        return;
+      }
+      const stored = sessionStorage.getItem(key);
+      setReturnToMem(stored && String(stored).trim() ? String(stored) : null);
+    } catch {
+      setReturnToMem(null);
+    }
+  }, [idObra, returnTo]);
+
+  function voltar() {
+    const target = String(returnTo || "").trim() || String(returnToMem || "").trim();
+    if (target) {
+      router.push(target);
+      return;
+    }
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push(`/dashboard/engenharia/obras/${idObra}/planilha`);
+  }
+
   const bancosBase = useMemo(() => ["SINAPI", "Próprio", "SBC", "SICRO3"], []);
   const bancosOptions = useMemo(() => Array.from(new Set([...bancosBase, ...bancosCustom])), [bancosBase, bancosCustom]);
 
@@ -1015,16 +1049,30 @@ async function readTextSmart(file: File) {
                 <tr key={idx} className="border-t" style={{ backgroundColor: rowBg }}>
                   {displayPrefs.colTipo ? (
                     <td className="px-3 py-2" style={{ ...cellW(w.tipo), fontSize: px(fs.tipo) }}>
-                      <button
-                        className="rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60"
-                        type="button"
-                        disabled={loading}
-                        title={`${meta.label} (clique para alterar)`}
-                        onClick={() => setItens((p) => p.map((x, i) => (i === idx ? { ...x, tipoItem: nextTipo(x.tipoItem) } : x)))}
-                        style={{ fontSize: px(fs.tipo) }}
-                      >
-                        <meta.Icon className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="shrink-0 rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60"
+                          type="button"
+                          disabled={loading}
+                          title={`Alterar tipo (atual: ${meta.label})`}
+                          onClick={() => {
+                            const next = nextTipo(r.tipoItem);
+                            const nextLabel = tipoMeta(next).label;
+                            if (!window.confirm(`Alterar tipo de "${meta.label}" para "${nextLabel}"?`)) return;
+                            setItens((p) => p.map((x, i) => (i === idx ? { ...x, tipoItem: next } : x)));
+                          }}
+                          style={{ fontSize: px(fs.tipo) }}
+                        >
+                          <meta.Icon className="h-4 w-4" />
+                        </button>
+                        <div
+                          className="min-w-0 flex-1 truncate rounded border bg-white px-2 py-1 text-xs text-slate-700"
+                          title={meta.label}
+                          style={{ fontSize: px(Math.max(10, Math.min(14, fs.tipo - 1))) }}
+                        >
+                          {meta.label}
+                        </div>
+                      </div>
                     </td>
                   ) : null}
                   {displayPrefs.colCodigo ? (
@@ -1452,12 +1500,12 @@ async function readTextSmart(file: File) {
     <div className="p-4 md:p-6 space-y-4 max-w-7xl text-slate-900">
        <div className="flex items-start justify-between gap-3 flex-wrap">
          <div>
-           <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Serviço</div>
+          <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Análise de composição</div>
           <h1 className="text-2xl font-semibold">Análise de composição — {codigoServico || "—"}</h1>
            <div className="text-sm text-slate-600">Importe por CSV ou cadastre manualmente os insumos do serviço.</div>
          </div>
          <div className="flex items-center gap-2 flex-wrap">
-           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => router.push(returnTo || `/dashboard/engenharia/obras/${idObra}/planilha`)}>
+           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={voltar}>
              Voltar
            </button>
           <button
@@ -2040,16 +2088,72 @@ async function readTextSmart(file: File) {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="text-lg font-semibold">Itens (composição)</div>
-            <div className="mt-1 flex flex-wrap gap-2 text-xs">
-              <span className="rounded border bg-white px-2 py-1 text-slate-700">Materiais: <span className="font-semibold">{moeda(Number(totalMateriaisBase || 0))}</span></span>
-              <span className="rounded border bg-white px-2 py-1 text-slate-700">Equip.: <span className="font-semibold">{moeda(Number(totalEquipBase || 0))}</span></span>
-              <span className="rounded border bg-white px-2 py-1 text-slate-700">Compos.: <span className="font-semibold">{moeda(Number(totalComposicoesBase || 0))}</span></span>
-              <span className="rounded border bg-white px-2 py-1 text-slate-700">Mão base: <span className="font-semibold">{moeda(Number(totalMaoBase || 0))}</span></span>
-              <span className="rounded border bg-white px-2 py-1 text-slate-700">Base: <span className="font-semibold">{moeda(Number(totalBase || 0))}</span></span>
-              <span className="rounded border bg-white px-2 py-1 text-slate-700">LS: <span className="font-semibold">{Number(lsPercent || 0).toFixed(2)}%</span></span>
-              <span className="rounded border bg-white px-2 py-1 text-slate-700">Base c/ LS: <span className="font-semibold">{moeda(Number(totalComLS || 0))}</span></span>
-              <span className="rounded border bg-white px-2 py-1 text-slate-700">BDI: <span className="font-semibold">{Number(bdiPercent || 0).toFixed(2)}%</span></span>
-              <span className="rounded border bg-white px-2 py-1 text-slate-700">Total final: <span className="font-semibold">{moeda(Number(totalComLSComBDI || 0))}</span></span>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-lg border bg-white p-3">
+                <div className="text-[11px] text-slate-500">Materiais</div>
+                <div className="mt-1 flex items-end justify-between gap-2">
+                  <div className="text-base font-semibold text-slate-900">{moeda(Number(totalMateriaisBase || 0))}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {totalBase > 0 ? `${((Number(totalMateriaisBase || 0) / Number(totalBase || 1)) * 100).toFixed(2)}%` : "—"}
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-lg border bg-white p-3">
+                <div className="text-[11px] text-slate-500">Equipamentos</div>
+                <div className="mt-1 flex items-end justify-between gap-2">
+                  <div className="text-base font-semibold text-slate-900">{moeda(Number(totalEquipBase || 0))}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {totalBase > 0 ? `${((Number(totalEquipBase || 0) / Number(totalBase || 1)) * 100).toFixed(2)}%` : "—"}
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-lg border bg-white p-3">
+                <div className="text-[11px] text-slate-500">Composições</div>
+                <div className="mt-1 flex items-end justify-between gap-2">
+                  <div className="text-base font-semibold text-slate-900">{moeda(Number(totalComposicoesBase || 0))}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {totalBase > 0 ? `${((Number(totalComposicoesBase || 0) / Number(totalBase || 1)) * 100).toFixed(2)}%` : "—"}
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-lg border bg-white p-3">
+                <div className="text-[11px] text-slate-500">Mão de obra (base)</div>
+                <div className="mt-1 flex items-end justify-between gap-2">
+                  <div className="text-base font-semibold text-slate-900">{moeda(Number(totalMaoBase || 0))}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {totalBase > 0 ? `${((Number(totalMaoBase || 0) / Number(totalBase || 1)) * 100).toFixed(2)}%` : "—"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-stretch gap-2 text-xs">
+              <div className="rounded-lg border bg-white px-3 py-2">
+                <div className="text-[11px] text-slate-500">Subtotal (sem LS + BDI)</div>
+                <div className="text-sm font-semibold text-slate-900">{moeda(Number(totalBase || 0))}</div>
+              </div>
+              <div className="self-center px-1 text-slate-400">→</div>
+              <div className="rounded-lg border bg-white px-3 py-2">
+                <div className="text-[11px] text-slate-500">LS</div>
+                <div className="text-sm font-semibold text-slate-900">{Number(lsPercent || 0).toFixed(2)}%</div>
+                <div className="text-[11px] text-slate-500">Acréscimo: {moeda(Number((totalComLS - totalBase) || 0))}</div>
+              </div>
+              <div className="self-center px-1 text-slate-400">→</div>
+              <div className="rounded-lg border bg-white px-3 py-2">
+                <div className="text-[11px] text-slate-500">Total (com LS)</div>
+                <div className="text-sm font-semibold text-slate-900">{moeda(Number(totalComLS || 0))}</div>
+              </div>
+              <div className="self-center px-1 text-slate-400">→</div>
+              <div className="rounded-lg border bg-white px-3 py-2">
+                <div className="text-[11px] text-slate-500">BDI</div>
+                <div className="text-sm font-semibold text-slate-900">{Number(bdiPercent || 0).toFixed(2)}%</div>
+                <div className="text-[11px] text-slate-500">Acréscimo: {moeda(Number((totalComLSComBDI - totalComLS) || 0))}</div>
+              </div>
+              <div className="self-center px-1 text-slate-400">→</div>
+              <div className="rounded-lg border bg-blue-600 px-3 py-2 text-white">
+                <div className="text-[11px] opacity-90">Total final (LS + BDI)</div>
+                <div className="text-sm font-semibold">{moeda(Number(totalComLSComBDI || 0))}</div>
+              </div>
             </div>
           </div>
           <button
