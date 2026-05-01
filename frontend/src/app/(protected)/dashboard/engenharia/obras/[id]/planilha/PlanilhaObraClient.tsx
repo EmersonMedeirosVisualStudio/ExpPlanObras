@@ -264,10 +264,30 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     missingColumns: string[];
   }>({ file: null, nomeVersao: "", rows: [], missingColumns: [] });
 
-  const [uiPrefs, setUiPrefs] = useState<{ fontSizePx: number; itemBg: string; subitemBg: string }>({
+  const [uiPrefs, setUiPrefs] = useState<{
+    fontSizePx: number;
+    itemBg: string;
+    subitemBg: string;
+    print: {
+      headerFontFamily: string;
+      headerFontSizePx: number;
+      headerFontWeight: "normal" | "semibold" | "bold";
+      topToHeaderPx: number;
+      headerToDadosPx: number;
+      dadosToTabelaPx: number;
+    };
+  }>({
     fontSizePx: 12,
     itemBg: "#F8FAFC",
     subitemBg: "#FFFFFF",
+    print: {
+      headerFontFamily: "Arial",
+      headerFontSizePx: 11,
+      headerFontWeight: "semibold",
+      topToHeaderPx: 0,
+      headerToDadosPx: 6,
+      dadosToTabelaPx: 10,
+    },
   });
 
   const [novo, setNovo] = useState({
@@ -344,10 +364,26 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       const fontSizePx = parsed?.fontSizePx != null ? Number(parsed.fontSizePx) : NaN;
       const itemBg = typeof parsed?.itemBg === "string" ? String(parsed.itemBg) : "";
       const subitemBg = typeof parsed?.subitemBg === "string" ? String(parsed.subitemBg) : "";
+      const pf = parsed?.print || {};
+      const headerFontFamily = typeof pf?.headerFontFamily === "string" && String(pf.headerFontFamily).trim() ? String(pf.headerFontFamily).trim() : "";
+      const headerFontSizePx = pf?.headerFontSizePx != null ? Number(pf.headerFontSizePx) : NaN;
+      const headerFontWeightRaw = String(pf?.headerFontWeight || "").trim().toLowerCase();
+      const headerFontWeight = headerFontWeightRaw === "bold" ? "bold" : headerFontWeightRaw === "normal" ? "normal" : "semibold";
+      const topToHeaderPx = pf?.topToHeaderPx != null ? Number(pf.topToHeaderPx) : NaN;
+      const headerToDadosPx = pf?.headerToDadosPx != null ? Number(pf.headerToDadosPx) : NaN;
+      const dadosToTabelaPx = pf?.dadosToTabelaPx != null ? Number(pf.dadosToTabelaPx) : NaN;
       setUiPrefs((p) => ({
         fontSizePx: Number.isFinite(fontSizePx) && fontSizePx >= 10 && fontSizePx <= 22 ? fontSizePx : p.fontSizePx,
         itemBg: itemBg && itemBg.startsWith("#") ? itemBg : p.itemBg,
         subitemBg: subitemBg && subitemBg.startsWith("#") ? subitemBg : p.subitemBg,
+        print: {
+          headerFontFamily: headerFontFamily || p.print.headerFontFamily,
+          headerFontSizePx: Number.isFinite(headerFontSizePx) && headerFontSizePx >= 8 && headerFontSizePx <= 16 ? headerFontSizePx : p.print.headerFontSizePx,
+          headerFontWeight,
+          topToHeaderPx: Number.isFinite(topToHeaderPx) ? Math.max(0, Math.min(80, Math.round(topToHeaderPx))) : p.print.topToHeaderPx,
+          headerToDadosPx: Number.isFinite(headerToDadosPx) ? Math.max(0, Math.min(80, Math.round(headerToDadosPx))) : p.print.headerToDadosPx,
+          dadosToTabelaPx: Number.isFinite(dadosToTabelaPx) ? Math.max(0, Math.min(120, Math.round(dadosToTabelaPx))) : p.print.dadosToTabelaPx,
+        },
       }));
     } catch {}
   }, []);
@@ -484,6 +520,11 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     const obraNome = obraResumo?.nome ? String(obraResumo.nome) : "";
     const contratoNumero = obraResumo?.contratoNumero ? String(obraResumo.contratoNumero) : "";
     const dataHoje = new Date().toLocaleDateString("pt-BR");
+    const pp = uiPrefs.print;
+    const headerFontWeight = pp.headerFontWeight === "bold" ? 700 : pp.headerFontWeight === "normal" ? 400 : 600;
+    const topToHeaderPx = Math.max(0, Number(pp.topToHeaderPx || 0));
+    const headerToDadosPx = Math.max(0, Number(pp.headerToDadosPx || 0));
+    const dadosToTabelaPx = Math.max(0, Number(pp.dadosToTabelaPx || 0));
     const itemBg = uiPrefs.itemBg || "#F8FAFC";
     const subitemBg = uiPrefs.subitemBg || "#FFFFFF";
     const rowsHtml = (planilha.linhas || [])
@@ -525,7 +566,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
         : "";
 
     const cabecalhoPlanilhaHtml = `
-      <div class="cabecalho-planilha">
+      <div class="cabecalho-planilha" style="margin-top:${headerToDadosPx}px;">
         <div class="cab-outer">
           <div class="cab-left">
             <div class="cab-linha"><span class="lab">Contrato:</span><span class="val">${fmtText(contratoNumero)}</span></div>
@@ -584,8 +625,6 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
           </div>`
         : "";
 
-    const headerTopMm = Math.min(120, Math.max(20, Number(empresaDocumentosLayout?.cabecalhoAlturaMm || 0) + 26));
-
     w.document.open();
     w.document.write(`<!doctype html>
 <html lang="pt-BR">
@@ -594,31 +633,31 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${printDocTitle}</title>
     <style>
-      body { font-family: Arial, sans-serif; margin: 0; color: #0f172a; font-size: 10px; line-height: 1.15; }
+      body { font-family: Arial, sans-serif; margin: 0; color: #0f172a; font-size: 9px; line-height: 1.12; }
       @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-      .print-header { position: fixed; top: 0; left: 0; right: 0; background: #ffffff; padding: 8px 10px; }
-      .print-header, .print-header * { line-height: 1.15; }
-      .print-content { padding: 8px 10px; }
+      .print-header { position: fixed; top: ${topToHeaderPx}px; left: 0; right: 0; background: #ffffff; padding: 6px 10px; font-family: ${escapeHtml(pp.headerFontFamily)}; font-size: ${Number(pp.headerFontSizePx || 11)}px; }
+      .print-header, .print-header * { line-height: 1.12; }
+      .print-content { padding: 6px 10px; }
       .empresa-cabecalho { width: 100%; }
       .empresa-rodape { width: 100%; margin-top: 14px; }
       .cabecalho-planilha { width: 100%; }
       .cab-outer { display: grid; grid-template-columns: 1fr 1fr; border: 2px solid #0f172a; }
       .cab-left { padding: 6px 8px; }
       .cab-right { border-left: 2px solid #0f172a; padding: 6px 8px; }
-      .cab-linha { display: grid; grid-template-columns: 76px 1fr; gap: 8px; align-items: baseline; font-size: 11px; line-height: 1.1; }
+      .cab-linha { display: grid; grid-template-columns: 76px 1fr; gap: 8px; align-items: baseline; font-size: ${Math.max(9, Math.min(15, Number(pp.headerFontSizePx || 11)))}px; line-height: 1.1; }
       .cab-linha + .cab-linha { margin-top: 4px; }
-      .lab { font-weight: 400; color: #0f172a; }
+      .lab { font-weight: ${headerFontWeight}; color: #0f172a; }
       .val { font-weight: 700; color: #0f172a; }
       .up { text-transform: uppercase; }
-      .cab-param { width: 100%; border-collapse: collapse; font-size: 11px; line-height: 1.1; }
+      .cab-param { width: 100%; border-collapse: collapse; font-size: ${Math.max(9, Math.min(15, Number(pp.headerFontSizePx || 11)))}px; line-height: 1.1; }
       .cab-param th, .cab-param td { padding: 1px 3px; vertical-align: top; border: none; }
       .cab-param thead th { font-weight: 700; color: #0f172a; text-align: left; padding-bottom: 3px; }
       .cab-param thead th.p-col { text-align: center; width: 78px; }
-      .cab-param tbody td.p-k { color: #0f172a; }
+      .cab-param tbody td.p-k { color: #0f172a; font-weight: ${headerFontWeight}; }
       .cab-param tbody td.p-v { text-align: center; font-weight: 700; }
       .linha-sep { border-top: 2px solid #e2e8f0; margin: 10px 0 12px 0; }
       .linha-sep-footer { border-top: 2px solid #e2e8f0; margin: 14px 0 0 0; }
-      table { width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.1; }
+      table { width: 100%; border-collapse: collapse; font-size: 9px; line-height: 1.1; }
       th, td { border: 1px solid #e2e8f0; padding: 4px 6px; vertical-align: top; }
       th { background: #f8fafc; text-align: left; padding: 6px 6px; }
       thead { display: table-header-group; }
@@ -632,7 +671,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       ${cabecalhoEmpresaHtml}
       ${cabecalhoPlanilhaHtml}
     </div>
-    <div class="print-content" style="padding-top:${headerTopMm}mm;">
+    <div class="print-content">
     <table class="planilha-table">
       <thead>
         <tr>
@@ -656,9 +695,19 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   </body>
 </html>`);
     w.document.close();
-    w.focus();
-    w.print();
-    w.close();
+    const doPrint = () => {
+      try {
+        const headerEl = w.document.querySelector(".print-header") as HTMLElement | null;
+        const contentEl = w.document.querySelector(".print-content") as HTMLElement | null;
+        const headerHeight = headerEl ? headerEl.offsetHeight : 0;
+        if (contentEl) contentEl.style.paddingTop = `${headerHeight + topToHeaderPx + dadosToTabelaPx}px`;
+      } catch {}
+      w.focus();
+      w.print();
+      w.close();
+    };
+    w.addEventListener("load", doPrint, { once: true });
+    window.setTimeout(doPrint, 250);
   }
 
   async function carregarVersoes() {
@@ -1650,6 +1699,162 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                   </div>
                 </div>
 
+                <div className="rounded-lg border bg-white p-3 space-y-3">
+                  <div className="text-sm font-semibold">Impressão — ajustes finos</div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+                    <div className="md:col-span-5 space-y-2">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Fonte do cabeçalho</div>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <label className="space-y-1">
+                          <div className="text-sm text-slate-600">Tipo</div>
+                          <select
+                            className="input bg-white"
+                            value={uiPrefs.print.headerFontFamily}
+                            onChange={(e) => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerFontFamily: e.target.value } }))}
+                          >
+                            <option value="Arial">Arial</option>
+                            <option value="Calibri">Calibri</option>
+                            <option value="Verdana">Verdana</option>
+                            <option value="Times New Roman">Times New Roman</option>
+                          </select>
+                        </label>
+
+                        <div className="space-y-1">
+                          <div className="text-sm text-slate-600">Tamanho</div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                              type="button"
+                              onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerFontSizePx: Math.max(8, p.print.headerFontSizePx - 1) } }))}
+                            >
+                              ➖
+                            </button>
+                            <input
+                              className="input bg-white w-[110px]"
+                              type="number"
+                              min={8}
+                              max={16}
+                              value={uiPrefs.print.headerFontSizePx}
+                              onChange={(e) => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerFontSizePx: Math.max(8, Math.min(16, Number(e.target.value || 11))) } }))}
+                            />
+                            <button
+                              className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                              type="button"
+                              onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerFontSizePx: Math.min(16, p.print.headerFontSizePx + 1) } }))}
+                            >
+                              ➕
+                            </button>
+                          </div>
+                        </div>
+
+                        <label className="space-y-1">
+                          <div className="text-sm text-slate-600">Peso</div>
+                          <select
+                            className="input bg-white"
+                            value={uiPrefs.print.headerFontWeight}
+                            onChange={(e) => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerFontWeight: e.target.value as any } }))}
+                          >
+                            <option value="normal">Normal</option>
+                            <option value="semibold">Semibold</option>
+                            <option value="bold">Bold</option>
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="md:col-span-7 space-y-2">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Espaçamentos (px)</div>
+
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <div className="space-y-1">
+                          <div className="text-sm text-slate-600">Topo → cabeçalho</div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                              type="button"
+                              onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, topToHeaderPx: Math.max(0, p.print.topToHeaderPx - 2) } }))}
+                            >
+                              ➖
+                            </button>
+                            <input
+                              className="input bg-white w-[110px]"
+                              type="number"
+                              min={0}
+                              max={80}
+                              value={uiPrefs.print.topToHeaderPx}
+                              onChange={(e) => setUiPrefs((p) => ({ ...p, print: { ...p.print, topToHeaderPx: Math.max(0, Math.min(80, Number(e.target.value || 0))) } }))}
+                            />
+                            <button
+                              className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                              type="button"
+                              onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, topToHeaderPx: Math.min(80, p.print.topToHeaderPx + 2) } }))}
+                            >
+                              ➕
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="text-sm text-slate-600">Cabeçalho → dados</div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                              type="button"
+                              onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerToDadosPx: Math.max(0, p.print.headerToDadosPx - 2) } }))}
+                            >
+                              ➖
+                            </button>
+                            <input
+                              className="input bg-white w-[110px]"
+                              type="number"
+                              min={0}
+                              max={80}
+                              value={uiPrefs.print.headerToDadosPx}
+                              onChange={(e) => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerToDadosPx: Math.max(0, Math.min(80, Number(e.target.value || 0))) } }))}
+                            />
+                            <button
+                              className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                              type="button"
+                              onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerToDadosPx: Math.min(80, p.print.headerToDadosPx + 2) } }))}
+                            >
+                              ➕
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="text-sm text-slate-600">Dados → tabela</div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                              type="button"
+                              onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, dadosToTabelaPx: Math.max(0, p.print.dadosToTabelaPx - 4) } }))}
+                            >
+                              ➖
+                            </button>
+                            <input
+                              className="input bg-white w-[110px]"
+                              type="number"
+                              min={0}
+                              max={120}
+                              value={uiPrefs.print.dadosToTabelaPx}
+                              onChange={(e) => setUiPrefs((p) => ({ ...p, print: { ...p.print, dadosToTabelaPx: Math.max(0, Math.min(120, Number(e.target.value || 0))) } }))}
+                            />
+                            <button
+                              className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                              type="button"
+                              onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, dadosToTabelaPx: Math.min(120, p.print.dadosToTabelaPx + 4) } }))}
+                            >
+                              ➕
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
             <div ref={adicionarLinhaRef} className="rounded-lg border bg-slate-50 p-3 space-y-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2">
@@ -1842,10 +2047,10 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
               <table className="min-w-[1100px] w-full" style={{ fontSize: `${uiPrefs.fontSizePx}px` }}>
                 <thead className="bg-slate-50 text-left text-slate-700">
                   <tr>
-                    <th className="px-3 py-2 w-[64px] border-r border-slate-200">ITEM</th>
-                    <th className="px-3 py-2 w-[85px] border-r border-slate-200">CÓDIGO</th>
+                    <th className="px-3 py-2 w-[52px] border-r border-slate-200">ITEM</th>
+                    <th className="px-3 py-2 w-[98px] border-r border-slate-200">CÓDIGO</th>
                     <th className="px-3 py-2 border-r border-slate-200">FONTE</th>
-                    <th className="px-3 py-2 min-w-[520px] border-r border-slate-200">SERVIÇOS</th>
+                    <th className="px-3 py-2 min-w-[468px] border-r border-slate-200">SERVIÇOS</th>
                     <th className="px-3 py-2 border-r border-slate-200">UND</th>
                     <th className="px-3 py-2 text-right border-r border-slate-200">QUANT.</th>
                     <th className="px-3 py-2 text-right border-r border-slate-200">VALOR UNIT.</th>
@@ -1870,7 +2075,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                         );
                       }}
                     >
-                      <td className="px-3 py-2 w-[64px] border-r border-slate-200">
+                      <td className="px-3 py-2 w-[52px] border-r border-slate-200">
                         <span className="inline-flex items-center gap-2">
                           {l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM" ? (
                             expandablePrefixes.has(String(l.item || "").trim()) ? (
@@ -1894,7 +2099,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                           <span>{l.item || ""}</span>
                         </span>
                       </td>
-                      <td className="px-3 py-2 w-[85px] max-w-[85px] whitespace-nowrap overflow-hidden text-ellipsis border-r border-slate-200">
+                      <td className="px-3 py-2 w-[98px] max-w-[98px] whitespace-nowrap overflow-hidden text-ellipsis border-r border-slate-200">
                         <span className="inline-flex items-center gap-2">
                           <span className="text-[11px]">{l.codigo || ""}</span>
                           {(() => {
@@ -1924,7 +2129,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                         </span>
                       </td>
                       <td className="px-3 py-2 border-r border-slate-200">{l.fonte || ""}</td>
-                      <td className="px-3 py-2 min-w-[520px] border-r border-slate-200">{l.servicos || ""}</td>
+                      <td className="px-3 py-2 min-w-[468px] border-r border-slate-200">{l.servicos || ""}</td>
                       <td className="px-3 py-2 border-r border-slate-200">{l.und || ""}</td>
                       <td className="px-3 py-2 text-right border-r border-slate-200">{l.quant || ""}</td>
                       <td className="px-3 py-2 text-right border-r border-slate-200">{l.valorUnitario || ""}</td>
