@@ -2,7 +2,7 @@
  
 import { useEffect, useMemo, useRef, useState } from "react";
  import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { Trash2, Printer, FileSpreadsheet, Image } from "lucide-react";
  
  type ItemRow = {
   idItemBase: number;
@@ -68,6 +68,15 @@ function parseNumberLoose(v: unknown) {
 
 function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function escapeHtml(v: unknown) {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function normalizeHeader(h: string) {
@@ -156,6 +165,50 @@ async function readTextSmart(file: File) {
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
   const [editingBancoOutroIdx, setEditingBancoOutroIdx] = useState<number | null>(null);
   const [bancoOutroValue, setBancoOutroValue] = useState("");
+  const [showDisplayConfig, setShowDisplayConfig] = useState(false);
+  const [showPrintConfig, setShowPrintConfig] = useState(false);
+  const [displayPrefs, setDisplayPrefs] = useState<{
+    colTipo: boolean;
+    colCodigo: boolean;
+    colBanco: boolean;
+    colDescricao: boolean;
+    colUnd: boolean;
+    colQtd: boolean;
+    colValorUnit: boolean;
+    colTotal: boolean;
+    colCentroCusto: boolean;
+    bgComposicoes: string;
+    bgMateriais: string;
+    bgEquipamentos: string;
+    bgMao: string;
+  }>({
+    colTipo: true,
+    colCodigo: true,
+    colBanco: true,
+    colDescricao: true,
+    colUnd: true,
+    colQtd: true,
+    colValorUnit: true,
+    colTotal: true,
+    colCentroCusto: true,
+    bgComposicoes: "#F8FAFC",
+    bgMateriais: "#FFFFFF",
+    bgEquipamentos: "#FFFFFF",
+    bgMao: "#FFFFFF",
+  });
+  const [printPrefs, setPrintPrefs] = useState<{
+    headerFontFamily: string;
+    headerFontSizePx: number;
+    headerFontWeight: "normal" | "semibold" | "bold";
+    topToHeaderPx: number;
+  }>({ headerFontFamily: "Arial", headerFontSizePx: 11, headerFontWeight: "semibold", topToHeaderPx: 0 });
+
+  const [primitiveOpen, setPrimitiveOpen] = useState(false);
+  const [primitiveLoading, setPrimitiveLoading] = useState(false);
+  const [primitiveErr, setPrimitiveErr] = useState<string | null>(null);
+  const [primitiveRows, setPrimitiveRows] = useState<
+    Array<{ tipoItem: string; codigoItem: string; banco: string; descricao: string; und: string; quantidade: number; valorUnitario: number; total: number }>
+  >([]);
   const [importPreview, setImportPreview] = useState<{
     file: File | null;
     rows: Array<{
@@ -177,6 +230,24 @@ async function readTextSmart(file: File) {
   const [importChoiceInfo, setImportChoiceInfo] = useState<{ existingCount: number; incomingCount: number } | null>(null);
  
    const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  function getUserKeyBase() {
+    try {
+      const raw = localStorage.getItem("user");
+      const u = raw ? JSON.parse(raw) : null;
+      const id = Number(u?.id);
+      if (Number.isFinite(id) && id > 0) return `exp:composicao:servico:${id}`;
+    } catch {}
+    return "exp:composicao:servico";
+  }
+
+  function getDisplayPrefsKey() {
+    return `${getUserKeyBase()}:display`;
+  }
+
+  function getPrintPrefsKey() {
+    return `${getUserKeyBase()}:print`;
+  }
  
    async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
      let token: string | null = null;
@@ -581,6 +652,60 @@ async function readTextSmart(file: File) {
   }, [bancosCustom]);
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem(getDisplayPrefsKey());
+      if (!raw) return;
+      const p = JSON.parse(raw) as any;
+      setDisplayPrefs((cur) => ({
+        colTipo: p?.colTipo !== false,
+        colCodigo: p?.colCodigo !== false,
+        colBanco: p?.colBanco !== false,
+        colDescricao: p?.colDescricao !== false,
+        colUnd: p?.colUnd !== false,
+        colQtd: p?.colQtd !== false,
+        colValorUnit: p?.colValorUnit !== false,
+        colTotal: p?.colTotal !== false,
+        colCentroCusto: p?.colCentroCusto !== false,
+        bgComposicoes: typeof p?.bgComposicoes === "string" && String(p.bgComposicoes).startsWith("#") ? String(p.bgComposicoes) : cur.bgComposicoes,
+        bgMateriais: typeof p?.bgMateriais === "string" && String(p.bgMateriais).startsWith("#") ? String(p.bgMateriais) : cur.bgMateriais,
+        bgEquipamentos: typeof p?.bgEquipamentos === "string" && String(p.bgEquipamentos).startsWith("#") ? String(p.bgEquipamentos) : cur.bgEquipamentos,
+        bgMao: typeof p?.bgMao === "string" && String(p.bgMao).startsWith("#") ? String(p.bgMao) : cur.bgMao,
+      }));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(getDisplayPrefsKey(), JSON.stringify(displayPrefs));
+    } catch {}
+  }, [displayPrefs]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(getPrintPrefsKey());
+      if (!raw) return;
+      const p = JSON.parse(raw) as any;
+      const ff = typeof p?.headerFontFamily === "string" && String(p.headerFontFamily).trim() ? String(p.headerFontFamily).trim() : "";
+      const fs = p?.headerFontSizePx != null ? Number(p.headerFontSizePx) : NaN;
+      const fwRaw = String(p?.headerFontWeight || "").trim().toLowerCase();
+      const fw = fwRaw === "bold" ? "bold" : fwRaw === "normal" ? "normal" : "semibold";
+      const top = p?.topToHeaderPx != null ? Number(p.topToHeaderPx) : NaN;
+      setPrintPrefs((cur) => ({
+        headerFontFamily: ff || cur.headerFontFamily,
+        headerFontSizePx: Number.isFinite(fs) ? Math.max(8, Math.min(16, Math.round(fs))) : cur.headerFontSizePx,
+        headerFontWeight: fw,
+        topToHeaderPx: Number.isFinite(top) ? Math.max(0, Math.min(80, Math.round(top))) : cur.topToHeaderPx,
+      }));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(getPrintPrefsKey(), JSON.stringify(printPrefs));
+    } catch {}
+  }, [printPrefs]);
+
+  useEffect(() => {
     if (!idObra || !codigoServico) return;
     carregarCentrosCusto();
     carregar(true);
@@ -698,21 +823,32 @@ async function readTextSmart(file: File) {
   const itensEquip = useMemo(() => itensIdx.filter(({ r }) => String(r.tipoItem || "").toUpperCase() === "EQUIPAMENTO"), [itensIdx]);
   const itensMao = useMemo(() => itensIdx.filter(({ r }) => String(r.tipoItem || "").toUpperCase() === "MAO_DE_OBRA"), [itensIdx]);
 
-  function renderItensTabela(list: Array<{ r: ItemRow; idx: number }>) {
+  function renderItensTabela(list: Array<{ r: ItemRow; idx: number }>, rowBg: string) {
+    const colCount =
+      (displayPrefs.colTipo ? 1 : 0) +
+      (displayPrefs.colCodigo ? 1 : 0) +
+      (displayPrefs.colBanco ? 1 : 0) +
+      (displayPrefs.colDescricao ? 1 : 0) +
+      (displayPrefs.colUnd ? 1 : 0) +
+      (displayPrefs.colQtd ? 1 : 0) +
+      (displayPrefs.colValorUnit ? 1 : 0) +
+      (displayPrefs.colTotal ? 1 : 0) +
+      (displayPrefs.colCentroCusto ? 1 : 0) +
+      1;
     return (
       <div className="overflow-auto">
         <table className="min-w-[1400px] w-full text-sm">
           <thead className="bg-slate-50 text-left text-slate-700">
             <tr>
-              <th className="px-3 py-2">Tipo</th>
-              <th className="px-3 py-2">Código</th>
-              <th className="px-3 py-2">Banco</th>
-              <th className="px-3 py-2">Descrição</th>
-              <th className="px-3 py-2">UND</th>
-              <th className="px-3 py-2 text-right">Qtd</th>
-              <th className="px-3 py-2 text-right">Valor Unit</th>
-              <th className="px-3 py-2 text-right">Total</th>
-              <th className="px-3 py-2">Centro de custo</th>
+              {displayPrefs.colTipo ? <th className="px-3 py-2">Tipo</th> : null}
+              {displayPrefs.colCodigo ? <th className="px-3 py-2">Código</th> : null}
+              {displayPrefs.colBanco ? <th className="px-3 py-2">Banco</th> : null}
+              {displayPrefs.colDescricao ? <th className="px-3 py-2">Descrição</th> : null}
+              {displayPrefs.colUnd ? <th className="px-3 py-2">UND</th> : null}
+              {displayPrefs.colQtd ? <th className="px-3 py-2 text-right">Qtd</th> : null}
+              {displayPrefs.colValorUnit ? <th className="px-3 py-2 text-right">Valor Unit</th> : null}
+              {displayPrefs.colTotal ? <th className="px-3 py-2 text-right">Total</th> : null}
+              {displayPrefs.colCentroCusto ? <th className="px-3 py-2">Centro de custo</th> : null}
               <th className="px-3 py-2">Ações</th>
             </tr>
           </thead>
@@ -724,8 +860,9 @@ async function readTextSmart(file: File) {
               const bancoInOptions = !r.banco || bancosOptions.includes(r.banco);
               const selectBancoValue = bancoInOptions ? r.banco : "__OUTRO__";
               return (
-                <tr key={idx} className="border-t">
-                  <td className="px-3 py-2">
+                <tr key={idx} className="border-t" style={{ backgroundColor: rowBg }}>
+                  {displayPrefs.colTipo ? (
+                    <td className="px-3 py-2">
                     <select className="input bg-white" value={r.tipoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, tipoItem: e.target.value } : x)))}>
                       <option value="COMPOSICAO">Composição</option>
                       <option value="COMPOSICAO_AUXILIAR">Composição Auxiliar</option>
@@ -734,7 +871,9 @@ async function readTextSmart(file: File) {
                       <option value="MAO_DE_OBRA">Mão de obra</option>
                     </select>
                   </td>
-                  <td className="px-3 py-2">
+                  ) : null}
+                  {displayPrefs.colCodigo ? (
+                    <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
                       <input className="input bg-white" value={r.codigoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoItem: e.target.value } : x)))} />
                       {String(r.tipoItem || "").toUpperCase() === "COMPOSICAO" || String(r.tipoItem || "").toUpperCase() === "COMPOSICAO_AUXILIAR" ? (
@@ -768,7 +907,9 @@ async function readTextSmart(file: File) {
                       ) : null}
                     </div>
                   </td>
-                  <td className="px-3 py-2">
+                  ) : null}
+                  {displayPrefs.colBanco ? (
+                    <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
                       <select
                         className="input bg-white"
@@ -815,20 +956,30 @@ async function readTextSmart(file: File) {
                       ) : null}
                     </div>
                   </td>
-                  <td className="px-3 py-2">
+                  ) : null}
+                  {displayPrefs.colDescricao ? (
+                    <td className="px-3 py-2">
                     <input className="input bg-white" value={r.descricao} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, descricao: e.target.value } : x)))} />
                   </td>
-                  <td className="px-3 py-2">
+                  ) : null}
+                  {displayPrefs.colUnd ? (
+                    <td className="px-3 py-2">
                     <input className="input bg-white" value={r.und} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, und: e.target.value } : x)))} />
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  ) : null}
+                  {displayPrefs.colQtd ? (
+                    <td className="px-3 py-2 text-right">
                     <input className="input bg-white text-right" value={r.quantidade} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, quantidade: e.target.value } : x)))} />
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  ) : null}
+                  {displayPrefs.colValorUnit ? (
+                    <td className="px-3 py-2 text-right">
                     <input className="input bg-white text-right" value={r.valorUnitario} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, valorUnitario: e.target.value } : x)))} />
                   </td>
-                  <td className="px-3 py-2 text-right">{total == null ? "" : moeda(Number(total))}</td>
-                  <td className="px-3 py-2">
+                  ) : null}
+                  {displayPrefs.colTotal ? <td className="px-3 py-2 text-right">{total == null ? "" : moeda(Number(total))}</td> : null}
+                  {displayPrefs.colCentroCusto ? (
+                    <td className="px-3 py-2">
                     <select className="input bg-white" value={r.codigoCentroCusto} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoCentroCusto: e.target.value } : x)))}>
                       <option value="">(sem CC)</option>
                       {centrosCusto.map((c) => (
@@ -838,6 +989,7 @@ async function readTextSmart(file: File) {
                       ))}
                     </select>
                   </td>
+                  ) : null}
                   <td className="px-3 py-2">
                     <button
                       className="rounded border bg-white p-2 text-red-700 hover:bg-slate-50 disabled:opacity-60"
@@ -854,7 +1006,7 @@ async function readTextSmart(file: File) {
             })}
             {!list.length ? (
               <tr>
-                <td colSpan={10} className="px-3 py-6 text-center text-slate-500">
+                <td colSpan={colCount} className="px-3 py-6 text-center text-slate-500">
                   Sem itens.
                 </td>
               </tr>
@@ -865,6 +1017,229 @@ async function readTextSmart(file: File) {
     );
   }
  
+  function exportarCsvItens(list: ItemRow[], fileName: string) {
+    const sep = ";";
+    const headers = ["tipo", "codigo", "banco", "descricao", "und", "quantidade", "valor_unit", "centro_custo"];
+    const lines = [headers.join(sep)];
+    for (const r of list) {
+      lines.push(
+        [
+          String(r.tipoItem || ""),
+          String(r.codigoItem || ""),
+          String(r.banco || ""),
+          String(r.descricao || ""),
+          String(r.und || ""),
+          String(r.quantidade || ""),
+          String(r.valorUnitario || ""),
+          String(r.codigoCentroCusto || ""),
+        ]
+          .map((v) => (String(v).includes(sep) || String(v).includes('"') || String(v).includes("\n") ? `"${String(v).replace(/"/g, '""')}"` : String(v)))
+          .join(sep)
+      );
+    }
+    const csv = `${lines.join("\n")}\n`;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setOkMsg("CSV exportado.");
+  }
+
+  function imprimirComposicao(title: string, groups: Array<{ label: string; itens: ItemRow[]; bg: string }>) {
+    const w = window.open("", "_blank");
+    if (!w) {
+      window.print();
+      return;
+    }
+    const fw = printPrefs.headerFontWeight === "bold" ? 700 : printPrefs.headerFontWeight === "normal" ? 400 : 600;
+    const top = Math.max(0, Number(printPrefs.topToHeaderPx || 0));
+    const headerFontSize = Math.max(8, Math.min(16, Number(printPrefs.headerFontSizePx || 11)));
+
+    const cols = [
+      displayPrefs.colTipo ? "Tipo" : null,
+      displayPrefs.colCodigo ? "Código" : null,
+      displayPrefs.colBanco ? "Banco" : null,
+      displayPrefs.colDescricao ? "Descrição" : null,
+      displayPrefs.colUnd ? "UND" : null,
+      displayPrefs.colQtd ? "Qtd" : null,
+      displayPrefs.colValorUnit ? "Valor Unit" : null,
+      displayPrefs.colTotal ? "Total" : null,
+      displayPrefs.colCentroCusto ? "Centro de custo" : null,
+    ].filter(Boolean) as string[];
+
+    const rowHtml = (r: ItemRow) => {
+      const q = parseNumberLoose(r.quantidade);
+      const v = parseNumberLoose(r.valorUnitario);
+      const tot = q != null && v != null ? q * v : null;
+      const cells: string[] = [];
+      if (displayPrefs.colTipo) cells.push(`<td>${escapeHtml(r.tipoItem)}</td>`);
+      if (displayPrefs.colCodigo) cells.push(`<td>${escapeHtml(r.codigoItem)}</td>`);
+      if (displayPrefs.colBanco) cells.push(`<td>${escapeHtml(r.banco)}</td>`);
+      if (displayPrefs.colDescricao) cells.push(`<td>${escapeHtml(r.descricao)}</td>`);
+      if (displayPrefs.colUnd) cells.push(`<td>${escapeHtml(r.und)}</td>`);
+      if (displayPrefs.colQtd) cells.push(`<td style="text-align:right">${escapeHtml(r.quantidade)}</td>`);
+      if (displayPrefs.colValorUnit) cells.push(`<td style="text-align:right">${escapeHtml(r.valorUnitario)}</td>`);
+      if (displayPrefs.colTotal) cells.push(`<td style="text-align:right">${tot == null ? "" : escapeHtml(moeda(Number(tot)))}</td>`);
+      if (displayPrefs.colCentroCusto) cells.push(`<td>${escapeHtml(r.codigoCentroCusto || "")}</td>`);
+      return `<tr>${cells.join("")}</tr>`;
+    };
+
+    const groupsHtml = groups
+      .map((g) => {
+        const ths = cols.map((c) => `<th>${escapeHtml(c)}</th>`).join("");
+        const trs = g.itens.map(rowHtml).join("");
+        return `
+          <div class="g-title" style="background:${escapeHtml(g.bg)}">${escapeHtml(g.label)}</div>
+          <table class="t">
+            <thead><tr>${ths}</tr></thead>
+            <tbody>${trs || `<tr><td colspan="${cols.length}" style="text-align:center;color:#64748b;padding:10px;">Sem itens</td></tr>`}</tbody>
+          </table>
+        `;
+      })
+      .join("");
+
+    w.document.open();
+    w.document.write(`<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>\u200B</title>
+    <style>
+      body { margin: 0; font-family: Arial, sans-serif; color: #0f172a; font-size: 9px; line-height: 1.12; }
+      @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+      :root { --print-header-offset: 0px; }
+      .h { position: fixed; top: ${top}px; left: 0; right: 0; background: #fff; padding: 6px 10px; z-index: 20; font-family: ${escapeHtml(
+        printPrefs.headerFontFamily
+      )}; font-size: ${headerFontSize}px; }
+      .h * { line-height: 1.12; }
+      .h-title { font-weight: ${fw}; }
+      .c { padding: 6px 10px; position: relative; z-index: 1; }
+      .sp { height: var(--print-header-offset); }
+      .g-title { margin: 10px 0 6px 0; padding: 6px 8px; border: 1px solid #e2e8f0; font-weight: 700; }
+      .t { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #e2e8f0; padding: 4px 6px; vertical-align: top; }
+      th { background: #f8fafc; text-align: left; padding: 6px 6px; }
+    </style>
+  </head>
+  <body>
+    <div class="h">
+      <div class="h-title">${escapeHtml(title)}</div>
+      <div style="font-size:10px;color:#334155">Serviço: ${escapeHtml(codigoServico)} • Obra #${escapeHtml(idObra)}</div>
+    </div>
+    <div class="c">
+      <div class="sp"></div>
+      ${groupsHtml}
+    </div>
+    <script>
+      (function(){
+        var tries=0,lastH=-1,stable=0;
+        function m(){
+          tries++;
+          var h=document.querySelector('.h');
+          var hh=h?Math.ceil(h.getBoundingClientRect().height):0;
+          if(hh===lastH) stable++; else stable=0;
+          lastH=hh;
+          document.documentElement.style.setProperty('--print-header-offset',(hh+${top})+'px');
+          if(stable>=2||tries>=20){ window.focus(); window.print(); window.close(); return; }
+          requestAnimationFrame(m);
+        }
+        requestAnimationFrame(m);
+      })();
+    </script>
+  </body>
+</html>`);
+    w.document.close();
+    setOkMsg("Impressão aberta.");
+  }
+
+  async function abrirComposicaoPrimitiva() {
+    if (!idObra || !codigoServico) return;
+    try {
+      setPrimitiveOpen(true);
+      setPrimitiveLoading(true);
+      setPrimitiveErr(null);
+      setPrimitiveRows([]);
+
+      const stack = new Set<string>();
+      const load = async (code: string) => {
+        const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}/composicao-itens`);
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.success) throw new Error(json?.message || `Erro ao carregar composição ${code}`);
+        const list = Array.isArray(json.data?.itens) ? json.data.itens : [];
+        return list.map((i: any) => ({
+          tipoItem: String(i.tipoItem || ""),
+          codigoItem: String(i.codigoItem || ""),
+          banco: String(i.banco || ""),
+          descricao: String(i.descricao || ""),
+          und: String(i.und || ""),
+          quantidade: i.quantidade == null ? "" : String(i.quantidade),
+          valorUnitario: i.valorUnitario == null ? "" : String(i.valorUnitario),
+        })) as Array<{ tipoItem: string; codigoItem: string; banco: string; descricao: string; und: string; quantidade: string; valorUnitario: string }>;
+      };
+
+      const out = new Map<string, { tipoItem: string; codigoItem: string; banco: string; descricao: string; und: string; quantidade: number; valorUnitario: number }>();
+
+      const expand = async (code: string, mult: number) => {
+        const k = String(code || "").trim().toUpperCase();
+        if (!k) return;
+        if (stack.has(k)) return;
+        stack.add(k);
+        const items = await load(k);
+        for (const it of items) {
+          const tipo = String(it.tipoItem || "").trim().toUpperCase();
+          const childCode = String(it.codigoItem || "").trim().toUpperCase();
+          const q = parseNumberLoose(it.quantidade);
+          const v = parseNumberLoose(it.valorUnitario);
+          const qty = (q == null ? 0 : q) * mult;
+          const vu = v == null ? 0 : v;
+
+          if (tipo === "COMPOSICAO" || tipo === "COMPOSICAO_AUXILIAR") {
+            if (childCode && qty > 0) await expand(childCode, qty);
+            continue;
+          }
+
+          const key = [tipo, childCode, String(it.und || "").trim().toUpperCase(), String(it.banco || "").trim().toUpperCase(), String(vu)].join("|");
+          const cur = out.get(key);
+          if (!cur) {
+            out.set(key, {
+              tipoItem: tipo,
+              codigoItem: childCode,
+              banco: String(it.banco || ""),
+              descricao: String(it.descricao || ""),
+              und: String(it.und || ""),
+              quantidade: qty,
+              valorUnitario: vu,
+            });
+          } else {
+            out.set(key, { ...cur, quantidade: cur.quantidade + qty });
+          }
+        }
+        stack.delete(k);
+      };
+
+      await expand(codigoServico, 1);
+      const rows = Array.from(out.values())
+        .map((r) => ({
+          ...r,
+          quantidade: Number((r.quantidade || 0).toFixed(6)),
+          total: Number(((r.quantidade || 0) * (r.valorUnitario || 0)).toFixed(2)),
+        }))
+        .sort((a, b) => String(a.tipoItem).localeCompare(String(b.tipoItem)) || String(a.codigoItem).localeCompare(String(b.codigoItem)));
+      setPrimitiveRows(rows);
+      setOkMsg("Composição primitiva gerada.");
+    } catch (e: any) {
+      setPrimitiveErr(e?.message || "Erro ao gerar composição primitiva");
+    } finally {
+      setPrimitiveLoading(false);
+    }
+  }
+
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-7xl text-slate-900">
        <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -903,6 +1278,40 @@ async function readTextSmart(file: File) {
            <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60" type="button" onClick={salvar} disabled={loading}>
              Salvar
            </button>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => exportarCsvItens(itens, `composicao_servico_${codigoServico || "servico"}.csv`)}
+            disabled={loading}
+            title="Exportar CSV"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+          </button>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() =>
+              imprimirComposicao(`Composição do serviço ${codigoServico || ""}`, [
+                { label: "Composições", itens: itensComposicoes.map((x) => x.r), bg: displayPrefs.bgComposicoes },
+                { label: "Material", itens: itensMateriais.map((x) => x.r), bg: displayPrefs.bgMateriais },
+                { label: "Equipamento", itens: itensEquip.map((x) => x.r), bg: displayPrefs.bgEquipamentos },
+                { label: "Mão de obra", itens: itensMao.map((x) => x.r), bg: displayPrefs.bgMao },
+              ])
+            }
+            disabled={loading}
+            title="Imprimir"
+          >
+            <Printer className="h-4 w-4" />
+          </button>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => setShowPrintConfig((v) => !v)}
+            disabled={loading}
+            title="Configurar impressão"
+          >
+            <Image className="h-4 w-4" />
+          </button>
          </div>
        </div>
  
@@ -910,10 +1319,268 @@ async function readTextSmart(file: File) {
         <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={baixarModeloComposicoesCsv} disabled={loading}>
           Modelo CSV (composição)
         </button>
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => setShowDisplayConfig((v) => !v)} disabled={loading}>
+          {showDisplayConfig ? "⯆" : "⯈"} Configurações de exibição
+        </button>
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={abrirComposicaoPrimitiva} disabled={loading || primitiveLoading}>
+          Composição primitiva
+        </button>
       </div>
 
       {okMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{okMsg}</div> : null}
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
+
+      {showDisplayConfig ? (
+        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-lg font-semibold">Configurações de exibição</div>
+              <div className="text-sm text-slate-600">Escolha quais colunas exibir e defina as cores de fundo padrão por tipo.</div>
+            </div>
+            <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setShowDisplayConfig(false)}>
+              Ocultar
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+            <div className="md:col-span-7 space-y-2">
+              <div className="text-sm font-semibold">Colunas</div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={displayPrefs.colTipo} onChange={(e) => setDisplayPrefs((p) => ({ ...p, colTipo: Boolean(e.target.checked) }))} />
+                  <span className="text-slate-700">Tipo</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={displayPrefs.colCodigo} onChange={(e) => setDisplayPrefs((p) => ({ ...p, colCodigo: Boolean(e.target.checked) }))} />
+                  <span className="text-slate-700">Código</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={displayPrefs.colBanco} onChange={(e) => setDisplayPrefs((p) => ({ ...p, colBanco: Boolean(e.target.checked) }))} />
+                  <span className="text-slate-700">Banco</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={displayPrefs.colDescricao} onChange={(e) => setDisplayPrefs((p) => ({ ...p, colDescricao: Boolean(e.target.checked) }))} />
+                  <span className="text-slate-700">Descrição</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={displayPrefs.colUnd} onChange={(e) => setDisplayPrefs((p) => ({ ...p, colUnd: Boolean(e.target.checked) }))} />
+                  <span className="text-slate-700">UND</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={displayPrefs.colQtd} onChange={(e) => setDisplayPrefs((p) => ({ ...p, colQtd: Boolean(e.target.checked) }))} />
+                  <span className="text-slate-700">Qtd</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={displayPrefs.colValorUnit} onChange={(e) => setDisplayPrefs((p) => ({ ...p, colValorUnit: Boolean(e.target.checked) }))} />
+                  <span className="text-slate-700">Valor unit</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={displayPrefs.colTotal} onChange={(e) => setDisplayPrefs((p) => ({ ...p, colTotal: Boolean(e.target.checked) }))} />
+                  <span className="text-slate-700">Total</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={displayPrefs.colCentroCusto} onChange={(e) => setDisplayPrefs((p) => ({ ...p, colCentroCusto: Boolean(e.target.checked) }))} />
+                  <span className="text-slate-700">Centro de custo</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="md:col-span-5 space-y-2">
+              <div className="text-sm font-semibold">Cores de fundo</div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="flex items-center justify-between gap-2 text-sm rounded border bg-white px-3 py-2">
+                  <span className="text-slate-700">Composições</span>
+                  <input type="color" value={displayPrefs.bgComposicoes} onChange={(e) => setDisplayPrefs((p) => ({ ...p, bgComposicoes: e.target.value }))} />
+                </label>
+                <label className="flex items-center justify-between gap-2 text-sm rounded border bg-white px-3 py-2">
+                  <span className="text-slate-700">Material</span>
+                  <input type="color" value={displayPrefs.bgMateriais} onChange={(e) => setDisplayPrefs((p) => ({ ...p, bgMateriais: e.target.value }))} />
+                </label>
+                <label className="flex items-center justify-between gap-2 text-sm rounded border bg-white px-3 py-2">
+                  <span className="text-slate-700">Equipamento</span>
+                  <input type="color" value={displayPrefs.bgEquipamentos} onChange={(e) => setDisplayPrefs((p) => ({ ...p, bgEquipamentos: e.target.value }))} />
+                </label>
+                <label className="flex items-center justify-between gap-2 text-sm rounded border bg-white px-3 py-2">
+                  <span className="text-slate-700">Mão de obra</span>
+                  <input type="color" value={displayPrefs.bgMao} onChange={(e) => setDisplayPrefs((p) => ({ ...p, bgMao: e.target.value }))} />
+                </label>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {showPrintConfig ? (
+        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-lg font-semibold">Configurar impressão</div>
+              <div className="text-sm text-slate-600">Ajusta fonte do cabeçalho e espaçamento do topo na impressão desta tela.</div>
+            </div>
+            <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setShowPrintConfig(false)}>
+              Ocultar
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+            <div className="md:col-span-5 space-y-1">
+              <div className="text-sm text-slate-600">Fonte</div>
+              <select className="input bg-white" value={printPrefs.headerFontFamily} onChange={(e) => setPrintPrefs((p) => ({ ...p, headerFontFamily: e.target.value }))}>
+                <option value="Arial">Arial</option>
+                <option value="Calibri">Calibri</option>
+                <option value="Verdana">Verdana</option>
+                <option value="Times New Roman">Times New Roman</option>
+              </select>
+            </div>
+            <div className="md:col-span-3 space-y-1">
+              <div className="text-sm text-slate-600">Tamanho</div>
+              <input
+                className="input bg-white"
+                type="number"
+                min={8}
+                max={16}
+                value={printPrefs.headerFontSizePx}
+                onChange={(e) => setPrintPrefs((p) => ({ ...p, headerFontSizePx: Math.max(8, Math.min(16, Number(e.target.value || 11))) }))}
+              />
+            </div>
+            <div className="md:col-span-4 space-y-1">
+              <div className="text-sm text-slate-600">Peso</div>
+              <select className="input bg-white" value={printPrefs.headerFontWeight} onChange={(e) => setPrintPrefs((p) => ({ ...p, headerFontWeight: e.target.value as any }))}>
+                <option value="normal">Normal</option>
+                <option value="semibold">Semibold</option>
+                <option value="bold">Bold</option>
+              </select>
+            </div>
+            <div className="md:col-span-4 space-y-1">
+              <div className="text-sm text-slate-600">Topo → cabeçalho (px)</div>
+              <input
+                className="input bg-white"
+                type="number"
+                min={0}
+                max={80}
+                value={printPrefs.topToHeaderPx}
+                onChange={(e) => setPrintPrefs((p) => ({ ...p, topToHeaderPx: Math.max(0, Math.min(80, Number(e.target.value || 0))) }))}
+              />
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {primitiveOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-5xl rounded-xl border bg-white p-4 shadow-sm space-y-3">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <div className="text-lg font-semibold">Composição primitiva — {codigoServico}</div>
+                <div className="text-sm text-slate-600">Consolida insumos (inclui insumos das composições auxiliares), somando quantitativos.</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={() =>
+                    imprimirComposicao(`Composição primitiva — ${codigoServico}`, [
+                      {
+                        label: "Insumos consolidados",
+                        itens: primitiveRows.map((r, i) => ({
+                          idItemBase: i + 1,
+                          etapa: "",
+                          tipoItem: r.tipoItem,
+                          codigoItem: r.codigoItem,
+                          banco: r.banco,
+                          descricao: r.descricao,
+                          und: r.und,
+                          quantidade: String(r.quantidade),
+                          valorUnitario: String(r.valorUnitario),
+                          perdaPercentual: "",
+                          codigoCentroCusto: "",
+                          codigoCentroCustoBase: "",
+                        })),
+                        bg: "#FFFFFF",
+                      },
+                    ])
+                  }
+                  disabled={primitiveLoading || !primitiveRows.length}
+                  title="Imprimir"
+                >
+                  <Printer className="h-4 w-4" />
+                </button>
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={() =>
+                    exportarCsvItens(
+                      primitiveRows.map((r, i) => ({
+                        idItemBase: i + 1,
+                        etapa: "",
+                        tipoItem: r.tipoItem,
+                        codigoItem: r.codigoItem,
+                        banco: r.banco,
+                        descricao: r.descricao,
+                        und: r.und,
+                        quantidade: String(r.quantidade),
+                        valorUnitario: String(r.valorUnitario),
+                        perdaPercentual: "",
+                        codigoCentroCusto: "",
+                        codigoCentroCustoBase: "",
+                      })),
+                      `composicao_primitiva_${codigoServico}.csv`
+                    )
+                  }
+                  disabled={primitiveLoading || !primitiveRows.length}
+                  title="Exportar CSV"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                </button>
+                <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setPrimitiveOpen(false)} disabled={primitiveLoading}>
+                  Fechar
+                </button>
+              </div>
+            </div>
+
+            {primitiveErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{primitiveErr}</div> : null}
+            {primitiveLoading ? <div className="text-sm text-slate-600">Gerando…</div> : null}
+
+            <div className="overflow-auto rounded-lg border">
+              <table className="min-w-[1100px] w-full text-sm">
+                <thead className="bg-slate-50 text-left text-slate-700">
+                  <tr>
+                    <th className="px-3 py-2">Tipo</th>
+                    <th className="px-3 py-2">Código</th>
+                    <th className="px-3 py-2">Banco</th>
+                    <th className="px-3 py-2">Descrição</th>
+                    <th className="px-3 py-2">UND</th>
+                    <th className="px-3 py-2 text-right">Qtd total</th>
+                    <th className="px-3 py-2 text-right">Valor unit</th>
+                    <th className="px-3 py-2 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {primitiveRows.map((r) => (
+                    <tr key={`${r.tipoItem}__${r.codigoItem}__${r.und}__${r.valorUnitario}`} className="border-t">
+                      <td className="px-3 py-2">{r.tipoItem}</td>
+                      <td className="px-3 py-2">{r.codigoItem}</td>
+                      <td className="px-3 py-2">{r.banco}</td>
+                      <td className="px-3 py-2">{r.descricao}</td>
+                      <td className="px-3 py-2">{r.und}</td>
+                      <td className="px-3 py-2 text-right">{Number(r.quantidade || 0).toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 6 })}</td>
+                      <td className="px-3 py-2 text-right">{moeda(Number(r.valorUnitario || 0))}</td>
+                      <td className="px-3 py-2 text-right">{moeda(Number(r.total || 0))}</td>
+                    </tr>
+                  ))}
+                  {!primitiveRows.length && !primitiveLoading ? (
+                    <tr>
+                      <td colSpan={8} className="px-3 py-6 text-center text-slate-500">
+                        Sem dados.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {importPreview.file ? (
         <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
@@ -1143,19 +1810,19 @@ async function readTextSmart(file: File) {
         <div className="space-y-4">
           <div className="space-y-2">
             <div className="text-sm font-semibold text-slate-800">Composições</div>
-            {renderItensTabela(itensComposicoes)}
+            {renderItensTabela(itensComposicoes, displayPrefs.bgComposicoes)}
           </div>
           <div className="space-y-2">
             <div className="text-sm font-semibold text-slate-800">Material</div>
-            {renderItensTabela(itensMateriais)}
+            {renderItensTabela(itensMateriais, displayPrefs.bgMateriais)}
           </div>
           <div className="space-y-2">
             <div className="text-sm font-semibold text-slate-800">Equipamento</div>
-            {renderItensTabela(itensEquip)}
+            {renderItensTabela(itensEquip, displayPrefs.bgEquipamentos)}
           </div>
           <div className="space-y-2">
             <div className="text-sm font-semibold text-slate-800">Mão de obra</div>
-            {renderItensTabela(itensMao)}
+            {renderItensTabela(itensMao, displayPrefs.bgMao)}
           </div>
         </div>
       </section>
