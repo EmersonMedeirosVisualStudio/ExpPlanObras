@@ -2,7 +2,7 @@
  
 import { useEffect, useMemo, useRef, useState } from "react";
  import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Trash2, Printer, FileSpreadsheet, Image, CheckCircle2, CircleDashed } from "lucide-react";
+import { Trash2, Printer, FileSpreadsheet, Image, CheckCircle2, CircleDashed, XCircle, Layers, Package, Wrench, HardHat } from "lucide-react";
  
  type ItemRow = {
   idItemBase: number;
@@ -182,6 +182,26 @@ async function readTextSmart(file: File) {
     bgMateriais: string;
     bgEquipamentos: string;
     bgMao: string;
+    wTipoPx: number;
+    wCodigoPx: number;
+    wBancoPx: number;
+    wDescricaoPx: number;
+    wUndPx: number;
+    wQtdPx: number;
+    wValorUnitPx: number;
+    wTotalPx: number;
+    wCentroCustoPx: number;
+    wAcoesPx: number;
+    fsTipoPx: number;
+    fsCodigoPx: number;
+    fsBancoPx: number;
+    fsDescricaoPx: number;
+    fsUndPx: number;
+    fsQtdPx: number;
+    fsValorUnitPx: number;
+    fsTotalPx: number;
+    fsCentroCustoPx: number;
+    fsAcoesPx: number;
   }>({
     colTipo: true,
     colCodigo: true,
@@ -196,6 +216,26 @@ async function readTextSmart(file: File) {
     bgMateriais: "#FFFFFF",
     bgEquipamentos: "#FFFFFF",
     bgMao: "#FFFFFF",
+    wTipoPx: 72,
+    wCodigoPx: 90,
+    wBancoPx: 130,
+    wDescricaoPx: 520,
+    wUndPx: 52,
+    wQtdPx: 88,
+    wValorUnitPx: 92,
+    wTotalPx: 120,
+    wCentroCustoPx: 110,
+    wAcoesPx: 72,
+    fsTipoPx: 13,
+    fsCodigoPx: 13,
+    fsBancoPx: 13,
+    fsDescricaoPx: 13,
+    fsUndPx: 13,
+    fsQtdPx: 13,
+    fsValorUnitPx: 13,
+    fsTotalPx: 13,
+    fsCentroCustoPx: 13,
+    fsAcoesPx: 13,
   });
   const [printPrefs, setPrintPrefs] = useState<{
     headerFontFamily: string;
@@ -657,6 +697,10 @@ async function readTextSmart(file: File) {
       const raw = localStorage.getItem(getDisplayPrefsKey());
       if (!raw) return;
       const p = JSON.parse(raw) as any;
+      const n = (v: any, min: number, max: number, fallback: number) => {
+        const x = Number(v);
+        return Number.isFinite(x) ? Math.max(min, Math.min(max, Math.round(x))) : fallback;
+      };
       setDisplayPrefs((cur) => ({
         colTipo: p?.colTipo !== false,
         colCodigo: p?.colCodigo !== false,
@@ -671,6 +715,26 @@ async function readTextSmart(file: File) {
         bgMateriais: typeof p?.bgMateriais === "string" && String(p.bgMateriais).startsWith("#") ? String(p.bgMateriais) : cur.bgMateriais,
         bgEquipamentos: typeof p?.bgEquipamentos === "string" && String(p.bgEquipamentos).startsWith("#") ? String(p.bgEquipamentos) : cur.bgEquipamentos,
         bgMao: typeof p?.bgMao === "string" && String(p.bgMao).startsWith("#") ? String(p.bgMao) : cur.bgMao,
+        wTipoPx: n(p?.wTipoPx, 44, 220, cur.wTipoPx),
+        wCodigoPx: n(p?.wCodigoPx, 60, 280, cur.wCodigoPx),
+        wBancoPx: n(p?.wBancoPx, 90, 280, cur.wBancoPx),
+        wDescricaoPx: n(p?.wDescricaoPx, 220, 1200, cur.wDescricaoPx),
+        wUndPx: n(p?.wUndPx, 40, 140, cur.wUndPx),
+        wQtdPx: n(p?.wQtdPx, 60, 160, cur.wQtdPx),
+        wValorUnitPx: n(p?.wValorUnitPx, 60, 200, cur.wValorUnitPx),
+        wTotalPx: n(p?.wTotalPx, 80, 220, cur.wTotalPx),
+        wCentroCustoPx: n(p?.wCentroCustoPx, 64, 240, cur.wCentroCustoPx),
+        wAcoesPx: n(p?.wAcoesPx, 56, 160, cur.wAcoesPx),
+        fsTipoPx: n(p?.fsTipoPx, 10, 16, cur.fsTipoPx),
+        fsCodigoPx: n(p?.fsCodigoPx, 10, 16, cur.fsCodigoPx),
+        fsBancoPx: n(p?.fsBancoPx, 10, 16, cur.fsBancoPx),
+        fsDescricaoPx: n(p?.fsDescricaoPx, 10, 16, cur.fsDescricaoPx),
+        fsUndPx: n(p?.fsUndPx, 10, 16, cur.fsUndPx),
+        fsQtdPx: n(p?.fsQtdPx, 10, 16, cur.fsQtdPx),
+        fsValorUnitPx: n(p?.fsValorUnitPx, 10, 16, cur.fsValorUnitPx),
+        fsTotalPx: n(p?.fsTotalPx, 10, 16, cur.fsTotalPx),
+        fsCentroCustoPx: n(p?.fsCentroCustoPx, 10, 16, cur.fsCentroCustoPx),
+        fsAcoesPx: n(p?.fsAcoesPx, 10, 16, cur.fsAcoesPx),
       }));
     } catch {}
   }, []);
@@ -824,6 +888,26 @@ async function readTextSmart(file: File) {
   const itensEquip = useMemo(() => itensIdx.filter(({ r }) => String(r.tipoItem || "").toUpperCase() === "EQUIPAMENTO"), [itensIdx]);
   const itensMao = useMemo(() => itensIdx.filter(({ r }) => String(r.tipoItem || "").toUpperCase() === "MAO_DE_OBRA"), [itensIdx]);
 
+  function tipoMeta(tipo: string) {
+    const t = String(tipo || "").toUpperCase();
+    if (t === "COMPOSICAO" || t === "COMPOSICAO_AUXILIAR") return { label: t === "COMPOSICAO" ? "Composição" : "Composição Auxiliar", Icon: Layers, key: t };
+    if (t === "INSUMO") return { label: "Material", Icon: Package, key: t };
+    if (t === "EQUIPAMENTO") return { label: "Equipamento", Icon: Wrench, key: t };
+    if (t === "MAO_DE_OBRA") return { label: "Mão de obra", Icon: HardHat, key: t };
+    return { label: t || "Tipo", Icon: Layers, key: t || "INSUMO" };
+  }
+
+  function nextTipo(tipo: string) {
+    const order = ["COMPOSICAO", "COMPOSICAO_AUXILIAR", "INSUMO", "EQUIPAMENTO", "MAO_DE_OBRA"];
+    const t = String(tipo || "").toUpperCase();
+    const idx = Math.max(0, order.indexOf(t));
+    return order[(idx + 1) % order.length];
+  }
+
+  function px(n: number) {
+    return `${Math.max(0, Math.round(Number(n) || 0))}px`;
+  }
+
   function renderItensTabela(list: Array<{ r: ItemRow; idx: number }>, rowBg: string) {
     const colCount =
       (displayPrefs.colTipo ? 1 : 0) +
@@ -836,25 +920,84 @@ async function readTextSmart(file: File) {
       (displayPrefs.colTotal ? 1 : 0) +
       (displayPrefs.colCentroCusto ? 1 : 0) +
       1;
-    const wCodigo = "w-[90px]";
-    const wUnd = "w-[52px]";
-    const wQtd = "w-[88px]";
-    const wValorUnit = "w-[92px]";
+    const w = {
+      tipo: displayPrefs.wTipoPx,
+      codigo: displayPrefs.wCodigoPx,
+      banco: displayPrefs.wBancoPx,
+      descricao: displayPrefs.wDescricaoPx,
+      und: displayPrefs.wUndPx,
+      qtd: displayPrefs.wQtdPx,
+      valorUnit: displayPrefs.wValorUnitPx,
+      total: displayPrefs.wTotalPx,
+      cc: displayPrefs.wCentroCustoPx,
+      acoes: displayPrefs.wAcoesPx,
+    };
+    const fs = {
+      tipo: displayPrefs.fsTipoPx,
+      codigo: displayPrefs.fsCodigoPx,
+      banco: displayPrefs.fsBancoPx,
+      descricao: displayPrefs.fsDescricaoPx,
+      und: displayPrefs.fsUndPx,
+      qtd: displayPrefs.fsQtdPx,
+      valorUnit: displayPrefs.fsValorUnitPx,
+      total: displayPrefs.fsTotalPx,
+      cc: displayPrefs.fsCentroCustoPx,
+      acoes: displayPrefs.fsAcoesPx,
+    };
+    const cellW = (widthPx: number) => ({ width: px(widthPx), minWidth: px(widthPx), maxWidth: px(widthPx) });
     return (
       <div className="overflow-auto">
-        <table className="min-w-[1400px] w-full text-sm">
+        <table className="w-full text-sm" style={{ minWidth: "1100px" }}>
           <thead className="bg-slate-50 text-left text-slate-700">
             <tr>
-              {displayPrefs.colTipo ? <th className="px-3 py-2">Tipo</th> : null}
-              {displayPrefs.colCodigo ? <th className={`px-3 py-2 ${wCodigo}`}>Código</th> : null}
-              {displayPrefs.colBanco ? <th className="px-3 py-2">Banco</th> : null}
-              {displayPrefs.colDescricao ? <th className="px-3 py-2">Descrição</th> : null}
-              {displayPrefs.colUnd ? <th className={`px-3 py-2 ${wUnd}`}>UND</th> : null}
-              {displayPrefs.colQtd ? <th className={`px-3 py-2 text-right ${wQtd}`}>Qtd</th> : null}
-              {displayPrefs.colValorUnit ? <th className={`px-3 py-2 text-right ${wValorUnit}`}>Valor Unit</th> : null}
-              {displayPrefs.colTotal ? <th className="px-3 py-2 text-right">Total</th> : null}
-              {displayPrefs.colCentroCusto ? <th className="px-3 py-2">Centro de custo</th> : null}
-              <th className="px-3 py-2">Ações</th>
+              {displayPrefs.colTipo ? (
+                <th className="px-3 py-2" style={cellW(w.tipo)}>
+                  Tipo
+                </th>
+              ) : null}
+              {displayPrefs.colCodigo ? (
+                <th className="px-3 py-2" style={cellW(w.codigo)}>
+                  Código
+                </th>
+              ) : null}
+              {displayPrefs.colBanco ? (
+                <th className="px-3 py-2" style={cellW(w.banco)}>
+                  Banco
+                </th>
+              ) : null}
+              {displayPrefs.colDescricao ? (
+                <th className="px-3 py-2" style={cellW(w.descricao)}>
+                  Descrição
+                </th>
+              ) : null}
+              {displayPrefs.colUnd ? (
+                <th className="px-3 py-2" style={cellW(w.und)}>
+                  UND
+                </th>
+              ) : null}
+              {displayPrefs.colQtd ? (
+                <th className="px-3 py-2 text-right" style={cellW(w.qtd)}>
+                  Qtd
+                </th>
+              ) : null}
+              {displayPrefs.colValorUnit ? (
+                <th className="px-3 py-2 text-right" style={cellW(w.valorUnit)}>
+                  Valor Unit
+                </th>
+              ) : null}
+              {displayPrefs.colTotal ? (
+                <th className="px-3 py-2 text-right" style={cellW(w.total)}>
+                  Total
+                </th>
+              ) : null}
+              {displayPrefs.colCentroCusto ? (
+                <th className="px-3 py-2" style={cellW(w.cc)}>
+                  Centro de custo
+                </th>
+              ) : null}
+              <th className="px-3 py-2" style={cellW(w.acoes)}>
+                Ações
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -864,61 +1007,66 @@ async function readTextSmart(file: File) {
               const total = q != null && v != null ? q * v : null;
               const bancoInOptions = !r.banco || bancosOptions.includes(r.banco);
               const selectBancoValue = bancoInOptions ? r.banco : "__OUTRO__";
+              const meta = tipoMeta(r.tipoItem);
+              const isComposicao = meta.key === "COMPOSICAO" || meta.key === "COMPOSICAO_AUXILIAR";
+              const codigoComposicao = String(r.codigoItem || "").trim().toUpperCase();
+              const isDefinida = Boolean(codigoComposicao) && definedComposicoesCodes.has(codigoComposicao);
               return (
                 <tr key={idx} className="border-t" style={{ backgroundColor: rowBg }}>
                   {displayPrefs.colTipo ? (
-                    <td className="px-3 py-2">
-                    <select className="input bg-white" value={r.tipoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, tipoItem: e.target.value } : x)))}>
-                      <option value="COMPOSICAO">Composição</option>
-                      <option value="COMPOSICAO_AUXILIAR">Composição Auxiliar</option>
-                      <option value="INSUMO">Material</option>
-                      <option value="EQUIPAMENTO">Equipamento</option>
-                      <option value="MAO_DE_OBRA">Mão de obra</option>
-                    </select>
-                  </td>
+                    <td className="px-3 py-2" style={{ ...cellW(w.tipo), fontSize: px(fs.tipo) }}>
+                      <button
+                        className="rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60"
+                        type="button"
+                        disabled={loading}
+                        title={`${meta.label} (clique para alterar)`}
+                        onClick={() => setItens((p) => p.map((x, i) => (i === idx ? { ...x, tipoItem: nextTipo(x.tipoItem) } : x)))}
+                        style={{ fontSize: px(fs.tipo) }}
+                      >
+                        <meta.Icon className="h-4 w-4" />
+                      </button>
+                    </td>
                   ) : null}
                   {displayPrefs.colCodigo ? (
-                    <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <input className={`input bg-white ${wCodigo}`} value={r.codigoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoItem: e.target.value } : x)))} />
-                      {String(r.tipoItem || "").toUpperCase() === "COMPOSICAO" || String(r.tipoItem || "").toUpperCase() === "COMPOSICAO_AUXILIAR" ? (
-                        (() => {
-                          const codigo = String(r.codigoItem || "").trim().toUpperCase();
-                          if (!codigo) return null;
-                          const definida = definedComposicoesCodes.has(codigo);
-                          return (
-                            <div className="flex items-center gap-2">
-                              {definida ? (
-                                <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Definida</span>
-                              ) : (
-                                <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Não definida</span>
-                              )}
-                              <button
-                                className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50"
-                                type="button"
-                                onClick={() =>
-                                  router.push(
-                                    `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigo)}?returnTo=${encodeURIComponent(
-                                      `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}`
-                                    )}`
-                                  )
-                                }
-                              >
-                                Abrir
-                              </button>
-                            </div>
-                          );
-                        })()
-                      ) : null}
-                    </div>
-                  </td>
+                    <td className="px-3 py-2" style={{ ...cellW(w.codigo), fontSize: px(fs.codigo) }}>
+                      <div className="flex items-center gap-2">
+                        <input
+                          className="input bg-white flex-1 min-w-0"
+                          value={r.codigoItem}
+                          onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoItem: e.target.value } : x)))}
+                          style={{ fontSize: px(fs.codigo) }}
+                        />
+                        {isComposicao && codigoComposicao ? (
+                          <button
+                            className="rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60"
+                            type="button"
+                            disabled={loading}
+                            title={
+                              isDefinida
+                                ? "Composição definida (clique para abrir)"
+                                : "Composição não definida (clique para abrir/definir)"
+                            }
+                            onClick={() =>
+                              router.push(
+                                `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoComposicao)}?returnTo=${encodeURIComponent(
+                                  `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}`
+                                )}`
+                              )
+                            }
+                          >
+                            {isDefinida ? <CheckCircle2 className="h-4 w-4 text-green-700" /> : <XCircle className="h-4 w-4 text-red-700" />}
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
                   ) : null}
                   {displayPrefs.colBanco ? (
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2" style={{ ...cellW(w.banco), fontSize: px(fs.banco) }}>
                     <div className="flex items-center gap-2">
                       <select
                         className="input bg-white"
                         value={selectBancoValue}
+                        style={{ ...cellW(w.banco), fontSize: px(fs.banco) }}
                         onChange={(e) => {
                           const v = e.target.value;
                           if (v === "__OUTRO__") {
@@ -957,34 +1105,59 @@ async function readTextSmart(file: File) {
                             setEditingBancoOutroIdx(null);
                             setBancoOutroValue("");
                           }}
+                          style={{ fontSize: px(fs.banco) }}
                         />
                       ) : null}
                     </div>
                   </td>
                   ) : null}
                   {displayPrefs.colDescricao ? (
-                    <td className="px-3 py-2">
-                    <input className="input bg-white" value={r.descricao} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, descricao: e.target.value } : x)))} />
+                    <td className="px-3 py-2" style={{ ...cellW(w.descricao), fontSize: px(fs.descricao) }}>
+                    <input
+                      className="input bg-white"
+                      value={r.descricao}
+                      onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, descricao: e.target.value } : x)))}
+                      style={{ fontSize: px(fs.descricao) }}
+                    />
                   </td>
                   ) : null}
                   {displayPrefs.colUnd ? (
-                    <td className="px-3 py-2">
-                    <input className={`input bg-white ${wUnd}`} value={r.und} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, und: e.target.value } : x)))} />
+                    <td className="px-3 py-2" style={{ ...cellW(w.und), fontSize: px(fs.und) }}>
+                    <input
+                      className="input bg-white"
+                      value={r.und}
+                      onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, und: e.target.value } : x)))}
+                      style={{ ...cellW(w.und), fontSize: px(fs.und) }}
+                    />
                   </td>
                   ) : null}
                   {displayPrefs.colQtd ? (
-                    <td className="px-3 py-2 text-right">
-                    <input className={`input bg-white text-right ${wQtd}`} value={r.quantidade} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, quantidade: e.target.value } : x)))} />
+                    <td className="px-3 py-2 text-right" style={{ ...cellW(w.qtd), fontSize: px(fs.qtd) }}>
+                    <input
+                      className="input bg-white text-right"
+                      value={r.quantidade}
+                      onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, quantidade: e.target.value } : x)))}
+                      style={{ ...cellW(w.qtd), fontSize: px(fs.qtd) }}
+                    />
                   </td>
                   ) : null}
                   {displayPrefs.colValorUnit ? (
-                    <td className="px-3 py-2 text-right">
-                    <input className={`input bg-white text-right ${wValorUnit}`} value={r.valorUnitario} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, valorUnitario: e.target.value } : x)))} />
+                    <td className="px-3 py-2 text-right" style={{ ...cellW(w.valorUnit), fontSize: px(fs.valorUnit) }}>
+                    <input
+                      className="input bg-white text-right"
+                      value={r.valorUnitario}
+                      onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, valorUnitario: e.target.value } : x)))}
+                      style={{ ...cellW(w.valorUnit), fontSize: px(fs.valorUnit) }}
+                    />
                   </td>
                   ) : null}
-                  {displayPrefs.colTotal ? <td className="px-3 py-2 text-right">{total == null ? "" : moeda(Number(total))}</td> : null}
+                  {displayPrefs.colTotal ? (
+                    <td className="px-3 py-2 text-right" style={{ ...cellW(w.total), fontSize: px(fs.total) }}>
+                      {total == null ? "" : moeda(Number(total))}
+                    </td>
+                  ) : null}
                   {displayPrefs.colCentroCusto ? (
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2" style={{ ...cellW(w.cc), fontSize: px(fs.cc) }}>
                     {editingCentroCustoIdx === idx ? (
                       <select
                         className="input bg-white"
@@ -995,6 +1168,7 @@ async function readTextSmart(file: File) {
                           setEditingCentroCustoIdx(null);
                         }}
                         onBlur={() => setEditingCentroCustoIdx(null)}
+                        style={{ ...cellW(w.cc), fontSize: px(fs.cc) }}
                       >
                         <option value="">(sem CC)</option>
                         {centrosCusto.map((c) => (
@@ -1016,19 +1190,21 @@ async function readTextSmart(file: File) {
                               : "Definir centro de custo"
                         }
                         onClick={() => setEditingCentroCustoIdx(idx)}
+                        style={{ fontSize: px(fs.cc) }}
                       >
                         {r.codigoCentroCusto ? <CheckCircle2 className="h-4 w-4 text-green-700" /> : <CircleDashed className="h-4 w-4 text-slate-500" />}
                       </button>
                     )}
                   </td>
                   ) : null}
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2" style={{ ...cellW(w.acoes), fontSize: px(fs.acoes) }}>
                     <button
                       className="rounded border bg-white p-2 text-red-700 hover:bg-slate-50 disabled:opacity-60"
                       type="button"
                       title="Remover"
                       onClick={() => setItens((p) => p.filter((_, i) => i !== idx))}
                       disabled={loading}
+                      style={{ fontSize: px(fs.acoes) }}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -1439,6 +1615,68 @@ async function readTextSmart(file: File) {
               </div>
             </div>
           </div>
+
+          <div className="rounded-lg border bg-slate-50 p-3">
+            <div className="text-sm font-semibold text-slate-800">Largura e fonte (px)</div>
+            <div className="mt-2 overflow-auto">
+              <table className="min-w-[900px] w-full text-sm">
+                <thead className="text-left text-slate-600">
+                  <tr>
+                    <th className="py-2 pr-3">Coluna</th>
+                    <th className="py-2 pr-3">Largura</th>
+                    <th className="py-2 pr-3">Fonte</th>
+                  </tr>
+                </thead>
+                <tbody className="text-slate-700">
+                  {[
+                    { key: "tipo", label: "Tipo", wKey: "wTipoPx", fsKey: "fsTipoPx" },
+                    { key: "codigo", label: "Código", wKey: "wCodigoPx", fsKey: "fsCodigoPx" },
+                    { key: "banco", label: "Banco", wKey: "wBancoPx", fsKey: "fsBancoPx" },
+                    { key: "descricao", label: "Descrição", wKey: "wDescricaoPx", fsKey: "fsDescricaoPx" },
+                    { key: "und", label: "UND", wKey: "wUndPx", fsKey: "fsUndPx" },
+                    { key: "qtd", label: "Qtd", wKey: "wQtdPx", fsKey: "fsQtdPx" },
+                    { key: "valorUnit", label: "Valor Unit", wKey: "wValorUnitPx", fsKey: "fsValorUnitPx" },
+                    { key: "total", label: "Total", wKey: "wTotalPx", fsKey: "fsTotalPx" },
+                    { key: "cc", label: "Centro de custo", wKey: "wCentroCustoPx", fsKey: "fsCentroCustoPx" },
+                    { key: "acoes", label: "Ações", wKey: "wAcoesPx", fsKey: "fsAcoesPx" },
+                  ].map((c) => (
+                    <tr key={c.key} className="border-t">
+                      <td className="py-2 pr-3 font-medium">{c.label}</td>
+                      <td className="py-2 pr-3">
+                        <input
+                          className="input bg-white w-[120px]"
+                          type="number"
+                          min={40}
+                          max={1200}
+                          value={(displayPrefs as any)[c.wKey]}
+                          onChange={(e) => {
+                            const v = Number(e.target.value || 0);
+                            const next = Number.isFinite(v) ? Math.max(40, Math.min(1200, Math.round(v))) : 40;
+                            setDisplayPrefs((p) => ({ ...(p as any), [c.wKey]: next }));
+                          }}
+                        />
+                      </td>
+                      <td className="py-2 pr-3">
+                        <input
+                          className="input bg-white w-[120px]"
+                          type="number"
+                          min={10}
+                          max={16}
+                          value={(displayPrefs as any)[c.fsKey]}
+                          onChange={(e) => {
+                            const v = Number(e.target.value || 0);
+                            const next = Number.isFinite(v) ? Math.max(10, Math.min(16, Math.round(v))) : 13;
+                            setDisplayPrefs((p) => ({ ...(p as any), [c.fsKey]: next }));
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-2 text-xs text-slate-500">As configurações são salvas automaticamente neste navegador.</div>
+          </div>
         </section>
       ) : null}
 
@@ -1802,13 +2040,16 @@ async function readTextSmart(file: File) {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="text-lg font-semibold">Itens (composição)</div>
-            <div className="text-sm text-slate-600">
-              Base: {moeda(Number(totalBase || 0))} • Materiais: {moeda(Number(totalMateriaisBase || 0))} • Equipamentos: {moeda(Number(totalEquipBase || 0))} • Composições:{" "}
-              {moeda(Number(totalComposicoesBase || 0))} • Mão de obra: {moeda(Number(totalMaoBase || 0))}
-            </div>
-            <div className="text-sm text-slate-600">
-              LS: {Number(lsPercent || 0).toFixed(2)}% • BDI: {Number(bdiPercent || 0).toFixed(2)}% • Total (com LS): {moeda(Number(totalComLS || 0))} • Total (com LS + BDI):{" "}
-              {moeda(Number(totalComLSComBDI || 0))}
+            <div className="mt-1 flex flex-wrap gap-2 text-xs">
+              <span className="rounded border bg-white px-2 py-1 text-slate-700">Materiais: <span className="font-semibold">{moeda(Number(totalMateriaisBase || 0))}</span></span>
+              <span className="rounded border bg-white px-2 py-1 text-slate-700">Equip.: <span className="font-semibold">{moeda(Number(totalEquipBase || 0))}</span></span>
+              <span className="rounded border bg-white px-2 py-1 text-slate-700">Compos.: <span className="font-semibold">{moeda(Number(totalComposicoesBase || 0))}</span></span>
+              <span className="rounded border bg-white px-2 py-1 text-slate-700">Mão base: <span className="font-semibold">{moeda(Number(totalMaoBase || 0))}</span></span>
+              <span className="rounded border bg-white px-2 py-1 text-slate-700">Base: <span className="font-semibold">{moeda(Number(totalBase || 0))}</span></span>
+              <span className="rounded border bg-white px-2 py-1 text-slate-700">LS: <span className="font-semibold">{Number(lsPercent || 0).toFixed(2)}%</span></span>
+              <span className="rounded border bg-white px-2 py-1 text-slate-700">Base c/ LS: <span className="font-semibold">{moeda(Number(totalComLS || 0))}</span></span>
+              <span className="rounded border bg-white px-2 py-1 text-slate-700">BDI: <span className="font-semibold">{Number(bdiPercent || 0).toFixed(2)}%</span></span>
+              <span className="rounded border bg-white px-2 py-1 text-slate-700">Total final: <span className="font-semibold">{moeda(Number(totalComLSComBDI || 0))}</span></span>
             </div>
           </div>
           <button
