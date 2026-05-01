@@ -1049,30 +1049,21 @@ async function readTextSmart(file: File) {
                 <tr key={idx} className="border-t" style={{ backgroundColor: rowBg }}>
                   {displayPrefs.colTipo ? (
                     <td className="px-3 py-2" style={{ ...cellW(w.tipo), fontSize: px(fs.tipo) }}>
-                      <div className="flex items-center gap-2">
-                        <button
-                          className="shrink-0 rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60"
-                          type="button"
-                          disabled={loading}
-                          title={`Alterar tipo (atual: ${meta.label})`}
-                          onClick={() => {
-                            const next = nextTipo(r.tipoItem);
-                            const nextLabel = tipoMeta(next).label;
-                            if (!window.confirm(`Alterar tipo de "${meta.label}" para "${nextLabel}"?`)) return;
-                            setItens((p) => p.map((x, i) => (i === idx ? { ...x, tipoItem: next } : x)));
-                          }}
-                          style={{ fontSize: px(fs.tipo) }}
-                        >
-                          <meta.Icon className="h-4 w-4" />
-                        </button>
-                        <div
-                          className="min-w-0 flex-1 truncate rounded border bg-white px-2 py-1 text-xs text-slate-700"
-                          title={meta.label}
-                          style={{ fontSize: px(Math.max(10, Math.min(14, fs.tipo - 1))) }}
-                        >
-                          {meta.label}
-                        </div>
-                      </div>
+                      <button
+                        className="rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60"
+                        type="button"
+                        disabled={loading}
+                        title={`Alterar tipo (atual: ${meta.label})`}
+                        onClick={() => {
+                          const next = nextTipo(r.tipoItem);
+                          const nextLabel = tipoMeta(next).label;
+                          if (!window.confirm(`Alterar tipo de "${meta.label}" para "${nextLabel}"?`)) return;
+                          setItens((p) => p.map((x, i) => (i === idx ? { ...x, tipoItem: next } : x)));
+                        }}
+                        style={{ fontSize: px(fs.tipo) }}
+                      >
+                        <meta.Icon className="h-4 w-4" />
+                      </button>
                     </td>
                   ) : null}
                   {displayPrefs.colCodigo ? (
@@ -2059,8 +2050,18 @@ async function readTextSmart(file: File) {
                   <td className="px-3 py-2">{r.item}</td>
                   <td className="px-3 py-2">{r.servicos}</td>
                   <td className="px-3 py-2">{r.und}</td>
-                  <td className="px-3 py-2 text-right">{r.quant}</td>
-                  <td className="px-3 py-2 text-right">{r.valorUnitario}</td>
+                  <td className="px-3 py-2 text-right">
+                    {(() => {
+                      const n = parseNumberLoose(r.quant);
+                      return n == null ? r.quant : n.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+                    })()}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {(() => {
+                      const n = parseNumberLoose(r.valorUnitario);
+                      return n == null ? r.valorUnitario : n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    })()}
+                  </td>
                   <td className="px-3 py-2 text-right">{r.valorParcial ? moeda(Number(parseNumberLoose(r.valorParcial) || 0)) : ""}</td>
                 </tr>
               ))}
@@ -2087,7 +2088,35 @@ async function readTextSmart(file: File) {
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <div className="text-lg font-semibold">Itens (composição)</div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="text-lg font-semibold">Itens (composição)</div>
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                type="button"
+                onClick={() =>
+                  setItens((p) => [
+                    ...p,
+                    {
+                      idItemBase: Date.now(),
+                      etapa: "",
+                      tipoItem: "INSUMO",
+                      codigoItem: "",
+                      banco: "",
+                      descricao: "",
+                      und: "",
+                      quantidade: "",
+                      valorUnitario: "",
+                      perdaPercentual: "",
+                      codigoCentroCusto: "",
+                      codigoCentroCustoBase: "",
+                    },
+                  ])
+                }
+                disabled={loading}
+              >
+                Adicionar item
+              </button>
+            </div>
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-lg border bg-white p-3">
                 <div className="text-[11px] text-slate-500">Materiais</div>
@@ -2156,32 +2185,6 @@ async function readTextSmart(file: File) {
               </div>
             </div>
           </div>
-          <button
-            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-            type="button"
-            onClick={() =>
-              setItens((p) => [
-                ...p,
-                {
-                  idItemBase: Date.now(),
-                  etapa: "",
-                  tipoItem: "INSUMO",
-                  codigoItem: "",
-                  banco: "",
-                  descricao: "",
-                  und: "",
-                  quantidade: "",
-                  valorUnitario: "",
-                  perdaPercentual: "",
-                  codigoCentroCusto: "",
-                  codigoCentroCustoBase: "",
-                },
-              ])
-            }
-            disabled={loading}
-          >
-            Adicionar item
-          </button>
         </div>
 
         <div className="space-y-4">
