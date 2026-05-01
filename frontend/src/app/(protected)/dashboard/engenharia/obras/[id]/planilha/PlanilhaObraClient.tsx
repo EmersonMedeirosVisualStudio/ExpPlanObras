@@ -480,7 +480,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       window.print();
       return;
     }
-    const title = `Planilha orçamentária — Obra #${idObra}`;
+    const printDocTitle = "\u200B";
     const obraNome = obraResumo?.nome ? String(obraResumo.nome) : "";
     const contratoNumero = obraResumo?.contratoNumero ? String(obraResumo.contratoNumero) : "";
     const dataHoje = new Date().toLocaleDateString("pt-BR");
@@ -526,39 +526,40 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
 
     const cabecalhoPlanilhaHtml = `
       <div class="cabecalho-planilha">
-        <div class="cabecalho-grid">
-          <table class="cab-bloco">
-            <tbody>
-              <tr><td class="k">CONTRATO:</td><td class="v">${fmtText(contratoNumero)}</td></tr>
-              <tr><td class="k">OBJETO:</td><td class="v">${fmtText(obraNome)}</td></tr>
-              <tr><td class="k">MUNICÍPIO:</td><td class="v">-</td></tr>
-              <tr><td class="k">ENDEREÇO:</td><td class="v">-</td></tr>
-              <tr><td class="k">DATA:</td><td class="v">${fmtText(dataHoje)}</td></tr>
-            </tbody>
-          </table>
+        <div class="cab-cards">
+          <div class="cab-card">
+            <div class="cab-card-title">Contrato / Obra</div>
+            <div class="cab-kv">
+              <div class="cab-k">Contrato</div><div class="cab-v">${fmtText(contratoNumero)}</div>
+              <div class="cab-k">Objeto</div><div class="cab-v">${fmtText(obraNome)}</div>
+              <div class="cab-k">Município</div><div class="cab-v">-</div>
+              <div class="cab-k">Endereço</div><div class="cab-v">-</div>
+              <div class="cab-k">Data</div><div class="cab-v">${fmtText(dataHoje)}</div>
+            </div>
+          </div>
 
-          <table class="cab-bloco">
-            <thead>
-              <tr><th class="cab-titulo" colspan="3">PARÂMETROS</th></tr>
-              <tr>
-                <th class="cab-sub"></th>
-                <th class="cab-sub">SBC</th>
-                <th class="cab-sub">SINAPI</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td class="k">DATA-BASE</td><td class="v">${fmtText(p.dataBaseSbc)}</td><td class="v">${fmtText(p.dataBaseSinapi)}</td></tr>
-              <tr><td class="k">BDI SERVIÇOS</td><td class="v">${escapeHtml(fmtPercent(p.bdiServicosSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.bdiServicosSinapi))}</td></tr>
-              <tr><td class="k">BDI DIFERENCIADO</td><td class="v">${escapeHtml(fmtPercent(p.bdiDiferenciadoSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.bdiDiferenciadoSinapi))}</td></tr>
-              <tr><td class="k">ENC. SOCIAIS</td><td class="v">${escapeHtml(fmtPercent(p.encSociaisSemDesSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.encSociaisSemDesSinapi))}</td></tr>
-              <tr><td class="k">DESCONTO</td><td class="v">${escapeHtml(fmtPercent(p.descontoSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.descontoSinapi))}</td></tr>
-            </tbody>
-          </table>
+          <div class="cab-card">
+            <div class="cab-card-title">Parâmetros</div>
+            <table class="cab-param">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>SBC</th>
+                  <th>SINAPI</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="k">DATA-BASE</td><td class="v">${fmtText(p.dataBaseSbc)}</td><td class="v">${fmtText(p.dataBaseSinapi)}</td></tr>
+                <tr><td class="k">BDI SERVIÇOS</td><td class="v">${escapeHtml(fmtPercent(p.bdiServicosSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.bdiServicosSinapi))}</td></tr>
+                <tr><td class="k">BDI DIFERENCIADO</td><td class="v">${escapeHtml(fmtPercent(p.bdiDiferenciadoSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.bdiDiferenciadoSinapi))}</td></tr>
+                <tr><td class="k">ENC. SOCIAIS</td><td class="v">${escapeHtml(fmtPercent(p.encSociaisSemDesSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.encSociaisSemDesSinapi))}</td></tr>
+                <tr><td class="k">DESCONTO</td><td class="v">${escapeHtml(fmtPercent(p.descontoSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.descontoSinapi))}</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        <div class="cabecalho-sep"></div>
         <div class="cabecalho-anexo">ANEXO 1 - ORÇAMENTO SINTÉTICO</div>
-        <div class="cabecalho-sep"></div>
       </div>
     `;
 
@@ -575,34 +576,39 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${title}</title>
+    <title>${printDocTitle}</title>
     <style>
       body { font-family: Arial, sans-serif; padding: 16px; margin: 0; color: #0f172a; }
       @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
       .empresa-cabecalho { width: 100%; }
       .empresa-rodape { width: 100%; margin-top: 14px; }
       .cabecalho-planilha { width: 100%; }
-      .cabecalho-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; }
-      .cabecalho-sep { border-top: 2px solid #0f172a; margin: 10px 0; }
-      .cabecalho-anexo { text-align: center; font-weight: 700; font-size: 14px; letter-spacing: 0.2px; }
-      .cab-bloco { width: 100%; border-collapse: collapse; font-size: 11px; }
-      .cab-bloco th, .cab-bloco td { border: 1px solid #0f172a; padding: 6px 8px; vertical-align: top; }
-      .cab-bloco .k { width: 120px; font-weight: 700; }
-      .cab-bloco .v { font-weight: 400; }
-      .cab-bloco .cab-titulo { text-align: center; font-weight: 700; background: #f1f5f9; }
-      .cab-bloco .cab-sub { text-align: center; font-weight: 700; background: #f8fafc; }
+      .cab-cards { display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px; margin-top: 8px; }
+      .cab-card { border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 12px; padding: 10px 12px; }
+      .cab-card-title { font-size: 12px; font-weight: 700; color: #0f172a; margin: 0 0 8px 0; }
+      .cab-kv { display: grid; grid-template-columns: 110px 1fr; gap: 6px 10px; font-size: 11px; }
+      .cab-k { font-weight: 700; color: #334155; }
+      .cab-v { font-weight: 400; color: #0f172a; }
+      .cabecalho-anexo { margin: 10px 0 12px 0; text-align: center; font-weight: 700; font-size: 13px; color: #0f172a; }
+      .cab-param { width: 100%; border-collapse: collapse; font-size: 11px; }
+      .cab-param th, .cab-param td { border-top: 1px solid #e2e8f0; padding: 6px 6px; vertical-align: top; }
+      .cab-param thead th { font-weight: 700; color: #334155; text-align: center; }
+      .cab-param tbody td.k { font-weight: 700; color: #334155; width: 130px; }
+      .cab-param tbody td.v { font-weight: 400; color: #0f172a; text-align: center; }
       .linha-sep { border-top: 2px solid #e2e8f0; margin: 10px 0 12px 0; }
       .linha-sep-footer { border-top: 2px solid #e2e8f0; margin: 14px 0 0 0; }
       table { width: 100%; border-collapse: collapse; font-size: 11px; }
       th, td { border: 1px solid #e2e8f0; padding: 6px 8px; vertical-align: top; }
       th { background: #f8fafc; text-align: left; }
       thead { display: table-header-group; }
+      .planilha-table th:nth-child(2), .planilha-table td:nth-child(2) { width: 56px; max-width: 56px; }
+      .planilha-table td:nth-child(2) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     </style>
   </head>
   <body>
     ${cabecalhoEmpresaHtml}
     ${cabecalhoPlanilhaHtml}
-    <table>
+    <table class="planilha-table">
       <thead>
         <tr>
           <th>ITEM</th>
@@ -1811,7 +1817,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                 <thead className="bg-slate-50 text-left text-slate-700">
                   <tr>
                     <th className="px-3 py-2">ITEM</th>
-                    <th className="px-3 py-2 w-[80px]">CÓDIGO</th>
+                    <th className="px-3 py-2 w-[56px]">CÓDIGO</th>
                     <th className="px-3 py-2">FONTE</th>
                     <th className="px-3 py-2 min-w-[520px]">SERVIÇOS</th>
                     <th className="px-3 py-2">UND</th>
