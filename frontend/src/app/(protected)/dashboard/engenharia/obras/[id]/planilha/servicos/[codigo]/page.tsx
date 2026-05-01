@@ -2,7 +2,7 @@
  
 import { useEffect, useMemo, useRef, useState } from "react";
  import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Trash2, Printer, FileSpreadsheet, Image } from "lucide-react";
+import { Trash2, Printer, FileSpreadsheet, Image, CheckCircle2, CircleDashed } from "lucide-react";
  
  type ItemRow = {
   idItemBase: number;
@@ -165,6 +165,7 @@ async function readTextSmart(file: File) {
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
   const [editingBancoOutroIdx, setEditingBancoOutroIdx] = useState<number | null>(null);
   const [bancoOutroValue, setBancoOutroValue] = useState("");
+  const [editingCentroCustoIdx, setEditingCentroCustoIdx] = useState<number | null>(null);
   const [showDisplayConfig, setShowDisplayConfig] = useState(false);
   const [showPrintConfig, setShowPrintConfig] = useState(false);
   const [displayPrefs, setDisplayPrefs] = useState<{
@@ -835,18 +836,22 @@ async function readTextSmart(file: File) {
       (displayPrefs.colTotal ? 1 : 0) +
       (displayPrefs.colCentroCusto ? 1 : 0) +
       1;
+    const wCodigo = "w-[90px]";
+    const wUnd = "w-[52px]";
+    const wQtd = "w-[88px]";
+    const wValorUnit = "w-[92px]";
     return (
       <div className="overflow-auto">
         <table className="min-w-[1400px] w-full text-sm">
           <thead className="bg-slate-50 text-left text-slate-700">
             <tr>
               {displayPrefs.colTipo ? <th className="px-3 py-2">Tipo</th> : null}
-              {displayPrefs.colCodigo ? <th className="px-3 py-2">Código</th> : null}
+              {displayPrefs.colCodigo ? <th className={`px-3 py-2 ${wCodigo}`}>Código</th> : null}
               {displayPrefs.colBanco ? <th className="px-3 py-2">Banco</th> : null}
               {displayPrefs.colDescricao ? <th className="px-3 py-2">Descrição</th> : null}
-              {displayPrefs.colUnd ? <th className="px-3 py-2">UND</th> : null}
-              {displayPrefs.colQtd ? <th className="px-3 py-2 text-right">Qtd</th> : null}
-              {displayPrefs.colValorUnit ? <th className="px-3 py-2 text-right">Valor Unit</th> : null}
+              {displayPrefs.colUnd ? <th className={`px-3 py-2 ${wUnd}`}>UND</th> : null}
+              {displayPrefs.colQtd ? <th className={`px-3 py-2 text-right ${wQtd}`}>Qtd</th> : null}
+              {displayPrefs.colValorUnit ? <th className={`px-3 py-2 text-right ${wValorUnit}`}>Valor Unit</th> : null}
               {displayPrefs.colTotal ? <th className="px-3 py-2 text-right">Total</th> : null}
               {displayPrefs.colCentroCusto ? <th className="px-3 py-2">Centro de custo</th> : null}
               <th className="px-3 py-2">Ações</th>
@@ -875,7 +880,7 @@ async function readTextSmart(file: File) {
                   {displayPrefs.colCodigo ? (
                     <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <input className="input bg-white" value={r.codigoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoItem: e.target.value } : x)))} />
+                      <input className={`input bg-white ${wCodigo}`} value={r.codigoItem} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoItem: e.target.value } : x)))} />
                       {String(r.tipoItem || "").toUpperCase() === "COMPOSICAO" || String(r.tipoItem || "").toUpperCase() === "COMPOSICAO_AUXILIAR" ? (
                         (() => {
                           const codigo = String(r.codigoItem || "").trim().toUpperCase();
@@ -964,30 +969,57 @@ async function readTextSmart(file: File) {
                   ) : null}
                   {displayPrefs.colUnd ? (
                     <td className="px-3 py-2">
-                    <input className="input bg-white" value={r.und} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, und: e.target.value } : x)))} />
+                    <input className={`input bg-white ${wUnd}`} value={r.und} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, und: e.target.value } : x)))} />
                   </td>
                   ) : null}
                   {displayPrefs.colQtd ? (
                     <td className="px-3 py-2 text-right">
-                    <input className="input bg-white text-right" value={r.quantidade} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, quantidade: e.target.value } : x)))} />
+                    <input className={`input bg-white text-right ${wQtd}`} value={r.quantidade} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, quantidade: e.target.value } : x)))} />
                   </td>
                   ) : null}
                   {displayPrefs.colValorUnit ? (
                     <td className="px-3 py-2 text-right">
-                    <input className="input bg-white text-right" value={r.valorUnitario} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, valorUnitario: e.target.value } : x)))} />
+                    <input className={`input bg-white text-right ${wValorUnit}`} value={r.valorUnitario} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, valorUnitario: e.target.value } : x)))} />
                   </td>
                   ) : null}
                   {displayPrefs.colTotal ? <td className="px-3 py-2 text-right">{total == null ? "" : moeda(Number(total))}</td> : null}
                   {displayPrefs.colCentroCusto ? (
                     <td className="px-3 py-2">
-                    <select className="input bg-white" value={r.codigoCentroCusto} onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoCentroCusto: e.target.value } : x)))}>
-                      <option value="">(sem CC)</option>
-                      {centrosCusto.map((c) => (
-                        <option key={c.codigo} value={c.codigo}>
-                          {c.codigo} — {c.descricao}
-                        </option>
-                      ))}
-                    </select>
+                    {editingCentroCustoIdx === idx ? (
+                      <select
+                        className="input bg-white"
+                        autoFocus
+                        value={r.codigoCentroCusto}
+                        onChange={(e) => {
+                          setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoCentroCusto: e.target.value } : x)));
+                          setEditingCentroCustoIdx(null);
+                        }}
+                        onBlur={() => setEditingCentroCustoIdx(null)}
+                      >
+                        <option value="">(sem CC)</option>
+                        {centrosCusto.map((c) => (
+                          <option key={c.codigo} value={c.codigo}>
+                            {c.codigo} — {c.descricao}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <button
+                        className="rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60"
+                        type="button"
+                        disabled={loading || !centrosCusto.length}
+                        title={
+                          !centrosCusto.length
+                            ? "Sem centros de custo cadastrados"
+                            : r.codigoCentroCusto
+                              ? `Centro de custo: ${r.codigoCentroCusto} (clique para alterar)`
+                              : "Definir centro de custo"
+                        }
+                        onClick={() => setEditingCentroCustoIdx(idx)}
+                      >
+                        {r.codigoCentroCusto ? <CheckCircle2 className="h-4 w-4 text-green-700" /> : <CircleDashed className="h-4 w-4 text-slate-500" />}
+                      </button>
+                    )}
                   </td>
                   ) : null}
                   <td className="px-3 py-2">
