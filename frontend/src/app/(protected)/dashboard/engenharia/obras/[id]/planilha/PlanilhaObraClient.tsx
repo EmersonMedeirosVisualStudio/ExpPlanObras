@@ -203,6 +203,14 @@ type ObraResumo = {
   valorPrevisto: number | null;
 };
 
+type DocumentosLayout = {
+  logoDataUrl: string | null;
+  cabecalhoHtml: string | null;
+  rodapeHtml: string | null;
+  cabecalhoAlturaMm: number | null;
+  rodapeAlturaMm: number | null;
+};
+
 function getUserPrefKey() {
   try {
     const raw = localStorage.getItem("user");
@@ -223,6 +231,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   const [versoes, setVersoes] = useState<VersaoRow[]>([]);
   const [planilha, setPlanilha] = useState<Planilha | null>(null);
   const [planilhaId, setPlanilhaId] = useState<number | null>(null);
+  const [documentosLayout, setDocumentosLayout] = useState<DocumentosLayout | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importPreview, setImportPreview] = useState<{
@@ -364,6 +373,28 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     });
   }
 
+  async function carregarDocumentosLayout() {
+    try {
+      const res = await authFetch(`/api/v1/empresa/documentos-layout`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error("fail");
+      const dl = json.data?.documentosLayout || null;
+      setDocumentosLayout(
+        dl
+          ? {
+              logoDataUrl: dl.logoDataUrl ? String(dl.logoDataUrl) : null,
+              cabecalhoHtml: dl.cabecalhoHtml ? String(dl.cabecalhoHtml) : null,
+              rodapeHtml: dl.rodapeHtml ? String(dl.rodapeHtml) : null,
+              cabecalhoAlturaMm: dl.cabecalhoAlturaMm == null ? null : Number(dl.cabecalhoAlturaMm),
+              rodapeAlturaMm: dl.rodapeAlturaMm == null ? null : Number(dl.rodapeAlturaMm),
+            }
+          : null
+      );
+    } catch {
+      setDocumentosLayout(null);
+    }
+  }
+
   function baixarModeloCsv() {
     const sep = ";";
     const lines = [
@@ -418,6 +449,15 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     URL.revokeObjectURL(url);
   }
 
+  function replaceTokens(rawHtml: string, args: { logoDataUrl: string | null; dataHora: string }) {
+    return String(rawHtml || "")
+      .replaceAll("{{DATA_HORA}}", args.dataHora)
+      .replaceAll("{{DATA}}", args.dataHora.slice(0, 10))
+      .replaceAll("{{LOGO}}", args.logoDataUrl ? `<img src="${args.logoDataUrl}" style="max-height:48px; width:auto;" />` : "")
+      .replaceAll("{{PAGINA}}", "")
+      .replaceAll("{{TOTAL_PAGINAS}}", "");
+  }
+
   function imprimirOuPdf(modo: "IMPRIMIR" | "PDF") {
     if (!planilha) return;
     const w = window.open("", "_blank");
@@ -444,6 +484,12 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       })
       .join("");
 
+    const dataHora = new Date().toLocaleString("pt-BR");
+    const headerMm = documentosLayout?.cabecalhoAlturaMm != null ? Number(documentosLayout.cabecalhoAlturaMm) : 18;
+    const footerMm = documentosLayout?.rodapeAlturaMm != null ? Number(documentosLayout.rodapeAlturaMm) : 18;
+    const headerHtml = documentosLayout?.cabecalhoHtml ? replaceTokens(documentosLayout.cabecalhoHtml, { logoDataUrl: documentosLayout.logoDataUrl, dataHora }) : "";
+    const footerHtml = documentosLayout?.rodapeHtml ? replaceTokens(documentosLayout.rodapeHtml, { logoDataUrl: documentosLayout.logoDataUrl, dataHora }) : "";
+
     w.document.open();
     w.document.write(`<!doctype html>
 <html lang="pt-BR">
@@ -452,7 +498,11 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${title}</title>
     <style>
-      body { font-family: Arial, sans-serif; padding: 16px; color: #0f172a; }
+      body { font-family: Arial, sans-serif; padding: 0; margin: 0; color: #0f172a; }
+      .doc-header { position: fixed; top: 0; left: 0; right: 0; height: ${headerMm}mm; padding: 10px 16px; box-sizing: border-box; }
+      .doc-footer { position: fixed; bottom: 0; left: 0; right: 0; height: ${footerMm}mm; padding: 10px 16px; box-sizing: border-box; }
+      .doc-content { padding: calc(${headerMm}mm + 16px) 16px calc(${footerMm}mm + 16px) 16px; }
+      .doc-header, .doc-footer { font-size: 11px; color: #0f172a; }
       h1 { font-size: 18px; margin: 0 0 12px 0; }
       table { width: 100%; border-collapse: collapse; font-size: 11px; }
       th, td { border: 1px solid #e2e8f0; padding: 6px 8px; vertical-align: top; }
@@ -460,24 +510,28 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     </style>
   </head>
   <body>
-    <h1>${title}</h1>
-    <table>
-      <thead>
-        <tr>
-          <th>ITEM</th>
-          <th>CÓDIGO</th>
-          <th>FONTE</th>
-          <th>SERVIÇOS</th>
-          <th>UND</th>
-          <th style="text-align:right">QUANT.</th>
-          <th style="text-align:right">VALOR UNIT.</th>
-          <th style="text-align:right">VALOR PARCIAL</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rowsHtml}
-      </tbody>
-    </table>
+    ${headerHtml ? `<div class="doc-header">${headerHtml}</div>` : ``}
+    ${footerHtml ? `<div class="doc-footer">${footerHtml}</div>` : ``}
+    <div class="doc-content">
+      <h1>${title}</h1>
+      <table>
+        <thead>
+          <tr>
+            <th>ITEM</th>
+            <th>CÓDIGO</th>
+            <th>FONTE</th>
+            <th>SERVIÇOS</th>
+            <th>UND</th>
+            <th style="text-align:right">QUANT.</th>
+            <th style="text-align:right">VALOR UNIT.</th>
+            <th style="text-align:right">VALOR PARCIAL</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </div>
   </body>
 </html>`);
     w.document.close();
@@ -603,6 +657,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     if (!idObra) return;
     carregarVersoes();
     carregarComposicaoStatus();
+    carregarDocumentosLayout();
   }, [idObra]);
 
   useEffect(() => {

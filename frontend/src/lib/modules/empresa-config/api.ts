@@ -44,6 +44,12 @@ export const EmpresaConfigApi = {
 
   listarFuncionariosSelect: () => request<FuncionarioSelectDTO[]>('get', '/api/v1/apoio/funcionarios-select'),
 
-  atualizarDocumentosLayout: (payload: { logoDataUrl?: string | null; cabecalho?: string | null; rodape?: string | null }) =>
+  atualizarDocumentosLayout: (payload: {
+    logoDataUrl?: string | null;
+    cabecalhoHtml?: string | null;
+    rodapeHtml?: string | null;
+    cabecalhoAlturaMm?: number | null;
+    rodapeAlturaMm?: number | null;
+  }) =>
     request<{ ok: true }>('put', '/api/v1/empresa/documentos-layout', payload),
 };

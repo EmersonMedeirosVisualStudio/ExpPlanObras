@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { EmpresaConfigApi } from '@/lib/modules/empresa-config/api';
 import type { ConfiguracaoEmpresaDTO, FuncionarioSelectDTO } from '@/lib/modules/empresa-config/types';
 
@@ -25,11 +25,13 @@ export default function ConfiguracaoEmpresaClient({ modo = 'REPRESENTANTE' }: { 
     gerenteRh: null,
   });
   const [funcionarios, setFuncionarios] = useState<FuncionarioSelectDTO[]>([]);
-  const [docLayout, setDocLayout] = useState<{ logoDataUrl: string | null; cabecalho: string; rodape: string }>({
-    logoDataUrl: null,
-    cabecalho: '',
-    rodape: '',
-  });
+  const [docLayout, setDocLayout] = useState<{
+    logoDataUrl: string | null;
+    cabecalhoHtml: string;
+    rodapeHtml: string;
+    cabecalhoAlturaMm: string;
+    rodapeAlturaMm: string;
+  }>({ logoDataUrl: null, cabecalhoHtml: '', rodapeHtml: '', cabecalhoAlturaMm: '18', rodapeAlturaMm: '18' });
 
   const [modalFuncionario, setModalFuncionario] = useState<null | { target: 'CEO' | 'ENCARREGADO' | 'GERENTE_RH' }>(null);
 
@@ -50,8 +52,10 @@ export default function ConfiguracaoEmpresaClient({ modo = 'REPRESENTANTE' }: { 
       const dl = (cfg as any)?.documentosLayout as any;
       setDocLayout({
         logoDataUrl: dl?.logoDataUrl ? String(dl.logoDataUrl) : null,
-        cabecalho: dl?.cabecalho ? String(dl.cabecalho) : '',
-        rodape: dl?.rodape ? String(dl.rodape) : '',
+        cabecalhoHtml: dl?.cabecalhoHtml ? String(dl.cabecalhoHtml) : '',
+        rodapeHtml: dl?.rodapeHtml ? String(dl.rodapeHtml) : '',
+        cabecalhoAlturaMm: dl?.cabecalhoAlturaMm != null ? String(dl.cabecalhoAlturaMm) : '18',
+        rodapeAlturaMm: dl?.rodapeAlturaMm != null ? String(dl.rodapeAlturaMm) : '18',
       });
     } catch (e: any) {
       setError(e.message || 'Erro ao carregar configuração.');
@@ -122,8 +126,10 @@ export default function ConfiguracaoEmpresaClient({ modo = 'REPRESENTANTE' }: { 
       setSavingDocLayout(true);
       await EmpresaConfigApi.atualizarDocumentosLayout({
         logoDataUrl: docLayout.logoDataUrl || null,
-        cabecalho: docLayout.cabecalho || null,
-        rodape: docLayout.rodape || null,
+        cabecalhoHtml: docLayout.cabecalhoHtml || null,
+        rodapeHtml: docLayout.rodapeHtml || null,
+        cabecalhoAlturaMm: docLayout.cabecalhoAlturaMm ? Number(docLayout.cabecalhoAlturaMm) : null,
+        rodapeAlturaMm: docLayout.rodapeAlturaMm ? Number(docLayout.rodapeAlturaMm) : null,
       });
       await carregar();
     } catch (e: any) {
@@ -356,26 +362,7 @@ export default function ConfiguracaoEmpresaClient({ modo = 'REPRESENTANTE' }: { 
               )}
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-800">Cabeçalho</div>
-                <textarea className="input min-h-[88px]" value={docLayout.cabecalho} onChange={(e) => setDocLayout((p) => ({ ...p, cabecalho: e.target.value }))} disabled={savingDocLayout} />
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-slate-800">Rodapé</div>
-                <textarea className="input min-h-[88px]" value={docLayout.rodape} onChange={(e) => setDocLayout((p) => ({ ...p, rodape: e.target.value }))} disabled={savingDocLayout} />
-              </div>
-              <div className="flex justify-end">
-                <button
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60"
-                  type="button"
-                  onClick={salvarDocumentosLayout}
-                  disabled={savingDocLayout}
-                >
-                  {savingDocLayout ? 'Salvando...' : 'Salvar'}
-                </button>
-              </div>
-            </div>
+            <RichDocLayoutEditor docLayout={docLayout} setDocLayout={setDocLayout} onSave={salvarDocumentosLayout} saving={savingDocLayout} />
           </div>
         </div>
       ) : null}
@@ -403,6 +390,235 @@ export default function ConfiguracaoEmpresaClient({ modo = 'REPRESENTANTE' }: { 
           />
         </Modal>
       )}
+    </div>
+  );
+}
+
+function RichDocLayoutEditor({
+  docLayout,
+  setDocLayout,
+  onSave,
+  saving,
+}: {
+  docLayout: { logoDataUrl: string | null; cabecalhoHtml: string; rodapeHtml: string; cabecalhoAlturaMm: string; rodapeAlturaMm: string };
+  setDocLayout: Dispatch<
+    SetStateAction<{ logoDataUrl: string | null; cabecalhoHtml: string; rodapeHtml: string; cabecalhoAlturaMm: string; rodapeAlturaMm: string }>
+  >;
+  onSave: () => void;
+  saving: boolean;
+}) {
+  const [active, setActive] = useState<'CABECALHO' | 'RODAPE'>('CABECALHO');
+  const cabRef = (useState<{ current: HTMLDivElement | null }>({ current: null })[0]);
+  const rodRef = (useState<{ current: HTMLDivElement | null }>({ current: null })[0]);
+
+  function currentRef() {
+    return active === 'CABECALHO' ? cabRef : rodRef;
+  }
+
+  function applySpanStyle(style: Record<string, string>) {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!range) return;
+    const span = document.createElement('span');
+    for (const [k, v] of Object.entries(style)) span.style.setProperty(k, v);
+    try {
+      if (range.collapsed) {
+        span.appendChild(document.createTextNode('\u200b'));
+        range.insertNode(span);
+        sel.removeAllRanges();
+        const r2 = document.createRange();
+        r2.setStart(span.firstChild as any, 1);
+        r2.setEnd(span.firstChild as any, 1);
+        sel.addRange(r2);
+      } else {
+        const contents = range.extractContents();
+        span.appendChild(contents);
+        range.insertNode(span);
+        sel.removeAllRanges();
+        const r2 = document.createRange();
+        r2.selectNodeContents(span);
+        sel.addRange(r2);
+      }
+    } catch {}
+  }
+
+  function insertToken(token: string) {
+    const ref = currentRef();
+    ref.current?.focus();
+    try {
+      document.execCommand('insertText', false, token);
+    } catch {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      range.insertNode(document.createTextNode(token));
+    }
+  }
+
+  function syncFromDom() {
+    const cab = cabRef.current ? cabRef.current.innerHTML : docLayout.cabecalhoHtml;
+    const rod = rodRef.current ? rodRef.current.innerHTML : docLayout.rodapeHtml;
+    setDocLayout((p) => ({ ...p, cabecalhoHtml: cab, rodapeHtml: rod }));
+  }
+
+  const toolbarBtn = 'rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60';
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="inline-flex gap-2">
+          <button
+            className={`${toolbarBtn} ${active === 'CABECALHO' ? 'border-blue-600 text-blue-700' : ''}`}
+            type="button"
+            onClick={() => setActive('CABECALHO')}
+            disabled={saving}
+          >
+            Cabeçalho
+          </button>
+          <button
+            className={`${toolbarBtn} ${active === 'RODAPE' ? 'border-blue-600 text-blue-700' : ''}`}
+            type="button"
+            onClick={() => setActive('RODAPE')}
+            disabled={saving}
+          >
+            Rodapé
+          </button>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="text-sm text-slate-600">Altura (mm)</div>
+          <input
+            className="input w-20 bg-white"
+            value={docLayout.cabecalhoAlturaMm}
+            onChange={(e) => setDocLayout((p) => ({ ...p, cabecalhoAlturaMm: e.target.value }))}
+            disabled={saving}
+          />
+          <input className="input w-20 bg-white" value={docLayout.rodapeAlturaMm} onChange={(e) => setDocLayout((p) => ({ ...p, rodapeAlturaMm: e.target.value }))} disabled={saving} />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button className={toolbarBtn} type="button" onClick={() => (document.execCommand('bold'), syncFromDom())} disabled={saving}>
+          Negrito
+        </button>
+        <button className={toolbarBtn} type="button" onClick={() => (document.execCommand('italic'), syncFromDom())} disabled={saving}>
+          Itálico
+        </button>
+        <button className={toolbarBtn} type="button" onClick={() => (document.execCommand('underline'), syncFromDom())} disabled={saving}>
+          Sublinhado
+        </button>
+        <button className={toolbarBtn} type="button" onClick={() => (document.execCommand('strikeThrough'), syncFromDom())} disabled={saving}>
+          Tachado
+        </button>
+        <button className={toolbarBtn} type="button" onClick={() => (document.execCommand('justifyLeft'), syncFromDom())} disabled={saving}>
+          Alinhar à esquerda
+        </button>
+        <button className={toolbarBtn} type="button" onClick={() => (document.execCommand('justifyCenter'), syncFromDom())} disabled={saving}>
+          Centralizar
+        </button>
+        <button className={toolbarBtn} type="button" onClick={() => (document.execCommand('justifyRight'), syncFromDom())} disabled={saving}>
+          Alinhar à direita
+        </button>
+
+        <select
+          className="input bg-white"
+          defaultValue="Arial"
+          onChange={(e) => {
+            applySpanStyle({ 'font-family': e.target.value });
+            syncFromDom();
+          }}
+          disabled={saving}
+        >
+          <option value="Arial">Arial</option>
+          <option value="Helvetica">Helvetica</option>
+          <option value="Times New Roman">Times New Roman</option>
+          <option value="Georgia">Georgia</option>
+          <option value="Courier New">Courier New</option>
+        </select>
+
+        <select
+          className="input bg-white"
+          defaultValue="12"
+          onChange={(e) => {
+            applySpanStyle({ 'font-size': `${e.target.value}px` });
+            syncFromDom();
+          }}
+          disabled={saving}
+        >
+          <option value="10">10</option>
+          <option value="11">11</option>
+          <option value="12">12</option>
+          <option value="14">14</option>
+          <option value="16">16</option>
+        </select>
+
+        <input
+          type="color"
+          className="h-10 w-12 rounded border bg-white px-1"
+          defaultValue="#0f172a"
+          onChange={(e) => {
+            applySpanStyle({ color: e.target.value });
+            syncFromDom();
+          }}
+          disabled={saving}
+        />
+
+        <button className={toolbarBtn} type="button" onClick={() => insertToken('{{DATA_HORA}}')} disabled={saving}>
+          Inserir data
+        </button>
+        <button className={toolbarBtn} type="button" onClick={() => insertToken('{{PAGINA}}')} disabled={saving}>
+          Inserir pág.
+        </button>
+        <button className={toolbarBtn} type="button" onClick={() => insertToken('{{TOTAL_PAGINAS}}')} disabled={saving}>
+          Inserir total
+        </button>
+        <button className={toolbarBtn} type="button" onClick={() => insertToken('{{LOGO}}')} disabled={saving}>
+          Inserir logo
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        <div className={`${active === 'CABECALHO' ? '' : 'hidden'}`}>
+          <div
+            ref={(el) => {
+              cabRef.current = el;
+            }}
+            className="min-h-[120px] rounded-lg border bg-white p-3 text-sm"
+            contentEditable={!saving}
+            suppressContentEditableWarning
+            onFocus={() => setActive('CABECALHO')}
+            onBlur={() => syncFromDom()}
+            dangerouslySetInnerHTML={{ __html: docLayout.cabecalhoHtml || '' }}
+          />
+        </div>
+        <div className={`${active === 'RODAPE' ? '' : 'hidden'}`}>
+          <div
+            ref={(el) => {
+              rodRef.current = el;
+            }}
+            className="min-h-[120px] rounded-lg border bg-white p-3 text-sm"
+            contentEditable={!saving}
+            suppressContentEditableWarning
+            onFocus={() => setActive('RODAPE')}
+            onBlur={() => syncFromDom()}
+            dangerouslySetInnerHTML={{ __html: docLayout.rodapeHtml || '' }}
+          />
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60"
+          type="button"
+          onClick={() => {
+            syncFromDom();
+            onSave();
+          }}
+          disabled={saving}
+        >
+          {saving ? 'Salvando...' : 'Salvar'}
+        </button>
+      </div>
     </div>
   );
 }

@@ -454,10 +454,17 @@ Regras:
 No menu **Painéis → Representante → Configurações**, o Representante pode definir:
 
 - **Logo da empresa** (imagem) para uso em documentos;
-- **Cabeçalho** padrão (texto);
-- **Rodapé** padrão (texto).
+- **Cabeçalho** padrão (editor rico, com formatação);
+- **Rodapé** padrão (editor rico, com formatação);
+- Altura (em mm) do cabeçalho e do rodapé.
 
 Essas informações ficam salvas por empresa e podem ser reutilizadas pelos módulos de geração/visualização de documentos.
+
+Tokens disponíveis (podem ser inseridos no editor):
+
+- `{{LOGO}}` — insere a logo (se existir);
+- `{{DATA_HORA}}` — data/hora atual;
+- `{{PAGINA}}` e `{{TOTAL_PAGINAS}}` — reservado para paginação automática (depende do tipo de geração do PDF).
 
 #### Cadastro inicial de funcionários (mínimo viável)
 

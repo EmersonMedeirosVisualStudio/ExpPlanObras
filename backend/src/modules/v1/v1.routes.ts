@@ -485,9 +485,17 @@ async function ensureEmpresaDocumentosLayoutTables(tx: any) {
       logo_data_url TEXT NULL,
       cabecalho_texto TEXT NULL,
       rodape_texto TEXT NULL,
+      cabecalho_html TEXT NULL,
+      rodape_html TEXT NULL,
+      cabecalho_altura_mm NUMERIC(8,2) NULL,
+      rodape_altura_mm NUMERIC(8,2) NULL,
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await tx.$executeRawUnsafe(`ALTER TABLE empresa_documentos_layout ADD COLUMN IF NOT EXISTS cabecalho_html TEXT NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE empresa_documentos_layout ADD COLUMN IF NOT EXISTS rodape_html TEXT NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE empresa_documentos_layout ADD COLUMN IF NOT EXISTS cabecalho_altura_mm NUMERIC(8,2) NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE empresa_documentos_layout ADD COLUMN IF NOT EXISTS rodape_altura_mm NUMERIC(8,2) NULL`).catch(() => null);
 }
 
 const ORGANOGRAMA_CARGOS_BASE = [
@@ -850,8 +858,10 @@ export default async function v1Routes(server: FastifyInstance) {
       `
       SELECT
         logo_data_url AS "logoDataUrl",
-        cabecalho_texto AS "cabecalho",
-        rodape_texto AS "rodape",
+        COALESCE(cabecalho_html, cabecalho_texto) AS "cabecalhoHtml",
+        COALESCE(rodape_html, rodape_texto) AS "rodapeHtml",
+        cabecalho_altura_mm AS "cabecalhoAlturaMm",
+        rodape_altura_mm AS "rodapeAlturaMm",
         atualizado_em AS "atualizadoEm"
       FROM empresa_documentos_layout
       WHERE tenant_id = $1
@@ -862,11 +872,13 @@ export default async function v1Routes(server: FastifyInstance) {
     const layout = layoutRows && layoutRows.length
       ? {
           logoDataUrl: layoutRows[0].logoDataUrl ? String(layoutRows[0].logoDataUrl) : null,
-          cabecalho: layoutRows[0].cabecalho ? String(layoutRows[0].cabecalho) : null,
-          rodape: layoutRows[0].rodape ? String(layoutRows[0].rodape) : null,
+          cabecalhoHtml: layoutRows[0].cabecalhoHtml ? String(layoutRows[0].cabecalhoHtml) : null,
+          rodapeHtml: layoutRows[0].rodapeHtml ? String(layoutRows[0].rodapeHtml) : null,
+          cabecalhoAlturaMm: layoutRows[0].cabecalhoAlturaMm == null ? null : Number(layoutRows[0].cabecalhoAlturaMm),
+          rodapeAlturaMm: layoutRows[0].rodapeAlturaMm == null ? null : Number(layoutRows[0].rodapeAlturaMm),
           atualizadoEm: layoutRows[0].atualizadoEm ? new Date(layoutRows[0].atualizadoEm).toISOString() : null,
         }
-      : { logoDataUrl: null, cabecalho: null, rodape: null, atualizadoEm: null };
+      : { logoDataUrl: null, cabecalhoHtml: null, rodapeHtml: null, cabecalhoAlturaMm: null, rodapeAlturaMm: null, atualizadoEm: null };
 
     return ok(reply, {
       representante: safeRepresentative,
@@ -891,8 +903,10 @@ export default async function v1Routes(server: FastifyInstance) {
       schema: {
         body: z.object({
           logoDataUrl: z.string().optional().nullable(),
-          cabecalho: z.string().optional().nullable(),
-          rodape: z.string().optional().nullable(),
+          cabecalhoHtml: z.string().optional().nullable(),
+          rodapeHtml: z.string().optional().nullable(),
+          cabecalhoAlturaMm: z.coerce.number().optional().nullable(),
+          rodapeAlturaMm: z.coerce.number().optional().nullable(),
         }),
       },
     },
@@ -902,32 +916,40 @@ export default async function v1Routes(server: FastifyInstance) {
 
       const body = request.body as any;
       const logoDataUrl = body.logoDataUrl == null ? null : String(body.logoDataUrl || '').trim();
-      const cabecalho = body.cabecalho == null ? null : String(body.cabecalho || '');
-      const rodape = body.rodape == null ? null : String(body.rodape || '');
+      const cabecalhoHtml = body.cabecalhoHtml == null ? null : String(body.cabecalhoHtml || '');
+      const rodapeHtml = body.rodapeHtml == null ? null : String(body.rodapeHtml || '');
+      const cabecalhoAlturaMm = body.cabecalhoAlturaMm == null ? null : Number(body.cabecalhoAlturaMm);
+      const rodapeAlturaMm = body.rodapeAlturaMm == null ? null : Number(body.rodapeAlturaMm);
 
       if (logoDataUrl) {
         if (!logoDataUrl.startsWith('data:image/')) return fail(reply, 422, 'Logo inválida. Envie uma imagem (data:image/...).');
         if (logoDataUrl.length > 800_000) return fail(reply, 422, 'Logo muito grande. Use uma imagem menor.');
       }
-      if (cabecalho && cabecalho.length > 5000) return fail(reply, 422, 'Cabeçalho muito grande.');
-      if (rodape && rodape.length > 5000) return fail(reply, 422, 'Rodapé muito grande.');
+      if (cabecalhoHtml && cabecalhoHtml.length > 20000) return fail(reply, 422, 'Cabeçalho muito grande.');
+      if (rodapeHtml && rodapeHtml.length > 20000) return fail(reply, 422, 'Rodapé muito grande.');
+      if (cabecalhoAlturaMm != null && (!Number.isFinite(cabecalhoAlturaMm) || cabecalhoAlturaMm < 0 || cabecalhoAlturaMm > 80)) return fail(reply, 422, 'Altura do cabeçalho inválida.');
+      if (rodapeAlturaMm != null && (!Number.isFinite(rodapeAlturaMm) || rodapeAlturaMm < 0 || rodapeAlturaMm > 80)) return fail(reply, 422, 'Altura do rodapé inválida.');
 
       await ensureEmpresaDocumentosLayoutTables(prisma);
       await prisma.$executeRawUnsafe(
         `
-        INSERT INTO empresa_documentos_layout (tenant_id, logo_data_url, cabecalho_texto, rodape_texto, atualizado_em)
-        VALUES ($1, $2, $3, $4, NOW())
+        INSERT INTO empresa_documentos_layout (tenant_id, logo_data_url, cabecalho_html, rodape_html, cabecalho_altura_mm, rodape_altura_mm, atualizado_em)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
         ON CONFLICT (tenant_id)
         DO UPDATE SET
           logo_data_url = EXCLUDED.logo_data_url,
-          cabecalho_texto = EXCLUDED.cabecalho_texto,
-          rodape_texto = EXCLUDED.rodape_texto,
+          cabecalho_html = EXCLUDED.cabecalho_html,
+          rodape_html = EXCLUDED.rodape_html,
+          cabecalho_altura_mm = EXCLUDED.cabecalho_altura_mm,
+          rodape_altura_mm = EXCLUDED.rodape_altura_mm,
           atualizado_em = NOW()
         `,
         ctx.tenantId,
         logoDataUrl,
-        cabecalho,
-        rodape
+        cabecalhoHtml,
+        rodapeHtml,
+        cabecalhoAlturaMm,
+        rodapeAlturaMm
       );
 
       await audit({
@@ -936,12 +958,47 @@ export default async function v1Routes(server: FastifyInstance) {
         entidade: 'empresa_documentos_layout',
         idRegistro: String(ctx.tenantId),
         acao: 'UPDATE',
-        dadosNovos: { logo: Boolean(logoDataUrl), cabecalho: Boolean(cabecalho), rodape: Boolean(rodape) } as any,
+        dadosNovos: { logo: Boolean(logoDataUrl), cabecalho: Boolean(cabecalhoHtml), rodape: Boolean(rodapeHtml) } as any,
       });
 
       return ok(reply, { ok: true }, { message: 'Layout de documentos atualizado' });
     }
   );
+
+  server.get('/empresa/documentos-layout', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    await ensureEmpresaDocumentosLayoutTables(prisma);
+    const layoutRows = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        logo_data_url AS "logoDataUrl",
+        COALESCE(cabecalho_html, cabecalho_texto) AS "cabecalhoHtml",
+        COALESCE(rodape_html, rodape_texto) AS "rodapeHtml",
+        cabecalho_altura_mm AS "cabecalhoAlturaMm",
+        rodape_altura_mm AS "rodapeAlturaMm",
+        atualizado_em AS "atualizadoEm"
+      FROM empresa_documentos_layout
+      WHERE tenant_id = $1
+      LIMIT 1
+      `,
+      ctx.tenantId
+    )) as any[];
+
+    const layout = layoutRows && layoutRows.length
+      ? {
+          logoDataUrl: layoutRows[0].logoDataUrl ? String(layoutRows[0].logoDataUrl) : null,
+          cabecalhoHtml: layoutRows[0].cabecalhoHtml ? String(layoutRows[0].cabecalhoHtml) : null,
+          rodapeHtml: layoutRows[0].rodapeHtml ? String(layoutRows[0].rodapeHtml) : null,
+          cabecalhoAlturaMm: layoutRows[0].cabecalhoAlturaMm == null ? null : Number(layoutRows[0].cabecalhoAlturaMm),
+          rodapeAlturaMm: layoutRows[0].rodapeAlturaMm == null ? null : Number(layoutRows[0].rodapeAlturaMm),
+          atualizadoEm: layoutRows[0].atualizadoEm ? new Date(layoutRows[0].atualizadoEm).toISOString() : null,
+        }
+      : { logoDataUrl: null, cabecalhoHtml: null, rodapeHtml: null, cabecalhoAlturaMm: null, rodapeAlturaMm: null, atualizadoEm: null };
+
+    return ok(reply, { documentosLayout: layout });
+  });
 
   server.put(
     '/empresa/representante',
