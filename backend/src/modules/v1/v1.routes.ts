@@ -5068,14 +5068,14 @@ export default async function v1Routes(server: FastifyInstance) {
         ci.codigo_item AS "codigoItem",
         COALESCE(ci.descricao,'') AS "descricao",
         COALESCE(ci.und,'') AS "und",
-        COALESCE(ci.codigo_centro_custo, '') AS "codigoCentroCusto",
+        COALESCE(ci.valor_unitario, 0) AS "valorUnitario",
         SUM(s.quant_servico * ci.quantidade * (1 + (ci.perda_percentual / 100.0))) AS "quantidadeTotal"
       FROM servicos s
       JOIN obras_planilhas_composicoes_itens ci
         ON ci.tenant_id = $1 AND ci.id_obra = $2 AND UPPER(ci.codigo_servico) = s.codigo_servico
       WHERE COALESCE(ci.tipo_item,'INSUMO') NOT IN ('COMPOSICAO', 'COMPOSICAO_AUXILIAR')
-      GROUP BY ci.codigo_item, ci.descricao, ci.und, ci.codigo_centro_custo
-      ORDER BY ci.codigo_item
+      GROUP BY ci.codigo_item, ci.descricao, ci.und, COALESCE(ci.valor_unitario, 0)
+      ORDER BY ci.codigo_item, COALESCE(ci.valor_unitario, 0)
       `,
       ctx.tenantId,
       idObra
@@ -5088,7 +5088,7 @@ export default async function v1Routes(server: FastifyInstance) {
           codigoItem: String(r.codigoItem || ''),
           descricao: String(r.descricao || ''),
           und: String(r.und || ''),
-          codigoCentroCusto: String(r.codigoCentroCusto || '').trim() ? String(r.codigoCentroCusto || '').trim() : null,
+          valorUnitario: r.valorUnitario == null ? 0 : Number(r.valorUnitario),
           quantidadeTotal: r.quantidadeTotal == null ? 0 : Number(r.quantidadeTotal),
         })),
       },
@@ -5105,26 +5105,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensureInsumosPrecosTables(prisma);
-
-    const rows = (await prisma.$queryRawUnsafe(
-      `
-      SELECT codigo_item AS "codigoItem", valor_unitario AS "valorUnitario", atualizado_em AS "atualizadoEm"
-      FROM obras_insumos_precos
-      WHERE tenant_id = $1 AND id_obra = $2
-      ORDER BY codigo_item
-      `,
-      ctx.tenantId,
-      idObra
-    )) as any[];
-
-    return ok(reply, {
-      rows: (rows || []).map((r: any) => ({
-        codigoItem: String(r.codigoItem || '').trim(),
-        valorUnitario: r.valorUnitario == null ? 0 : Number(r.valorUnitario),
-        atualizadoEm: r.atualizadoEm ? new Date(r.atualizadoEm).toISOString() : null,
-      })),
-    });
+    return fail(reply, 410, 'Endpoint desativado. O preço unitário do insumo agora é capturado das composições.');
   });
 
   server.post('/engenharia/obras/:id/planilha/insumos/precos', async (request, reply) => {
@@ -5136,34 +5117,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    const body = z
-      .object({
-        codigoItem: z.string().min(1),
-        valorUnitario: z.coerce.number(),
-      })
-      .parse(request.body || {});
-
-    const codigoItem = String(body.codigoItem || '').trim().toUpperCase();
-    const valorUnitario = Number(body.valorUnitario);
-    if (!codigoItem) return fail(reply, 422, 'codigoItem é obrigatório');
-    if (!Number.isFinite(valorUnitario) || valorUnitario < 0) return fail(reply, 422, 'valorUnitario inválido');
-
-    await ensureInsumosPrecosTables(prisma);
-
-    await prisma.$executeRawUnsafe(
-      `
-      INSERT INTO obras_insumos_precos (tenant_id, id_obra, codigo_item, valor_unitario)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (tenant_id, id_obra, codigo_item)
-      DO UPDATE SET valor_unitario = EXCLUDED.valor_unitario, atualizado_em = NOW()
-      `,
-      ctx.tenantId,
-      idObra,
-      codigoItem,
-      valorUnitario
-    );
-
-    return ok(reply, { ok: true }, { message: 'Preço salvo' });
+    return fail(reply, 410, 'Endpoint desativado. O preço unitário do insumo agora é capturado das composições.');
   });
 
   server.post('/engenharia/obras/:id/planilha/insumos/precos/importar-csv', async (request, reply) => {
@@ -5175,84 +5129,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensureInsumosPrecosTables(prisma);
-
-    const isMultipart = typeof (request as any).isMultipart === 'function' ? (request as any).isMultipart() : false;
-    if (!isMultipart) return fail(reply, 422, 'Envie multipart/form-data com arquivo no campo "file"');
-
-    const parts = (request as any).parts();
-    let fileBuffer: Buffer | null = null;
-    for await (const part of parts) {
-      if (part.type === 'file' && String(part.fieldname) === 'file') fileBuffer = await part.toBuffer();
-    }
-    if (!fileBuffer) return fail(reply, 422, 'Arquivo CSV é obrigatório (campo "file")');
-
-    let csvText = decodeCsvBuffer(fileBuffer);
-    csvText = csvText.replace(/^\uFEFF/, '');
-    const { headers, rows } = parseCsvTextAuto(csvText);
-    if (!headers.length || !rows.length) return fail(reply, 422, 'CSV vazio ou inválido');
-
-    const idx: Record<string, number> = Object.fromEntries(headers.map((h, i) => [normalizeHeader(h), i]));
-    const get = (r: string[], key: string) => String(r[idx[key]] ?? '').trim();
-
-    const codigoKey = idx['codigo'] != null ? 'codigo' : idx['codigo_item'] != null ? 'codigo_item' : idx['insumo'] != null ? 'insumo' : '';
-    if (!codigoKey) return fail(reply, 422, 'Coluna obrigatória ausente: codigo (ou codigo_item)');
-
-    const valorKey =
-      idx['valor_unitario'] != null
-        ? 'valor_unitario'
-        : idx['valor_unit'] != null
-          ? 'valor_unit'
-          : idx['valorunit'] != null
-            ? 'valorunit'
-            : idx['valor'] != null
-              ? 'valor'
-              : '';
-    if (!valorKey) return fail(reply, 422, 'Coluna obrigatória ausente: valor_unitario (ou valor_unit)');
-
-    const preparedAll = rows.map((r, i) => {
-        const codigo = String(get(r, codigoKey) || '').trim().toUpperCase();
-        const v = toDec(get(r, valorKey));
-        if (!codigo) return { ok: false as const, rowIndex: i, message: 'Código vazio' };
-        if (v == null || !(v >= 0)) return { ok: false as const, rowIndex: i, message: 'Valor unitário inválido' };
-        return { ok: true as const, codigo, valor: v };
-      });
-
-    const invalid = preparedAll.find((x) => !x.ok);
-    if (invalid && !invalid.ok) return fail(reply, 422, `Erro no CSV (linha ${invalid.rowIndex + 2}): ${invalid.message}`);
-
-    const prepared = preparedAll.filter((x): x is Extract<(typeof preparedAll)[number], { ok: true }> => x.ok);
-
-    if (!prepared.length) return fail(reply, 422, 'Nenhuma linha válida para importar');
-
-    await prisma.$transaction(async (tx: any) => {
-      const chunkSize = 500;
-      for (let start = 0; start < prepared.length; start += chunkSize) {
-        const chunk = prepared.slice(start, start + chunkSize);
-        const params: any[] = [];
-        let p = 1;
-        const values = chunk
-          .map((r) => {
-            const base = [ctx.tenantId, idObra, r.codigo, r.valor];
-            for (const v of base) params.push(v);
-            const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
-            return `(${placeholders})`;
-          })
-          .join(',');
-
-        await tx.$executeRawUnsafe(
-          `
-          INSERT INTO obras_insumos_precos (tenant_id, id_obra, codigo_item, valor_unitario)
-          VALUES ${values}
-          ON CONFLICT (tenant_id, id_obra, codigo_item)
-          DO UPDATE SET valor_unitario = EXCLUDED.valor_unitario, atualizado_em = NOW()
-          `,
-          ...params
-        );
-      }
-    });
-
-    return ok(reply, { imported: prepared.length }, { message: 'Preços importados' });
+    return fail(reply, 410, 'Endpoint desativado. O preço unitário do insumo agora é capturado das composições.');
   });
 
   server.get('/engenharia/projetos', async (request, reply) => {

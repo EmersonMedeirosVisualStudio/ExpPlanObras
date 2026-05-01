@@ -1678,8 +1678,9 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
   - Importação e modelo de CSV de composições ficam na própria tela **Composições da obra**.
   - A tela marca serviços **sem composição** e **divergentes** comparando total da planilha x total calculado por composição.
 - Insumos consolidados:
-  - Além do consolidado, existe o card **Preço dos insumos**, com cadastro **manual** e importação via **CSV (cód + valor unitário)**.
-  - A tabela passa a exibir **Valor unit** e **Total (QTD × VALOR)** quando existir preço cadastrado/importado.
+  - Insumos **não são importados nem cadastrados manualmente**: são capturados automaticamente das **composições** da obra.
+  - A consolidação agrupa por **Código + Und + Preço Unit** (e mantém descrição) e soma a **Quantidade total** de todas as ocorrências.
+  - Sempre que composições são inseridas/atualizadas, a captura de insumos passa a refletir os dados mais recentes (cálculo dinâmico).
 
 #### Validação
 
