@@ -526,40 +526,54 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
 
     const cabecalhoPlanilhaHtml = `
       <div class="cabecalho-planilha">
-        <div class="cab-cards">
-          <div class="cab-card">
-            <div class="cab-card-title">Contrato / Obra</div>
-            <div class="cab-kv">
-              <div class="cab-k">Contrato</div><div class="cab-v">${fmtText(contratoNumero)}</div>
-              <div class="cab-k">Objeto</div><div class="cab-v">${fmtText(obraNome)}</div>
-              <div class="cab-k">Município</div><div class="cab-v">-</div>
-              <div class="cab-k">Endereço</div><div class="cab-v">-</div>
-              <div class="cab-k">Data</div><div class="cab-v">${fmtText(dataHoje)}</div>
-            </div>
+        <div class="cab-outer">
+          <div class="cab-left">
+            <div class="cab-linha"><span class="lab">Contrato:</span><span class="val">${fmtText(contratoNumero)}</span></div>
+            <div class="cab-linha"><span class="lab">Objeto:</span><span class="val up">${fmtText(obraNome)}</span></div>
+            <div class="cab-linha"><span class="lab">Município:</span><span class="val">-</span></div>
+            <div class="cab-linha"><span class="lab">Endereço:</span><span class="val up">-</span></div>
+            <div class="cab-linha"><span class="lab">Data:</span><span class="val">${fmtText(dataHoje)}</span></div>
           </div>
 
-          <div class="cab-card">
-            <div class="cab-card-title">Parâmetros</div>
+          <div class="cab-right">
             <table class="cab-param">
               <thead>
                 <tr>
-                  <th></th>
-                  <th>SBC</th>
-                  <th>SINAPI</th>
+                  <th class="p-title">PARÂMETROS</th>
+                  <th class="p-col">SBC</th>
+                  <th class="p-col">SINAPI</th>
                 </tr>
               </thead>
               <tbody>
-                <tr><td class="k">DATA-BASE</td><td class="v">${fmtText(p.dataBaseSbc)}</td><td class="v">${fmtText(p.dataBaseSinapi)}</td></tr>
-                <tr><td class="k">BDI SERVIÇOS</td><td class="v">${escapeHtml(fmtPercent(p.bdiServicosSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.bdiServicosSinapi))}</td></tr>
-                <tr><td class="k">BDI DIFERENCIADO</td><td class="v">${escapeHtml(fmtPercent(p.bdiDiferenciadoSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.bdiDiferenciadoSinapi))}</td></tr>
-                <tr><td class="k">ENC. SOCIAIS</td><td class="v">${escapeHtml(fmtPercent(p.encSociaisSemDesSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.encSociaisSemDesSinapi))}</td></tr>
-                <tr><td class="k">DESCONTO</td><td class="v">${escapeHtml(fmtPercent(p.descontoSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.descontoSinapi))}</td></tr>
+                <tr>
+                  <td class="p-k">Data-base</td>
+                  <td class="p-v">${fmtText(p.dataBaseSbc)}</td>
+                  <td class="p-v">${fmtText(p.dataBaseSinapi)}</td>
+                </tr>
+                <tr>
+                  <td class="p-k">BDI de Serviços:</td>
+                  <td class="p-v">${escapeHtml(fmtPercent(p.bdiServicosSbc))}</td>
+                  <td class="p-v">${escapeHtml(fmtPercent(p.bdiServicosSinapi))}</td>
+                </tr>
+                <tr>
+                  <td class="p-k">BDI Diferenciado:</td>
+                  <td class="p-v">${escapeHtml(fmtPercent(p.bdiDiferenciadoSbc))}</td>
+                  <td class="p-v">${escapeHtml(fmtPercent(p.bdiDiferenciadoSinapi))}</td>
+                </tr>
+                <tr>
+                  <td class="p-k">Enc. Sociais SEM Desoneração:</td>
+                  <td class="p-v">${escapeHtml(fmtPercent(p.encSociaisSemDesSbc))}</td>
+                  <td class="p-v">${escapeHtml(fmtPercent(p.encSociaisSemDesSinapi))}</td>
+                </tr>
+                <tr>
+                  <td class="p-k">Desconto:</td>
+                  <td class="p-v">${escapeHtml(fmtPercent(p.descontoSbc))}</td>
+                  <td class="p-v">${escapeHtml(fmtPercent(p.descontoSinapi))}</td>
+                </tr>
               </tbody>
             </table>
           </div>
         </div>
-
-        <div class="cabecalho-anexo">ANEXO 1 - ORÇAMENTO SINTÉTICO</div>
       </div>
     `;
 
@@ -583,18 +597,20 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       .empresa-cabecalho { width: 100%; }
       .empresa-rodape { width: 100%; margin-top: 14px; }
       .cabecalho-planilha { width: 100%; }
-      .cab-cards { display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px; margin-top: 8px; }
-      .cab-card { border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 12px; padding: 10px 12px; }
-      .cab-card-title { font-size: 12px; font-weight: 700; color: #0f172a; margin: 0 0 8px 0; }
-      .cab-kv { display: grid; grid-template-columns: 110px 1fr; gap: 6px 10px; font-size: 11px; }
-      .cab-k { font-weight: 700; color: #334155; }
-      .cab-v { font-weight: 400; color: #0f172a; }
-      .cabecalho-anexo { margin: 10px 0 12px 0; text-align: center; font-weight: 700; font-size: 13px; color: #0f172a; }
-      .cab-param { width: 100%; border-collapse: collapse; font-size: 11px; }
-      .cab-param th, .cab-param td { border-top: 1px solid #e2e8f0; padding: 6px 6px; vertical-align: top; }
-      .cab-param thead th { font-weight: 700; color: #334155; text-align: center; }
-      .cab-param tbody td.k { font-weight: 700; color: #334155; width: 130px; }
-      .cab-param tbody td.v { font-weight: 400; color: #0f172a; text-align: center; }
+      .cab-outer { display: grid; grid-template-columns: 1.35fr 1fr; border: 2px solid #0f172a; }
+      .cab-left { padding: 10px 12px; }
+      .cab-right { border-left: 2px solid #0f172a; padding: 8px 10px; }
+      .cab-linha { display: grid; grid-template-columns: 88px 1fr; gap: 10px; align-items: baseline; font-size: 13px; line-height: 1.25; }
+      .cab-linha + .cab-linha { margin-top: 6px; }
+      .lab { font-weight: 400; color: #0f172a; }
+      .val { font-weight: 700; color: #0f172a; }
+      .up { text-transform: uppercase; }
+      .cab-param { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.25; }
+      .cab-param th, .cab-param td { padding: 3px 4px; vertical-align: top; border: none; }
+      .cab-param thead th { font-weight: 700; color: #0f172a; text-align: left; padding-bottom: 6px; }
+      .cab-param thead th.p-col { text-align: center; width: 86px; }
+      .cab-param tbody td.p-k { color: #0f172a; }
+      .cab-param tbody td.p-v { text-align: center; font-weight: 700; }
       .linha-sep { border-top: 2px solid #e2e8f0; margin: 10px 0 12px 0; }
       .linha-sep-footer { border-top: 2px solid #e2e8f0; margin: 14px 0 0 0; }
       table { width: 100%; border-collapse: collapse; font-size: 11px; }
@@ -603,6 +619,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       thead { display: table-header-group; }
       .planilha-table th:nth-child(2), .planilha-table td:nth-child(2) { width: 56px; max-width: 56px; }
       .planilha-table td:nth-child(2) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .planilha-table td:nth-child(2) { padding-top: 3px; padding-bottom: 3px; line-height: 1.05; }
     </style>
   </head>
   <body>
@@ -1868,7 +1885,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                           <span>{l.item || ""}</span>
                         </span>
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 w-[56px] max-w-[56px] whitespace-nowrap overflow-hidden text-ellipsis">
                         <span className="inline-flex items-center gap-2">
                           <span className="text-[11px]">{l.codigo || ""}</span>
                           {(() => {
