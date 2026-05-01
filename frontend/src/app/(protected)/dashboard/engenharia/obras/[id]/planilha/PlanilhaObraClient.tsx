@@ -597,17 +597,17 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       .empresa-cabecalho { width: 100%; }
       .empresa-rodape { width: 100%; margin-top: 14px; }
       .cabecalho-planilha { width: 100%; }
-      .cab-outer { display: grid; grid-template-columns: 1.35fr 1fr; border: 2px solid #0f172a; }
-      .cab-left { padding: 10px 12px; }
+      .cab-outer { display: grid; grid-template-columns: 1fr 1fr; border: 2px solid #0f172a; }
+      .cab-left { padding: 8px 10px; }
       .cab-right { border-left: 2px solid #0f172a; padding: 8px 10px; }
-      .cab-linha { display: grid; grid-template-columns: 88px 1fr; gap: 10px; align-items: baseline; font-size: 13px; line-height: 1.25; }
-      .cab-linha + .cab-linha { margin-top: 6px; }
+      .cab-linha { display: grid; grid-template-columns: 80px 1fr; gap: 10px; align-items: baseline; font-size: 12px; line-height: 1.15; }
+      .cab-linha + .cab-linha { margin-top: 4px; }
       .lab { font-weight: 400; color: #0f172a; }
       .val { font-weight: 700; color: #0f172a; }
       .up { text-transform: uppercase; }
-      .cab-param { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.25; }
-      .cab-param th, .cab-param td { padding: 3px 4px; vertical-align: top; border: none; }
-      .cab-param thead th { font-weight: 700; color: #0f172a; text-align: left; padding-bottom: 6px; }
+      .cab-param { width: 100%; border-collapse: collapse; font-size: 12px; line-height: 1.15; }
+      .cab-param th, .cab-param td { padding: 2px 4px; vertical-align: top; border: none; }
+      .cab-param thead th { font-weight: 700; color: #0f172a; text-align: left; padding-bottom: 4px; }
       .cab-param thead th.p-col { text-align: center; width: 86px; }
       .cab-param tbody td.p-k { color: #0f172a; }
       .cab-param tbody td.p-v { text-align: center; font-weight: 700; }
@@ -619,7 +619,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       thead { display: table-header-group; }
       .planilha-table th:nth-child(2), .planilha-table td:nth-child(2) { width: 56px; max-width: 56px; }
       .planilha-table td:nth-child(2) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .planilha-table td:nth-child(2) { padding-top: 3px; padding-bottom: 3px; line-height: 1.05; }
+      .planilha-table td:nth-child(2) { padding-top: 2px; padding-bottom: 2px; line-height: 1.0; }
     </style>
   </head>
   <body>
@@ -1176,7 +1176,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   }, [planilha, somenteItens, collapsedPrefixes]);
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl text-slate-900">
+    <div className="p-4 md:p-6 space-y-6 max-w-7xl text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex-1 min-w-[260px]">
           <div className="text-xs text-slate-500">{breadcrumb}</div>
@@ -1833,14 +1833,14 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
               <table className="min-w-[1100px] w-full" style={{ fontSize: `${uiPrefs.fontSizePx}px` }}>
                 <thead className="bg-slate-50 text-left text-slate-700">
                   <tr>
-                    <th className="px-3 py-2">ITEM</th>
-                    <th className="px-3 py-2 w-[56px]">CÓDIGO</th>
-                    <th className="px-3 py-2">FONTE</th>
-                    <th className="px-3 py-2 min-w-[520px]">SERVIÇOS</th>
-                    <th className="px-3 py-2">UND</th>
-                    <th className="px-3 py-2 text-right">QUANT.</th>
-                    <th className="px-3 py-2 text-right">VALOR UNIT.</th>
-                    <th className="px-3 py-2 text-right">VALOR PARCIAL</th>
+                    <th className="px-3 py-2 w-[90px] border-r border-slate-200">ITEM</th>
+                    <th className="px-3 py-2 w-[68px] border-r border-slate-200">CÓDIGO</th>
+                    <th className="px-3 py-2 border-r border-slate-200">FONTE</th>
+                    <th className="px-3 py-2 min-w-[520px] border-r border-slate-200">SERVIÇOS</th>
+                    <th className="px-3 py-2 border-r border-slate-200">UND</th>
+                    <th className="px-3 py-2 text-right border-r border-slate-200">QUANT.</th>
+                    <th className="px-3 py-2 text-right border-r border-slate-200">VALOR UNIT.</th>
+                    <th className="px-3 py-2 text-right border-r border-slate-200">VALOR PARCIAL</th>
                     <th className="px-3 py-2">Ações</th>
                   </tr>
                 </thead>
@@ -1861,7 +1861,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                         );
                       }}
                     >
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 w-[90px] border-r border-slate-200">
                         <span className="inline-flex items-center gap-2">
                           {l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM" ? (
                             expandablePrefixes.has(String(l.item || "").trim()) ? (
@@ -1885,7 +1885,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                           <span>{l.item || ""}</span>
                         </span>
                       </td>
-                      <td className="px-3 py-2 w-[56px] max-w-[56px] whitespace-nowrap overflow-hidden text-ellipsis">
+                      <td className="px-3 py-2 w-[68px] max-w-[68px] whitespace-nowrap overflow-hidden text-ellipsis border-r border-slate-200">
                         <span className="inline-flex items-center gap-2">
                           <span className="text-[11px]">{l.codigo || ""}</span>
                           {(() => {
@@ -1914,12 +1914,12 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                           })()}
                         </span>
                       </td>
-                      <td className="px-3 py-2">{l.fonte || ""}</td>
-                      <td className="px-3 py-2 min-w-[520px]">{l.servicos || ""}</td>
-                      <td className="px-3 py-2">{l.und || ""}</td>
-                      <td className="px-3 py-2 text-right">{l.quant || ""}</td>
-                      <td className="px-3 py-2 text-right">{l.valorUnitario || ""}</td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="px-3 py-2 border-r border-slate-200">{l.fonte || ""}</td>
+                      <td className="px-3 py-2 min-w-[520px] border-r border-slate-200">{l.servicos || ""}</td>
+                      <td className="px-3 py-2 border-r border-slate-200">{l.und || ""}</td>
+                      <td className="px-3 py-2 text-right border-r border-slate-200">{l.quant || ""}</td>
+                      <td className="px-3 py-2 text-right border-r border-slate-200">{l.valorUnitario || ""}</td>
+                      <td className="px-3 py-2 text-right border-r border-slate-200">
                         {l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM"
                           ? (() => {
                               const k = String(l.item || "").trim();
