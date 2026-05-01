@@ -100,6 +100,15 @@ function parseNumberLoose(v: unknown) {
   return Number.isFinite(n) ? n : null;
 }
 
+function escapeHtml(v: unknown) {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function normalizeHeader(h: string) {
   return String(h || "")
     .trim()
@@ -203,6 +212,15 @@ type ObraResumo = {
   valorPrevisto: number | null;
 };
 
+type EmpresaDocumentosLayout = {
+  logoDataUrl: string | null;
+  cabecalhoHtml: string | null;
+  rodapeHtml: string | null;
+  cabecalhoAlturaMm: number | null;
+  rodapeAlturaMm: number | null;
+  atualizadoEm: string | null;
+};
+
 function getUserPrefKey() {
   try {
     const raw = localStorage.getItem("user");
@@ -220,6 +238,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const [obraStatus, setObraStatus] = useState<string | null>(null);
   const [obraResumo, setObraResumo] = useState<ObraResumo | null>(null);
+  const [empresaDocumentosLayout, setEmpresaDocumentosLayout] = useState<EmpresaDocumentosLayout | null>(null);
   const [versoes, setVersoes] = useState<VersaoRow[]>([]);
   const [planilha, setPlanilha] = useState<Planilha | null>(null);
   const [planilhaId, setPlanilhaId] = useState<number | null>(null);
@@ -418,6 +437,42 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     URL.revokeObjectURL(url);
   }
 
+  async function carregarEmpresaDocumentosLayout() {
+    try {
+      const res = await authFetch(`/api/v1/empresa/documentos-layout`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        setEmpresaDocumentosLayout(null);
+        return;
+      }
+      const dl = (json.data?.documentosLayout || null) as any;
+      if (!dl) {
+        setEmpresaDocumentosLayout(null);
+        return;
+      }
+      setEmpresaDocumentosLayout({
+        logoDataUrl: dl.logoDataUrl == null ? null : String(dl.logoDataUrl || ""),
+        cabecalhoHtml: dl.cabecalhoHtml == null ? null : String(dl.cabecalhoHtml || ""),
+        rodapeHtml: dl.rodapeHtml == null ? null : String(dl.rodapeHtml || ""),
+        cabecalhoAlturaMm: dl.cabecalhoAlturaMm == null ? null : Number(dl.cabecalhoAlturaMm),
+        rodapeAlturaMm: dl.rodapeAlturaMm == null ? null : Number(dl.rodapeAlturaMm),
+        atualizadoEm: dl.atualizadoEm == null ? null : String(dl.atualizadoEm || ""),
+      });
+    } catch {
+      setEmpresaDocumentosLayout(null);
+    }
+  }
+
+  function applyEmpresaDocTokens(html: string, layout: EmpresaDocumentosLayout | null) {
+    const dataHora = new Date().toLocaleString("pt-BR");
+    const logoHtml = layout?.logoDataUrl ? `<img alt="Logo" src="${escapeHtml(layout.logoDataUrl)}" style="max-height:100%;max-width:100%;object-fit:contain;" />` : "";
+    return String(html || "")
+      .replaceAll("{{DATA_HORA}}", escapeHtml(dataHora))
+      .replaceAll("{{PAGINA}}", "")
+      .replaceAll("{{TOTAL_PAGINAS}}", "")
+      .replaceAll("{{LOGO}}", logoHtml);
+  }
+
   function imprimirPlanilha() {
     if (!planilha) return;
     const w = window.open("", "_blank");
@@ -427,7 +482,8 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     }
     const title = `Planilha orçamentária — Obra #${idObra}`;
     const obraNome = obraResumo?.nome ? String(obraResumo.nome) : "";
-    const obraLabel = `Obra: #${idObra}${obraNome ? ` - ${obraNome}` : ""}`;
+    const contratoNumero = obraResumo?.contratoNumero ? String(obraResumo.contratoNumero) : "";
+    const dataHoje = new Date().toLocaleDateString("pt-BR");
     const itemBg = uiPrefs.itemBg || "#F8FAFC";
     const subitemBg = uiPrefs.subitemBg || "#FFFFFF";
     const rowsHtml = (planilha.linhas || [])
@@ -439,17 +495,79 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
         const bg = isItem ? itemBg : isSubitem ? subitemBg : "";
         const style = `${isHeader ? "font-weight:700;font-size:12px;" : ""}${bg ? `background:${bg};` : ""}`;
         return `<tr style="${style}">
-          <td>${String(l.item || "")}</td>
-          <td>${String(l.codigo || "")}</td>
-          <td>${String(l.fonte || "")}</td>
-          <td>${String(l.servicos || "")}</td>
-          <td>${String(l.und || "")}</td>
-          <td style="text-align:right">${String(l.quant || "")}</td>
-          <td style="text-align:right">${String(l.valorUnitario || "")}</td>
-          <td style="text-align:right">${String(l.valorParcial || "")}</td>
+          <td>${escapeHtml(l.item || "")}</td>
+          <td>${escapeHtml(l.codigo || "")}</td>
+          <td>${escapeHtml(l.fonte || "")}</td>
+          <td>${escapeHtml(l.servicos || "")}</td>
+          <td>${escapeHtml(l.und || "")}</td>
+          <td style="text-align:right">${escapeHtml(l.quant || "")}</td>
+          <td style="text-align:right">${escapeHtml(l.valorUnitario || "")}</td>
+          <td style="text-align:right">${escapeHtml(l.valorParcial || "")}</td>
         </tr>`;
       })
       .join("");
+
+    const p = planilha.parametros || ({} as any);
+    const fmtPercent = (n: unknown) => {
+      const num = typeof n === "number" ? n : n == null ? null : Number(n);
+      if (num == null || !Number.isFinite(num)) return "-";
+      return `${num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+    };
+    const fmtText = (s: unknown) => {
+      const t = String(s ?? "").trim();
+      return t ? escapeHtml(t) : "-";
+    };
+    const cabecalhoEmpresaHtml =
+      empresaDocumentosLayout?.cabecalhoHtml || empresaDocumentosLayout?.logoDataUrl
+        ? `<div class="empresa-cabecalho" style="${empresaDocumentosLayout?.cabecalhoAlturaMm ? `min-height:${Number(empresaDocumentosLayout.cabecalhoAlturaMm)}mm;` : ""}">
+            ${empresaDocumentosLayout?.cabecalhoHtml ? applyEmpresaDocTokens(empresaDocumentosLayout.cabecalhoHtml, empresaDocumentosLayout) : ""}
+          </div>`
+        : "";
+
+    const cabecalhoPlanilhaHtml = `
+      <div class="cabecalho-planilha">
+        <div class="cabecalho-grid">
+          <table class="cab-bloco">
+            <tbody>
+              <tr><td class="k">CONTRATO:</td><td class="v">${fmtText(contratoNumero)}</td></tr>
+              <tr><td class="k">OBJETO:</td><td class="v">${fmtText(obraNome)}</td></tr>
+              <tr><td class="k">MUNICÍPIO:</td><td class="v">-</td></tr>
+              <tr><td class="k">ENDEREÇO:</td><td class="v">-</td></tr>
+              <tr><td class="k">DATA:</td><td class="v">${fmtText(dataHoje)}</td></tr>
+            </tbody>
+          </table>
+
+          <table class="cab-bloco">
+            <thead>
+              <tr><th class="cab-titulo" colspan="3">PARÂMETROS</th></tr>
+              <tr>
+                <th class="cab-sub"></th>
+                <th class="cab-sub">SBC</th>
+                <th class="cab-sub">SINAPI</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="k">DATA-BASE</td><td class="v">${fmtText(p.dataBaseSbc)}</td><td class="v">${fmtText(p.dataBaseSinapi)}</td></tr>
+              <tr><td class="k">BDI SERVIÇOS</td><td class="v">${escapeHtml(fmtPercent(p.bdiServicosSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.bdiServicosSinapi))}</td></tr>
+              <tr><td class="k">BDI DIFERENCIADO</td><td class="v">${escapeHtml(fmtPercent(p.bdiDiferenciadoSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.bdiDiferenciadoSinapi))}</td></tr>
+              <tr><td class="k">ENC. SOCIAIS</td><td class="v">${escapeHtml(fmtPercent(p.encSociaisSemDesSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.encSociaisSemDesSinapi))}</td></tr>
+              <tr><td class="k">DESCONTO</td><td class="v">${escapeHtml(fmtPercent(p.descontoSbc))}</td><td class="v">${escapeHtml(fmtPercent(p.descontoSinapi))}</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="cabecalho-sep"></div>
+        <div class="cabecalho-anexo">ANEXO 1 - ORÇAMENTO SINTÉTICO</div>
+        <div class="cabecalho-sep"></div>
+      </div>
+    `;
+
+    const rodapeEmpresaHtml =
+      empresaDocumentosLayout?.rodapeHtml || empresaDocumentosLayout?.logoDataUrl
+        ? `<div class="empresa-rodape" style="${empresaDocumentosLayout?.rodapeAlturaMm ? `min-height:${Number(empresaDocumentosLayout.rodapeAlturaMm)}mm;` : ""}">
+            ${empresaDocumentosLayout?.rodapeHtml ? applyEmpresaDocTokens(empresaDocumentosLayout.rodapeHtml, empresaDocumentosLayout) : ""}
+          </div>`
+        : "";
 
     w.document.open();
     w.document.write(`<!doctype html>
@@ -460,22 +578,30 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     <title>${title}</title>
     <style>
       body { font-family: Arial, sans-serif; padding: 16px; margin: 0; color: #0f172a; }
-      .planilha-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
-      .planilha-head h1 { font-size: 18px; margin: 0; }
-      .planilha-head .obra { text-align: right; font-size: 12px; color: #334155; }
+      @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+      .empresa-cabecalho { width: 100%; }
+      .empresa-rodape { width: 100%; margin-top: 14px; }
+      .cabecalho-planilha { width: 100%; }
+      .cabecalho-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; }
+      .cabecalho-sep { border-top: 2px solid #0f172a; margin: 10px 0; }
+      .cabecalho-anexo { text-align: center; font-weight: 700; font-size: 14px; letter-spacing: 0.2px; }
+      .cab-bloco { width: 100%; border-collapse: collapse; font-size: 11px; }
+      .cab-bloco th, .cab-bloco td { border: 1px solid #0f172a; padding: 6px 8px; vertical-align: top; }
+      .cab-bloco .k { width: 120px; font-weight: 700; }
+      .cab-bloco .v { font-weight: 400; }
+      .cab-bloco .cab-titulo { text-align: center; font-weight: 700; background: #f1f5f9; }
+      .cab-bloco .cab-sub { text-align: center; font-weight: 700; background: #f8fafc; }
       .linha-sep { border-top: 2px solid #e2e8f0; margin: 10px 0 12px 0; }
       .linha-sep-footer { border-top: 2px solid #e2e8f0; margin: 14px 0 0 0; }
       table { width: 100%; border-collapse: collapse; font-size: 11px; }
       th, td { border: 1px solid #e2e8f0; padding: 6px 8px; vertical-align: top; }
       th { background: #f8fafc; text-align: left; }
+      thead { display: table-header-group; }
     </style>
   </head>
   <body>
-    <div class="planilha-head">
-      <h1>${title}</h1>
-      <div class="obra">${obraLabel}</div>
-    </div>
-    <div class="linha-sep"></div>
+    ${cabecalhoEmpresaHtml}
+    ${cabecalhoPlanilhaHtml}
     <table>
       <thead>
         <tr>
@@ -494,6 +620,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       </tbody>
     </table>
     <div class="linha-sep-footer"></div>
+    ${rodapeEmpresaHtml}
   </body>
 </html>`);
     w.document.close();
@@ -619,6 +746,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     if (!idObra) return;
     carregarVersoes();
     carregarComposicaoStatus();
+    carregarEmpresaDocumentosLayout();
   }, [idObra]);
 
   useEffect(() => {
