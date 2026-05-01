@@ -54,7 +54,16 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const pdf = await renderPdf(data);
+    let layout: any = null;
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3333';
+      const auth = req.headers.get('authorization');
+      const res = await fetch(`${base}/api/v1/empresa/documentos-layout`, { headers: auth ? { Authorization: auth } : undefined, cache: 'no-store' });
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.success) layout = json.data?.documentosLayout || null;
+    } catch {}
+
+    const pdf = await renderPdf(data, layout);
     const pdfBytes = new Uint8Array(pdf);
     const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
     return new Response(pdfBlob, {

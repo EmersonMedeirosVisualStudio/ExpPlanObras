@@ -1,10 +1,44 @@
 import type { DashboardExportDataDTO } from './types';
 
-export async function renderPdf(data: DashboardExportDataDTO): Promise<Buffer> {
+type EmpresaDocLayout = { logoDataUrl?: string | null; cabecalhoHtml?: string | null; rodapeHtml?: string | null };
+
+function htmlToText(html: string) {
+  return String(html || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function replaceTokens(t: string, args: { dataHora: string; pagina: number; totalPaginas: number }) {
+  return String(t || '')
+    .replaceAll('{{DATA_HORA}}', args.dataHora)
+    .replaceAll('{{DATA}}', args.dataHora.slice(0, 10))
+    .replaceAll('{{PAGINA}}', String(args.pagina))
+    .replaceAll('{{TOTAL_PAGINAS}}', String(args.totalPaginas))
+    .replaceAll('{{LOGO}}', '');
+}
+
+export async function renderPdf(data: DashboardExportDataDTO, layout?: EmpresaDocLayout | null): Promise<Buffer> {
   const lines: string[] = [];
+  const dataHora = new Date().toLocaleString('pt-BR');
+  const headerText = layout?.cabecalhoHtml ? replaceTokens(htmlToText(layout.cabecalhoHtml), { dataHora, pagina: 1, totalPaginas: 1 }) : '';
+  const footerText = layout?.rodapeHtml ? replaceTokens(htmlToText(layout.rodapeHtml), { dataHora, pagina: 1, totalPaginas: 1 }) : '';
+
+  if (headerText) {
+    lines.push(...headerText.split('\n'));
+    lines.push('');
+  }
+
   lines.push(data.titulo || 'Relatório de Dashboard');
   if (data.subtitulo) lines.push(data.subtitulo);
-  lines.push(new Date().toLocaleString('pt-BR'));
+  lines.push(dataHora);
   lines.push('');
 
   if (data.filtrosAplicados) {
@@ -45,6 +79,11 @@ export async function renderPdf(data: DashboardExportDataDTO): Promise<Buffer> {
       for (const l of t.linhas.slice(0, 50)) lines.push(l.map((x) => (x === null || x === undefined ? '' : String(x))).join(' | '));
       lines.push('');
     }
+  }
+
+  if (footerText) {
+    lines.push('');
+    lines.push(...footerText.split('\n'));
   }
 
   const pageWidth = 595.28;
