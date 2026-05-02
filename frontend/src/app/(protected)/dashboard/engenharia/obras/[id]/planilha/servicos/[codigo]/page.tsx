@@ -763,7 +763,10 @@ async function readTextSmart(file: File) {
     const pickInsumosSheetName = () => {
       const isPreco = (k: string) => (k.includes("preco") || k.includes("precos")) && (k.includes("insumo") || k.includes("insumos"));
       const hasToken = (k: string, token: string) => k === token || k.startsWith(`${token}_`) || k.endsWith(`_${token}`) || k.includes(`_${token}_`);
+      const pickByExactToken = (token: string) => allSheets.find((s: any) => String(s.key || "") === token)?.name || "";
       if (sinapiInsumosModo === "ISD") {
+        const exact = pickByExactToken("isd");
+        if (exact) return exact;
         const hit =
           allSheets.find((s: any) => isPreco(s.key) && hasToken(s.key, "isd")) ||
           allSheets.find((s: any) => isPreco(s.key) && s.key.includes("sem_desoneracao")) ||
@@ -774,6 +777,8 @@ async function readTextSmart(file: File) {
         return hit?.name || "";
       }
       if (sinapiInsumosModo === "ICD") {
+        const exact = pickByExactToken("icd");
+        if (exact) return exact;
         const hit =
           allSheets.find((s: any) => isPreco(s.key) && hasToken(s.key, "icd")) ||
           allSheets.find((s: any) => isPreco(s.key) && s.key.includes("com_desoneracao")) ||
@@ -782,6 +787,8 @@ async function readTextSmart(file: File) {
           allSheets.find((s: any) => isPreco(s.key) && s.key.includes("encargos") && s.key.includes("com") && s.key.includes("desoner"));
         return hit?.name || "";
       }
+      const exact = pickByExactToken("ise");
+      if (exact) return exact;
       const hit =
         allSheets.find((s: any) => isPreco(s.key) && hasToken(s.key, "ise")) ||
         allSheets.find((s: any) => isPreco(s.key) && s.key.includes("sem_encargos")) ||
