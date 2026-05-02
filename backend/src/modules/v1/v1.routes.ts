@@ -4,6 +4,8 @@ import prisma from '../../plugins/prisma.js';
 import { authenticate } from '../../utils/authenticate.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import * as XLSX from 'xlsx';
+import fs from 'fs/promises';
 import { normalizeEmail, onlyDigits } from '../../utils/validators.js';
 import { loadSubjectContext } from '../security-fields/service.js';
 import { sanitizeResourceObject } from '../security-fields/sanitizer.js';
@@ -5192,6 +5194,331 @@ export default async function v1Routes(server: FastifyInstance) {
     }, { timeout: 120000, maxWait: 20000 });
 
     return ok(reply, { ok: true }, { message: 'Composição importada' });
+  });
+
+  server.post('/engenharia/obras/:id/planilha/sinapi/import-analitico', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensurePlanilhaOrcamentariaTables(prisma);
+    await ensurePlanilhaComposicaoTables(prisma);
+
+    const parseNumber = (v: any) => {
+      if (v == null) return null;
+      if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+      const s = String(v || '').trim();
+      if (!s) return null;
+      const cleaned = s.replace(/\s/g, '').replace(/\./g, '').replace(/,/g, '.');
+      const n = Number(cleaned);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const mapTipo = (raw: string) => {
+      const v = String(raw || '').trim().toUpperCase();
+      if (!v) return null;
+      if (v.includes('AUX')) return 'COMPOSICAO_AUXILIAR';
+      if (v.includes('COMPOS')) return 'COMPOSICAO';
+      if (v.includes('EQUIP')) return 'EQUIPAMENTO';
+      if (v.includes('MAO') || v.includes('MÃO')) return 'MAO_DE_OBRA';
+      if (v.includes('INSUM')) return 'INSUMO';
+      return null;
+    };
+
+    const isMultipart = typeof (request as any).isMultipart === 'function' ? (request as any).isMultipart() : false;
+    const fields: Record<string, any> = {};
+    let fileBuffer: Buffer | null = null;
+
+    if (isMultipart) {
+      const parts = (request as any).parts();
+      for await (const part of parts) {
+        if (part.type === 'file' && String(part.fieldname) === 'file') fileBuffer = await part.toBuffer();
+        if (part.type === 'field') fields[String(part.fieldname)] = part.value;
+      }
+    } else {
+      const body = (request.body || {}) as any;
+      for (const k of Object.keys(body || {})) fields[k] = (body as any)[k];
+    }
+
+    const sheetName = String(fields.sheetName || fields.aba || 'Analítico').trim() || 'Analítico';
+    const uf = String(fields.uf || fields.estado || '').trim().toUpperCase();
+    const banco = String(fields.banco || 'SINAPI').trim().slice(0, 60) || 'SINAPI';
+    const modeRaw = String(fields.mode || fields.modo || 'MISSING_ONLY').trim().toUpperCase();
+    const mode = modeRaw === 'UPSERT' || modeRaw === 'REPLACE' ? 'UPSERT' : 'MISSING_ONLY';
+    const importAllParsed = String(fields.importAllParsed || fields.importAll || '').toLowerCase() === 'true' || fields.importAllParsed === true || fields.importAll === true;
+    const dryRun = String(fields.dryRun || '').toLowerCase() === 'true' || fields.dryRun === true;
+
+    if (!fileBuffer) {
+      const filePath = fields.filePath ? String(fields.filePath) : '';
+      if (!filePath) return fail(reply, 422, 'Envie o arquivo XLSX no campo "file" (upload) ou informe "filePath" (apenas ambiente local).');
+      if (process.env.VERCEL) return fail(reply, 422, 'Em produção (Vercel), não é possível ler um caminho do seu computador. Envie o arquivo por upload.');
+      try {
+        fileBuffer = await fs.readFile(filePath);
+      } catch {
+        return fail(reply, 422, 'Não foi possível ler o arquivo pelo caminho informado.');
+      }
+    }
+
+    let wb: XLSX.WorkBook;
+    try {
+      wb = XLSX.read(fileBuffer, { type: 'buffer', cellDates: false });
+    } catch {
+      return fail(reply, 422, 'Arquivo XLSX inválido ou corrompido.');
+    }
+
+    const sheet = wb.Sheets[sheetName] || wb.Sheets[String(sheetName || '').trim()] || null;
+    if (!sheet) {
+      const names = (wb.SheetNames || []).slice(0, 30).join(', ');
+      return fail(reply, 422, `Aba não encontrada: "${sheetName}". Abas disponíveis: ${names || '—'}`);
+    }
+
+    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }) as any[][];
+    if (!Array.isArray(matrix) || matrix.length < 2) return fail(reply, 422, 'Aba vazia.');
+
+    let headerRowIdx = -1;
+    for (let i = 0; i < Math.min(60, matrix.length); i++) {
+      const r = Array.isArray(matrix[i]) ? matrix[i] : [];
+      const keys = r.map((c) => normalizeHeader(String(c || ''))).filter(Boolean);
+      const hasCodigo = keys.includes('codigo') || keys.includes('codigo_item') || keys.includes('codigo_da_composicao') || keys.includes('codigo_composicao');
+      const hasDesc = keys.includes('descricao') || keys.includes('descricao_item');
+      const hasCoef = keys.some((k) => k.includes('coef') || k === 'quantidade');
+      if (hasCodigo && hasDesc && hasCoef) {
+        headerRowIdx = i;
+        break;
+      }
+    }
+    if (headerRowIdx < 0) return fail(reply, 422, 'Não foi possível identificar o cabeçalho da aba. Verifique se é a aba "Analítico".');
+
+    const headerRow = matrix[headerRowIdx] as any[];
+    const headers = headerRow.map((h) => normalizeHeader(String(h || '')));
+    const findCol = (cands: string[]) => {
+      for (const c of cands) {
+        const idx = headers.findIndex((h) => h === c);
+        if (idx >= 0) return idx;
+      }
+      for (const c of cands) {
+        const idx = headers.findIndex((h) => h.includes(c));
+        if (idx >= 0) return idx;
+      }
+      return -1;
+    };
+
+    const iCodigo = findCol(['codigo_da_composicao', 'codigo_composicao', 'codigo_item', 'codigo']);
+    const iDescricao = findCol(['descricao_item', 'descricao']);
+    const iUnd = findCol(['und', 'unid', 'unidade']);
+    const iCoef = findCol(['coeficiente', 'coef', 'quantidade']);
+    const iCustoUnit = findCol(['custo_unitario', 'custo_unit', 'valor_unitario', 'preco_unitario']);
+    const iTipo = findCol(['tipo_item', 'tipo']);
+    const iNivel = findCol(['nivel']);
+    const iUf = findCol(['uf', 'estado']);
+
+    if (iCodigo < 0 || iDescricao < 0 || iCoef < 0) return fail(reply, 422, 'Aba "Analítico" não contém as colunas mínimas (Código, Descrição, Coeficiente/Quantidade).');
+
+    const comps = new Map<
+      string,
+      { codigo: string; descricao: string; und: string; itens: Array<{ tipoItem: string; codigoItem: string; banco: string | null; descricao: string | null; und: string | null; quantidade: number; valorUnitario: number | null }> }
+    >();
+    let current: string | null = null;
+
+    for (let i = headerRowIdx + 1; i < matrix.length; i++) {
+      const row = Array.isArray(matrix[i]) ? matrix[i] : [];
+      const rowUf = iUf >= 0 ? String(row[iUf] || '').trim().toUpperCase() : '';
+      if (uf && iUf >= 0 && rowUf && rowUf !== uf) continue;
+      const codigo = String(row[iCodigo] ?? '').trim().toUpperCase();
+      const descricao = String(row[iDescricao] ?? '').trim();
+      const und = iUnd >= 0 ? String(row[iUnd] ?? '').trim() : '';
+      const tipoRaw = iTipo >= 0 ? String(row[iTipo] ?? '').trim() : '';
+      const tipoMapped = mapTipo(tipoRaw) || '';
+      const nivel = iNivel >= 0 ? parseNumber(row[iNivel]) : null;
+      const coef = parseNumber(row[iCoef]);
+      const custoUnit = iCustoUnit >= 0 ? parseNumber(row[iCustoUnit]) : null;
+
+      if (!codigo && !descricao) continue;
+
+      const isHeader =
+        (nivel != null && Number.isFinite(nivel) && Math.round(nivel) === 0 && codigo) ||
+        (tipoMapped === 'COMPOSICAO' && codigo && (coef == null || coef === 1));
+
+      if (isHeader) {
+        current = codigo;
+        if (!comps.has(current)) comps.set(current, { codigo: current, descricao, und, itens: [] });
+        continue;
+      }
+
+      if (!current) continue;
+      const parent = comps.get(current) || { codigo: current, descricao: '', und: '', itens: [] };
+      if (!comps.has(current)) comps.set(current, parent);
+      if (!codigo) continue;
+
+      const tipoItem = tipoMapped || (descricao.toUpperCase().includes('AUX') ? 'COMPOSICAO_AUXILIAR' : 'INSUMO');
+      const quantidade = coef == null ? null : coef;
+      if (quantidade == null || !Number.isFinite(quantidade)) continue;
+      parent.itens.push({
+        tipoItem,
+        codigoItem: codigo,
+        banco: banco || null,
+        descricao: descricao ? descricao.slice(0, 255) : null,
+        und: und ? und.slice(0, 40) : null,
+        quantidade: Number(quantidade),
+        valorUnitario: custoUnit == null || !Number.isFinite(custoUnit) ? null : Number(custoUnit),
+      });
+    }
+
+    const parsedCodes = Array.from(comps.keys());
+    if (!parsedCodes.length) return fail(reply, 422, 'Nenhuma composição foi identificada na aba. Verifique a aba, UF e estrutura.');
+
+    let targetCodes = new Set<string>(parsedCodes);
+    let planilhaId: number | null = null;
+    if (!importAllParsed) {
+      const row = (await prisma.$queryRawUnsafe(
+        `
+        SELECT id_planilha AS "idPlanilha"
+        FROM obras_planilhas_versoes
+        WHERE tenant_id = $1 AND id_obra = $2 AND atual = TRUE
+        ORDER BY numero_versao DESC, id_planilha DESC
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        idObra
+      )) as any[];
+      planilhaId = row?.[0]?.idPlanilha != null ? Number(row[0].idPlanilha) : null;
+      if (!planilhaId) return fail(reply, 422, 'Não há planilha atual para a obra. Importe a planilha orçamentária primeiro.');
+      const serv = (await prisma.$queryRawUnsafe(
+        `
+        SELECT DISTINCT UPPER(COALESCE(codigo,'')) AS codigo
+        FROM obras_planilhas_linhas
+        WHERE tenant_id = $1 AND id_planilha = $2 AND tipo_linha = 'SERVICO' AND COALESCE(codigo,'') <> ''
+        `,
+        ctx.tenantId,
+        planilhaId
+      )) as any[];
+      const needed = new Set((serv || []).map((r: any) => String(r.codigo || '').trim()).filter(Boolean));
+      targetCodes = new Set(parsedCodes.filter((c) => needed.has(c)));
+    }
+
+    const existingRows = (await prisma.$queryRawUnsafe(
+      `
+      SELECT DISTINCT UPPER(codigo_servico) AS codigo
+      FROM obras_planilhas_composicoes_itens
+      WHERE tenant_id = $1 AND id_obra = $2
+      `,
+      ctx.tenantId,
+      idObra
+    )) as any[];
+    const existing = new Set((existingRows || []).map((r: any) => String(r.codigo || '').trim()).filter(Boolean));
+
+    const toImport = Array.from(targetCodes).filter((c) => {
+      if (mode === 'MISSING_ONLY') return !existing.has(c);
+      return true;
+    });
+
+    const skippedExisting = mode === 'MISSING_ONLY' ? Array.from(targetCodes).filter((c) => existing.has(c)).length : 0;
+    const skippedNotInPlanilha = importAllParsed ? 0 : parsedCodes.length - targetCodes.size;
+
+    const totalItens = toImport.reduce((acc, code) => acc + (comps.get(code)?.itens.length || 0), 0);
+    const sample = toImport.slice(0, 5).map((c) => ({ codigo: c, itens: (comps.get(c)?.itens || []).slice(0, 3) }));
+
+    if (dryRun) {
+      return ok(
+        reply,
+        {
+          sheetName,
+          uf: uf || null,
+          planilhaId,
+          parsedComposicoes: parsedCodes.length,
+          targetComposicoes: targetCodes.size,
+          toImportComposicoes: toImport.length,
+          toImportItens: totalItens,
+          skippedExisting,
+          skippedNotInPlanilha,
+          sample,
+        },
+        { message: 'Prévia gerada' }
+      );
+    }
+
+    let importedItens = 0;
+    let importedComposicoes = 0;
+    await prisma.$transaction(async (tx: any) => {
+      for (const code of toImport) {
+        const entry = comps.get(code);
+        const itens = entry?.itens || [];
+        if (!itens.length) continue;
+        if (mode === 'UPSERT') {
+          await tx.$executeRawUnsafe(`DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND UPPER(codigo_servico) = $3`, ctx.tenantId, idObra, code);
+        }
+
+        const chunkSize = 500;
+        const normalized = itens
+          .map((r) => ({
+            etapa: '',
+            tipoItem: String(r.tipoItem || 'INSUMO').trim().toUpperCase().slice(0, 32) || 'INSUMO',
+            codigoItem: String(r.codigoItem || '').trim().slice(0, 80),
+            banco: r.banco ? String(r.banco).trim().slice(0, 60) : null,
+            descricao: r.descricao ? String(r.descricao).trim().slice(0, 255) : null,
+            und: r.und ? String(r.und).trim().slice(0, 40) : null,
+            quantidade: r.quantidade == null ? null : toDec(r.quantidade),
+            valorUnitario: r.valorUnitario == null ? null : toDec(r.valorUnitario),
+            perda: 0,
+            codigoCentroCusto: null,
+          }))
+          .filter((i) => i.codigoItem && i.quantidade != null);
+
+        for (let start = 0; start < normalized.length; start += chunkSize) {
+          const chunk = normalized.slice(start, start + chunkSize);
+          const params: any[] = [];
+          let p = 1;
+          const values = chunk
+            .map((r) => {
+              const base = [ctx.tenantId, idObra, code, r.etapa, r.tipoItem, r.codigoItem, r.banco, r.descricao, r.und, r.quantidade, r.valorUnitario, r.perda, r.codigoCentroCusto];
+              for (const v of base) params.push(v);
+              const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+              return `(${placeholders})`;
+            })
+            .join(',');
+
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO obras_planilhas_composicoes_itens
+              (tenant_id, id_obra, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo)
+            VALUES
+              ${values}
+            ON CONFLICT (tenant_id, id_obra, codigo_servico, etapa, tipo_item, codigo_item)
+            DO UPDATE SET
+              banco = EXCLUDED.banco,
+              descricao = EXCLUDED.descricao,
+              und = EXCLUDED.und,
+              quantidade = EXCLUDED.quantidade,
+              valor_unitario = EXCLUDED.valor_unitario,
+              perda_percentual = EXCLUDED.perda_percentual,
+              codigo_centro_custo = EXCLUDED.codigo_centro_custo,
+              atualizado_em = NOW()
+            `,
+            ...params
+          );
+          importedItens += chunk.length;
+        }
+        importedComposicoes++;
+      }
+    }, { timeout: 120000, maxWait: 20000 });
+
+    return ok(
+      reply,
+      {
+        sheetName,
+        uf: uf || null,
+        planilhaId,
+        importedComposicoes,
+        importedItens,
+        skippedExisting,
+        skippedNotInPlanilha,
+      },
+      { message: 'Importação SINAPI concluída' }
+    );
   });
 
   server.get('/engenharia/obras/:id/planilha/insumos/consolidado', async (request, reply) => {

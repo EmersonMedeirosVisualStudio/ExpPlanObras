@@ -1336,6 +1336,15 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
+            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/sinapi?returnTo=${encodeURIComponent(returnTo || `/dashboard/engenharia/obras/${idObra}/planilha`)}`)}
+            disabled={loading}
+            title="Importar composições do SINAPI (Excel)"
+          >
+            SINAPI
+          </button>
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
             onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(returnTo || `/dashboard/engenharia/obras/${idObra}`)}`)}
             disabled={loading}
           >
