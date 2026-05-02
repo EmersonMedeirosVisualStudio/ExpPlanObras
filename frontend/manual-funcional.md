@@ -2991,6 +2991,78 @@ Com:
 - validação;
 - confirmação antes do processamento final.
 
+#### 18.2.1 SINAPI (Excel) — Importar composições para a planilha da obra (sem upload do arquivo grande)
+
+**Problema identificado**
+
+O arquivo oficial do SINAPI (Excel) é grande. Enviar esse arquivo para o backend pode gerar erros como “request file too large” (limite de upload) e/ou travamentos por memória no servidor durante a leitura.
+
+**Oportunidade de melhoria**
+
+Manter o padrão do sistema **Frontend ↔ Backend ↔ Banco de dados** e reduzir risco em produção: o frontend lê o Excel localmente (no navegador) e envia ao backend apenas um **payload JSON pequeno** com os dados já extraídos.
+
+**Solução sugerida (implementada)**
+
+- A importação de SINAPI foi implementada em **duas telas**:
+  - **Análise de composição** (atalho “Importar do SINAPI (este serviço)”): importa a composição do serviço atualmente aberto.
+  - **Sinapi** (na Planilha orçamentária): importa e também lista os **serviços SINAPI já importados** para a obra.
+- O sistema valida os parâmetros **Data-base, UF e modo ISD/ICD/ISE**.
+- O botão de **Prévia** só habilita quando os requisitos estão preenchidos e um arquivo XLSX foi selecionado.
+- Se o serviço não existir no SINAPI para a base informada, o sistema informa: “O serviço X não é cadastrado no SINAPI, na base informada”.
+
+**Benefício da mudança**
+
+- Menos falhas de deploy/execução em produção.
+- Importação mais previsível e rápida (sem upload do arquivo grande).
+- Backend permanece responsável pela regra de negócio, validações e persistência no banco.
+
+**Como usar — Atalho na Análise de composição**
+
+ETAPA 1 — Onde acessar
+- Acesse: Engenharia → Obras → (selecione a obra) → Planilha orçamentária → Serviços → (selecione o serviço) → Análise de composição.
+
+ETAPA 2 — O que clicar
+- No card “Importar do SINAPI (este serviço)”, clique em “Selecionar arquivo XLSX”.
+- Preencha os parâmetros (Data-base, UF e ISD/ICD/ISE).
+- Clique em “Prévia — SINAPI”.
+
+ETAPA 3 — O que preencher
+- Data-base: mês-base do arquivo SINAPI.
+- UF: estado desejado para o P.U. do insumo.
+- ISD/ICD/ISE: modo de preços de insumos.
+
+ETAPA 4 — O que esperar
+- O sistema monta uma prévia com os itens da composição (insumos e subcomposições), já cruzando o “Analítico” com a aba de preços (ISD/ICD/ISE) conforme UF.
+- Se a data-base do SINAPI estiver diferente da data-base configurada na planilha da obra, o sistema bloqueia a importação e exige marcar “Forçar importação (mês-base diferente)”.
+
+ETAPA 5 — Como validar
+- Clique em “Confirmar importação” e verifique que os itens passaram a aparecer na composição do serviço na planilha.
+
+**Como usar — Tela Sinapi (Planilha orçamentária)**
+
+ETAPA 1 — Onde acessar
+- Acesse: Engenharia → Obras → (selecione a obra) → Planilha orçamentária → Sinapi.
+
+ETAPA 2 — O que clicar
+- Clique em “Selecionar arquivo XLSX”.
+- Preencha os parâmetros e clique em “Prévia”.
+
+ETAPA 3 — O que preencher
+- Data-base, UF e ISD/ICD/ISE (mesmas regras do atalho).
+
+ETAPA 4 — O que esperar
+- Após confirmar, a tela passa a listar os **serviços SINAPI importados** (com contagem de itens/insumos).
+
+ETAPA 5 — Como validar
+- Recarregue a página “Sinapi” e verifique o serviço importado na lista.
+
+**Validações e regras técnicas (para consistência do dado)**
+
+- O sistema usa:
+  - **Aba Analítico**: filtra por “Código da Composição” igual ao código do serviço e extrai Tipo Item, Código do Item, Descrição, Unidade e Coeficiente.
+  - **Abas ISD/ICD/ISE**: localiza cabeçalho com Classificação, Código do Insumo, Descrição do Insumo, Unidade e a coluna UF do preço unitário (P.U.).
+- Persistência: além de gravar a composição na planilha da obra, o backend mantém uma **base SINAPI interna** para reuso (serviços/insumos/PU/composições) vinculada à data-base.
+
 ### 18.3 Documentos e acervos
 
 O sistema também deve permitir:
@@ -3118,6 +3190,13 @@ Observação importante:
 - No estado atual do código, essas APIs do Next usam um banco **MySQL** (variáveis `MYSQL_URL` ou `DB_HOST/DB_USER/DB_PASSWORD/DB_NAME`) e rodam na **Vercel**.
 - O módulo de **Contratos** (regras de negócio) roda no **Backend (Render)** e persiste no **Neon/Postgres** (via Prisma).
 - O módulo de **Documentos (Obra/Contrato)** roda no **Backend (Render)** e persiste no **Neon/Postgres** (via Prisma), com upload/download via API.
+
+Implementação SINAPI (Planilha da Obra):
+
+- A importação do **SINAPI (Excel)** segue o padrão **Frontend ↔ Backend ↔ Neon**:
+  - Frontend (Vercel): lê o XLSX localmente (no navegador) e envia apenas um JSON pequeno.
+  - Backend (Render): valida parâmetros (ex.: data-base) e grava no Postgres (Neon).
+- Motivo: reduzir risco de erro por tamanho de upload e evitar consumo alto de memória no backend ao processar o Excel completo.
 
 ### 21.1 Contratos (módulo de Engenharia)
 

@@ -5603,7 +5603,21 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const comps = new Map<
       string,
-      { codigo: string; descricao: string; und: string; itens: Array<{ tipoItem: string; codigoItem: string; banco: string | null; descricao: string | null; und: string | null; quantidade: number; valorUnitario: number | null }> }
+      {
+        codigo: string;
+        descricao: string;
+        und: string;
+        itens: Array<{
+          tipoItem: string;
+          tipoItemSinapi?: string;
+          codigoItem: string;
+          banco: string | null;
+          descricao: string | null;
+          und: string | null;
+          quantidade: number;
+          valorUnitario: number | null;
+        }>;
+      }
     >();
     let current: string | null = null;
 
