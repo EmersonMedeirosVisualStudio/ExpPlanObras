@@ -5251,6 +5251,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const mode = modeRaw === 'UPSERT' || modeRaw === 'REPLACE' ? 'UPSERT' : 'MISSING_ONLY';
     const importAllParsed = String(fields.importAllParsed || fields.importAll || '').toLowerCase() === 'true' || fields.importAllParsed === true || fields.importAll === true;
     const dryRun = String(fields.dryRun || '').toLowerCase() === 'true' || fields.dryRun === true;
+    const onlyCodigoServico = fields.codigoServico ? String(fields.codigoServico).trim().toUpperCase() : '';
 
     if (!fileBuffer) {
       const filePath = fields.filePath ? String(fields.filePath) : '';
@@ -5275,6 +5276,23 @@ export default async function v1Routes(server: FastifyInstance) {
       const names = (wb.SheetNames || []).slice(0, 30).join(', ');
       return fail(reply, 422, `Aba não encontrada: "${sheetName}". Abas disponíveis: ${names || '—'}`);
     }
+
+    const detectDataBase = () => {
+      const rx = /\b(0[1-9]|1[0-2])\/\d{4}\b/;
+      const names = (wb.SheetNames || []).slice(0, 8);
+      for (const n of names) {
+        const s = wb.Sheets[n];
+        if (!s) continue;
+        const m = XLSX.utils.sheet_to_json(s, { header: 1, defval: '' }) as any[][];
+        for (let i = 0; i < Math.min(30, m.length); i++) {
+          const line = (m[i] || []).map((c) => String(c || '')).join(' ');
+          const hit = line.match(rx);
+          if (hit?.[0]) return hit[0];
+        }
+      }
+      return null;
+    };
+    const sinapiDataBase = detectDataBase();
 
     const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }) as any[][];
     if (!Array.isArray(matrix) || matrix.length < 2) return fail(reply, 422, 'Aba vazia.');
@@ -5371,21 +5389,51 @@ export default async function v1Routes(server: FastifyInstance) {
     const parsedCodes = Array.from(comps.keys());
     if (!parsedCodes.length) return fail(reply, 422, 'Nenhuma composição foi identificada na aba. Verifique a aba, UF e estrutura.');
 
+    const vers = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        id_planilha AS "idPlanilha",
+        data_base_sbc AS "dataBaseSbc",
+        data_base_sinapi AS "dataBaseSinapi",
+        bdi_servicos_sbc AS "bdiServicosSbc",
+        bdi_servicos_sinapi AS "bdiServicosSinapi",
+        bdi_diferenciado_sbc AS "bdiDiferenciadoSbc",
+        bdi_diferenciado_sinapi AS "bdiDiferenciadoSinapi",
+        enc_sociais_sem_des_sbc AS "encSociaisSemDesSbc",
+        enc_sociais_sem_des_sinapi AS "encSociaisSemDesSinapi",
+        desconto_sbc AS "descontoSbc",
+        desconto_sinapi AS "descontoSinapi"
+      FROM obras_planilhas_versoes
+      WHERE tenant_id = $1 AND id_obra = $2 AND atual = TRUE
+      ORDER BY numero_versao DESC, id_planilha DESC
+      LIMIT 1
+      `,
+      ctx.tenantId,
+      idObra
+    )) as any[];
+    const versRow = vers?.[0] || null;
+    const planilhaId: number | null = versRow?.idPlanilha != null ? Number(versRow.idPlanilha) : null;
+    const planilhaParams = versRow
+      ? {
+          dataBaseSbc: versRow.dataBaseSbc == null ? null : String(versRow.dataBaseSbc || ''),
+          dataBaseSinapi: versRow.dataBaseSinapi == null ? null : String(versRow.dataBaseSinapi || ''),
+          bdiServicosSbc: versRow.bdiServicosSbc == null ? null : Number(versRow.bdiServicosSbc),
+          bdiServicosSinapi: versRow.bdiServicosSinapi == null ? null : Number(versRow.bdiServicosSinapi),
+          bdiDiferenciadoSbc: versRow.bdiDiferenciadoSbc == null ? null : Number(versRow.bdiDiferenciadoSbc),
+          bdiDiferenciadoSinapi: versRow.bdiDiferenciadoSinapi == null ? null : Number(versRow.bdiDiferenciadoSinapi),
+          encSociaisSemDesSbc: versRow.encSociaisSemDesSbc == null ? null : Number(versRow.encSociaisSemDesSbc),
+          encSociaisSemDesSinapi: versRow.encSociaisSemDesSinapi == null ? null : Number(versRow.encSociaisSemDesSinapi),
+          descontoSbc: versRow.descontoSbc == null ? null : Number(versRow.descontoSbc),
+          descontoSinapi: versRow.descontoSinapi == null ? null : Number(versRow.descontoSinapi),
+        }
+      : null;
+
     let targetCodes = new Set<string>(parsedCodes);
-    let planilhaId: number | null = null;
-    if (!importAllParsed) {
-      const row = (await prisma.$queryRawUnsafe(
-        `
-        SELECT id_planilha AS "idPlanilha"
-        FROM obras_planilhas_versoes
-        WHERE tenant_id = $1 AND id_obra = $2 AND atual = TRUE
-        ORDER BY numero_versao DESC, id_planilha DESC
-        LIMIT 1
-        `,
-        ctx.tenantId,
-        idObra
-      )) as any[];
-      planilhaId = row?.[0]?.idPlanilha != null ? Number(row[0].idPlanilha) : null;
+    if (onlyCodigoServico) {
+      const code = String(onlyCodigoServico).trim().toUpperCase();
+      if (!comps.has(code)) return fail(reply, 422, `Composição não encontrada no arquivo (código: ${code})`);
+      targetCodes = new Set([code]);
+    } else if (!importAllParsed) {
       if (!planilhaId) return fail(reply, 422, 'Não há planilha atual para a obra. Importe a planilha orçamentária primeiro.');
       const serv = (await prisma.$queryRawUnsafe(
         `
@@ -5417,7 +5465,8 @@ export default async function v1Routes(server: FastifyInstance) {
     });
 
     const skippedExisting = mode === 'MISSING_ONLY' ? Array.from(targetCodes).filter((c) => existing.has(c)).length : 0;
-    const skippedNotInPlanilha = importAllParsed ? 0 : parsedCodes.length - targetCodes.size;
+    const skippedNotInPlanilha = onlyCodigoServico ? 0 : importAllParsed ? 0 : parsedCodes.length - targetCodes.size;
+    const paramsMatch = planilhaParams?.dataBaseSinapi && sinapiDataBase ? String(planilhaParams.dataBaseSinapi).trim() === String(sinapiDataBase).trim() : null;
 
     const totalItens = toImport.reduce((acc, code) => acc + (comps.get(code)?.itens.length || 0), 0);
     const sample = toImport.slice(0, 5).map((c) => ({ codigo: c, itens: (comps.get(c)?.itens || []).slice(0, 3) }));
@@ -5429,6 +5478,9 @@ export default async function v1Routes(server: FastifyInstance) {
           sheetName,
           uf: uf || null,
           planilhaId,
+          planilhaParams,
+          sinapiDetected: { dataBase: sinapiDataBase },
+          paramsMatch,
           parsedComposicoes: parsedCodes.length,
           targetComposicoes: targetCodes.size,
           toImportComposicoes: toImport.length,
@@ -5512,6 +5564,9 @@ export default async function v1Routes(server: FastifyInstance) {
         sheetName,
         uf: uf || null,
         planilhaId,
+        planilhaParams,
+        sinapiDetected: { dataBase: sinapiDataBase },
+        paramsMatch,
         importedComposicoes,
         importedItens,
         skippedExisting,

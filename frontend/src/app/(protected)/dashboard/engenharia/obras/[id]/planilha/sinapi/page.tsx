@@ -1,12 +1,26 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 type PreviewResult = {
   sheetName: string;
   uf: string | null;
   planilhaId: number | null;
+  planilhaParams: {
+    dataBaseSbc: string | null;
+    dataBaseSinapi: string | null;
+    bdiServicosSbc: number | null;
+    bdiServicosSinapi: number | null;
+    bdiDiferenciadoSbc: number | null;
+    bdiDiferenciadoSinapi: number | null;
+    encSociaisSemDesSbc: number | null;
+    encSociaisSemDesSinapi: number | null;
+    descontoSbc: number | null;
+    descontoSinapi: number | null;
+  } | null;
+  sinapiDetected: { dataBase: string | null };
+  paramsMatch: boolean | null;
   parsedComposicoes: number;
   targetComposicoes: number;
   toImportComposicoes: number;
@@ -31,6 +45,9 @@ type ImportResult = {
   sheetName: string;
   uf: string | null;
   planilhaId: number | null;
+  planilhaParams: PreviewResult["planilhaParams"];
+  sinapiDetected: PreviewResult["sinapiDetected"];
+  paramsMatch: PreviewResult["paramsMatch"];
   importedComposicoes: number;
   importedItens: number;
   skippedExisting: number;
@@ -45,7 +62,6 @@ export default function SinapiImportPage() {
   const returnTo = sp.get("returnTo") || "";
 
   const [file, setFile] = useState<File | null>(null);
-  const [filePath, setFilePath] = useState<string>("C:\\Users\\Usuario\\Dropbox\\SINAPI-2025-04-formato-xlsx");
   const [sheetName, setSheetName] = useState<string>("Analítico");
   const [uf, setUf] = useState<string>("AC");
   const [mode, setMode] = useState<"MISSING_ONLY" | "UPSERT">("MISSING_ONLY");
@@ -59,6 +75,23 @@ export default function SinapiImportPage() {
   const breadcrumb = useMemo(() => {
     return "Engenharia → Obras → Obra selecionada → Planilha orçamentária → SINAPI";
   }, []);
+
+  const returnToKey = useMemo(() => `expplanobras:sinapi:returnTo:${idObra}`, [idObra]);
+  useEffect(() => {
+    if (!returnTo) return;
+    try {
+      localStorage.setItem(returnToKey, returnTo);
+    } catch {}
+  }, [returnTo, returnToKey]);
+
+  const backHref = useMemo(() => {
+    if (returnTo) return returnTo;
+    try {
+      const saved = localStorage.getItem(returnToKey);
+      if (saved) return saved;
+    } catch {}
+    return `/dashboard/engenharia/obras/${idObra}/planilha`;
+  }, [idObra, returnTo, returnToKey]);
 
   async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     let token: string | null = null;
@@ -83,11 +116,14 @@ export default function SinapiImportPage() {
     setErr("");
     setOkMsg("");
     setImported(null);
+    if (!file) {
+      setErr("Selecione o arquivo XLSX do SINAPI para importar.");
+      return;
+    }
     setBusy(true);
     try {
       const fd = new FormData();
-      if (file) fd.append("file", file);
-      if (!file && filePath.trim()) fd.append("filePath", filePath.trim());
+      fd.append("file", file);
       fd.append("sheetName", sheetName.trim() || "Analítico");
       if (uf.trim()) fd.append("uf", uf.trim().toUpperCase());
       fd.append("mode", mode);
@@ -130,14 +166,14 @@ export default function SinapiImportPage() {
           <div className="text-xs text-slate-500">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">SINAPI — Importar composições (Excel)</h1>
           <div className="mt-2 text-sm text-slate-700">
-            Em produção (Vercel), use o upload do arquivo. O campo de caminho serve apenas para ambiente local/servidor que tenha acesso ao arquivo.
+            Selecione o arquivo XLSX do SINAPI e gere uma prévia antes de importar.
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() => router.push(returnTo || `/dashboard/engenharia/obras/${idObra}/planilha`)}
+            onClick={() => router.push(backHref)}
             disabled={busy}
             title="Voltar"
           >
@@ -162,10 +198,6 @@ export default function SinapiImportPage() {
               title="Selecione o arquivo XLSX do SINAPI"
             />
           </div>
-          <div className="md:col-span-12 space-y-1">
-            <div className="text-sm text-slate-600">Ou caminho do arquivo (apenas ambiente local)</div>
-            <input className="input bg-white" value={filePath} onChange={(e) => setFilePath(e.target.value)} disabled={busy || Boolean(file)} />
-          </div>
         </div>
       </section>
 
@@ -178,7 +210,40 @@ export default function SinapiImportPage() {
           </div>
           <div className="md:col-span-2 space-y-1">
             <div className="text-sm text-slate-600">UF</div>
-            <input className="input bg-white" value={uf} onChange={(e) => setUf(e.target.value)} disabled={busy} />
+            <input className="input bg-white" value={uf} onChange={(e) => setUf(e.target.value)} disabled={busy} list="ufs" />
+            <datalist id="ufs">
+              {[
+                "AC",
+                "AL",
+                "AP",
+                "AM",
+                "BA",
+                "CE",
+                "DF",
+                "ES",
+                "GO",
+                "MA",
+                "MT",
+                "MS",
+                "MG",
+                "PA",
+                "PB",
+                "PR",
+                "PE",
+                "PI",
+                "RJ",
+                "RN",
+                "RS",
+                "RO",
+                "RR",
+                "SC",
+                "SP",
+                "SE",
+                "TO",
+              ].map((x) => (
+                <option key={x} value={x} />
+              ))}
+            </datalist>
           </div>
           <div className="md:col-span-12 space-y-2">
             <div className="text-sm text-slate-600">Modo</div>
@@ -218,6 +283,28 @@ export default function SinapiImportPage() {
       {preview ? (
         <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
           <div className="text-lg font-semibold">Prévia</div>
+          <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+            <div className="font-semibold text-slate-700">Parâmetros</div>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="rounded border bg-white px-3 py-2">
+                <div className="text-[11px] text-slate-500">Data-base (Planilha/SINAPI)</div>
+                <div className="text-sm font-semibold">
+                  {preview.planilhaParams?.dataBaseSinapi ? preview.planilhaParams.dataBaseSinapi : "—"} {" / "}
+                  {preview.sinapiDetected?.dataBase ? preview.sinapiDetected.dataBase : "—"}
+                </div>
+              </div>
+              <div className="rounded border bg-white px-3 py-2">
+                <div className="text-[11px] text-slate-500">Parâmetros compatíveis</div>
+                <div className="text-sm font-semibold">
+                  {preview.paramsMatch == null ? "—" : preview.paramsMatch ? "Sim" : "Não"}
+                </div>
+              </div>
+              <div className="rounded border bg-white px-3 py-2">
+                <div className="text-[11px] text-slate-500">Planilha atual</div>
+                <div className="text-sm font-semibold">{preview.planilhaId ? `#${preview.planilhaId}` : "—"}</div>
+              </div>
+            </div>
+          </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-lg border bg-white px-3 py-2">
               <div className="text-[11px] text-slate-500">Composições no arquivo</div>
@@ -291,4 +378,3 @@ export default function SinapiImportPage() {
     </div>
   );
 }
-

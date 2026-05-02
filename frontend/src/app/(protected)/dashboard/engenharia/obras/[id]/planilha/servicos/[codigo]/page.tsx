@@ -31,10 +31,16 @@ type PrevistoPlanilhaRow = {
 };
 
 type PlanilhaParams = {
+  dataBaseSbc: string | null;
+  dataBaseSinapi: string | null;
   bdiServicosSbc: number | null;
   bdiServicosSinapi: number | null;
+  bdiDiferenciadoSbc: number | null;
+  bdiDiferenciadoSinapi: number | null;
   encSociaisSemDesSbc: number | null;
   encSociaisSemDesSinapi: number | null;
+  descontoSbc: number | null;
+  descontoSinapi: number | null;
 };
 
 type EmpresaDocumentosLayout = {
@@ -175,6 +181,12 @@ async function readTextSmart(file: File) {
   const [planilhaParams, setPlanilhaParams] = useState<PlanilhaParams | null>(null);
   const [definedComposicoesCodes, setDefinedComposicoesCodes] = useState<Set<string>>(new Set());
   const [empresaDocumentosLayout, setEmpresaDocumentosLayout] = useState<EmpresaDocumentosLayout | null>(null);
+  const [sinapiImportOpen, setSinapiImportOpen] = useState(false);
+  const [sinapiFile, setSinapiFile] = useState<File | null>(null);
+  const [sinapiUf, setSinapiUf] = useState<string>("AC");
+  const [sinapiSheetName, setSinapiSheetName] = useState<string>("Analítico");
+  const [sinapiPreview, setSinapiPreview] = useState<any | null>(null);
+  const [sinapiBusy, setSinapiBusy] = useState(false);
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
   const [editingBancoOutroIdx, setEditingBancoOutroIdx] = useState<number | null>(null);
   const [bancoOutroValue, setBancoOutroValue] = useState("");
@@ -626,10 +638,16 @@ async function readTextSmart(file: File) {
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar planilha");
       const p = (json.data?.planilha?.parametros || {}) as any;
       setPlanilhaParams({
+        dataBaseSbc: p.dataBaseSbc == null ? null : String(p.dataBaseSbc || ""),
+        dataBaseSinapi: p.dataBaseSinapi == null ? null : String(p.dataBaseSinapi || ""),
         bdiServicosSbc: p.bdiServicosSbc == null ? null : Number(p.bdiServicosSbc),
         bdiServicosSinapi: p.bdiServicosSinapi == null ? null : Number(p.bdiServicosSinapi),
+        bdiDiferenciadoSbc: p.bdiDiferenciadoSbc == null ? null : Number(p.bdiDiferenciadoSbc),
+        bdiDiferenciadoSinapi: p.bdiDiferenciadoSinapi == null ? null : Number(p.bdiDiferenciadoSinapi),
         encSociaisSemDesSbc: p.encSociaisSemDesSbc == null ? null : Number(p.encSociaisSemDesSbc),
         encSociaisSemDesSinapi: p.encSociaisSemDesSinapi == null ? null : Number(p.encSociaisSemDesSinapi),
+        descontoSbc: p.descontoSbc == null ? null : Number(p.descontoSbc),
+        descontoSinapi: p.descontoSinapi == null ? null : Number(p.descontoSinapi),
       });
       const linhas = Array.isArray(json.data?.planilha?.linhas) ? json.data.planilha.linhas : [];
       const navList: Array<{ item: string; codigo: string; servicos: string }> = linhas
@@ -710,6 +728,71 @@ async function readTextSmart(file: File) {
       .replaceAll("{{PAGINA}}", "")
       .replaceAll("{{TOTAL_PAGINAS}}", "")
       .replaceAll("{{LOGO}}", logoHtml);
+  }
+
+  async function sinapiGerarPrevia() {
+    try {
+      if (!idObra || !codigoServico) return;
+      if (!sinapiFile) {
+        setErr("Selecione o arquivo XLSX do SINAPI para gerar a prévia.");
+        return;
+      }
+      setErr("");
+      setOkMsg("");
+      setSinapiBusy(true);
+      const fd = new FormData();
+      fd.append("file", sinapiFile);
+      fd.append("sheetName", sinapiSheetName.trim() || "Analítico");
+      if (sinapiUf.trim()) fd.append("uf", sinapiUf.trim().toUpperCase());
+      fd.append("mode", "UPSERT");
+      fd.append("importAllParsed", "true");
+      fd.append("dryRun", "true");
+      fd.append("codigoServico", String(codigoServico).trim().toUpperCase());
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico`, { method: "POST", body: fd });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao gerar prévia do SINAPI");
+      setSinapiPreview(json.data);
+      setOkMsg("Prévia do SINAPI gerada.");
+    } catch (e: any) {
+      setSinapiPreview(null);
+      setErr(e?.message || "Erro ao gerar prévia do SINAPI");
+    } finally {
+      setSinapiBusy(false);
+    }
+  }
+
+  async function sinapiImportarAgora() {
+    try {
+      if (!idObra || !codigoServico) return;
+      if (!sinapiFile) {
+        setErr("Selecione o arquivo XLSX do SINAPI para importar.");
+        return;
+      }
+      const ok = window.confirm("Importar a composição deste serviço a partir do SINAPI e substituir a composição atual?");
+      if (!ok) return;
+      setErr("");
+      setOkMsg("");
+      setSinapiBusy(true);
+      const fd = new FormData();
+      fd.append("file", sinapiFile);
+      fd.append("sheetName", sinapiSheetName.trim() || "Analítico");
+      if (sinapiUf.trim()) fd.append("uf", sinapiUf.trim().toUpperCase());
+      fd.append("mode", "UPSERT");
+      fd.append("importAllParsed", "true");
+      fd.append("dryRun", "false");
+      fd.append("codigoServico", String(codigoServico).trim().toUpperCase());
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico`, { method: "POST", body: fd });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao importar do SINAPI");
+      setOkMsg("Composição importada do SINAPI.");
+      setSinapiImportOpen(false);
+      setSinapiPreview(null);
+      await Promise.all([carregar(true), carregarPrevistoPlanilha(), carregarComposicoesDefinidas()]);
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao importar do SINAPI");
+    } finally {
+      setSinapiBusy(false);
+    }
   }
 
   function baixarModeloComposicoesCsv() {
@@ -2416,9 +2499,49 @@ async function readTextSmart(file: File) {
       </section>
 
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <div className="text-lg font-semibold">Itens (composição)</div>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex-1 min-w-[280px]">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-lg font-semibold">Itens (composição)</div>
+              <div className="flex items-center gap-2">
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={() => setSinapiImportOpen((v) => !v)}
+                  disabled={loading}
+                  title="Importar a composição deste serviço a partir do SINAPI (com prévia)"
+                >
+                  SINAPI
+                </button>
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={() =>
+                    setItens((p) => [
+                      ...p,
+                      {
+                        idItemBase: Date.now(),
+                        etapa: "",
+                        tipoItem: "INSUMO",
+                        codigoItem: "",
+                        banco: "",
+                        descricao: "",
+                        und: "",
+                        quantidade: "",
+                        valorUnitario: "",
+                        perdaPercentual: "",
+                        codigoCentroCusto: "",
+                        codigoCentroCustoBase: "",
+                      },
+                    ])
+                  }
+                  disabled={loading}
+                  title="Adicionar um novo item na composição"
+                >
+                  Adicionar item
+                </button>
+              </div>
+            </div>
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-lg border bg-white p-3">
                 <div className="text-[11px] text-slate-500">Materiais</div>
@@ -2487,34 +2610,173 @@ async function readTextSmart(file: File) {
               </div>
             </div>
           </div>
-          <button
-            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-            type="button"
-            onClick={() =>
-              setItens((p) => [
-                ...p,
-                {
-                  idItemBase: Date.now(),
-                  etapa: "",
-                  tipoItem: "INSUMO",
-                  codigoItem: "",
-                  banco: "",
-                  descricao: "",
-                  und: "",
-                  quantidade: "",
-                  valorUnitario: "",
-                  perdaPercentual: "",
-                  codigoCentroCusto: "",
-                  codigoCentroCustoBase: "",
-                },
-              ])
-            }
-            disabled={loading}
-            title="Adicionar um novo item na composição"
-          >
-            Adicionar item
-          </button>
+          <div className="w-full md:w-[420px]">
+            <div className="rounded-lg border bg-white p-3">
+              <div className="text-sm font-semibold text-slate-800">Parâmetros (Obra pública)</div>
+              <div className="mt-2 overflow-auto">
+                <table className="w-full min-w-[380px] border-collapse text-xs">
+                  <thead className="bg-slate-50 text-center text-slate-700">
+                    <tr>
+                      <th className="border px-2 py-1">Parâmetros</th>
+                      <th className="border px-2 py-1">SBC</th>
+                      <th className="border px-2 py-1">SINAPI</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="border px-2 py-1">Data-base</td>
+                      <td className="border px-2 py-1 text-center">{planilhaParams?.dataBaseSbc ? planilhaParams.dataBaseSbc : "—"}</td>
+                      <td className="border px-2 py-1 text-center">{planilhaParams?.dataBaseSinapi ? planilhaParams.dataBaseSinapi : "—"}</td>
+                    </tr>
+                    <tr>
+                      <td className="border px-2 py-1">BDI de Serviços (%)</td>
+                      <td className="border px-2 py-1 text-center">{planilhaParams?.bdiServicosSbc == null ? "—" : Number(planilhaParams.bdiServicosSbc).toFixed(2)}</td>
+                      <td className="border px-2 py-1 text-center">{planilhaParams?.bdiServicosSinapi == null ? "—" : Number(planilhaParams.bdiServicosSinapi).toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td className="border px-2 py-1">BDI Diferenciado (%)</td>
+                      <td className="border px-2 py-1 text-center">{planilhaParams?.bdiDiferenciadoSbc == null ? "—" : Number(planilhaParams.bdiDiferenciadoSbc).toFixed(2)}</td>
+                      <td className="border px-2 py-1 text-center">{planilhaParams?.bdiDiferenciadoSinapi == null ? "—" : Number(planilhaParams.bdiDiferenciadoSinapi).toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td className="border px-2 py-1">Enc. Sociais SEM Desoneração (%)</td>
+                      <td className="border px-2 py-1 text-center">{planilhaParams?.encSociaisSemDesSbc == null ? "—" : Number(planilhaParams.encSociaisSemDesSbc).toFixed(2)}</td>
+                      <td className="border px-2 py-1 text-center">{planilhaParams?.encSociaisSemDesSinapi == null ? "—" : Number(planilhaParams.encSociaisSemDesSinapi).toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td className="border px-2 py-1">Desconto (%)</td>
+                      <td className="border px-2 py-1 text-center">{planilhaParams?.descontoSbc == null ? "—" : Number(planilhaParams.descontoSbc).toFixed(2)}</td>
+                      <td className="border px-2 py-1 text-center">{planilhaParams?.descontoSinapi == null ? "—" : Number(planilhaParams.descontoSinapi).toFixed(2)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
+
+        {sinapiImportOpen ? (
+          <div className="rounded-lg border bg-slate-50 p-3 space-y-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-sm font-semibold text-slate-800">Importar do SINAPI (este serviço)</div>
+              <button className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setSinapiImportOpen(false)} disabled={sinapiBusy} title="Ocultar importação SINAPI">
+                Ocultar
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+              <div className="md:col-span-12 space-y-1">
+                <div className="text-sm text-slate-600">Arquivo XLSX</div>
+                <input type="file" accept=".xlsx" onChange={(e) => setSinapiFile(e.target.files?.[0] || null)} disabled={sinapiBusy} title="Selecione o XLSX do SINAPI" />
+              </div>
+              <div className="md:col-span-6 space-y-1">
+                <div className="text-sm text-slate-600">Aba</div>
+                <input className="input bg-white" value={sinapiSheetName} onChange={(e) => setSinapiSheetName(e.target.value)} disabled={sinapiBusy} />
+              </div>
+              <div className="md:col-span-2 space-y-1">
+                <div className="text-sm text-slate-600">UF</div>
+                <input className="input bg-white" value={sinapiUf} onChange={(e) => setSinapiUf(e.target.value)} disabled={sinapiBusy} list="ufs-analise" />
+                <datalist id="ufs-analise">
+                  {[
+                    "AC",
+                    "AL",
+                    "AP",
+                    "AM",
+                    "BA",
+                    "CE",
+                    "DF",
+                    "ES",
+                    "GO",
+                    "MA",
+                    "MT",
+                    "MS",
+                    "MG",
+                    "PA",
+                    "PB",
+                    "PR",
+                    "PE",
+                    "PI",
+                    "RJ",
+                    "RN",
+                    "RS",
+                    "RO",
+                    "RR",
+                    "SC",
+                    "SP",
+                    "SE",
+                    "TO",
+                  ].map((x) => (
+                    <option key={x} value={x} />
+                  ))}
+                </datalist>
+              </div>
+              <div className="md:col-span-12 flex items-center justify-end gap-2 flex-wrap">
+                <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={sinapiGerarPrevia} disabled={sinapiBusy} title="Gerar prévia da composição no SINAPI">
+                  Prévia
+                </button>
+                <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60" type="button" onClick={sinapiImportarAgora} disabled={sinapiBusy} title="Importar e substituir a composição atual pelo SINAPI">
+                  Importar
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {sinapiPreview ? (
+          <div className="rounded-lg border bg-white p-3 space-y-3">
+            <div className="text-sm font-semibold text-slate-800">Prévia — SINAPI</div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="rounded border bg-white px-3 py-2">
+                <div className="text-[11px] text-slate-500">Data-base (Planilha/SINAPI)</div>
+                <div className="text-sm font-semibold">
+                  {planilhaParams?.dataBaseSinapi ? planilhaParams.dataBaseSinapi : "—"} {" / "} {sinapiPreview?.sinapiDetected?.dataBase ? String(sinapiPreview.sinapiDetected.dataBase) : "—"}
+                </div>
+              </div>
+              <div className="rounded border bg-white px-3 py-2">
+                <div className="text-[11px] text-slate-500">Parâmetros compatíveis</div>
+                <div className="text-sm font-semibold">
+                  {sinapiPreview?.paramsMatch == null ? "—" : sinapiPreview.paramsMatch ? "Sim" : "Não"}
+                </div>
+              </div>
+              <div className="rounded border bg-white px-3 py-2">
+                <div className="text-[11px] text-slate-500">Itens a importar</div>
+                <div className="text-sm font-semibold">{Number(sinapiPreview?.toImportItens || 0)}</div>
+              </div>
+            </div>
+
+            {Array.isArray(sinapiPreview?.sample) && sinapiPreview.sample.length ? (
+              <div className="overflow-auto">
+                <table className="min-w-[860px] w-full border-collapse text-xs">
+                  <thead className="bg-slate-50 text-center text-slate-700">
+                    <tr>
+                      <th className="border px-2 py-1">Tipo</th>
+                      <th className="border px-2 py-1">Código</th>
+                      <th className="border px-2 py-1">UND</th>
+                      <th className="border px-2 py-1">Qtd</th>
+                      <th className="border px-2 py-1">Valor Unit</th>
+                      <th className="border px-2 py-1">Descrição</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(sinapiPreview.sample?.[0]?.itens || []).map((it: any, idx: number) => (
+                      <tr key={idx} className="border-t">
+                        <td className="border px-2 py-1 text-center">{String(it.tipoItem || "")}</td>
+                        <td className="border px-2 py-1 text-center">{String(it.codigoItem || "")}</td>
+                        <td className="border px-2 py-1 text-center">{String(it.und || "")}</td>
+                        <td className="border px-2 py-1 text-right">{Number(it.quantidade || 0).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</td>
+                        <td className="border px-2 py-1 text-right">
+                          {it.valorUnitario == null ? "" : Number(it.valorUnitario).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="border px-2 py-1">{String(it.descricao || "")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-sm text-slate-600">Sem itens na prévia.</div>
+            )}
+          </div>
+        ) : null}
 
         <div className="space-y-4">
           <div className="space-y-2">
