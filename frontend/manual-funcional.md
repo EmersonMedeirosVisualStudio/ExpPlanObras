@@ -3049,10 +3049,14 @@ ETAPA 2 — O que clicar
 ETAPA 3 — O que preencher
 - Em “Opções de importação”:
   - Aba (Relatório Analítico de Composições): normalmente “Analítico”.
-  - UF.
-  - Preços de insumos: selecione ISD/ICD/ISE e, ao lado, informe o nome da aba de preços (se necessário).
+  - UF: selecione a UF (lista completa). O sistema mantém a última UF selecionada.
+  - Preços de insumos: selecione ISD/ICD/ISE (com descrição completa). O sistema mantém a última opção selecionada.
+    - Nome da aba (preços de insumos): informe o nome da aba do XLSX (se necessário).
   - Modo: escolha se vai importar apenas faltantes ou substituir existentes e selecione a obra.
-  - Escopo: selecione um serviço (código) ou use a planilha da obra / todo o arquivo.
+  - Escopo:
+    - Marque “Selecionar um serviço” para informar o código.
+    - Marque “Importar TODAS as composições…” para importar tudo do arquivo.
+    - Se não marcar nenhuma das duas opções, o sistema usa os serviços da planilha da obra.
   - Arquivo XLSX: selecione o arquivo.
 
 ETAPA 4 — O que esperar

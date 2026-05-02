@@ -91,7 +91,7 @@ export default function SinapiImportPage() {
   const [insumosModoFiltro, setInsumosModoFiltro] = useState<"" | "ISD" | "ICD" | "ISE">("");
   const [targetObraId, setTargetObraId] = useState<number>(Number.isFinite(idObra) && idObra > 0 ? idObra : 0);
   const [obrasLista, setObrasLista] = useState<ObraListaRow[]>([]);
-  const [importScope, setImportScope] = useState<"SERVICO" | "PLANILHA" | "ARQUIVO">(codigoParam ? "SERVICO" : "PLANILHA");
+  const [escopo, setEscopo] = useState<"PLANILHA" | "SERVICO" | "ARQUIVO">(codigoParam ? "SERVICO" : "PLANILHA");
   const [mode, setMode] = useState<"MISSING_ONLY" | "UPSERT">("MISSING_ONLY");
   const [forceDataBaseMismatch, setForceDataBaseMismatch] = useState<boolean>(false);
   const [busy, setBusy] = useState<boolean>(false);
@@ -112,6 +112,39 @@ export default function SinapiImportPage() {
     return "Engenharia → Obras → Obra selecionada → Planilha orçamentária → Sinapi";
   }, []);
 
+  const ufs = useMemo(
+    () => [
+      "AC",
+      "AL",
+      "AP",
+      "AM",
+      "BA",
+      "CE",
+      "DF",
+      "ES",
+      "GO",
+      "MA",
+      "MT",
+      "MS",
+      "MG",
+      "PA",
+      "PB",
+      "PR",
+      "PE",
+      "PI",
+      "RJ",
+      "RN",
+      "RS",
+      "RO",
+      "RR",
+      "SC",
+      "SP",
+      "SE",
+      "TO",
+    ],
+    []
+  );
+
   const returnToKey = useMemo(() => `expplanobras:sinapi:returnTo:${idObra}`, [idObra]);
   useEffect(() => {
     if (!returnTo) return;
@@ -128,6 +161,34 @@ export default function SinapiImportPage() {
     } catch {}
     return `/dashboard/engenharia/obras/${idObra}/planilha`;
   }, [idObra, returnTo, returnToKey]);
+
+  const importPrefsKey = useMemo(() => `expplanobras:sinapi:importPrefs`, []);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(importPrefsKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const ufSaved = String(parsed?.uf || "").trim().toUpperCase();
+      const modoSaved = String(parsed?.insumosModo || "").trim().toUpperCase();
+      const abaSaved = String(parsed?.insumosSheetName || "").trim();
+      if (ufSaved && ufs.includes(ufSaved)) setUf(ufSaved);
+      if (modoSaved === "ISD" || modoSaved === "ICD" || modoSaved === "ISE") setInsumosModo(modoSaved as any);
+      if (abaSaved) setInsumosSheetName(abaSaved);
+    } catch {}
+  }, [importPrefsKey, ufs]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        importPrefsKey,
+        JSON.stringify({
+          uf,
+          insumosModo,
+          insumosSheetName,
+        })
+      );
+    } catch {}
+  }, [importPrefsKey, uf, insumosModo, insumosSheetName]);
 
   async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     let token: string | null = null;
@@ -157,6 +218,10 @@ export default function SinapiImportPage() {
       setErr("Selecione o arquivo XLSX do SINAPI para importar.");
       return;
     }
+    if (escopo === "SERVICO" && !codigoServico.trim()) {
+      setErr("Informe o código do serviço.");
+      return;
+    }
     setBusy(true);
     try {
       const fd = new FormData();
@@ -166,9 +231,9 @@ export default function SinapiImportPage() {
       fd.append("insumosModo", insumosModo);
       if (insumosSheetName.trim()) fd.append("insumosSheetName", insumosSheetName.trim());
       if (Number.isFinite(targetObraId) && targetObraId > 0) fd.append("targetObraId", String(targetObraId));
-      if (importScope === "SERVICO" && codigoServico.trim()) fd.append("codigoServico", codigoServico.trim().toUpperCase());
+      if (escopo === "SERVICO" && codigoServico.trim()) fd.append("codigoServico", codigoServico.trim().toUpperCase());
       fd.append("mode", mode);
-      fd.append("importAllParsed", String(importScope === "ARQUIVO"));
+      fd.append("importAllParsed", String(escopo === "ARQUIVO"));
       fd.append("dryRun", String(dryRun));
       fd.append("forceDataBaseMismatch", String(forceDataBaseMismatch));
 
@@ -342,7 +407,7 @@ export default function SinapiImportPage() {
     if (codigoParam) {
       setCodigoServico(codigoParam);
       setCodigoFiltro(codigoParam);
-      setImportScope("SERVICO");
+      setEscopo("SERVICO");
     }
   }, [codigoParam]);
 
@@ -390,39 +455,6 @@ export default function SinapiImportPage() {
       alive = false;
     };
   }, [idObra]);
-
-  const ufs = useMemo(
-    () => [
-      "AC",
-      "AL",
-      "AP",
-      "AM",
-      "BA",
-      "CE",
-      "DF",
-      "ES",
-      "GO",
-      "MA",
-      "MT",
-      "MS",
-      "MG",
-      "PA",
-      "PB",
-      "PR",
-      "PE",
-      "PI",
-      "RJ",
-      "RN",
-      "RS",
-      "RO",
-      "RR",
-      "SC",
-      "SP",
-      "SE",
-      "TO",
-    ],
-    []
-  );
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-5xl text-slate-900">
@@ -496,9 +528,9 @@ export default function SinapiImportPage() {
                 <div className="text-sm text-slate-600">Preços de insumos</div>
                 <select className="input bg-white" value={insumosModoFiltro} onChange={(e) => setInsumosModoFiltro(e.target.value as any)} disabled={busy}>
                   <option value="">(todos)</option>
-                  <option value="ISD">ISD — Encargos sociais sem desoneração</option>
-                  <option value="ICD">ICD — Encargos sociais com desoneração</option>
-                  <option value="ISE">ISE — Sem encargos sociais</option>
+                  <option value="ISD">ISD — Preços de Insumos — Encargos sociais SEM desoneração</option>
+                  <option value="ICD">ICD — Preços de Insumos — Encargos sociais COM desoneração</option>
+                  <option value="ISE">ISE — Preços de Insumos — Sem encargos sociais</option>
                 </select>
               </div>
               <div className="md:col-span-12 text-xs text-slate-600">
@@ -602,16 +634,23 @@ export default function SinapiImportPage() {
                   </div>
                   <div className="md:col-span-3 space-y-1">
                     <div className="text-sm text-slate-600">UF</div>
-                    <input className="input bg-white" value={uf} onChange={(e) => setUf(e.target.value)} disabled={busy} list="ufs" />
+                    <select className="input bg-white w-[92px]" value={uf} onChange={(e) => setUf(e.target.value)} disabled={busy}>
+                      {ufs.map((x) => (
+                        <option key={x} value={x}>
+                          {x}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="md:col-span-3 space-y-1">
                     <div className="text-sm text-slate-600">Preços de insumos</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <select className="input bg-white" value={insumosModo} onChange={(e) => setInsumosModo(e.target.value as any)} disabled={busy}>
-                        <option value="ISD">ISD</option>
-                        <option value="ICD">ICD</option>
-                        <option value="ISE">ISE</option>
-                      </select>
+                    <select className="input bg-white" value={insumosModo} onChange={(e) => setInsumosModo(e.target.value as any)} disabled={busy}>
+                      <option value="ISD">ISD — Preços de Insumos — Encargos sociais SEM desoneração</option>
+                      <option value="ICD">ICD — Preços de Insumos — Encargos sociais COM desoneração</option>
+                      <option value="ISE">ISE — Preços de Insumos — Sem encargos sociais</option>
+                    </select>
+                    <div className="mt-2 space-y-1">
+                      <div className="text-xs text-slate-500">Nome da aba (preços de insumos)</div>
                       <input
                         className="input bg-white"
                         value={insumosSheetName}
@@ -657,47 +696,32 @@ export default function SinapiImportPage() {
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
                   <div className="md:col-span-12 space-y-2">
                     <div className="text-sm text-slate-600">Modo</div>
-                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                      <label className="flex items-start gap-2 text-sm rounded border bg-white px-3 py-2">
-                        <input type="radio" name="mode" checked={mode === "MISSING_ONLY"} onChange={() => setMode("MISSING_ONLY")} disabled={busy} />
-                        <span className="flex-1">
-                          <div className="font-medium">Importar somente as composições que faltam na obra</div>
-                          <div className="mt-2">
-                            <div className="text-xs text-slate-500">Obra</div>
-                            <select className="input bg-white mt-1" value={String(targetObraId || idObra)} onChange={(e) => setTargetObraId(Number(e.target.value || 0))} disabled={busy}>
-                              {obrasLista.length ? (
-                                obrasLista.map((o) => (
-                                  <option key={o.idObra} value={o.idObra}>
-                                    {o.nomeObra} {o.numeroContrato ? `• ${o.numeroContrato}` : ""}
-                                  </option>
-                                ))
-                              ) : (
-                                <option value={idObra}>Obra #{idObra}</option>
-                              )}
-                            </select>
-                          </div>
-                        </span>
-                      </label>
-                      <label className="flex items-start gap-2 text-sm rounded border bg-white px-3 py-2">
-                        <input type="radio" name="mode" checked={mode === "UPSERT"} onChange={() => setMode("UPSERT")} disabled={busy} />
-                        <span className="flex-1">
-                          <div className="font-medium">Atualizar/substituir composições existentes na obra</div>
-                          <div className="mt-2">
-                            <div className="text-xs text-slate-500">Obra</div>
-                            <select className="input bg-white mt-1" value={String(targetObraId || idObra)} onChange={(e) => setTargetObraId(Number(e.target.value || 0))} disabled={busy}>
-                              {obrasLista.length ? (
-                                obrasLista.map((o) => (
-                                  <option key={o.idObra} value={o.idObra}>
-                                    {o.nomeObra} {o.numeroContrato ? `• ${o.numeroContrato}` : ""}
-                                  </option>
-                                ))
-                              ) : (
-                                <option value={idObra}>Obra #{idObra}</option>
-                              )}
-                            </select>
-                          </div>
-                        </span>
-                      </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="radio" name="mode" checked={mode === "MISSING_ONLY"} onChange={() => setMode("MISSING_ONLY")} disabled={busy} />
+                      <span>Importar somente as composições que faltam na obra</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="radio" name="mode" checked={mode === "UPSERT"} onChange={() => setMode("UPSERT")} disabled={busy} />
+                      <span>Atualizar/substituir composições existentes na obra</span>
+                    </label>
+                    <div className="mt-2">
+                      <div className="text-xs text-slate-500">Obra</div>
+                      <select
+                        className="input bg-white mt-1"
+                        value={String(targetObraId || idObra)}
+                        onChange={(e) => setTargetObraId(Number(e.target.value || 0))}
+                        disabled={busy}
+                      >
+                        {obrasLista.length ? (
+                          obrasLista.map((o) => (
+                            <option key={o.idObra} value={o.idObra}>
+                              #{o.idObra} - {o.nomeObra} - {o.numeroContrato || "—"}
+                            </option>
+                          ))
+                        ) : (
+                          <option value={idObra}>#{idObra} - Obra #{idObra} - —</option>
+                        )}
+                      </select>
                     </div>
                   </div>
                 </div>
@@ -705,22 +729,28 @@ export default function SinapiImportPage() {
                 <div className="space-y-2">
                   <div className="text-sm text-slate-600">Escopo</div>
                   <label className="flex items-center gap-2 text-sm">
-                    <input type="radio" name="importScope" checked={importScope === "SERVICO"} onChange={() => setImportScope("SERVICO")} disabled={busy} />
+                    <input
+                      type="checkbox"
+                      checked={escopo === "SERVICO"}
+                      onChange={() => setEscopo((cur) => (cur === "SERVICO" ? "PLANILHA" : "SERVICO"))}
+                      disabled={busy}
+                    />
                     <span>Selecionar um serviço</span>
                   </label>
-                  {importScope === "SERVICO" ? (
+                  {escopo === "SERVICO" ? (
                     <div>
                       <div className="text-xs text-slate-500">Código do serviço</div>
                       <input className="input bg-white mt-1" value={codigoServico} onChange={(e) => setCodigoServico(e.target.value)} disabled={busy} placeholder="Ex: 100309" />
                     </div>
                   ) : null}
                   <label className="flex items-center gap-2 text-sm">
-                    <input type="radio" name="importScope" checked={importScope === "PLANILHA"} onChange={() => setImportScope("PLANILHA")} disabled={busy} />
-                    <span>Usar os serviços da planilha da obra</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="radio" name="importScope" checked={importScope === "ARQUIVO"} onChange={() => setImportScope("ARQUIVO")} disabled={busy} />
-                    <span>Importar todas as composições encontradas no arquivo</span>
+                    <input
+                      type="checkbox"
+                      checked={escopo === "ARQUIVO"}
+                      onChange={() => setEscopo((cur) => (cur === "ARQUIVO" ? "PLANILHA" : "ARQUIVO"))}
+                      disabled={busy}
+                    />
+                    <span>Importar TODAS as composições encontradas no arquivo</span>
                   </label>
                 </div>
 
