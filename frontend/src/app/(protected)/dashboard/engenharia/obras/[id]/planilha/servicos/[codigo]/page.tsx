@@ -735,6 +735,15 @@ async function readTextSmart(file: File) {
       .replaceAll("{{LOGO}}", logoHtml);
   }
 
+  function normalizeSinapiErrorMessage(msg: string) {
+    const raw = String(msg || "").trim();
+    const lower = raw.toLowerCase();
+    if (lower.includes("request file too large") || lower.includes("file too large")) {
+      return "Arquivo XLSX muito grande para upload. O servidor rejeitou por limite de tamanho. Tente novamente após atualizar o backend (limite maior) ou use um arquivo menor.";
+    }
+    return raw || "Erro inesperado.";
+  }
+
   async function sinapiGerarPrevia() {
     try {
       if (!idObra || !codigoServico) return;
@@ -767,7 +776,7 @@ async function readTextSmart(file: File) {
       setSinapiMsgErr("");
     } catch (e: any) {
       setSinapiPreview(null);
-      const msg = e?.message || "Erro ao gerar prévia do SINAPI";
+      const msg = normalizeSinapiErrorMessage(e?.message || "Erro ao gerar prévia do SINAPI");
       setErr(msg);
       setSinapiMsgOk("");
       setSinapiMsgErr(msg);
@@ -811,7 +820,7 @@ async function readTextSmart(file: File) {
       setSinapiPreview(null);
       await Promise.all([carregar(true), carregarPrevistoPlanilha(), carregarComposicoesDefinidas()]);
     } catch (e: any) {
-      const msg = e?.message || "Erro ao importar do SINAPI";
+      const msg = normalizeSinapiErrorMessage(e?.message || "Erro ao importar do SINAPI");
       setErr(msg);
       setSinapiMsgOk("");
       setSinapiMsgErr(msg);
@@ -2513,11 +2522,12 @@ async function readTextSmart(file: File) {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="text-lg font-semibold">Previsto na planilha</div>
-            <div className="text-sm text-slate-600">Quant., valor unit. e total previsto para este serviço (se houver mais de 1 linha, aparece separado).</div>
-          </div>
-          <div className="text-sm text-slate-700">
-            Planilha: <span className="font-semibold">{moeda(Number(previstoTotal || 0))}</span> • Cálculo:{" "}
-            <span className="font-semibold">{moeda(Number(previstoCalcTotal || 0))}</span>
+            <div className="text-sm text-slate-600">
+              {(() => {
+                const nome = String(previstoRows?.[0]?.servicos || "").trim();
+                return nome ? `${codigoServico} — ${nome}` : codigoServico;
+              })()}
+            </div>
           </div>
         </div>
 
