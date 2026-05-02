@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { CheckCircle2, XCircle } from "lucide-react";
 
 type PreviewResult = {
   sheetName: string;
@@ -64,6 +65,7 @@ export default function SinapiImportPage() {
   const returnTo = sp.get("returnTo") || "";
 
   const [file, setFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [sheetName, setSheetName] = useState<string>("Analítico");
   const [uf, setUf] = useState<string>("AC");
   const [insumosModo, setInsumosModo] = useState<"ISD" | "ICD" | "ISE">("ISD");
@@ -75,9 +77,11 @@ export default function SinapiImportPage() {
   const [okMsg, setOkMsg] = useState<string>("");
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [imported, setImported] = useState<ImportResult | null>(null);
+  const [importados, setImportados] = useState<Array<{ codigo: string; descricao: string; und: string; dataBase: string; itens: number; insumos: number }>>([]);
+  const [importadosErr, setImportadosErr] = useState<string>("");
 
   const breadcrumb = useMemo(() => {
-    return "Engenharia → Obras → Obra selecionada → Planilha orçamentária → SINAPI";
+    return "Engenharia → Obras → Obra selecionada → Planilha orçamentária → Sinapi";
   }, []);
 
   const returnToKey = useMemo(() => `expplanobras:sinapi:returnTo:${idObra}`, [idObra]);
@@ -169,15 +173,46 @@ export default function SinapiImportPage() {
     await doRequest(false);
   }
 
+  useEffect(() => {
+    if (!Number.isFinite(idObra) || idObra <= 0) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/importados`);
+        const json = await res.json().catch(() => null);
+        if (!alive) return;
+        if (!res.ok || !json?.success) throw new Error(json?.message || "Falha ao carregar serviços SINAPI importados");
+        const rows = Array.isArray(json?.data?.rows) ? json.data.rows : [];
+        setImportados(
+          rows
+            .map((r: any) => ({
+              codigo: String(r.codigo || "").trim(),
+              descricao: String(r.descricao || ""),
+              und: String(r.und || ""),
+              dataBase: String(r.dataBase || ""),
+              itens: r.itens == null ? 0 : Number(r.itens),
+              insumos: r.insumos == null ? 0 : Number(r.insumos),
+            }))
+            .filter((r: any) => r.codigo)
+        );
+        setImportadosErr("");
+      } catch (e: any) {
+        if (!alive) return;
+        setImportados([]);
+        setImportadosErr(String(e?.message || "Erro ao carregar serviços SINAPI importados"));
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [idObra]);
+
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-5xl text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex-1 min-w-[260px]">
           <div className="text-xs text-slate-500">{breadcrumb}</div>
-          <h1 className="text-2xl font-semibold">SINAPI — Importar composições (Excel)</h1>
-          <div className="mt-2 text-sm text-slate-700">
-            Selecione o arquivo XLSX do SINAPI e gere uma prévia antes de importar.
-          </div>
+          <h1 className="text-2xl font-semibold">Sinapi</h1>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
@@ -195,18 +230,76 @@ export default function SinapiImportPage() {
       {okMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{okMsg}</div> : null}
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
 
+      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+        <div className="text-lg font-semibold">Serviços SINAPI importados</div>
+        {importadosErr ? <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{importadosErr}</div> : null}
+        {importados.length ? (
+          <div className="overflow-auto">
+            <table className="min-w-[860px] w-full border-collapse text-xs">
+              <thead className="bg-slate-50 text-center text-slate-700">
+                <tr>
+                  <th className="border px-2 py-1">Código</th>
+                  <th className="border px-2 py-1">Descrição</th>
+                  <th className="border px-2 py-1">UND</th>
+                  <th className="border px-2 py-1">Data-base</th>
+                  <th className="border px-2 py-1">Itens</th>
+                  <th className="border px-2 py-1">Insumos</th>
+                </tr>
+              </thead>
+              <tbody>
+                {importados.map((r) => (
+                  <tr key={`${r.dataBase}:${r.codigo}`} className="border-t">
+                    <td className="border px-2 py-1 text-center">{r.codigo}</td>
+                    <td className="border px-2 py-1">{r.descricao}</td>
+                    <td className="border px-2 py-1 text-center">{r.und}</td>
+                    <td className="border px-2 py-1 text-center">{r.dataBase || "—"}</td>
+                    <td className="border px-2 py-1 text-right">{Number(r.itens || 0).toLocaleString("pt-BR")}</td>
+                    <td className="border px-2 py-1 text-right">{Number(r.insumos || 0).toLocaleString("pt-BR")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-sm text-slate-600">Nenhum serviço SINAPI importado ainda.</div>
+        )}
+      </section>
+
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
         <div className="text-lg font-semibold">Arquivo</div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-12 space-y-1">
-            <div className="text-sm text-slate-600">Upload do XLSX</div>
-            <input
-              type="file"
-              accept=".xlsx"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              disabled={busy}
-              title="Selecione o arquivo XLSX do SINAPI"
-            />
+            <div className="text-sm text-slate-600 flex items-center gap-2">
+              <span>Arquivo XLSX</span>
+              {file ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
+              <span className="text-xs text-slate-500">{file ? String(file.name || "") : "Nenhum arquivo selecionado"}</span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={busy}
+                title="Selecionar arquivo XLSX"
+              >
+                Selecionar arquivo XLSX
+              </button>
+              <input
+                ref={fileInputRef}
+                className="hidden"
+                type="file"
+                accept=".xlsx"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] || null;
+                  setFile(f);
+                  setPreview(null);
+                  setImported(null);
+                  setOkMsg("");
+                  setErr("");
+                }}
+                disabled={busy}
+              />
+            </div>
           </div>
         </div>
       </section>

@@ -184,6 +184,7 @@ async function readTextSmart(file: File) {
   const [empresaDocumentosLayout, setEmpresaDocumentosLayout] = useState<EmpresaDocumentosLayout | null>(null);
   const [sinapiImportOpen, setSinapiImportOpen] = useState(false);
   const [sinapiFile, setSinapiFile] = useState<File | null>(null);
+  const sinapiFileInputRef = useRef<HTMLInputElement | null>(null);
   const [sinapiUf, setSinapiUf] = useState<string>("AC");
   const [sinapiSheetName, setSinapiSheetName] = useState<string>("Analítico");
   const [sinapiInsumosModo, setSinapiInsumosModo] = useState<"ISD" | "ICD" | "ISE">("ISD");
@@ -851,43 +852,21 @@ async function readTextSmart(file: File) {
 
     const sinapiDataBase = detectDataBase();
 
-    const findHeader = (sheet: any, maxScanRows: number) => {
+    const findHeaderByRequired = (sheet: any, requiredGroups: string[][]) => {
       if (!sheet?.["!ref"]) return null;
       const range = XLSX.utils.decode_range(sheet["!ref"]);
-      const maxR = Math.min(range.e.r, range.s.r + maxScanRows);
-      const maxC = range.e.c;
-      for (let r = range.s.r; r <= maxR; r++) {
-        const headersNorm: string[] = [];
-        for (let c = range.s.c; c <= maxC; c++) headersNorm.push(normalizeHeader(String(readCell(sheet, r, c) || "")));
-        const keys = headersNorm.filter(Boolean);
-        const hasCodigo = keys.includes("codigo") || keys.includes("codigo_item") || keys.includes("codigo_da_composicao") || keys.includes("codigo_composicao");
-        const hasDesc = keys.includes("descricao") || keys.includes("descricao_item");
-        const hasCoef = keys.some((k) => k.includes("coef") || k === "quantidade");
-        if (hasCodigo && hasDesc && hasCoef) return { headerRow: r, headersNorm, range };
-      }
-      return null;
-    };
-
-    const findInsumosHeader = (sheet: any, maxScanRows: number) => {
-      if (!sheet?.["!ref"]) return null;
-      const range = XLSX.utils.decode_range(sheet["!ref"]);
-      const maxR = Math.min(range.e.r, range.s.r + Math.max(0, Number(maxScanRows || 0)));
       const maxC = Math.min(range.e.c, range.s.c + 49);
-      for (let r = range.s.r; r <= maxR; r++) {
+      for (let r = range.s.r; r <= range.e.r; r++) {
         const headersNorm: string[] = [];
         for (let c = range.s.c; c <= maxC; c++) headersNorm.push(normalizeHeader(String(readCell(sheet, r, c) || "")));
         const keys = headersNorm.filter(Boolean);
         if (keys.length < 4) continue;
-        const hasCodigo = keys.some((k) => k.includes("codigo") && (k.includes("insumo") || k.includes("item") || k === "codigo"));
-        const hasDesc = keys.some((k) => k.includes("descricao"));
-        const hasUnd = keys.some((k) => k === "unidade" || k === "und" || k.startsWith("unid"));
-        if (hasCodigo && hasDesc && hasUnd) return { headerRow: r, headersNorm, range };
+        const ok = requiredGroups.every((g) => g.some((k) => keys.includes(k)));
+        if (ok) return { headerRow: r, headersNorm, range };
       }
       return null;
     };
 
-    const anal = findHeader(analiticoSheet, 60);
-    if (!anal) throw new Error('Não foi possível identificar o cabeçalho da aba. Verifique se é a aba "Analítico".');
     const findCol = (headersNorm: string[], cands: string[]) => {
       for (const c of cands) {
         const idx = headersNorm.findIndex((h) => h === c);
@@ -899,135 +878,176 @@ async function readTextSmart(file: File) {
       }
       return -1;
     };
-
-    const iCodigo = findCol(anal.headersNorm, ["codigo_da_composicao", "codigo_composicao", "codigo_item", "codigo"]);
-    const iDescricao = findCol(anal.headersNorm, ["descricao_item", "descricao"]);
-    const iUnd = findCol(anal.headersNorm, ["und", "unid", "unidade"]);
-    const iCoef = findCol(anal.headersNorm, ["coeficiente", "coef", "quantidade"]);
-    const iTipo = findCol(anal.headersNorm, ["tipo_item", "tipo"]);
-    const iNivel = findCol(anal.headersNorm, ["nivel"]);
-    const iUf = findCol(anal.headersNorm, ["uf", "estado"]);
-
-    const mapTipo = (raw: string) => {
-      const v = String(raw || "").trim().toUpperCase();
-      if (!v) return "";
-      if (v.includes("AUX")) return "COMPOSICAO_AUXILIAR";
-      if (v.includes("COMPOS")) return "COMPOSICAO";
-      if (v.includes("EQUIP")) return "EQUIPAMENTO";
-      if (v.includes("MAO") || v.includes("MÃO")) return "MAO_DE_OBRA";
-      if (v.includes("INSUM")) return "INSUMO";
-      return "";
-    };
-
     const target = String(codigoServico || "").trim().toUpperCase();
     const uf = String(sinapiUf || "").trim().toUpperCase();
-    const itensRaw: Array<{ tipoItem: string; codigoItem: string; coeficiente: number; descricao: string | null; und: string | null }> = [];
-    const insumosNeed = new Set<string>();
-    let current: string | null = null;
-    let captured = false;
 
-    const maxR = anal.range.e.r;
-    for (let r = anal.headerRow + 1; r <= maxR; r++) {
-      const rowUf = iUf >= 0 ? String(readCell(analiticoSheet, r, anal.range.s.c + iUf) || "").trim().toUpperCase() : "";
-      if (uf && iUf >= 0 && rowUf && rowUf !== uf) continue;
+    const analHdr = findHeaderByRequired(analiticoSheet, [
+      ["codigo_da_composicao", "codigo_composicao"],
+      ["tipo_item"],
+      ["codigo_do_item", "codigo_item"],
+      ["descricao"],
+      ["unidade", "und", "unid"],
+      ["coeficiente", "coef", "quantidade"],
+    ]);
+    if (!analHdr) throw new Error('Não foi possível identificar o cabeçalho da aba Analítico. Verifique se a aba selecionada é "Analítico".');
 
-      const codigo = String(readCell(analiticoSheet, r, anal.range.s.c + iCodigo) ?? "").trim().toUpperCase();
-      const descricao = String(readCell(analiticoSheet, r, anal.range.s.c + iDescricao) ?? "").trim();
-      const und = iUnd >= 0 ? String(readCell(analiticoSheet, r, anal.range.s.c + iUnd) ?? "").trim() : "";
-      const tipoRaw = iTipo >= 0 ? String(readCell(analiticoSheet, r, anal.range.s.c + iTipo) ?? "").trim() : "";
-      const tipoMapped = mapTipo(tipoRaw);
-      const nivel = iNivel >= 0 ? parseNum(readCell(analiticoSheet, r, anal.range.s.c + iNivel)) : null;
-      const coef = parseNum(readCell(analiticoSheet, r, anal.range.s.c + iCoef));
-
-      if (!codigo && !descricao) continue;
-
-      const isHeader = (nivel != null && Number.isFinite(nivel) && Math.round(Number(nivel)) === 0 && codigo) || (tipoMapped === "COMPOSICAO" && codigo && (coef == null || coef === 1));
-      if (isHeader) {
-        if (captured && current && current === target && codigo && codigo !== target) break;
-        current = codigo;
-        continue;
-      }
-
-      if (!current || current !== target) continue;
-      if (!codigo) continue;
-      const quantidade = coef == null ? null : Number(coef);
-      if (quantidade == null || !Number.isFinite(quantidade)) continue;
-
-      captured = true;
-      const tipoItem = tipoMapped || (descricao.toUpperCase().includes("AUX") ? "COMPOSICAO_AUXILIAR" : "INSUMO");
-      itensRaw.push({
-        tipoItem,
-        codigoItem: codigo,
-        coeficiente: Number(quantidade),
-        descricao: descricao ? descricao : null,
-        und: und ? und : null,
-      });
-      if (tipoItem !== "COMPOSICAO" && tipoItem !== "COMPOSICAO_AUXILIAR") insumosNeed.add(codigo);
+    const aH = analHdr.headersNorm;
+    const aCodComp = findCol(aH, ["codigo_da_composicao", "codigo_composicao"]);
+    const aTipoItem = findCol(aH, ["tipo_item"]);
+    const aCodItem = findCol(aH, ["codigo_do_item", "codigo_item"]);
+    const aDesc = findCol(aH, ["descricao"]);
+    const aUnd = findCol(aH, ["unidade", "und", "unid"]);
+    const aCoef = findCol(aH, ["coeficiente", "coef", "quantidade"]);
+    const aDescComp = findCol(aH, ["descricao_da_composicao", "descricao_composicao"]);
+    const aUndComp = findCol(aH, ["unidade_da_composicao", "unidade_composicao"]);
+    if (aCodComp < 0 || aTipoItem < 0 || aCodItem < 0 || aDesc < 0 || aUnd < 0 || aCoef < 0) {
+      throw new Error('Cabeçalho da aba Analítico incompleto. Esperado: Código da Composição, Tipo Item, Código do Item, Descrição, Unidade, Coeficiente.');
     }
 
-    if (!itensRaw.length) throw new Error(`Composição não encontrada no arquivo (código: ${target}).`);
+    const itensAnalitico: Array<{
+      tipoItemSinapi: string;
+      codigoItem: string;
+      descricao: string | null;
+      und: string | null;
+      coeficiente: number;
+    }> = [];
 
-    const insHdr = findInsumosHeader(insumosSheet, 200000);
+    let composicaoDescricao: string | null = null;
+    let composicaoUnd: string | null = null;
+    for (let r = analHdr.headerRow + 1; r <= analHdr.range.e.r; r++) {
+      const codigoComp = String(readCell(analiticoSheet, r, analHdr.range.s.c + aCodComp) ?? "")
+        .trim()
+        .toUpperCase();
+      if (!codigoComp || codigoComp !== target) continue;
+      const tipoItemSinapi = String(readCell(analiticoSheet, r, analHdr.range.s.c + aTipoItem) ?? "").trim().toUpperCase();
+      const codigoItem = String(readCell(analiticoSheet, r, analHdr.range.s.c + aCodItem) ?? "")
+        .trim()
+        .toUpperCase();
+      const descricao = String(readCell(analiticoSheet, r, analHdr.range.s.c + aDesc) ?? "").trim();
+      const undV = String(readCell(analiticoSheet, r, analHdr.range.s.c + aUnd) ?? "").trim();
+      const coef = parseNum(readCell(analiticoSheet, r, analHdr.range.s.c + aCoef));
+      const quantidade = coef == null ? null : Number(coef);
+      if (!codigoItem || quantidade == null || !Number.isFinite(quantidade)) continue;
+      itensAnalitico.push({
+        tipoItemSinapi: tipoItemSinapi || "",
+        codigoItem,
+        descricao: descricao ? descricao : null,
+        und: undV ? undV : null,
+        coeficiente: Number(quantidade),
+      });
+      if (!composicaoDescricao && aDescComp >= 0) {
+        const v = String(readCell(analiticoSheet, r, analHdr.range.s.c + aDescComp) ?? "").trim();
+        if (v) composicaoDescricao = v;
+      }
+      if (!composicaoUnd && aUndComp >= 0) {
+        const v = String(readCell(analiticoSheet, r, analHdr.range.s.c + aUndComp) ?? "").trim();
+        if (v) composicaoUnd = v;
+      }
+    }
+
+    if (!itensAnalitico.length) {
+      throw new Error(
+        `O serviço ${target} não é cadastrado no SINAPI, na base informada (Data-base: ${sinapiDataBase || "—"}, UF: ${uf || "—"}, ${sinapiInsumosModo}).`
+      );
+    }
+
+    const insumosNeed = new Set<string>();
+    for (const it of itensAnalitico) {
+      const t = normalizeHeader(it.tipoItemSinapi);
+      if (t.includes("insumo")) insumosNeed.add(it.codigoItem);
+    }
+
+    const insHdr = findHeaderByRequired(insumosSheet, [["classificacao"], ["codigo_do_insumo"], ["descricao_do_insumo"], ["unidade"]]);
     if (!insHdr) throw new Error(`Não foi possível identificar o cabeçalho da aba de insumos (${insumosSheetName}).`);
-    const h = insHdr.headersNorm;
-    const iCod = findCol(h, ["codigo_item", "codigo"]);
-    const iDesc = findCol(h, ["descricao_item", "descricao", "insumo"]);
-    const iUnd2 = findCol(h, ["und", "unid", "unidade"]);
+
+    const iClass = findCol(insHdr.headersNorm, ["classificacao"]);
+    const iCodInsumo = findCol(insHdr.headersNorm, ["codigo_do_insumo", "codigo_insumo"]);
+    const iDescInsumo = findCol(insHdr.headersNorm, ["descricao_do_insumo", "descricao_insumo"]);
+    const iUndInsumo = findCol(insHdr.headersNorm, ["unidade", "und", "unid"]);
+    if (iClass < 0 || iCodInsumo < 0 || iDescInsumo < 0 || iUndInsumo < 0) {
+      throw new Error(`Cabeçalho da aba de insumos (${insumosSheetName}) incompleto. Esperado: Classificação, Código do Insumo, Descrição do Insumo, Unidade.`);
+    }
+
     const ufLower = uf.toLowerCase();
     const readHeaderRowNorm = (rowIdx: number) => {
       const out: string[] = [];
-      for (let c = insHdr.range.s.c; c <= insHdr.range.e.c; c++) out.push(normalizeHeader(String(readCell(insumosSheet, rowIdx, c) || "")));
+      for (let c = insHdr.range.s.c; c <= Math.min(insHdr.range.e.c, insHdr.range.s.c + 49); c++) out.push(normalizeHeader(String(readCell(insumosSheet, rowIdx, c) || "")));
       return out;
     };
-    let iPreco = h.findIndex((x) => x === ufLower);
-    if (iPreco < 0) iPreco = h.findIndex((x) => x.endsWith(`_${ufLower}`) || x.includes(`_${ufLower}_`) || x.includes(`preco_${ufLower}`) || x.includes(`valor_${ufLower}`));
-    let insPrecoHeaderRow = insHdr.headerRow;
-    if (iPreco < 0) {
-      for (let off = 1; off <= 3; off++) {
+    let iPu = readHeaderRowNorm(insHdr.headerRow).findIndex((x) => x === ufLower);
+    let puHeaderRow = insHdr.headerRow;
+    if (iPu < 0) {
+      for (let off = 1; off <= 4; off++) {
         const rowNorm = readHeaderRowNorm(insHdr.headerRow + off);
         const idx = rowNorm.findIndex((x) => x === ufLower);
         if (idx >= 0) {
-          iPreco = idx;
-          insPrecoHeaderRow = insHdr.headerRow + off;
+          iPu = idx;
+          puHeaderRow = insHdr.headerRow + off;
           break;
         }
       }
     }
-    if (iPreco < 0) iPreco = findCol(h, ["preco_unitario", "preco", "valor", "custo_unitario", "custo", "preco_medio"]);
-    if (iCod < 0 || iDesc < 0 || iUnd2 < 0 || iPreco < 0) {
-      const base = h.slice(0, 40).filter(Boolean).join(", ");
-      const next = readHeaderRowNorm(insHdr.headerRow + 1).slice(0, 40).filter(Boolean).join(", ");
-      throw new Error(
-        `Não foi possível localizar colunas mínimas na aba de insumos (${insumosSheetName}). ` +
-          `Detectado (linha ${insHdr.headerRow + 1}): ${base || "—"}. ` +
-          `Linha seguinte: ${next || "—"}.`
-      );
-    }
+    if (iPu < 0) throw new Error(`Não foi possível localizar a coluna da UF ${uf} (P.U.) na aba de insumos (${insumosSheetName}).`);
 
-    const insumosFound = new Map<string, { descricao: string; und: string; preco: number | null }>();
+    const insumosFound = new Map<string, { classificacao: string; descricao: string; und: string; pu: number | null }>();
     const rangeIns = insHdr.range;
-    const dataStartRow = Math.max(insHdr.headerRow, insPrecoHeaderRow) + 1;
+    const dataStartRow = Math.max(insHdr.headerRow, puHeaderRow) + 1;
     for (let r = dataStartRow; r <= rangeIns.e.r; r++) {
       if (!insumosNeed.size) break;
-      const code = String(readCell(insumosSheet, r, rangeIns.s.c + iCod) ?? "").trim().toUpperCase();
+      const code = String(readCell(insumosSheet, r, rangeIns.s.c + iCodInsumo) ?? "").trim().toUpperCase();
       if (!code || !insumosNeed.has(code)) continue;
-      const desc = String(readCell(insumosSheet, r, rangeIns.s.c + iDesc) ?? "").trim();
-      const undV = String(readCell(insumosSheet, r, rangeIns.s.c + iUnd2) ?? "").trim();
-      const preco = parseNum(readCell(insumosSheet, r, rangeIns.s.c + iPreco));
-      insumosFound.set(code, { descricao: desc, und: undV, preco: preco == null ? null : Number(preco) });
+      const classificacao = String(readCell(insumosSheet, r, rangeIns.s.c + iClass) ?? "").trim();
+      const desc = String(readCell(insumosSheet, r, rangeIns.s.c + iDescInsumo) ?? "").trim();
+      const undV = String(readCell(insumosSheet, r, rangeIns.s.c + iUndInsumo) ?? "").trim();
+      const pu = parseNum(readCell(insumosSheet, r, rangeIns.s.c + iPu));
+      insumosFound.set(code, { classificacao, descricao: desc, und: undV, pu: pu == null ? null : Number(pu) });
       insumosNeed.delete(code);
     }
 
-    const itens = itensRaw.map((it) => {
-      const isComp = it.tipoItem === "COMPOSICAO" || it.tipoItem === "COMPOSICAO_AUXILIAR";
-      const ins = !isComp ? insumosFound.get(it.codigoItem) : null;
+    if (insumosNeed.size) {
+      const miss = Array.from(insumosNeed).slice(0, 12).join(", ");
+      throw new Error(`Não foi possível localizar ${insumosNeed.size} insumo(s) na aba ${insumosSheetName} para UF ${uf} (ex.: ${miss}).`);
+    }
+
+    const itens = itensAnalitico.map((it) => {
+      const tipoNorm = normalizeHeader(it.tipoItemSinapi);
+      const isInsumo = tipoNorm.includes("insumo");
+      if (isInsumo) {
+        const ins = insumosFound.get(it.codigoItem);
+        const classificacao = ins?.classificacao ? String(ins.classificacao).trim() : "";
+        const expTipo = classificacao || "INSUMO";
+        return {
+          tipoItemSinapi: it.tipoItemSinapi,
+          codigoItem: it.codigoItem,
+          descricaoSinapi: it.descricao,
+          undSinapi: it.und,
+          coeficiente: it.coeficiente,
+          insumoClassificacao: classificacao || null,
+          insumoDescricao: ins?.descricao || null,
+          insumoUnd: ins?.und || null,
+          insumoPu: ins?.pu == null ? null : Number(ins.pu),
+          expTipo,
+          expCodigo: it.codigoItem,
+          expDescricao: ins?.descricao || it.descricao || null,
+          expUnd: ins?.und || it.und || null,
+          expValorUnitario: ins?.pu == null ? null : Number(ins.pu),
+        };
+      }
       return {
-        tipoItem: it.tipoItem,
+        tipoItemSinapi: it.tipoItemSinapi,
         codigoItem: it.codigoItem,
+        descricaoSinapi: it.descricao,
+        undSinapi: it.und,
         coeficiente: it.coeficiente,
-        descricao: isComp ? it.descricao : (ins?.descricao || it.descricao || null),
-        und: isComp ? it.und : (ins?.und || it.und || null),
-        precoUnitario: isComp ? null : (ins?.preco == null ? null : ins.preco),
+        insumoClassificacao: null,
+        insumoDescricao: null,
+        insumoUnd: null,
+        insumoPu: null,
+        expTipo: "COMPOSICAO",
+        expCodigo: it.codigoItem,
+        expDescricao: it.descricao,
+        expUnd: it.und,
+        expValorUnitario: null,
       };
     });
 
@@ -1039,7 +1059,7 @@ async function readTextSmart(file: File) {
       banco: "SINAPI",
       mode: "UPSERT",
       forceDataBaseMismatch: Boolean(sinapiForceDataBaseMismatch),
-      composicao: { codigo: target, descricao: null, und: null },
+      composicao: { codigo: target, descricao: composicaoDescricao, und: composicaoUnd },
       itens,
     };
 
@@ -3083,10 +3103,35 @@ async function readTextSmart(file: File) {
               <div className="md:col-span-12 space-y-1">
                 <div className="text-sm text-slate-600 flex items-center gap-2">
                   <span>Arquivo XLSX</span>
-                  {sinapiFile ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <CircleDashed className="h-4 w-4 text-slate-400" />}
+                  {sinapiFile ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
                   <span className="text-xs text-slate-500">{sinapiFile ? String(sinapiFile.name || "") : "Nenhum arquivo selecionado"}</span>
                 </div>
-                <input type="file" accept=".xlsx" onChange={(e) => setSinapiFile(e.target.files?.[0] || null)} disabled={sinapiBusy} title="Selecione o XLSX do SINAPI" />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                    type="button"
+                    onClick={() => sinapiFileInputRef.current?.click()}
+                    disabled={sinapiBusy}
+                    title="Selecionar arquivo XLSX"
+                  >
+                    Selecionar arquivo XLSX
+                  </button>
+                  <input
+                    ref={sinapiFileInputRef}
+                    className="hidden"
+                    type="file"
+                    accept=".xlsx"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      setSinapiFile(f);
+                      setSinapiPreview(null);
+                      setSinapiParsedPayload(null);
+                      setSinapiMsgOk("");
+                      setSinapiMsgErr("");
+                    }}
+                    disabled={sinapiBusy}
+                  />
+                </div>
               </div>
               <div className="md:col-span-6 space-y-1">
                 <div className="text-sm text-slate-600">Aba</div>

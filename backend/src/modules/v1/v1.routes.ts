@@ -557,6 +557,78 @@ async function ensureSinapiBaseTables(tx: any) {
     `CREATE UNIQUE INDEX IF NOT EXISTS sinapi_composicoes_itens_uk ON sinapi_composicoes_itens (tenant_id, uf, data_base, codigo_composicao, tipo_item, codigo_item)`
   );
   await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS sinapi_composicoes_itens_idx ON sinapi_composicoes_itens (tenant_id, uf, data_base, codigo_composicao)`);
+
+  await tx.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS sinapi_servicos_base (
+      id_serv_sinapi BIGSERIAL PRIMARY KEY,
+      tenant_id BIGINT NOT NULL,
+      data_base VARCHAR(16) NOT NULL DEFAULT '',
+      codigo_servico VARCHAR(80) NOT NULL,
+      descricao VARCHAR(255) NULL,
+      und VARCHAR(40) NULL,
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS sinapi_servicos_base_uk ON sinapi_servicos_base (tenant_id, data_base, codigo_servico)`);
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS sinapi_servicos_base_idx ON sinapi_servicos_base (tenant_id, data_base)`);
+
+  await tx.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS sinapi_insumos_base (
+      id_insumo_sinapi BIGSERIAL PRIMARY KEY,
+      tenant_id BIGINT NOT NULL,
+      data_base VARCHAR(16) NOT NULL DEFAULT '',
+      tipo_preco VARCHAR(3) NOT NULL,
+      classificacao VARCHAR(80) NULL,
+      codigo_insumo VARCHAR(80) NOT NULL,
+      descricao VARCHAR(255) NULL,
+      und VARCHAR(40) NULL,
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await tx.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS sinapi_insumos_base_uk ON sinapi_insumos_base (tenant_id, data_base, tipo_preco, codigo_insumo)`
+  );
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS sinapi_insumos_base_idx ON sinapi_insumos_base (tenant_id, data_base, tipo_preco)`);
+
+  await tx.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS sinapi_insumos_pu (
+      id_pu BIGSERIAL PRIMARY KEY,
+      tenant_id BIGINT NOT NULL,
+      id_insumo_sinapi BIGINT NOT NULL REFERENCES sinapi_insumos_base(id_insumo_sinapi) ON DELETE CASCADE,
+      uf VARCHAR(2) NOT NULL,
+      pu NUMERIC(14,6) NULL,
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS sinapi_insumos_pu_uk ON sinapi_insumos_pu (tenant_id, id_insumo_sinapi, uf)`);
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS sinapi_insumos_pu_idx ON sinapi_insumos_pu (tenant_id, uf)`);
+
+  await tx.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS sinapi_composicoes_base (
+      id_compo_sinapi BIGSERIAL PRIMARY KEY,
+      tenant_id BIGINT NOT NULL,
+      uf VARCHAR(2) NOT NULL,
+      data_base VARCHAR(16) NOT NULL DEFAULT '',
+      tipo_preco VARCHAR(3) NOT NULL,
+      id_serv_sinapi BIGINT NOT NULL REFERENCES sinapi_servicos_base(id_serv_sinapi) ON DELETE CASCADE,
+      id_insumo_sinapi BIGINT NULL REFERENCES sinapi_insumos_base(id_insumo_sinapi) ON DELETE SET NULL,
+      id_pu BIGINT NULL REFERENCES sinapi_insumos_pu(id_pu) ON DELETE SET NULL,
+      tipo_item VARCHAR(32) NOT NULL,
+      codigo_item VARCHAR(80) NOT NULL,
+      descricao VARCHAR(255) NULL,
+      und VARCHAR(40) NULL,
+      coeficiente NUMERIC(14,6) NOT NULL DEFAULT 0,
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await tx.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS sinapi_composicoes_base_uk ON sinapi_composicoes_base (tenant_id, uf, data_base, tipo_preco, id_serv_sinapi, tipo_item, codigo_item)`
+  );
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS sinapi_composicoes_base_idx ON sinapi_composicoes_base (tenant_id, uf, data_base, tipo_preco, id_serv_sinapi)`);
 }
 
 const ORGANOGRAMA_CARGOS_BASE = [
@@ -5419,7 +5491,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const parseInsumos = () => {
       const m = XLSX.utils.sheet_to_json(insumosSheet, { header: 1, defval: '' }) as any[][];
-      if (!Array.isArray(m) || m.length < 2) return new Map<string, { descricao: string; und: string; preco: number | null }>();
+      if (!Array.isArray(m) || m.length < 2) return new Map<string, { classificacao: string; descricao: string; und: string; preco: number | null }>();
       const ufLower = uf.toLowerCase();
       let headerIdx = -1;
       let rawHeader: any[] = [];
@@ -5436,7 +5508,7 @@ export default async function v1Routes(server: FastifyInstance) {
           break;
         }
       }
-      if (headerIdx < 0) return new Map<string, { descricao: string; und: string; preco: number | null }>();
+      if (headerIdx < 0) return new Map<string, { classificacao: string; descricao: string; und: string; preco: number | null }>();
       const headersNorm = rawHeader.map((h) => normalizeHeader(String(h || '')));
       const findCol = (cands: string[]) => {
         for (const c of cands) {
@@ -5449,6 +5521,7 @@ export default async function v1Routes(server: FastifyInstance) {
         }
         return -1;
       };
+      const iClass = findCol(['classificacao']);
       const iCod = findCol(['codigo_item', 'codigo']);
       const iDesc = findCol(['descricao_item', 'descricao', 'insumo']);
       const iUnd = findCol(['und', 'unid', 'unidade']);
@@ -5468,16 +5541,17 @@ export default async function v1Routes(server: FastifyInstance) {
         }
       }
       if (iPreco < 0) iPreco = findCol(['preco_unitario', 'preco', 'valor', 'custo_unitario', 'custo', 'preco_medio']);
-      if (iCod < 0 || iDesc < 0 || iUnd < 0 || iPreco < 0) return new Map<string, { descricao: string; und: string; preco: number | null }>();
-      const out = new Map<string, { descricao: string; und: string; preco: number | null }>();
+      if (iCod < 0 || iDesc < 0 || iUnd < 0 || iPreco < 0) return new Map<string, { classificacao: string; descricao: string; und: string; preco: number | null }>();
+      const out = new Map<string, { classificacao: string; descricao: string; und: string; preco: number | null }>();
       for (let i = dataStartIdx; i < m.length; i++) {
         const row = Array.isArray(m[i]) ? m[i] : [];
         const code = String(row[iCod] ?? '').trim().toUpperCase();
         if (!code) continue;
+        const classificacao = iClass >= 0 ? String(row[iClass] ?? '').trim() : '';
         const desc = String(row[iDesc] ?? '').trim();
         const undV = String(row[iUnd] ?? '').trim();
         const preco = parseNumber(row[iPreco]);
-        out.set(code, { descricao: desc, und: undV, preco });
+        out.set(code, { classificacao, descricao: desc, und: undV, preco });
       }
       return out;
     };
@@ -5563,13 +5637,15 @@ export default async function v1Routes(server: FastifyInstance) {
       if (!comps.has(current)) comps.set(current, parent);
       if (!codigo) continue;
 
-      const tipoItem = tipoMapped || (descricao.toUpperCase().includes('AUX') ? 'COMPOSICAO_AUXILIAR' : 'INSUMO');
+      const tipoItemSinapi = tipoMapped || (descricao.toUpperCase().includes('AUX') ? 'COMPOSICAO_AUXILIAR' : 'INSUMO');
       const quantidade = coef == null ? null : coef;
       if (quantidade == null || !Number.isFinite(quantidade)) continue;
-      const isCompItem = tipoItem === 'COMPOSICAO' || tipoItem === 'COMPOSICAO_AUXILIAR';
+      const isCompItem = tipoItemSinapi === 'COMPOSICAO' || tipoItemSinapi === 'COMPOSICAO_AUXILIAR';
       const ins = !isCompItem ? insumosMap.get(codigo) : null;
+      const tipoExp = isCompItem ? tipoItemSinapi : (ins?.classificacao ? String(ins.classificacao).trim().slice(0, 32) : 'INSUMO');
       parent.itens.push({
-        tipoItem,
+        tipoItem: tipoExp,
+        tipoItemSinapi,
         codigoItem: codigo,
         banco: banco || null,
         descricao: (ins?.descricao || descricao || '').trim() ? String(ins?.descricao || descricao).trim().slice(0, 255) : null,
@@ -5624,7 +5700,7 @@ export default async function v1Routes(server: FastifyInstance) {
     let targetCodes = new Set<string>(parsedCodes);
     if (onlyCodigoServico) {
       const code = String(onlyCodigoServico).trim().toUpperCase();
-      if (!comps.has(code)) return fail(reply, 422, `Composição não encontrada no arquivo (código: ${code})`);
+      if (!comps.has(code)) return fail(reply, 422, `O serviço ${code} não é cadastrado no SINAPI, na base informada (Data-base: ${sinapiDataBaseKey || '—'}, UF: ${uf || '—'}, ${insumosModo}).`);
       targetCodes = new Set([code]);
     } else if (!importAllParsed) {
       if (!planilhaId) return fail(reply, 422, 'Não há planilha atual para a obra. Importe a planilha orçamentária primeiro.');
@@ -5804,6 +5880,221 @@ export default async function v1Routes(server: FastifyInstance) {
         }
       }
 
+      const importSet = new Set(toImport.map((c) => String(c || '').trim().toUpperCase()).filter(Boolean));
+      const servicosMeta = new Map<string, { descricao: string | null; und: string | null }>();
+      for (const code of importSet) {
+        const entry = comps.get(code);
+        if (!entry) continue;
+        servicosMeta.set(code, {
+          descricao: entry.descricao ? String(entry.descricao).trim().slice(0, 255) : null,
+          und: entry.und ? String(entry.und).trim().slice(0, 40) : null,
+        });
+        for (const it of entry.itens || []) {
+          const t = String((it as any).tipoItemSinapi || '').trim().toUpperCase();
+          if (t !== 'COMPOSICAO' && t !== 'COMPOSICAO_AUXILIAR') continue;
+          const child = String(it.codigoItem || '').trim().toUpperCase();
+          if (!child) continue;
+          if (!servicosMeta.has(child)) {
+            servicosMeta.set(child, {
+              descricao: it.descricao ? String(it.descricao).trim().slice(0, 255) : null,
+              und: it.und ? String(it.und).trim().slice(0, 40) : null,
+            });
+          }
+        }
+      }
+
+      if (servicosMeta.size) {
+        const entries = Array.from(servicosMeta.entries());
+        const params: any[] = [];
+        let p = 1;
+        const values = entries
+          .map(([codigo, meta]) => {
+            const base = [ctx.tenantId, sinapiDataBaseKey, codigo, meta.descricao ?? null, meta.und ?? null];
+            for (const v of base) params.push(v);
+            const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+            return `(${placeholders})`;
+          })
+          .join(',');
+        await tx.$executeRawUnsafe(
+          `
+          INSERT INTO sinapi_servicos_base (tenant_id, data_base, codigo_servico, descricao, und)
+          VALUES ${values}
+          ON CONFLICT (tenant_id, data_base, codigo_servico)
+          DO UPDATE SET descricao = EXCLUDED.descricao, und = EXCLUDED.und, atualizado_em = NOW()
+          `,
+          ...params
+        );
+      }
+
+      const servRows = servicosMeta.size
+        ? ((await tx.$queryRawUnsafe(
+            `
+            SELECT id_serv_sinapi AS "id", codigo_servico AS "codigo"
+            FROM sinapi_servicos_base
+            WHERE tenant_id = $1 AND data_base = $2 AND codigo_servico = ANY($3)
+            `,
+            ctx.tenantId,
+            sinapiDataBaseKey,
+            Array.from(servicosMeta.keys())
+          )) as any[])
+        : [];
+      const servByCodigo = new Map<string, number>();
+      for (const r of servRows || []) servByCodigo.set(String(r.codigo || '').trim().toUpperCase(), Number(r.id));
+
+      const insumosMeta = new Map<string, { classificacao: string | null; descricao: string | null; und: string | null; pu: number | null }>();
+      for (const code of importSet) {
+        const entry = comps.get(code);
+        if (!entry) continue;
+        for (const it of entry.itens || []) {
+          const t = String((it as any).tipoItemSinapi || '').trim().toUpperCase();
+          if (t === 'COMPOSICAO' || t === 'COMPOSICAO_AUXILIAR') continue;
+          const insCode = String(it.codigoItem || '').trim().toUpperCase();
+          if (!insCode) continue;
+          const ins = insumosMap.get(insCode);
+          insumosMeta.set(insCode, {
+            classificacao: ins?.classificacao ? String(ins.classificacao).trim().slice(0, 80) : null,
+            descricao: ins?.descricao ? String(ins.descricao).trim().slice(0, 255) : null,
+            und: ins?.und ? String(ins.und).trim().slice(0, 40) : null,
+            pu: ins?.preco == null ? null : Number(ins.preco),
+          });
+        }
+      }
+
+      if (insumosMeta.size) {
+        const entries = Array.from(insumosMeta.entries());
+        const params: any[] = [];
+        let p = 1;
+        const values = entries
+          .map(([codigo, meta]) => {
+            const base = [ctx.tenantId, sinapiDataBaseKey, insumosModo, meta.classificacao ?? null, codigo, meta.descricao ?? null, meta.und ?? null];
+            for (const v of base) params.push(v);
+            const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+            return `(${placeholders})`;
+          })
+          .join(',');
+        await tx.$executeRawUnsafe(
+          `
+          INSERT INTO sinapi_insumos_base (tenant_id, data_base, tipo_preco, classificacao, codigo_insumo, descricao, und)
+          VALUES ${values}
+          ON CONFLICT (tenant_id, data_base, tipo_preco, codigo_insumo)
+          DO UPDATE SET classificacao = EXCLUDED.classificacao, descricao = EXCLUDED.descricao, und = EXCLUDED.und, atualizado_em = NOW()
+          `,
+          ...params
+        );
+      }
+
+      const insRows = insumosMeta.size
+        ? ((await tx.$queryRawUnsafe(
+            `
+            SELECT id_insumo_sinapi AS "id", codigo_insumo AS "codigo"
+            FROM sinapi_insumos_base
+            WHERE tenant_id = $1 AND data_base = $2 AND tipo_preco = $3 AND codigo_insumo = ANY($4)
+            `,
+            ctx.tenantId,
+            sinapiDataBaseKey,
+            insumosModo,
+            Array.from(insumosMeta.keys())
+          )) as any[])
+        : [];
+      const insByCodigo = new Map<string, number>();
+      for (const r of insRows || []) insByCodigo.set(String(r.codigo || '').trim().toUpperCase(), Number(r.id));
+
+      if (insumosMeta.size) {
+        const entries = Array.from(insumosMeta.entries())
+          .map(([codigo, meta]) => {
+            const idInsumo = insByCodigo.get(codigo);
+            return idInsumo ? { idInsumo, pu: meta.pu } : null;
+          })
+          .filter(Boolean) as Array<{ idInsumo: number; pu: number | null }>;
+        if (entries.length) {
+          const params: any[] = [];
+          let p = 1;
+          const values = entries
+            .map((e) => {
+              const base = [ctx.tenantId, e.idInsumo, uf, e.pu == null ? null : toDec(e.pu)];
+              for (const v of base) params.push(v);
+              const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+              return `(${placeholders})`;
+            })
+            .join(',');
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO sinapi_insumos_pu (tenant_id, id_insumo_sinapi, uf, pu)
+            VALUES ${values}
+            ON CONFLICT (tenant_id, id_insumo_sinapi, uf)
+            DO UPDATE SET pu = EXCLUDED.pu, atualizado_em = NOW()
+            `,
+            ...params
+          );
+        }
+      }
+
+      const puRows = insumosMeta.size
+        ? ((await tx.$queryRawUnsafe(
+            `
+            SELECT id_pu AS "id", id_insumo_sinapi AS "idInsumo"
+            FROM sinapi_insumos_pu
+            WHERE tenant_id = $1 AND uf = $2 AND id_insumo_sinapi = ANY($3)
+            `,
+            ctx.tenantId,
+            uf,
+            Array.from(insByCodigo.values())
+          )) as any[])
+        : [];
+      const puByInsumoId = new Map<number, number>();
+      for (const r of puRows || []) puByInsumoId.set(Number(r.idInsumo), Number(r.id));
+
+      for (const code of importSet) {
+        const parentId = servByCodigo.get(code);
+        if (!parentId) continue;
+        const entry = comps.get(code);
+        if (!entry) continue;
+        await tx.$executeRawUnsafe(
+          `DELETE FROM sinapi_composicoes_base WHERE tenant_id = $1 AND uf = $2 AND data_base = $3 AND tipo_preco = $4 AND id_serv_sinapi = $5`,
+          ctx.tenantId,
+          uf,
+          sinapiDataBaseKey,
+          insumosModo,
+          parentId
+        );
+        const itens = entry.itens || [];
+        if (!itens.length) continue;
+        const chunkSize = 500;
+        for (let start = 0; start < itens.length; start += chunkSize) {
+          const chunk = itens.slice(start, start + chunkSize);
+          const params: any[] = [];
+          let p = 1;
+          const values = chunk
+            .map((it: any) => {
+              const tipoSinapi = String(it.tipoItemSinapi || '').trim().toUpperCase().slice(0, 32) || 'INSUMO';
+              const codigoItem = String(it.codigoItem || '').trim().toUpperCase().slice(0, 80);
+              const coef = it.quantidade == null ? null : Number(it.quantidade);
+              if (!codigoItem || coef == null) return null;
+              const isInsumo = tipoSinapi !== 'COMPOSICAO' && tipoSinapi !== 'COMPOSICAO_AUXILIAR';
+              const idInsumo = isInsumo ? insByCodigo.get(codigoItem) || null : null;
+              const idPu = idInsumo ? puByInsumoId.get(idInsumo) || null : null;
+              const ins = isInsumo ? insumosMap.get(codigoItem) : null;
+              const desc = isInsumo ? (ins?.descricao ? String(ins.descricao).trim().slice(0, 255) : null) : it.descricao ? String(it.descricao).trim().slice(0, 255) : null;
+              const undV = isInsumo ? (ins?.und ? String(ins.und).trim().slice(0, 40) : null) : it.und ? String(it.und).trim().slice(0, 40) : null;
+              const base = [ctx.tenantId, uf, sinapiDataBaseKey, insumosModo, parentId, idInsumo, idPu, tipoSinapi, codigoItem, desc, undV, toDec(coef)];
+              for (const v of base) params.push(v);
+              const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+              return `(${placeholders})`;
+            })
+            .filter(Boolean)
+            .join(',');
+          if (!values) continue;
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO sinapi_composicoes_base
+              (tenant_id, uf, data_base, tipo_preco, id_serv_sinapi, id_insumo_sinapi, id_pu, tipo_item, codigo_item, descricao, und, coeficiente)
+            VALUES ${values}
+            `,
+            ...params
+          );
+        }
+      }
+
       for (const code of toImport) {
         const entry = comps.get(code);
         const itens = entry?.itens || [];
@@ -5926,12 +6217,20 @@ export default async function v1Routes(server: FastifyInstance) {
         itens: z
           .array(
             z.object({
-              tipoItem: z.string().min(1),
               codigoItem: z.string().min(1),
               coeficiente: z.number(),
-              descricao: z.string().optional().nullable(),
-              und: z.string().optional().nullable(),
-              precoUnitario: z.number().optional().nullable(),
+              tipoItemSinapi: z.string().optional().nullable(),
+              descricaoSinapi: z.string().optional().nullable(),
+              undSinapi: z.string().optional().nullable(),
+              insumoClassificacao: z.string().optional().nullable(),
+              insumoDescricao: z.string().optional().nullable(),
+              insumoUnd: z.string().optional().nullable(),
+              insumoPu: z.number().optional().nullable(),
+              expTipo: z.string().optional().nullable(),
+              expCodigo: z.string().optional().nullable(),
+              expDescricao: z.string().optional().nullable(),
+              expUnd: z.string().optional().nullable(),
+              expValorUnitario: z.number().optional().nullable(),
             })
           )
           .min(1),
@@ -6000,16 +6299,43 @@ export default async function v1Routes(server: FastifyInstance) {
       return fail(reply, 422, `${detalhe} Para prosseguir, marque “Forçar importação (mês-base diferente)”.`);
     }
 
-    const itens = (parsed.itens || []).map((r) => ({
-      tipoItem: String(r.tipoItem || 'INSUMO').trim().toUpperCase().slice(0, 32) || 'INSUMO',
-      codigoItem: String(r.codigoItem || '').trim().toUpperCase().slice(0, 80),
-      coeficiente: r.coeficiente,
-      descricao: r.descricao == null ? null : String(r.descricao || '').trim().slice(0, 255),
-      und: r.und == null ? null : String(r.und || '').trim().slice(0, 40),
-      precoUnitario: r.precoUnitario == null ? null : Number(r.precoUnitario),
-    }));
+    const itens = (parsed.itens || []).map((r) => {
+      const codigoItem = String(r.codigoItem || '').trim().toUpperCase().slice(0, 80);
+      const tipoItemSinapi = String(r.tipoItemSinapi || '').trim().toUpperCase().slice(0, 32);
+      const expTipo = String(r.expTipo || '').trim().toUpperCase().slice(0, 32);
+      const expCodigo = String(r.expCodigo || '').trim().toUpperCase().slice(0, 80);
+      return {
+        codigoItem,
+        coeficiente: r.coeficiente,
+        tipoItemSinapi: tipoItemSinapi || (normalizeHeader(tipoItemSinapi).includes('insumo') ? 'INSUMO' : 'COMPOSICAO'),
+        descricaoSinapi: r.descricaoSinapi == null ? null : String(r.descricaoSinapi || '').trim().slice(0, 255),
+        undSinapi: r.undSinapi == null ? null : String(r.undSinapi || '').trim().slice(0, 40),
+        insumoClassificacao: r.insumoClassificacao == null ? null : String(r.insumoClassificacao || '').trim().slice(0, 80),
+        insumoDescricao: r.insumoDescricao == null ? null : String(r.insumoDescricao || '').trim().slice(0, 255),
+        insumoUnd: r.insumoUnd == null ? null : String(r.insumoUnd || '').trim().slice(0, 40),
+        insumoPu: r.insumoPu == null ? null : Number(r.insumoPu),
+        expTipo: expTipo || (normalizeHeader(tipoItemSinapi).includes('insumo') ? 'INSUMO' : 'COMPOSICAO'),
+        expCodigo: expCodigo || codigoItem,
+        expDescricao: r.expDescricao == null ? null : String(r.expDescricao || '').trim().slice(0, 255),
+        expUnd: r.expUnd == null ? null : String(r.expUnd || '').trim().slice(0, 40),
+        expValorUnitario: r.expValorUnitario == null ? null : Number(r.expValorUnitario),
+      };
+    });
     const totalItens = itens.length;
-    const sample = [{ codigo: codigoServico, itens: itens.slice(0, 3).map((x) => ({ ...x, quantidade: x.coeficiente, valorUnitario: x.precoUnitario })) }];
+    const sample = [
+      {
+        codigo: codigoServico,
+        itens: itens.slice(0, 3).map((x) => ({
+          tipoItem: x.expTipo,
+          codigoItem: x.expCodigo,
+          banco: banco || null,
+          descricao: x.expDescricao ?? x.insumoDescricao ?? x.descricaoSinapi ?? null,
+          und: x.expUnd ?? x.insumoUnd ?? x.undSinapi ?? null,
+          quantidade: x.coeficiente,
+          valorUnitario: x.expValorUnitario ?? x.insumoPu ?? null,
+        })),
+      },
+    ];
 
     if (dryRun) {
       return ok(
@@ -6072,7 +6398,8 @@ export default async function v1Routes(server: FastifyInstance) {
           let p = 1;
           const values = chunk
             .map((r) => {
-              const base = [ctx.tenantId, uf, sinapiDataBaseNorm, compCodigo, r.tipoItem, r.codigoItem, toDec(r.coeficiente)];
+              const tipoItem = normalizeHeader(r.tipoItemSinapi).includes('insumo') ? 'INSUMO' : 'COMPOSICAO';
+              const base = [ctx.tenantId, uf, sinapiDataBaseNorm, compCodigo, tipoItem, r.codigoItem, toDec(r.coeficiente)];
               for (const v of base) params.push(v);
               const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
               return `(${placeholders})`;
@@ -6090,10 +6417,14 @@ export default async function v1Routes(server: FastifyInstance) {
 
       const usedInsumos = new Map<string, { descricao: string | null; und: string | null; preco: number | null }>();
       for (const it of itens) {
-        const t = String(it.tipoItem || '').toUpperCase();
-        if (t === 'COMPOSICAO' || t === 'COMPOSICAO_AUXILIAR') continue;
+        const t = normalizeHeader(it.tipoItemSinapi);
+        if (!t.includes('insumo')) continue;
         if (!it.codigoItem) continue;
-        usedInsumos.set(it.codigoItem, { descricao: it.descricao ?? null, und: it.und ?? null, preco: it.precoUnitario ?? null });
+        usedInsumos.set(it.codigoItem, {
+          descricao: it.insumoDescricao ?? it.descricaoSinapi ?? null,
+          und: it.insumoUnd ?? it.undSinapi ?? null,
+          preco: it.insumoPu ?? it.expValorUnitario ?? null,
+        });
       }
 
       if (usedInsumos.size) {
@@ -6132,13 +6463,13 @@ export default async function v1Routes(server: FastifyInstance) {
         const normalized = itens
           .map((r) => ({
             etapa: '',
-            tipoItem: r.tipoItem,
-            codigoItem: r.codigoItem,
+            tipoItem: r.expTipo,
+            codigoItem: r.expCodigo,
             banco: banco || null,
-            descricao: r.descricao ?? null,
-            und: r.und ?? null,
+            descricao: (r.expDescricao ?? r.insumoDescricao ?? r.descricaoSinapi) ?? null,
+            und: (r.expUnd ?? r.insumoUnd ?? r.undSinapi) ?? null,
             quantidade: toDec(r.coeficiente),
-            valorUnitario: r.precoUnitario == null ? null : toDec(r.precoUnitario),
+            valorUnitario: r.expValorUnitario == null ? null : toDec(r.expValorUnitario),
             perda: 0,
             codigoCentroCusto: null,
           }))
@@ -6180,6 +6511,220 @@ export default async function v1Routes(server: FastifyInstance) {
           importedItens += chunk.length;
         }
       }
+
+      const servicosMeta = new Map<string, { descricao: string | null; und: string | null }>();
+      servicosMeta.set(compCodigo, { descricao: compDesc, und: compUnd });
+      for (const it of itens) {
+        const t = normalizeHeader(it.tipoItemSinapi);
+        if (!t.includes('compos')) continue;
+        const code = String(it.codigoItem || '').trim().toUpperCase();
+        if (!code) continue;
+        servicosMeta.set(code, {
+          descricao: it.descricaoSinapi ?? null,
+          und: it.undSinapi ?? null,
+        });
+      }
+
+      if (servicosMeta.size) {
+        const entries = Array.from(servicosMeta.entries());
+        const params: any[] = [];
+        let p = 1;
+        const values = entries
+          .map(([codigo, meta]) => {
+            const base = [ctx.tenantId, sinapiDataBaseNorm, codigo, meta.descricao ?? null, meta.und ?? null];
+            for (const v of base) params.push(v);
+            const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+            return `(${placeholders})`;
+          })
+          .join(',');
+        await tx.$executeRawUnsafe(
+          `
+          INSERT INTO sinapi_servicos_base (tenant_id, data_base, codigo_servico, descricao, und)
+          VALUES ${values}
+          ON CONFLICT (tenant_id, data_base, codigo_servico)
+          DO UPDATE SET descricao = EXCLUDED.descricao, und = EXCLUDED.und, atualizado_em = NOW()
+          `,
+          ...params
+        );
+      }
+
+      const servRows = (await tx.$queryRawUnsafe(
+        `
+        SELECT id_serv_sinapi AS "id", codigo_servico AS "codigo"
+        FROM sinapi_servicos_base
+        WHERE tenant_id = $1 AND data_base = $2 AND codigo_servico = ANY($3)
+        `,
+        ctx.tenantId,
+        sinapiDataBaseNorm,
+        Array.from(servicosMeta.keys())
+      )) as any[];
+      const servByCodigo = new Map<string, number>();
+      for (const r of servRows || []) servByCodigo.set(String(r.codigo || '').trim().toUpperCase(), Number(r.id));
+      const parentServId = servByCodigo.get(compCodigo) || null;
+      if (!parentServId) return;
+
+      const insumosMeta = new Map<string, { classificacao: string | null; descricao: string | null; und: string | null; pu: number | null }>();
+      for (const it of itens) {
+        const t = normalizeHeader(it.tipoItemSinapi);
+        if (!t.includes('insumo')) continue;
+        const code = String(it.codigoItem || '').trim().toUpperCase();
+        if (!code) continue;
+        insumosMeta.set(code, {
+          classificacao: it.insumoClassificacao ?? null,
+          descricao: it.insumoDescricao ?? null,
+          und: it.insumoUnd ?? null,
+          pu: it.insumoPu == null ? null : Number(it.insumoPu),
+        });
+      }
+
+      if (insumosMeta.size) {
+        const entries = Array.from(insumosMeta.entries());
+        const params: any[] = [];
+        let p = 1;
+        const values = entries
+          .map(([codigo, meta]) => {
+            const base = [ctx.tenantId, sinapiDataBaseNorm, insumosModo, meta.classificacao ?? null, codigo, meta.descricao ?? null, meta.und ?? null];
+            for (const v of base) params.push(v);
+            const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+            return `(${placeholders})`;
+          })
+          .join(',');
+        await tx.$executeRawUnsafe(
+          `
+          INSERT INTO sinapi_insumos_base (tenant_id, data_base, tipo_preco, classificacao, codigo_insumo, descricao, und)
+          VALUES ${values}
+          ON CONFLICT (tenant_id, data_base, tipo_preco, codigo_insumo)
+          DO UPDATE SET classificacao = EXCLUDED.classificacao, descricao = EXCLUDED.descricao, und = EXCLUDED.und, atualizado_em = NOW()
+          `,
+          ...params
+        );
+      }
+
+      const insRows = insumosMeta.size
+        ? ((await tx.$queryRawUnsafe(
+            `
+            SELECT id_insumo_sinapi AS "id", codigo_insumo AS "codigo"
+            FROM sinapi_insumos_base
+            WHERE tenant_id = $1 AND data_base = $2 AND tipo_preco = $3 AND codigo_insumo = ANY($4)
+            `,
+            ctx.tenantId,
+            sinapiDataBaseNorm,
+            insumosModo,
+            Array.from(insumosMeta.keys())
+          )) as any[])
+        : [];
+      const insByCodigo = new Map<string, number>();
+      for (const r of insRows || []) insByCodigo.set(String(r.codigo || '').trim().toUpperCase(), Number(r.id));
+
+      if (insumosMeta.size) {
+        const entries = Array.from(insumosMeta.entries())
+          .map(([codigo, meta]) => {
+            const idInsumo = insByCodigo.get(codigo);
+            return idInsumo ? { idInsumo, pu: meta.pu } : null;
+          })
+          .filter(Boolean) as Array<{ idInsumo: number; pu: number | null }>;
+        if (entries.length) {
+          const params: any[] = [];
+          let p = 1;
+          const values = entries
+            .map((e) => {
+              const base = [ctx.tenantId, e.idInsumo, uf, e.pu == null ? null : toDec(e.pu)];
+              for (const v of base) params.push(v);
+              const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+              return `(${placeholders})`;
+            })
+            .join(',');
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO sinapi_insumos_pu (tenant_id, id_insumo_sinapi, uf, pu)
+            VALUES ${values}
+            ON CONFLICT (tenant_id, id_insumo_sinapi, uf)
+            DO UPDATE SET pu = EXCLUDED.pu, atualizado_em = NOW()
+            `,
+            ...params
+          );
+        }
+      }
+
+      const puRows = insumosMeta.size
+        ? ((await tx.$queryRawUnsafe(
+            `
+            SELECT id_pu AS "id", id_insumo_sinapi AS "idInsumo"
+            FROM sinapi_insumos_pu
+            WHERE tenant_id = $1 AND uf = $2 AND id_insumo_sinapi = ANY($3)
+            `,
+            ctx.tenantId,
+            uf,
+            Array.from(insByCodigo.values())
+          )) as any[])
+        : [];
+      const puByInsumoId = new Map<number, number>();
+      for (const r of puRows || []) puByInsumoId.set(Number(r.idInsumo), Number(r.id));
+
+      await tx.$executeRawUnsafe(
+        `DELETE FROM sinapi_composicoes_base WHERE tenant_id = $1 AND uf = $2 AND data_base = $3 AND tipo_preco = $4 AND id_serv_sinapi = $5`,
+        ctx.tenantId,
+        uf,
+        sinapiDataBaseNorm,
+        insumosModo,
+        parentServId
+      );
+
+      const compEntries = itens
+        .map((it) => {
+          const tNorm = normalizeHeader(it.tipoItemSinapi);
+          const isInsumo = tNorm.includes('insumo');
+          const idInsumo = isInsumo ? insByCodigo.get(String(it.codigoItem || '').trim().toUpperCase()) || null : null;
+          const idPu = idInsumo ? puByInsumoId.get(idInsumo) || null : null;
+          return {
+            tipoItem: it.tipoItemSinapi || (isInsumo ? 'INSUMO' : 'COMPOSICAO'),
+            codigoItem: String(it.codigoItem || '').trim().toUpperCase(),
+            descricao: (isInsumo ? it.insumoDescricao : it.descricaoSinapi) ?? null,
+            und: (isInsumo ? it.insumoUnd : it.undSinapi) ?? null,
+            coeficiente: it.coeficiente,
+            idInsumo,
+            idPu,
+          };
+        })
+        .filter((x) => x.codigoItem && x.coeficiente != null);
+
+      if (compEntries.length) {
+        const chunkSize = 500;
+        for (let start = 0; start < compEntries.length; start += chunkSize) {
+          const chunk = compEntries.slice(start, start + chunkSize);
+          const params: any[] = [];
+          let p = 1;
+          const values = chunk
+            .map((r) => {
+              const base = [
+                ctx.tenantId,
+                uf,
+                sinapiDataBaseNorm,
+                insumosModo,
+                parentServId,
+                r.idInsumo,
+                r.idPu,
+                String(r.tipoItem || '').trim().toUpperCase().slice(0, 32),
+                String(r.codigoItem || '').trim().toUpperCase().slice(0, 80),
+                r.descricao == null ? null : String(r.descricao || '').trim().slice(0, 255),
+                r.und == null ? null : String(r.und || '').trim().slice(0, 40),
+                toDec(r.coeficiente),
+              ];
+              for (const v of base) params.push(v);
+              const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+              return `(${placeholders})`;
+            })
+            .join(',');
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO sinapi_composicoes_base
+              (tenant_id, uf, data_base, tipo_preco, id_serv_sinapi, id_insumo_sinapi, id_pu, tipo_item, codigo_item, descricao, und, coeficiente)
+            VALUES ${values}
+            `,
+            ...params
+          );
+        }
+      }
     }, { timeout: 120000, maxWait: 20000 });
 
     return ok(
@@ -6198,6 +6743,56 @@ export default async function v1Routes(server: FastifyInstance) {
         skippedNotInPlanilha: 0,
       },
       { message: 'Importação SINAPI concluída' }
+    );
+  });
+
+  server.get('/engenharia/obras/:id/planilha/sinapi/importados', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensureSinapiBaseTables(prisma);
+
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        s.codigo_servico AS "codigo",
+        COALESCE(s.descricao,'') AS "descricao",
+        COALESCE(s.und,'') AS "und",
+        s.data_base AS "dataBase",
+        COUNT(DISTINCT c.codigo_item) AS "itens",
+        COUNT(DISTINCT c.id_insumo_sinapi) FILTER (WHERE c.id_insumo_sinapi IS NOT NULL) AS "insumos"
+      FROM sinapi_servicos_base s
+      JOIN sinapi_composicoes_base c
+        ON c.tenant_id = s.tenant_id
+        AND c.data_base = s.data_base
+        AND c.id_serv_sinapi = s.id_serv_sinapi
+      WHERE s.tenant_id = $1
+      GROUP BY s.codigo_servico, s.descricao, s.und, s.data_base
+      HAVING COUNT(*) > 0 AND COUNT(*) FILTER (WHERE c.id_insumo_sinapi IS NOT NULL) > 0
+      ORDER BY s.data_base DESC, s.codigo_servico ASC
+      LIMIT 800
+      `,
+      ctx.tenantId
+    )) as any[];
+
+    return ok(
+      reply,
+      {
+        rows: (rows || []).map((r: any) => ({
+          codigo: String(r.codigo || '').trim(),
+          descricao: String(r.descricao || ''),
+          und: String(r.und || ''),
+          dataBase: String(r.dataBase || ''),
+          itens: r.itens == null ? 0 : Number(r.itens),
+          insumos: r.insumos == null ? 0 : Number(r.insumos),
+        })),
+      },
+      { message: 'Serviços SINAPI importados' }
     );
   });
 
