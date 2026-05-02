@@ -5453,9 +5453,23 @@ export default async function v1Routes(server: FastifyInstance) {
       const iUnd = findCol(['und', 'unid', 'unidade']);
       let iPreco = headersNorm.findIndex((h) => h === ufLower);
       if (iPreco < 0) iPreco = headersNorm.findIndex((h) => h.endsWith(`_${ufLower}`) || h.includes(`_${ufLower}_`) || h.includes(`preco_${ufLower}`) || h.includes(`valor_${ufLower}`));
-      if (iPreco < 0) return new Map<string, { descricao: string; und: string; preco: number | null }>();
+      let dataStartIdx = headerIdx + 1;
+      if (iPreco < 0) {
+        for (let off = 1; off <= 3; off++) {
+          const r = Array.isArray(m[headerIdx + off]) ? (m[headerIdx + off] as any[]) : [];
+          const rowNorm = r.map((h) => normalizeHeader(String(h || '')));
+          const idx = rowNorm.findIndex((h) => h === ufLower);
+          if (idx >= 0) {
+            iPreco = idx;
+            dataStartIdx = headerIdx + off + 1;
+            break;
+          }
+        }
+      }
+      if (iPreco < 0) iPreco = findCol(['preco_unitario', 'preco', 'valor', 'custo_unitario', 'custo', 'preco_medio']);
+      if (iCod < 0 || iDesc < 0 || iUnd < 0 || iPreco < 0) return new Map<string, { descricao: string; und: string; preco: number | null }>();
       const out = new Map<string, { descricao: string; und: string; preco: number | null }>();
-      for (let i = headerIdx + 1; i < m.length; i++) {
+      for (let i = dataStartIdx; i < m.length; i++) {
         const row = Array.isArray(m[i]) ? m[i] : [];
         const code = String(row[iCod] ?? '').trim().toUpperCase();
         if (!code) continue;

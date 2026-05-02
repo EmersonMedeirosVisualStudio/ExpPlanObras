@@ -868,6 +868,23 @@ async function readTextSmart(file: File) {
       return null;
     };
 
+    const findInsumosHeader = (sheet: any, maxScanRows: number) => {
+      if (!sheet?.["!ref"]) return null;
+      const range = XLSX.utils.decode_range(sheet["!ref"]);
+      const maxR = Math.min(range.e.r, range.s.r + maxScanRows);
+      const maxC = range.e.c;
+      for (let r = range.s.r; r <= maxR; r++) {
+        const headersNorm: string[] = [];
+        for (let c = range.s.c; c <= maxC; c++) headersNorm.push(normalizeHeader(String(readCell(sheet, r, c) || "")));
+        const keys = headersNorm.filter(Boolean);
+        const hasCodigo = keys.includes("codigo") || keys.includes("codigo_item") || keys.includes("codigo_insumo") || keys.includes("codigo_do_insumo");
+        const hasDesc = keys.includes("descricao") || keys.includes("descricao_item") || keys.includes("descricao_insumo") || keys.includes("insumo");
+        const hasUnd = keys.includes("unidade") || keys.includes("und") || keys.includes("unid");
+        if (hasCodigo && hasDesc && hasUnd) return { headerRow: r, headersNorm, range };
+      }
+      return null;
+    };
+
     const anal = findHeader(analiticoSheet, 60);
     if (!anal) throw new Error('Não foi possível identificar o cabeçalho da aba. Verifique se é a aba "Analítico".');
     const findCol = (headersNorm: string[], cands: string[]) => {
@@ -949,20 +966,47 @@ async function readTextSmart(file: File) {
 
     if (!itensRaw.length) throw new Error(`Composição não encontrada no arquivo (código: ${target}).`);
 
-    const insHdr = findHeader(insumosSheet, 80);
+    const insHdr = findInsumosHeader(insumosSheet, 160);
     if (!insHdr) throw new Error(`Não foi possível identificar o cabeçalho da aba de insumos (${insumosSheetName}).`);
     const h = insHdr.headersNorm;
     const iCod = findCol(h, ["codigo_item", "codigo"]);
     const iDesc = findCol(h, ["descricao_item", "descricao", "insumo"]);
     const iUnd2 = findCol(h, ["und", "unid", "unidade"]);
     const ufLower = uf.toLowerCase();
+    const readHeaderRowNorm = (rowIdx: number) => {
+      const out: string[] = [];
+      for (let c = insHdr.range.s.c; c <= insHdr.range.e.c; c++) out.push(normalizeHeader(String(readCell(insumosSheet, rowIdx, c) || "")));
+      return out;
+    };
     let iPreco = h.findIndex((x) => x === ufLower);
     if (iPreco < 0) iPreco = h.findIndex((x) => x.endsWith(`_${ufLower}`) || x.includes(`_${ufLower}_`) || x.includes(`preco_${ufLower}`) || x.includes(`valor_${ufLower}`));
-    if (iCod < 0 || iDesc < 0 || iUnd2 < 0 || iPreco < 0) throw new Error(`Não foi possível localizar colunas mínimas (código/descrição/und/preço ${uf}) na aba de insumos (${insumosSheetName}).`);
+    let insPrecoHeaderRow = insHdr.headerRow;
+    if (iPreco < 0) {
+      for (let off = 1; off <= 3; off++) {
+        const rowNorm = readHeaderRowNorm(insHdr.headerRow + off);
+        const idx = rowNorm.findIndex((x) => x === ufLower);
+        if (idx >= 0) {
+          iPreco = idx;
+          insPrecoHeaderRow = insHdr.headerRow + off;
+          break;
+        }
+      }
+    }
+    if (iPreco < 0) iPreco = findCol(h, ["preco_unitario", "preco", "valor", "custo_unitario", "custo", "preco_medio"]);
+    if (iCod < 0 || iDesc < 0 || iUnd2 < 0 || iPreco < 0) {
+      const base = h.slice(0, 40).filter(Boolean).join(", ");
+      const next = readHeaderRowNorm(insHdr.headerRow + 1).slice(0, 40).filter(Boolean).join(", ");
+      throw new Error(
+        `Não foi possível localizar colunas mínimas na aba de insumos (${insumosSheetName}). ` +
+          `Detectado (linha ${insHdr.headerRow + 1}): ${base || "—"}. ` +
+          `Linha seguinte: ${next || "—"}.`
+      );
+    }
 
     const insumosFound = new Map<string, { descricao: string; und: string; preco: number | null }>();
     const rangeIns = insHdr.range;
-    for (let r = insHdr.headerRow + 1; r <= rangeIns.e.r; r++) {
+    const dataStartRow = Math.max(insHdr.headerRow, insPrecoHeaderRow) + 1;
+    for (let r = dataStartRow; r <= rangeIns.e.r; r++) {
       if (!insumosNeed.size) break;
       const code = String(readCell(insumosSheet, r, rangeIns.s.c + iCod) ?? "").trim().toUpperCase();
       if (!code || !insumosNeed.has(code)) continue;
