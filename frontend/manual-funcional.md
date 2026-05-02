@@ -3168,19 +3168,27 @@ Este é o comportamento real da importação ao ler o arquivo XLSX (regras de bu
 
 **Tarefa: Importação SINAPI — evolução**
 
-A importação SINAPI evoluiu em etapas (commits principais):
+A importação SINAPI evoluiu em etapas. Este checklist mostra o que está **em uso**, o que ficou como **alternativa**, e o que está **concluído** como parte da evolução.
 
-- 57c585b — Importação inicial a partir do Excel.
-- deecdb9 — Upload + prévia + parâmetros.
-- dab67db — Importar analítico + preços (ISD/ICD/ISE) e prévia em card.
-- e38c670 — Melhorias de UX (validações de prévia, mensagens e KPIs).
-- d3364d4 — Bloquear quando mês-base é diferente (com opção de forçar).
-- c5b701b — Alternativa “Opção A”: parse local no navegador e envio de JSON (sem upload do XLSX).
-- 0fe24ba — Reestruturação do fluxo: Sinapi centralizado + aplicar base na obra.
-- d20aaa6 — Lista de importados + filtros ocultos + modal de importação.
-- 02532fd — Preferências persistidas (UF/insumos).
-- 584b886 — Correções de rota/UX (obras, mensagens no modal, ajustes de rótulos).
-- 07c1291 — Opções exclusivas (sem “Escopo”) + erro de importação mais detalhado.
+Legenda:
+- Concluído: etapa feita e estabilizada (marco histórico).
+- Em uso: etapa ativa no fluxo atual.
+- Alternativa: existe no código/foi testada, mas não é o fluxo padrão hoje.
+
+| Etapa | O que foi entregue | Status | Commit |
+|---|---|---|---|
+| 1 | Importação inicial a partir do Excel | Concluído | 57c585b |
+| 2 | Upload + prévia + parâmetros | Concluído | deecdb9 |
+| 3 | Importar analítico + preços (ISD/ICD/ISE) + prévia em card | Concluído | dab67db |
+| 4 | Melhorias de UX (validações de prévia, mensagens e KPIs) | Concluído | e38c670 |
+| 5 | Bloqueio quando mês-base é diferente (com opção de forçar) | Em uso | d3364d4 |
+| 6 | “Opção A”: parse local no navegador e envio de JSON (sem upload do XLSX) | Alternativa | c5b701b |
+| 7 | Reestruturação do fluxo: Sinapi centralizado + aplicar base na obra | Em uso | 0fe24ba |
+| 8 | Lista de importados + filtros ocultos + modal de importação | Em uso | d20aaa6 |
+| 9 | Preferências persistidas (UF/insumos) | Em uso | 02532fd |
+| 10 | Correções de rota/UX (obras, mensagens no modal, ajustes de rótulos) | Em uso | 584b886 |
+| 11 | Opções exclusivas (sem “Escopo”) + erro de importação mais detalhado | Em uso | 07c1291 |
+| 12 | Data-base primeiro no modal + override manual da data-base informada | Em uso | 81b7b19 |
 
 ### 18.3 Documentos e acervos
 
