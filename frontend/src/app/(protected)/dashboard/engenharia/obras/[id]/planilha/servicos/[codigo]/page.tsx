@@ -189,6 +189,8 @@ async function readTextSmart(file: File) {
   const [sinapiInsumosModo, setSinapiInsumosModo] = useState<"ISD" | "ICD" | "ISE">("ISD");
   const [sinapiPreview, setSinapiPreview] = useState<any | null>(null);
   const [sinapiBusy, setSinapiBusy] = useState(false);
+  const [sinapiMsgOk, setSinapiMsgOk] = useState<string>("");
+  const [sinapiMsgErr, setSinapiMsgErr] = useState<string>("");
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
   const [editingBancoOutroIdx, setEditingBancoOutroIdx] = useState<number | null>(null);
   const [bancoOutroValue, setBancoOutroValue] = useState("");
@@ -738,10 +740,14 @@ async function readTextSmart(file: File) {
       if (!idObra || !codigoServico) return;
       if (!sinapiFile) {
         setErr("Selecione o arquivo XLSX do SINAPI para gerar a prévia.");
+        setSinapiMsgOk("");
+        setSinapiMsgErr("Selecione o arquivo XLSX do SINAPI para gerar a prévia.");
         return;
       }
       setErr("");
       setOkMsg("");
+      setSinapiMsgOk("");
+      setSinapiMsgErr("");
       setSinapiBusy(true);
       const fd = new FormData();
       fd.append("file", sinapiFile);
@@ -757,9 +763,14 @@ async function readTextSmart(file: File) {
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao gerar prévia do SINAPI");
       setSinapiPreview(json.data);
       setOkMsg("Prévia do SINAPI gerada.");
+      setSinapiMsgOk("Prévia gerada com sucesso.");
+      setSinapiMsgErr("");
     } catch (e: any) {
       setSinapiPreview(null);
-      setErr(e?.message || "Erro ao gerar prévia do SINAPI");
+      const msg = e?.message || "Erro ao gerar prévia do SINAPI";
+      setErr(msg);
+      setSinapiMsgOk("");
+      setSinapiMsgErr(msg);
     } finally {
       setSinapiBusy(false);
     }
@@ -770,12 +781,16 @@ async function readTextSmart(file: File) {
       if (!idObra || !codigoServico) return;
       if (!sinapiFile) {
         setErr("Selecione o arquivo XLSX do SINAPI para importar.");
+        setSinapiMsgOk("");
+        setSinapiMsgErr("Selecione o arquivo XLSX do SINAPI para importar.");
         return;
       }
       const ok = window.confirm("Importar a composição deste serviço a partir do SINAPI e substituir a composição atual?");
       if (!ok) return;
       setErr("");
       setOkMsg("");
+      setSinapiMsgOk("");
+      setSinapiMsgErr("");
       setSinapiBusy(true);
       const fd = new FormData();
       fd.append("file", sinapiFile);
@@ -790,11 +805,16 @@ async function readTextSmart(file: File) {
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao importar do SINAPI");
       setOkMsg("Composição importada do SINAPI.");
+      setSinapiMsgOk("Importação concluída com sucesso.");
+      setSinapiMsgErr("");
       setSinapiImportOpen(false);
       setSinapiPreview(null);
       await Promise.all([carregar(true), carregarPrevistoPlanilha(), carregarComposicoesDefinidas()]);
     } catch (e: any) {
-      setErr(e?.message || "Erro ao importar do SINAPI");
+      const msg = e?.message || "Erro ao importar do SINAPI";
+      setErr(msg);
+      setSinapiMsgOk("");
+      setSinapiMsgErr(msg);
     } finally {
       setSinapiBusy(false);
     }
@@ -970,6 +990,15 @@ async function readTextSmart(file: File) {
 
   const bancosBase = useMemo(() => ["SINAPI", "Próprio", "SBC", "SICRO3"], []);
   const bancosOptions = useMemo(() => Array.from(new Set([...bancosBase, ...bancosCustom])), [bancosBase, bancosCustom]);
+
+  const sinapiRequisitos = useMemo(() => {
+    const missing: string[] = [];
+    if (!sinapiFile) missing.push("Arquivo XLSX");
+    if (!String(sinapiSheetName || "").trim()) missing.push("Aba");
+    if (!String(sinapiUf || "").trim()) missing.push("UF");
+    if (!String(sinapiInsumosModo || "").trim()) missing.push("Preços de insumos");
+    return { ok: missing.length === 0, missing };
+  }, [sinapiFile, sinapiSheetName, sinapiUf, sinapiInsumosModo]);
 
   const previstoTotal = useMemo(() => {
     let total = 0;
@@ -2650,43 +2679,31 @@ async function readTextSmart(file: File) {
               </div>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-stretch gap-2 text-xs">
-              <div className="rounded-lg border bg-white px-3 py-2">
-                <div className="text-[11px] text-slate-500">Subtotal (sem LS + BDI)</div>
-                <div className="text-sm font-semibold text-slate-900">{moeda(Number(totalBase || 0))}</div>
+            <div className="mt-3 grid grid-cols-6 gap-2 text-xs">
+              <div className="rounded-lg border bg-white px-2 py-2">
+                <div className="text-[10px] text-slate-500">Subtotal</div>
+                <div className="text-[13px] font-semibold text-slate-900">{moeda(Number(totalBase || 0))}</div>
               </div>
-              <div className="self-center px-1 text-slate-400">→</div>
-              <div className="rounded-lg border bg-white px-3 py-2">
-                <div className="text-[11px] text-slate-500">LS</div>
-                <div className="text-sm font-semibold text-slate-900">{Number(lsPercent || 0).toFixed(2)}%</div>
-                <div className="text-[11px] text-slate-500">Acréscimo: {moeda(Number((totalComLS - totalBase) || 0))}</div>
+              <div className="rounded-lg border bg-white px-2 py-2">
+                <div className="text-[10px] text-slate-500">LS</div>
+                <div className="text-[13px] font-semibold text-slate-900">{Number(lsPercent || 0).toFixed(2)}%</div>
               </div>
-              <div className="self-center px-1 text-slate-400">→</div>
-              <div className="rounded-lg border border-indigo-600 bg-indigo-50 px-3 py-2">
-                <div className="text-[11px] text-slate-500">Total (com LS)</div>
-                <div className="text-sm font-semibold text-slate-900">{moeda(Number(totalComLS || 0))}</div>
+              <div className="rounded-lg border border-indigo-600 bg-indigo-50 px-2 py-2">
+                <div className="text-[10px] text-slate-500">Total (c/ LS)</div>
+                <div className="text-[13px] font-semibold text-slate-900">{moeda(Number(totalComLS || 0))}</div>
               </div>
-              <div className="self-center px-1 text-slate-400">→</div>
-              <div className="rounded-lg border bg-white px-3 py-2">
-                <div className="text-[11px] text-slate-500">BDI</div>
-                <div className="text-sm font-semibold text-slate-900">{Number(bdiPercent || 0).toFixed(2)}%</div>
-                <div className="text-[11px] text-slate-500">Acréscimo: {moeda(Number((totalComLSComBDI - totalComLS) || 0))}</div>
+              <div className="rounded-lg border bg-white px-2 py-2">
+                <div className="text-[10px] text-slate-500">BDI</div>
+                <div className="text-[13px] font-semibold text-slate-900">{Number(bdiPercent || 0).toFixed(2)}%</div>
               </div>
-              <div className="self-center px-1 text-slate-400">→</div>
-              <div className="rounded-lg border bg-blue-600 px-3 py-2 text-white">
-                <div className="text-[11px] opacity-90">Total final (LS + BDI)</div>
-                <div className="text-sm font-semibold">{moeda(Number(totalComLSComBDI || 0))}</div>
+              <div className="rounded-lg border bg-blue-600 px-2 py-2 text-white">
+                <div className="text-[10px] opacity-90">Total final</div>
+                <div className="text-[13px] font-semibold">{moeda(Number(totalComLSComBDI || 0))}</div>
               </div>
-              {Number(descontoPercent || 0) > 0 ? (
-                <>
-                  <div className="self-center px-1 text-slate-400">→</div>
-                  <div className="rounded-lg border bg-white px-3 py-2">
-                    <div className="text-[11px] text-slate-500">Total com desconto</div>
-                    <div className="text-sm font-semibold text-slate-900">{moeda(Number(totalComDesconto || 0))}</div>
-                    <div className="text-[11px] text-slate-500">Desconto: {Number(descontoPercent || 0).toFixed(2)}%</div>
-                  </div>
-                </>
-              ) : null}
+              <div className="rounded-lg border bg-white px-2 py-2">
+                <div className="text-[10px] text-slate-500">{Number(descontoPercent || 0) > 0 ? `Total c/ desc. (${Number(descontoPercent || 0).toFixed(2)}%)` : "Total c/ desc."}</div>
+                <div className="text-[13px] font-semibold text-slate-900">{moeda(Number(totalComDesconto || 0))}</div>
+              </div>
             </div>
           </div>
           <div className="w-full md:w-[420px]">
@@ -2744,6 +2761,8 @@ async function readTextSmart(file: File) {
                 onClick={() => {
                   setSinapiImportOpen(false);
                   setSinapiPreview(null);
+                  setSinapiMsgOk("");
+                  setSinapiMsgErr("");
                 }}
                 disabled={sinapiBusy}
                 title="Ocultar importação SINAPI"
@@ -2751,9 +2770,15 @@ async function readTextSmart(file: File) {
                 Ocultar
               </button>
             </div>
+            {sinapiMsgOk ? <div className="rounded border border-green-200 bg-green-50 p-2 text-sm text-green-800">{sinapiMsgOk}</div> : null}
+            {sinapiMsgErr ? <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{sinapiMsgErr}</div> : null}
             <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
               <div className="md:col-span-12 space-y-1">
-                <div className="text-sm text-slate-600">Arquivo XLSX</div>
+                <div className="text-sm text-slate-600 flex items-center gap-2">
+                  <span>Arquivo XLSX</span>
+                  {sinapiFile ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <CircleDashed className="h-4 w-4 text-slate-400" />}
+                  <span className="text-xs text-slate-500">{sinapiFile ? String(sinapiFile.name || "") : "Nenhum arquivo selecionado"}</span>
+                </div>
                 <input type="file" accept=".xlsx" onChange={(e) => setSinapiFile(e.target.files?.[0] || null)} disabled={sinapiBusy} title="Selecione o XLSX do SINAPI" />
               </div>
               <div className="md:col-span-6 space-y-1">
@@ -2812,7 +2837,13 @@ async function readTextSmart(file: File) {
                 </select>
               </div>
               <div className="md:col-span-12 flex items-center justify-end gap-2 flex-wrap">
-                <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={sinapiGerarPrevia} disabled={sinapiBusy} title="Gerar prévia da composição no SINAPI">
+                <button
+                  className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={sinapiGerarPrevia}
+                  disabled={sinapiBusy || !sinapiRequisitos.ok}
+                  title={sinapiRequisitos.ok ? "Gerar prévia da composição no SINAPI" : `Preencha para habilitar: ${sinapiRequisitos.missing.join(", ")}`}
+                >
                   Prévia
                 </button>
               </div>
