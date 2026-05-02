@@ -3189,6 +3189,7 @@ Legenda:
 | 10 | Correções de rota/UX (obras, mensagens no modal, ajustes de rótulos) | Em uso | 584b886 |
 | 11 | Opções exclusivas (sem “Escopo”) + erro de importação mais detalhado | Em uso | 07c1291 |
 | 12 | Data-base primeiro no modal + override manual da data-base informada | Em uso | 81b7b19 |
+| 13 | Correção de navegação externa (evitar ROUTER_EXTERNAL_TARGET_ERROR em rotas externas) | Em uso | 2609b2f |
 
 ### 18.3 Documentos e acervos
 
