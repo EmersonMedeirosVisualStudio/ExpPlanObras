@@ -5426,9 +5426,10 @@ export default async function v1Routes(server: FastifyInstance) {
       for (let i = 0; i < Math.min(80, m.length); i++) {
         const r = Array.isArray(m[i]) ? m[i] : [];
         const keys = r.map((c) => normalizeHeader(String(c || ''))).filter(Boolean);
-        const hasCodigo = keys.includes('codigo') || keys.includes('codigo_item');
-        const hasDesc = keys.includes('descricao') || keys.includes('descricao_item') || keys.includes('insumo');
-        const hasUnd = keys.includes('unidade') || keys.includes('und') || keys.includes('unid');
+        if (keys.length < 4) continue;
+        const hasCodigo = keys.some((k) => k.includes('codigo') && (k.includes('insumo') || k.includes('item') || k === 'codigo'));
+        const hasDesc = keys.some((k) => k.includes('descricao'));
+        const hasUnd = keys.some((k) => k === 'unidade' || k === 'und' || k.startsWith('unid'));
         if (hasCodigo && hasDesc && hasUnd) {
           headerIdx = i;
           rawHeader = r;

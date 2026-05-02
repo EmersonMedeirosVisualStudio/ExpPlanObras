@@ -871,15 +871,16 @@ async function readTextSmart(file: File) {
     const findInsumosHeader = (sheet: any, maxScanRows: number) => {
       if (!sheet?.["!ref"]) return null;
       const range = XLSX.utils.decode_range(sheet["!ref"]);
-      const maxR = Math.min(range.e.r, range.s.r + maxScanRows);
-      const maxC = range.e.c;
+      const maxR = Math.min(range.e.r, range.s.r + Math.max(0, Number(maxScanRows || 0)));
+      const maxC = Math.min(range.e.c, range.s.c + 49);
       for (let r = range.s.r; r <= maxR; r++) {
         const headersNorm: string[] = [];
         for (let c = range.s.c; c <= maxC; c++) headersNorm.push(normalizeHeader(String(readCell(sheet, r, c) || "")));
         const keys = headersNorm.filter(Boolean);
-        const hasCodigo = keys.includes("codigo") || keys.includes("codigo_item") || keys.includes("codigo_insumo") || keys.includes("codigo_do_insumo");
-        const hasDesc = keys.includes("descricao") || keys.includes("descricao_item") || keys.includes("descricao_insumo") || keys.includes("insumo");
-        const hasUnd = keys.includes("unidade") || keys.includes("und") || keys.includes("unid");
+        if (keys.length < 4) continue;
+        const hasCodigo = keys.some((k) => k.includes("codigo") && (k.includes("insumo") || k.includes("item") || k === "codigo"));
+        const hasDesc = keys.some((k) => k.includes("descricao"));
+        const hasUnd = keys.some((k) => k === "unidade" || k === "und" || k.startsWith("unid"));
         if (hasCodigo && hasDesc && hasUnd) return { headerRow: r, headersNorm, range };
       }
       return null;
@@ -966,7 +967,7 @@ async function readTextSmart(file: File) {
 
     if (!itensRaw.length) throw new Error(`Composição não encontrada no arquivo (código: ${target}).`);
 
-    const insHdr = findInsumosHeader(insumosSheet, 160);
+    const insHdr = findInsumosHeader(insumosSheet, 200000);
     if (!insHdr) throw new Error(`Não foi possível identificar o cabeçalho da aba de insumos (${insumosSheetName}).`);
     const h = insHdr.headersNorm;
     const iCod = findCol(h, ["codigo_item", "codigo"]);
