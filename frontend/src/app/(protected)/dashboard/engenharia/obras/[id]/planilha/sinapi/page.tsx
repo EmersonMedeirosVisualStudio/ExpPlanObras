@@ -21,6 +21,7 @@ type PreviewResult = {
   } | null;
   sinapiDetected: { dataBase: string | null };
   paramsMatch: boolean | null;
+  insumosModo?: string | null;
   parsedComposicoes: number;
   targetComposicoes: number;
   toImportComposicoes: number;
@@ -64,6 +65,7 @@ export default function SinapiImportPage() {
   const [file, setFile] = useState<File | null>(null);
   const [sheetName, setSheetName] = useState<string>("Analítico");
   const [uf, setUf] = useState<string>("AC");
+  const [insumosModo, setInsumosModo] = useState<"ISD" | "ICD" | "ISE">("ISD");
   const [mode, setMode] = useState<"MISSING_ONLY" | "UPSERT">("MISSING_ONLY");
   const [importAllParsed, setImportAllParsed] = useState<boolean>(false);
   const [busy, setBusy] = useState<boolean>(false);
@@ -126,6 +128,7 @@ export default function SinapiImportPage() {
       fd.append("file", file);
       fd.append("sheetName", sheetName.trim() || "Analítico");
       if (uf.trim()) fd.append("uf", uf.trim().toUpperCase());
+      fd.append("insumosModo", insumosModo);
       fd.append("mode", mode);
       fd.append("importAllParsed", String(importAllParsed));
       fd.append("dryRun", String(dryRun));
@@ -245,6 +248,14 @@ export default function SinapiImportPage() {
               ))}
             </datalist>
           </div>
+          <div className="md:col-span-4 space-y-1">
+            <div className="text-sm text-slate-600">Preços de insumos</div>
+            <select className="input bg-white" value={insumosModo} onChange={(e) => setInsumosModo(e.target.value as any)} disabled={busy} title="Escolha qual aba de preços de insumos usar">
+              <option value="ISD">ISD — Encargos sociais sem desoneração</option>
+              <option value="ICD">ICD — Encargos sociais com desoneração</option>
+              <option value="ISE">ISE — Sem encargos sociais</option>
+            </select>
+          </div>
           <div className="md:col-span-12 space-y-2">
             <div className="text-sm text-slate-600">Modo</div>
             <label className="flex items-center gap-2 text-sm">
@@ -300,8 +311,8 @@ export default function SinapiImportPage() {
                 </div>
               </div>
               <div className="rounded border bg-white px-3 py-2">
-                <div className="text-[11px] text-slate-500">Planilha atual</div>
-                <div className="text-sm font-semibold">{preview.planilhaId ? `#${preview.planilhaId}` : "—"}</div>
+                <div className="text-[11px] text-slate-500">Preços de insumos</div>
+                <div className="text-sm font-semibold">{preview.insumosModo ? String(preview.insumosModo) : insumosModo}</div>
               </div>
             </div>
           </div>

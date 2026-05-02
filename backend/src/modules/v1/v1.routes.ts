@@ -500,6 +500,65 @@ async function ensureEmpresaDocumentosLayoutTables(tx: any) {
   await tx.$executeRawUnsafe(`ALTER TABLE empresa_documentos_layout ADD COLUMN IF NOT EXISTS rodape_altura_mm NUMERIC(8,2) NULL`).catch(() => null);
 }
 
+async function ensureSinapiBaseTables(tx: any) {
+  await tx.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS sinapi_insumos (
+      id_insumo BIGSERIAL PRIMARY KEY,
+      tenant_id BIGINT NOT NULL,
+      uf VARCHAR(2) NOT NULL,
+      data_base VARCHAR(16) NOT NULL DEFAULT '',
+      tipo_preco VARCHAR(3) NOT NULL,
+      codigo_item VARCHAR(80) NOT NULL,
+      descricao VARCHAR(255) NULL,
+      und VARCHAR(40) NULL,
+      preco_unitario NUMERIC(14,6) NULL,
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await tx.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS sinapi_insumos_uk ON sinapi_insumos (tenant_id, uf, data_base, tipo_preco, codigo_item)`
+  );
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS sinapi_insumos_idx ON sinapi_insumos (tenant_id, uf, data_base, tipo_preco)`);
+
+  await tx.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS sinapi_composicoes (
+      id_composicao BIGSERIAL PRIMARY KEY,
+      tenant_id BIGINT NOT NULL,
+      uf VARCHAR(2) NOT NULL,
+      data_base VARCHAR(16) NOT NULL DEFAULT '',
+      codigo_composicao VARCHAR(80) NOT NULL,
+      descricao VARCHAR(255) NULL,
+      und VARCHAR(40) NULL,
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await tx.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS sinapi_composicoes_uk ON sinapi_composicoes (tenant_id, uf, data_base, codigo_composicao)`
+  );
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS sinapi_composicoes_idx ON sinapi_composicoes (tenant_id, uf, data_base)`);
+
+  await tx.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS sinapi_composicoes_itens (
+      id_item BIGSERIAL PRIMARY KEY,
+      tenant_id BIGINT NOT NULL,
+      uf VARCHAR(2) NOT NULL,
+      data_base VARCHAR(16) NOT NULL DEFAULT '',
+      codigo_composicao VARCHAR(80) NOT NULL,
+      tipo_item VARCHAR(32) NOT NULL DEFAULT 'INSUMO',
+      codigo_item VARCHAR(80) NOT NULL,
+      coeficiente NUMERIC(14,6) NOT NULL DEFAULT 0,
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await tx.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS sinapi_composicoes_itens_uk ON sinapi_composicoes_itens (tenant_id, uf, data_base, codigo_composicao, tipo_item, codigo_item)`
+  );
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS sinapi_composicoes_itens_idx ON sinapi_composicoes_itens (tenant_id, uf, data_base, codigo_composicao)`);
+}
+
 const ORGANOGRAMA_CARGOS_BASE = [
   'Servente',
   'Pedreiro',
@@ -5207,6 +5266,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
     await ensurePlanilhaOrcamentariaTables(prisma);
     await ensurePlanilhaComposicaoTables(prisma);
+    await ensureSinapiBaseTables(prisma);
 
     const parseNumber = (v: any) => {
       if (v == null) return null;
@@ -5247,11 +5307,14 @@ export default async function v1Routes(server: FastifyInstance) {
     const sheetName = String(fields.sheetName || fields.aba || 'Analítico').trim() || 'Analítico';
     const uf = String(fields.uf || fields.estado || '').trim().toUpperCase();
     const banco = String(fields.banco || 'SINAPI').trim().slice(0, 60) || 'SINAPI';
+    const insumosModoRaw = String(fields.insumosModo || fields.insumos || 'ISD').trim().toUpperCase();
+    const insumosModo = insumosModoRaw === 'ICD' ? 'ICD' : insumosModoRaw === 'ISE' ? 'ISE' : 'ISD';
     const modeRaw = String(fields.mode || fields.modo || 'MISSING_ONLY').trim().toUpperCase();
     const mode = modeRaw === 'UPSERT' || modeRaw === 'REPLACE' ? 'UPSERT' : 'MISSING_ONLY';
     const importAllParsed = String(fields.importAllParsed || fields.importAll || '').toLowerCase() === 'true' || fields.importAllParsed === true || fields.importAll === true;
     const dryRun = String(fields.dryRun || '').toLowerCase() === 'true' || fields.dryRun === true;
     const onlyCodigoServico = fields.codigoServico ? String(fields.codigoServico).trim().toUpperCase() : '';
+    if (!uf) return fail(reply, 422, 'UF é obrigatória');
 
     if (!fileBuffer) {
       const filePath = fields.filePath ? String(fields.filePath) : '';
@@ -5293,6 +5356,92 @@ export default async function v1Routes(server: FastifyInstance) {
       return null;
     };
     const sinapiDataBase = detectDataBase();
+    const sinapiDataBaseKey = sinapiDataBase ? String(sinapiDataBase).trim() : '';
+
+    const normalizeSheetName = (n: string) => normalizeHeader(String(n || ''));
+    const allSheets = (wb.SheetNames || []).map((n) => ({ name: n, key: normalizeSheetName(n) }));
+    const pickInsumosSheetName = () => {
+      const isPreco = (k: string) => k.includes('precos') && k.includes('insumos');
+      if (insumosModo === 'ISD') {
+        const hit =
+          allSheets.find((s) => isPreco(s.key) && s.key.includes('sem_desoneracao')) ||
+          allSheets.find((s) => isPreco(s.key) && s.key.includes('encargos_sociais') && s.key.includes('sem_desoneracao')) ||
+          allSheets.find((s) => isPreco(s.key) && s.key.includes('sem_deson')) ||
+          allSheets.find((s) => isPreco(s.key) && s.key.includes('sem') && s.key.includes('desoneracao'));
+        return hit?.name || '';
+      }
+      if (insumosModo === 'ICD') {
+        const hit =
+          allSheets.find((s) => isPreco(s.key) && s.key.includes('com_desoneracao')) ||
+          allSheets.find((s) => isPreco(s.key) && s.key.includes('encargos_sociais') && s.key.includes('com_desoneracao')) ||
+          allSheets.find((s) => isPreco(s.key) && s.key.includes('com') && s.key.includes('desoneracao'));
+        return hit?.name || '';
+      }
+      const hit =
+        allSheets.find((s) => isPreco(s.key) && s.key.includes('sem_encargos')) ||
+        allSheets.find((s) => isPreco(s.key) && s.key.includes('sem_encargos_sociais')) ||
+        allSheets.find((s) => isPreco(s.key) && s.key.includes('sem') && s.key.includes('encargos'));
+      return hit?.name || '';
+    };
+
+    const insumosSheetName = pickInsumosSheetName();
+    const insumosSheet = insumosSheetName ? wb.Sheets[insumosSheetName] : null;
+    if (!insumosSheet) {
+      return fail(reply, 422, `Não foi possível localizar a aba de preços de insumos para ${insumosModo}.`);
+    }
+
+    const parseInsumos = () => {
+      const m = XLSX.utils.sheet_to_json(insumosSheet, { header: 1, defval: '' }) as any[][];
+      if (!Array.isArray(m) || m.length < 2) return new Map<string, { descricao: string; und: string; preco: number | null }>();
+      const ufLower = uf.toLowerCase();
+      let headerIdx = -1;
+      let rawHeader: any[] = [];
+      for (let i = 0; i < Math.min(80, m.length); i++) {
+        const r = Array.isArray(m[i]) ? m[i] : [];
+        const keys = r.map((c) => normalizeHeader(String(c || ''))).filter(Boolean);
+        const hasCodigo = keys.includes('codigo') || keys.includes('codigo_item');
+        const hasDesc = keys.includes('descricao') || keys.includes('descricao_item') || keys.includes('insumo');
+        const hasUnd = keys.includes('unidade') || keys.includes('und') || keys.includes('unid');
+        if (hasCodigo && hasDesc && hasUnd) {
+          headerIdx = i;
+          rawHeader = r;
+          break;
+        }
+      }
+      if (headerIdx < 0) return new Map<string, { descricao: string; und: string; preco: number | null }>();
+      const headersNorm = rawHeader.map((h) => normalizeHeader(String(h || '')));
+      const findCol = (cands: string[]) => {
+        for (const c of cands) {
+          const idx = headersNorm.findIndex((h) => h === c);
+          if (idx >= 0) return idx;
+        }
+        for (const c of cands) {
+          const idx = headersNorm.findIndex((h) => h.includes(c));
+          if (idx >= 0) return idx;
+        }
+        return -1;
+      };
+      const iCod = findCol(['codigo_item', 'codigo']);
+      const iDesc = findCol(['descricao_item', 'descricao', 'insumo']);
+      const iUnd = findCol(['und', 'unid', 'unidade']);
+      let iPreco = headersNorm.findIndex((h) => h === ufLower);
+      if (iPreco < 0) iPreco = headersNorm.findIndex((h) => h.endsWith(`_${ufLower}`) || h.includes(`_${ufLower}_`) || h.includes(`preco_${ufLower}`) || h.includes(`valor_${ufLower}`));
+      if (iPreco < 0) return new Map<string, { descricao: string; und: string; preco: number | null }>();
+      const out = new Map<string, { descricao: string; und: string; preco: number | null }>();
+      for (let i = headerIdx + 1; i < m.length; i++) {
+        const row = Array.isArray(m[i]) ? m[i] : [];
+        const code = String(row[iCod] ?? '').trim().toUpperCase();
+        if (!code) continue;
+        const desc = String(row[iDesc] ?? '').trim();
+        const undV = String(row[iUnd] ?? '').trim();
+        const preco = parseNumber(row[iPreco]);
+        out.set(code, { descricao: desc, und: undV, preco });
+      }
+      return out;
+    };
+
+    const insumosMap = parseInsumos();
+    if (!insumosMap.size) return fail(reply, 422, `Não foi possível ler os preços do UF ${uf} na aba de insumos (${insumosSheetName}).`);
 
     const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }) as any[][];
     if (!Array.isArray(matrix) || matrix.length < 2) return fail(reply, 422, 'Aba vazia.');
@@ -5375,14 +5524,16 @@ export default async function v1Routes(server: FastifyInstance) {
       const tipoItem = tipoMapped || (descricao.toUpperCase().includes('AUX') ? 'COMPOSICAO_AUXILIAR' : 'INSUMO');
       const quantidade = coef == null ? null : coef;
       if (quantidade == null || !Number.isFinite(quantidade)) continue;
+      const isCompItem = tipoItem === 'COMPOSICAO' || tipoItem === 'COMPOSICAO_AUXILIAR';
+      const ins = !isCompItem ? insumosMap.get(codigo) : null;
       parent.itens.push({
         tipoItem,
         codigoItem: codigo,
         banco: banco || null,
-        descricao: descricao ? descricao.slice(0, 255) : null,
-        und: und ? und.slice(0, 40) : null,
+        descricao: (ins?.descricao || descricao || '').trim() ? String(ins?.descricao || descricao).trim().slice(0, 255) : null,
+        und: (ins?.und || und || '').trim() ? String(ins?.und || und).trim().slice(0, 40) : null,
         quantidade: Number(quantidade),
-        valorUnitario: custoUnit == null || !Number.isFinite(custoUnit) ? null : Number(custoUnit),
+        valorUnitario: isCompItem ? null : ins?.preco == null || !Number.isFinite(ins.preco) ? null : Number(ins.preco),
       });
     }
 
@@ -5481,6 +5632,7 @@ export default async function v1Routes(server: FastifyInstance) {
           planilhaParams,
           sinapiDetected: { dataBase: sinapiDataBase },
           paramsMatch,
+          insumosModo,
           parsedComposicoes: parsedCodes.length,
           targetComposicoes: targetCodes.size,
           toImportComposicoes: toImport.length,
@@ -5496,6 +5648,108 @@ export default async function v1Routes(server: FastifyInstance) {
     let importedItens = 0;
     let importedComposicoes = 0;
     await prisma.$transaction(async (tx: any) => {
+      const usedInsumosCodes = new Set<string>();
+
+      const allParsedCodesForBase = Array.from(targetCodes);
+      for (const code of allParsedCodesForBase) {
+        const entry = comps.get(code);
+        if (!entry) continue;
+        await tx.$executeRawUnsafe(
+          `
+          INSERT INTO sinapi_composicoes (tenant_id, uf, data_base, codigo_composicao, descricao, und)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (tenant_id, uf, data_base, codigo_composicao)
+          DO UPDATE SET descricao = EXCLUDED.descricao, und = EXCLUDED.und, atualizado_em = NOW()
+          `,
+          ctx.tenantId,
+          uf,
+          sinapiDataBaseKey,
+          entry.codigo,
+          entry.descricao ? entry.descricao.slice(0, 255) : null,
+          entry.und ? entry.und.slice(0, 40) : null
+        );
+
+        await tx.$executeRawUnsafe(
+          `DELETE FROM sinapi_composicoes_itens WHERE tenant_id = $1 AND uf = $2 AND data_base = $3 AND UPPER(codigo_composicao) = $4`,
+          ctx.tenantId,
+          uf,
+          sinapiDataBaseKey,
+          String(entry.codigo).trim().toUpperCase()
+        );
+
+        const itens = entry.itens || [];
+        const chunkSize = 500;
+        for (let start = 0; start < itens.length; start += chunkSize) {
+          const chunk = itens.slice(start, start + chunkSize);
+          const params: any[] = [];
+          let p = 1;
+          const values = chunk
+            .map((r) => {
+              const base = [
+                ctx.tenantId,
+                uf,
+                sinapiDataBaseKey,
+                entry.codigo,
+                String(r.tipoItem || 'INSUMO').trim().toUpperCase().slice(0, 32) || 'INSUMO',
+                String(r.codigoItem || '').trim().slice(0, 80),
+                toDec(r.quantidade),
+              ];
+              for (const v of base) params.push(v);
+              const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+              return `(${placeholders})`;
+            })
+            .join(',');
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO sinapi_composicoes_itens (tenant_id, uf, data_base, codigo_composicao, tipo_item, codigo_item, coeficiente)
+            VALUES ${values}
+            `,
+            ...params
+          );
+        }
+        for (const it of itens) {
+          const t = String(it.tipoItem || '').toUpperCase();
+          if (t !== 'COMPOSICAO' && t !== 'COMPOSICAO_AUXILIAR') usedInsumosCodes.add(String(it.codigoItem || '').trim().toUpperCase());
+        }
+      }
+
+      if (usedInsumosCodes.size) {
+        const codes = Array.from(usedInsumosCodes);
+        const chunkSize = 500;
+        for (let start = 0; start < codes.length; start += chunkSize) {
+          const chunk = codes.slice(start, start + chunkSize);
+          const params: any[] = [];
+          let p = 1;
+          const values = chunk
+            .map((code) => {
+              const ins = insumosMap.get(code);
+              const base = [
+                ctx.tenantId,
+                uf,
+                sinapiDataBaseKey,
+                insumosModo,
+                code,
+                ins?.descricao ? String(ins.descricao).trim().slice(0, 255) : null,
+                ins?.und ? String(ins.und).trim().slice(0, 40) : null,
+                ins?.preco == null ? null : toDec(ins.preco),
+              ];
+              for (const v of base) params.push(v);
+              const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+              return `(${placeholders})`;
+            })
+            .join(',');
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO sinapi_insumos (tenant_id, uf, data_base, tipo_preco, codigo_item, descricao, und, preco_unitario)
+            VALUES ${values}
+            ON CONFLICT (tenant_id, uf, data_base, tipo_preco, codigo_item)
+            DO UPDATE SET descricao = EXCLUDED.descricao, und = EXCLUDED.und, preco_unitario = EXCLUDED.preco_unitario, atualizado_em = NOW()
+            `,
+            ...params
+          );
+        }
+      }
+
       for (const code of toImport) {
         const entry = comps.get(code);
         const itens = entry?.itens || [];
@@ -5506,18 +5760,25 @@ export default async function v1Routes(server: FastifyInstance) {
 
         const chunkSize = 500;
         const normalized = itens
-          .map((r) => ({
+          .map((r) => {
+            const tipoItem = String(r.tipoItem || 'INSUMO').trim().toUpperCase().slice(0, 32) || 'INSUMO';
+            const codigoItem = String(r.codigoItem || '').trim().slice(0, 80);
+            const isCompItem = tipoItem === 'COMPOSICAO' || tipoItem === 'COMPOSICAO_AUXILIAR';
+            const ins = !isCompItem ? insumosMap.get(String(codigoItem || '').trim().toUpperCase()) : null;
+            const compRef = isCompItem ? comps.get(String(codigoItem || '').trim().toUpperCase()) : null;
+            return {
             etapa: '',
-            tipoItem: String(r.tipoItem || 'INSUMO').trim().toUpperCase().slice(0, 32) || 'INSUMO',
-            codigoItem: String(r.codigoItem || '').trim().slice(0, 80),
-            banco: r.banco ? String(r.banco).trim().slice(0, 60) : null,
-            descricao: r.descricao ? String(r.descricao).trim().slice(0, 255) : null,
-            und: r.und ? String(r.und).trim().slice(0, 40) : null,
+            tipoItem,
+            codigoItem,
+            banco: banco || null,
+            descricao: isCompItem ? (compRef?.descricao ? String(compRef.descricao).trim().slice(0, 255) : null) : ins?.descricao ? String(ins.descricao).trim().slice(0, 255) : r.descricao ? String(r.descricao).trim().slice(0, 255) : null,
+            und: isCompItem ? (compRef?.und ? String(compRef.und).trim().slice(0, 40) : null) : ins?.und ? String(ins.und).trim().slice(0, 40) : r.und ? String(r.und).trim().slice(0, 40) : null,
             quantidade: r.quantidade == null ? null : toDec(r.quantidade),
-            valorUnitario: r.valorUnitario == null ? null : toDec(r.valorUnitario),
+            valorUnitario: isCompItem ? null : ins?.preco == null ? null : toDec(ins.preco),
             perda: 0,
             codigoCentroCusto: null,
-          }))
+          };
+          })
           .filter((i) => i.codigoItem && i.quantidade != null);
 
         for (let start = 0; start < normalized.length; start += chunkSize) {
@@ -5567,6 +5828,7 @@ export default async function v1Routes(server: FastifyInstance) {
         planilhaParams,
         sinapiDetected: { dataBase: sinapiDataBase },
         paramsMatch,
+        insumosModo,
         importedComposicoes,
         importedItens,
         skippedExisting,

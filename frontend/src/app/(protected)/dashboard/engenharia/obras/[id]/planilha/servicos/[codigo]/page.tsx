@@ -23,6 +23,7 @@ type CentroCustoOption = { codigo: string; descricao: string };
 
 type PrevistoPlanilhaRow = {
   item: string;
+  fonte: string;
   servicos: string;
   und: string;
   quant: string;
@@ -185,6 +186,7 @@ async function readTextSmart(file: File) {
   const [sinapiFile, setSinapiFile] = useState<File | null>(null);
   const [sinapiUf, setSinapiUf] = useState<string>("AC");
   const [sinapiSheetName, setSinapiSheetName] = useState<string>("Analítico");
+  const [sinapiInsumosModo, setSinapiInsumosModo] = useState<"ISD" | "ICD" | "ISE">("ISD");
   const [sinapiPreview, setSinapiPreview] = useState<any | null>(null);
   const [sinapiBusy, setSinapiBusy] = useState(false);
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
@@ -663,6 +665,7 @@ async function readTextSmart(file: File) {
         .filter((l: any) => String(l.tipoLinha || "").toUpperCase() === "SERVICO" && String(l.codigo || "").trim().toUpperCase() === codigoServico)
         .map((l: any) => ({
           item: String(l.item || ""),
+          fonte: String(l.fonte || ""),
           servicos: String(l.servicos || ""),
           und: String(l.und || ""),
           quant: String(l.quant || ""),
@@ -744,6 +747,7 @@ async function readTextSmart(file: File) {
       fd.append("file", sinapiFile);
       fd.append("sheetName", sinapiSheetName.trim() || "Analítico");
       if (sinapiUf.trim()) fd.append("uf", sinapiUf.trim().toUpperCase());
+      fd.append("insumosModo", sinapiInsumosModo);
       fd.append("mode", "UPSERT");
       fd.append("importAllParsed", "true");
       fd.append("dryRun", "true");
@@ -777,6 +781,7 @@ async function readTextSmart(file: File) {
       fd.append("file", sinapiFile);
       fd.append("sheetName", sinapiSheetName.trim() || "Analítico");
       if (sinapiUf.trim()) fd.append("uf", sinapiUf.trim().toUpperCase());
+      fd.append("insumosModo", sinapiInsumosModo);
       fd.append("mode", "UPSERT");
       fd.append("importAllParsed", "true");
       fd.append("dryRun", "false");
@@ -975,13 +980,23 @@ async function readTextSmart(file: File) {
     return Number(total.toFixed(2));
   }, [previstoRows]);
 
+  const fontePlanilhaServico = useMemo(() => {
+    const raw = String(previstoRows?.[0]?.fonte || "").trim().toUpperCase();
+    if (!raw) return "";
+    if (raw.includes("SINAPI")) return "SINAPI";
+    if (raw.includes("SBC")) return "SBC";
+    return raw;
+  }, [previstoRows]);
+
   const bdiPercent = useMemo(() => {
     const sinapi = planilhaParams?.bdiServicosSinapi;
     const sbc = planilhaParams?.bdiServicosSbc;
+    if (fontePlanilhaServico === "SINAPI") return sinapi != null && Number.isFinite(sinapi) ? sinapi : 0;
+    if (fontePlanilhaServico === "SBC") return sbc != null && Number.isFinite(sbc) ? sbc : 0;
     if (sinapi != null && Number.isFinite(sinapi) && sinapi > 0) return sinapi;
     if (sbc != null && Number.isFinite(sbc) && sbc > 0) return sbc;
     return 0;
-  }, [planilhaParams]);
+  }, [planilhaParams, fontePlanilhaServico]);
 
   const totalBase = useMemo(() => {
     let total = 0;
@@ -1051,10 +1066,22 @@ async function readTextSmart(file: File) {
   const lsPercent = useMemo(() => {
     const sinapi = planilhaParams?.encSociaisSemDesSinapi;
     const sbc = planilhaParams?.encSociaisSemDesSbc;
+    if (fontePlanilhaServico === "SINAPI") return sinapi != null && Number.isFinite(sinapi) ? sinapi : 0;
+    if (fontePlanilhaServico === "SBC") return sbc != null && Number.isFinite(sbc) ? sbc : 0;
     if (sinapi != null && Number.isFinite(sinapi) && sinapi > 0) return sinapi;
     if (sbc != null && Number.isFinite(sbc) && sbc > 0) return sbc;
     return 0;
-  }, [planilhaParams]);
+  }, [planilhaParams, fontePlanilhaServico]);
+
+  const descontoPercent = useMemo(() => {
+    const sinapi = planilhaParams?.descontoSinapi;
+    const sbc = planilhaParams?.descontoSbc;
+    if (fontePlanilhaServico === "SINAPI") return sinapi != null && Number.isFinite(sinapi) ? sinapi : 0;
+    if (fontePlanilhaServico === "SBC") return sbc != null && Number.isFinite(sbc) ? sbc : 0;
+    if (sinapi != null && Number.isFinite(sinapi) && sinapi > 0) return sinapi;
+    if (sbc != null && Number.isFinite(sbc) && sbc > 0) return sbc;
+    return 0;
+  }, [planilhaParams, fontePlanilhaServico]);
 
   const totalComLS = useMemo(() => {
     const mao = totalMaoBase * (1 + Number(lsPercent || 0) / 100);
@@ -1066,6 +1093,25 @@ async function readTextSmart(file: File) {
     const t = totalComLS * (1 + Number(bdiPercent || 0) / 100);
     return Number(t.toFixed(2));
   }, [totalComLS, bdiPercent]);
+
+  const totalComDesconto = useMemo(() => {
+    const d = Number(descontoPercent || 0);
+    if (!d || !Number.isFinite(d) || d <= 0) return totalComLSComBDI;
+    const t = totalComLSComBDI * (1 - d / 100);
+    return Number(t.toFixed(2));
+  }, [totalComLSComBDI, descontoPercent]);
+
+  const previstoCalcUnit = useMemo(() => (Number(descontoPercent || 0) > 0 ? Number(totalComDesconto || 0) : Number(totalComLSComBDI || 0)), [descontoPercent, totalComDesconto, totalComLSComBDI]);
+
+  const previstoCalcTotal = useMemo(() => {
+    let total = 0;
+    for (const r of previstoRows) {
+      const q = parseNumberLoose(r.quant);
+      if (q == null) continue;
+      total += q * Number(previstoCalcUnit || 0);
+    }
+    return Number(total.toFixed(2));
+  }, [previstoRows, previstoCalcUnit]);
 
   useEffect(() => {
     if (!itens.length) return;
@@ -2441,7 +2487,8 @@ async function readTextSmart(file: File) {
             <div className="text-sm text-slate-600">Quant., valor unit. e total previsto para este serviço (se houver mais de 1 linha, aparece separado).</div>
           </div>
           <div className="text-sm text-slate-700">
-            Total: <span className="font-semibold">{moeda(Number(previstoTotal || 0))}</span>
+            Planilha: <span className="font-semibold">{moeda(Number(previstoTotal || 0))}</span> • Cálculo:{" "}
+            <span className="font-semibold">{moeda(Number(previstoCalcTotal || 0))}</span>
           </div>
         </div>
 
@@ -2455,6 +2502,8 @@ async function readTextSmart(file: File) {
                 <th className="px-3 py-2">QUANT.</th>
                 <th className="px-3 py-2">VALOR UNIT.</th>
                 <th className="px-3 py-2">TOTAL</th>
+                <th className="px-3 py-2">{Number(descontoPercent || 0) > 0 ? "TOTAL COM DESCONTO" : "TOTAL FINAL (LS + BDI)"}</th>
+                <th className="px-3 py-2">DIFERENÇA</th>
               </tr>
             </thead>
             <tbody>
@@ -2476,6 +2525,24 @@ async function readTextSmart(file: File) {
                     })()}
                   </td>
                   <td className="px-3 py-2 text-right">{r.valorParcial ? moeda(Number(parseNumberLoose(r.valorParcial) || 0)) : ""}</td>
+                  <td className="px-3 py-2 text-right">
+                    {(() => {
+                      const q = parseNumberLoose(r.quant);
+                      if (q == null) return "";
+                      return moeda(Number((q * Number(previstoCalcUnit || 0)).toFixed(2)));
+                    })()}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {(() => {
+                      const q = parseNumberLoose(r.quant);
+                      const p = parseNumberLoose(r.valorParcial);
+                      if (q == null || p == null) return "";
+                      const calc = q * Number(previstoCalcUnit || 0);
+                      const diff = Number((p - calc).toFixed(2));
+                      const cls = Math.abs(diff) < 0.01 ? "text-slate-600" : diff > 0 ? "text-red-700" : "text-emerald-700";
+                      return <span className={cls}>{moeda(diff)}</span>;
+                    })()}
+                  </td>
                 </tr>
               ))}
               {previstoRows.length > 1 ? (
@@ -2484,11 +2551,13 @@ async function readTextSmart(file: File) {
                     Totais
                   </td>
                   <td className="px-3 py-2 text-right font-semibold">{moeda(Number(previstoTotal || 0))}</td>
+                  <td className="px-3 py-2 text-right font-semibold">{moeda(Number(previstoCalcTotal || 0))}</td>
+                  <td className="px-3 py-2 text-right font-semibold">{moeda(Number((Number(previstoTotal || 0) - Number(previstoCalcTotal || 0)).toFixed(2)))}</td>
                 </tr>
               ) : null}
               {!previstoRows.length ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={8} className="px-3 py-6 text-center text-slate-500">
                     Serviço não encontrado na planilha atual.
                   </td>
                 </tr>
@@ -2608,6 +2677,16 @@ async function readTextSmart(file: File) {
                 <div className="text-[11px] opacity-90">Total final (LS + BDI)</div>
                 <div className="text-sm font-semibold">{moeda(Number(totalComLSComBDI || 0))}</div>
               </div>
+              {Number(descontoPercent || 0) > 0 ? (
+                <>
+                  <div className="self-center px-1 text-slate-400">→</div>
+                  <div className="rounded-lg border bg-white px-3 py-2">
+                    <div className="text-[11px] text-slate-500">Total com desconto</div>
+                    <div className="text-sm font-semibold text-slate-900">{moeda(Number(totalComDesconto || 0))}</div>
+                    <div className="text-[11px] text-slate-500">Desconto: {Number(descontoPercent || 0).toFixed(2)}%</div>
+                  </div>
+                </>
+              ) : null}
             </div>
           </div>
           <div className="w-full md:w-[420px]">
@@ -2659,7 +2738,16 @@ async function readTextSmart(file: File) {
           <div className="rounded-lg border bg-slate-50 p-3 space-y-3">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="text-sm font-semibold text-slate-800">Importar do SINAPI (este serviço)</div>
-              <button className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setSinapiImportOpen(false)} disabled={sinapiBusy} title="Ocultar importação SINAPI">
+              <button
+                className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                type="button"
+                onClick={() => {
+                  setSinapiImportOpen(false);
+                  setSinapiPreview(null);
+                }}
+                disabled={sinapiBusy}
+                title="Ocultar importação SINAPI"
+              >
                 Ocultar
               </button>
             </div>
@@ -2709,22 +2797,44 @@ async function readTextSmart(file: File) {
                   ))}
                 </datalist>
               </div>
+              <div className="md:col-span-4 space-y-1">
+                <div className="text-sm text-slate-600">Preços de insumos</div>
+                <select
+                  className="input bg-white"
+                  value={sinapiInsumosModo}
+                  onChange={(e) => setSinapiInsumosModo(e.target.value as any)}
+                  disabled={sinapiBusy}
+                  title="Escolha qual aba de preços de insumos usar"
+                >
+                  <option value="ISD">ISD — Encargos sociais sem desoneração</option>
+                  <option value="ICD">ICD — Encargos sociais com desoneração</option>
+                  <option value="ISE">ISE — Sem encargos sociais</option>
+                </select>
+              </div>
               <div className="md:col-span-12 flex items-center justify-end gap-2 flex-wrap">
                 <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={sinapiGerarPrevia} disabled={sinapiBusy} title="Gerar prévia da composição no SINAPI">
                   Prévia
-                </button>
-                <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60" type="button" onClick={sinapiImportarAgora} disabled={sinapiBusy} title="Importar e substituir a composição atual pelo SINAPI">
-                  Importar
                 </button>
               </div>
             </div>
           </div>
         ) : null}
 
-        {sinapiPreview ? (
+        {sinapiImportOpen && sinapiPreview ? (
           <div className="rounded-lg border bg-white p-3 space-y-3">
-            <div className="text-sm font-semibold text-slate-800">Prévia — SINAPI</div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-sm font-semibold text-slate-800">Prévia — SINAPI</div>
+              <button
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                type="button"
+                onClick={sinapiImportarAgora}
+                disabled={sinapiBusy}
+                title="Importar e substituir a composição atual pelo SINAPI"
+              >
+                Confirmar importação
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
               <div className="rounded border bg-white px-3 py-2">
                 <div className="text-[11px] text-slate-500">Data-base (Planilha/SINAPI)</div>
                 <div className="text-sm font-semibold">
@@ -2736,6 +2846,10 @@ async function readTextSmart(file: File) {
                 <div className="text-sm font-semibold">
                   {sinapiPreview?.paramsMatch == null ? "—" : sinapiPreview.paramsMatch ? "Sim" : "Não"}
                 </div>
+              </div>
+              <div className="rounded border bg-white px-3 py-2">
+                <div className="text-[11px] text-slate-500">Preços de insumos</div>
+                <div className="text-sm font-semibold">{sinapiPreview?.insumosModo ? String(sinapiPreview.insumosModo) : sinapiInsumosModo}</div>
               </div>
               <div className="rounded border bg-white px-3 py-2">
                 <div className="text-[11px] text-slate-500">Itens a importar</div>
