@@ -57,18 +57,32 @@ type ImportResult = {
   skippedNotInPlanilha: number;
 };
 
+type ApplyBaseResult = {
+  codigoServico: string;
+  dataBase: string;
+  uf: string;
+  insumosModo: string;
+  mode: "MISSING_ONLY" | "UPSERT";
+  importedItens: number;
+  skippedExisting: boolean;
+};
+
 export default function SinapiImportPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const sp = useSearchParams();
   const idObra = Number(params?.id);
   const returnTo = sp.get("returnTo") || "";
+  const codigoParam = String(sp.get("codigo") || "").trim().toUpperCase();
+  const dataBaseParam = String(sp.get("dataBase") || "").trim();
 
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [sheetName, setSheetName] = useState<string>("Analítico");
   const [uf, setUf] = useState<string>("AC");
   const [insumosModo, setInsumosModo] = useState<"ISD" | "ICD" | "ISE">("ISD");
+  const [codigoServico, setCodigoServico] = useState<string>(codigoParam);
+  const [dataBaseFiltro, setDataBaseFiltro] = useState<string>(dataBaseParam);
   const [mode, setMode] = useState<"MISSING_ONLY" | "UPSERT">("MISSING_ONLY");
   const [importAllParsed, setImportAllParsed] = useState<boolean>(false);
   const [forceDataBaseMismatch, setForceDataBaseMismatch] = useState<boolean>(false);
@@ -77,8 +91,10 @@ export default function SinapiImportPage() {
   const [okMsg, setOkMsg] = useState<string>("");
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [imported, setImported] = useState<ImportResult | null>(null);
-  const [importados, setImportados] = useState<Array<{ codigo: string; descricao: string; und: string; dataBase: string; itens: number; insumos: number }>>([]);
+  const [appliedBase, setAppliedBase] = useState<ApplyBaseResult | null>(null);
+  const [importados, setImportados] = useState<Array<{ codigo: string; descricao: string; und: string; dataBase: string; uf: string; insumosModo: string; itens: number; insumos: number }>>([]);
   const [importadosErr, setImportadosErr] = useState<string>("");
+  const [planilhaDataBaseSinapi, setPlanilhaDataBaseSinapi] = useState<string>("");
 
   const breadcrumb = useMemo(() => {
     return "Engenharia → Obras → Obra selecionada → Planilha orçamentária → Sinapi";
@@ -124,6 +140,7 @@ export default function SinapiImportPage() {
     setErr("");
     setOkMsg("");
     setImported(null);
+    setAppliedBase(null);
     if (!file) {
       setErr("Selecione o arquivo XLSX do SINAPI para importar.");
       return;
@@ -135,6 +152,7 @@ export default function SinapiImportPage() {
       fd.append("sheetName", sheetName.trim() || "Analítico");
       if (uf.trim()) fd.append("uf", uf.trim().toUpperCase());
       fd.append("insumosModo", insumosModo);
+      if (codigoServico.trim()) fd.append("codigoServico", codigoServico.trim().toUpperCase());
       fd.append("mode", mode);
       fd.append("importAllParsed", String(importAllParsed));
       fd.append("dryRun", String(dryRun));
@@ -173,12 +191,71 @@ export default function SinapiImportPage() {
     await doRequest(false);
   }
 
+  async function aplicarDaBase(row: { codigo: string; dataBase: string; uf: string; insumosModo: string }) {
+    if (!Number.isFinite(idObra) || idObra <= 0) {
+      setErr("Obra inválida.");
+      return;
+    }
+    setErr("");
+    setOkMsg("");
+    setPreview(null);
+    setImported(null);
+    setAppliedBase(null);
+
+    if (!row?.codigo?.trim()) {
+      setErr("Código inválido.");
+      return;
+    }
+
+    if (mode === "UPSERT") {
+      const ok = window.confirm("Você escolheu atualizar/substituir a composição existente na obra. Confirmar?");
+      if (!ok) return;
+    }
+
+    const planDb = String(planilhaDataBaseSinapi || "").trim();
+    const baseDb = String(row.dataBase || "").trim();
+    if (planDb && baseDb && planDb !== baseDb && !forceDataBaseMismatch) {
+      setErr("Mês-base diferente. Marque “Forçar importação (mês-base diferente)” para prosseguir.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/aplicar-base`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          codigoServico: String(row.codigo || "").trim().toUpperCase(),
+          dataBase: String(row.dataBase || "").trim(),
+          uf: String(row.uf || "").trim().toUpperCase(),
+          insumosModo: String(row.insumosModo || "").trim().toUpperCase(),
+          mode,
+          forceDataBaseMismatch,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Falha ao aplicar composição já importada");
+      setAppliedBase(json.data as ApplyBaseResult);
+      setOkMsg("Composição aplicada na obra.");
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao aplicar composição");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (!Number.isFinite(idObra) || idObra <= 0) return;
     let alive = true;
     (async () => {
       try {
-        const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/importados`);
+        const qs = new URLSearchParams();
+        if (codigoServico.trim()) qs.set("codigo", codigoServico.trim().toUpperCase());
+        if (dataBaseFiltro.trim()) qs.set("dataBase", dataBaseFiltro.trim());
+        if (uf.trim()) qs.set("uf", uf.trim().toUpperCase());
+        if (insumosModo.trim()) qs.set("insumosModo", insumosModo.trim());
+        const url = `/api/v1/engenharia/obras/${idObra}/planilha/sinapi/importados${qs.toString() ? `?${qs.toString()}` : ""}`;
+        const res = await authFetch(url);
         const json = await res.json().catch(() => null);
         if (!alive) return;
         if (!res.ok || !json?.success) throw new Error(json?.message || "Falha ao carregar serviços SINAPI importados");
@@ -190,6 +267,8 @@ export default function SinapiImportPage() {
               descricao: String(r.descricao || ""),
               und: String(r.und || ""),
               dataBase: String(r.dataBase || ""),
+              uf: String(r.uf || ""),
+              insumosModo: String(r.insumosModo || ""),
               itens: r.itens == null ? 0 : Number(r.itens),
               insumos: r.insumos == null ? 0 : Number(r.insumos),
             }))
@@ -205,7 +284,53 @@ export default function SinapiImportPage() {
     return () => {
       alive = false;
     };
+  }, [idObra, codigoServico, dataBaseFiltro, uf, insumosModo]);
+
+  useEffect(() => {
+    if (!Number.isFinite(idObra) || idObra <= 0) return;
+    let alive = true;
+    (async () => {
+      try {
+        const resV = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes`);
+        const jsonV = await resV.json().catch(() => null);
+        if (!alive) return;
+        if (!resV.ok || !jsonV?.success) throw new Error(jsonV?.message || "Erro ao carregar versões da planilha");
+        const versoes = Array.isArray(jsonV.data?.versoes) ? jsonV.data.versoes : [];
+        const atual = versoes.find((v: any) => Boolean(v.atual)) || versoes[0] || null;
+        const planilhaId = atual?.idPlanilha != null ? Number(atual.idPlanilha) : 0;
+        if (!planilhaId) {
+          setPlanilhaDataBaseSinapi("");
+          return;
+        }
+        const resP = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${planilhaId}`);
+        const jsonP = await resP.json().catch(() => null);
+        if (!alive) return;
+        if (!resP.ok || !jsonP?.success) throw new Error(jsonP?.message || "Erro ao carregar planilha");
+        const p = (jsonP.data?.planilha?.parametros || {}) as any;
+        setPlanilhaDataBaseSinapi(p?.dataBaseSinapi ? String(p.dataBaseSinapi || "") : "");
+      } catch {
+        if (!alive) return;
+        setPlanilhaDataBaseSinapi("");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
   }, [idObra]);
+
+  useEffect(() => {
+    if (!planilhaDataBaseSinapi.trim()) return;
+    if (String(dataBaseParam || "").trim()) return;
+    setDataBaseFiltro((cur) => (String(cur || "").trim() ? cur : planilhaDataBaseSinapi.trim()));
+  }, [planilhaDataBaseSinapi, dataBaseParam]);
+
+  useEffect(() => {
+    if (codigoParam) setCodigoServico(codigoParam);
+  }, [codigoParam]);
+
+  useEffect(() => {
+    if (dataBaseParam) setDataBaseFiltro(dataBaseParam);
+  }, [dataBaseParam]);
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-5xl text-slate-900">
@@ -233,6 +358,32 @@ export default function SinapiImportPage() {
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="text-lg font-semibold">Serviços SINAPI importados</div>
         {importadosErr ? <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{importadosErr}</div> : null}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+          <div className="md:col-span-3 space-y-1">
+            <div className="text-sm text-slate-600">Código</div>
+            <input className="input bg-white" value={codigoServico} onChange={(e) => setCodigoServico(e.target.value)} disabled={busy} placeholder="Ex: 100309" />
+          </div>
+          <div className="md:col-span-3 space-y-1">
+            <div className="text-sm text-slate-600">Data-base</div>
+            <input className="input bg-white" value={dataBaseFiltro} onChange={(e) => setDataBaseFiltro(e.target.value)} disabled={busy} placeholder={planilhaDataBaseSinapi || "Ex: 04/2025"} />
+          </div>
+          <div className="md:col-span-2 space-y-1">
+            <div className="text-sm text-slate-600">UF</div>
+            <input className="input bg-white" value={uf} onChange={(e) => setUf(e.target.value)} disabled={busy} list="ufs" />
+          </div>
+          <div className="md:col-span-4 space-y-1">
+            <div className="text-sm text-slate-600">Preços de insumos</div>
+            <select className="input bg-white" value={insumosModo} onChange={(e) => setInsumosModo(e.target.value as any)} disabled={busy}>
+              <option value="ISD">ISD — Encargos sociais sem desoneração</option>
+              <option value="ICD">ICD — Encargos sociais com desoneração</option>
+              <option value="ISE">ISE — Sem encargos sociais</option>
+            </select>
+          </div>
+          <div className="md:col-span-12 text-xs text-slate-600">
+            Data-base da planilha (SINAPI): {planilhaDataBaseSinapi || "—"} {dataBaseFiltro.trim() ? `• Filtro: ${dataBaseFiltro.trim()}` : ""}{" "}
+            {planilhaDataBaseSinapi && dataBaseFiltro.trim() ? (planilhaDataBaseSinapi.trim() === dataBaseFiltro.trim() ? "• Compatível" : "• Diferente") : ""}
+          </div>
+        </div>
         {importados.length ? (
           <div className="overflow-auto">
             <table className="min-w-[860px] w-full border-collapse text-xs">
@@ -242,19 +393,35 @@ export default function SinapiImportPage() {
                   <th className="border px-2 py-1">Descrição</th>
                   <th className="border px-2 py-1">UND</th>
                   <th className="border px-2 py-1">Data-base</th>
+                  <th className="border px-2 py-1">UF</th>
+                  <th className="border px-2 py-1">Preços</th>
                   <th className="border px-2 py-1">Itens</th>
                   <th className="border px-2 py-1">Insumos</th>
+                  <th className="border px-2 py-1">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {importados.map((r) => (
-                  <tr key={`${r.dataBase}:${r.codigo}`} className="border-t">
+                  <tr key={`${r.dataBase}:${r.uf}:${r.insumosModo}:${r.codigo}`} className="border-t">
                     <td className="border px-2 py-1 text-center">{r.codigo}</td>
                     <td className="border px-2 py-1">{r.descricao}</td>
                     <td className="border px-2 py-1 text-center">{r.und}</td>
                     <td className="border px-2 py-1 text-center">{r.dataBase || "—"}</td>
+                    <td className="border px-2 py-1 text-center">{r.uf || "—"}</td>
+                    <td className="border px-2 py-1 text-center">{r.insumosModo || "—"}</td>
                     <td className="border px-2 py-1 text-right">{Number(r.itens || 0).toLocaleString("pt-BR")}</td>
                     <td className="border px-2 py-1 text-right">{Number(r.insumos || 0).toLocaleString("pt-BR")}</td>
+                    <td className="border px-2 py-1 text-center">
+                      <button
+                        className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => aplicarDaBase(r)}
+                        title="Aplicar esta composição já importada diretamente na obra (sem XLSX)"
+                      >
+                        Aplicar na obra
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -396,6 +563,29 @@ export default function SinapiImportPage() {
           </button>
         </div>
       </section>
+
+      {appliedBase ? (
+        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+          <div className="text-lg font-semibold">Aplicado na obra</div>
+          <div className="text-sm text-slate-700">
+            {appliedBase.codigoServico} • {appliedBase.dataBase} • {appliedBase.uf} • {appliedBase.insumosModo}
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 text-sm">
+            <div className="rounded border bg-slate-50 p-3">
+              <div className="text-[11px] text-slate-500">Itens importados</div>
+              <div className="mt-1 font-semibold">{Number(appliedBase.importedItens || 0).toLocaleString("pt-BR")}</div>
+            </div>
+            <div className="rounded border bg-slate-50 p-3">
+              <div className="text-[11px] text-slate-500">Modo</div>
+              <div className="mt-1 font-semibold">{appliedBase.mode}</div>
+            </div>
+            <div className="rounded border bg-slate-50 p-3">
+              <div className="text-[11px] text-slate-500">Já existia</div>
+              <div className="mt-1 font-semibold">{appliedBase.skippedExisting ? "Sim" : "Não"}</div>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {preview ? (
         <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">

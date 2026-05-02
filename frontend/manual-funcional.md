@@ -3003,9 +3003,11 @@ Manter o padrão do sistema **Frontend ↔ Backend ↔ Banco de dados** e reduzi
 
 **Solução sugerida (implementada)**
 
-- A importação de SINAPI foi implementada em **duas telas**:
-  - **Análise de composição** (atalho “Importar do SINAPI (este serviço)”): importa a composição do serviço atualmente aberto.
-  - **Sinapi** (na Planilha orçamentária): importa e também lista os **serviços SINAPI já importados** para a obra.
+- A importação de SINAPI foi centralizada na tela **Sinapi** (na Planilha orçamentária):
+  - importa o SINAPI (Excel) para uma base interna (por data-base/UF/ISD-ICD-ISE);
+  - lista os **serviços SINAPI já importados** (com filtros);
+  - permite **aplicar na obra** uma composição que já esteja importada (sem reimportar o XLSX).
+- A tela **Análise de composição** possui um botão “SINAPI” que abre a tela **Sinapi** já filtrada pelo serviço atual.
 - O sistema valida os parâmetros **Data-base, UF e modo ISD/ICD/ISE**.
 - O botão de **Prévia** só habilita quando os requisitos estão preenchidos e um arquivo XLSX foi selecionado.
 - Se o serviço não existir no SINAPI para a base informada, o sistema informa: “O serviço X não é cadastrado no SINAPI, na base informada”.
@@ -3016,27 +3018,23 @@ Manter o padrão do sistema **Frontend ↔ Backend ↔ Banco de dados** e reduzi
 - Importação mais previsível e rápida (sem upload do arquivo grande).
 - Backend permanece responsável pela regra de negócio, validações e persistência no banco.
 
-**Como usar — Atalho na Análise de composição**
+**Como usar — A partir da Análise de composição**
 
 ETAPA 1 — Onde acessar
 - Acesse: Engenharia → Obras → (selecione a obra) → Planilha orçamentária → Serviços → (selecione o serviço) → Análise de composição.
 
 ETAPA 2 — O que clicar
-- No card “Importar do SINAPI (este serviço)”, clique em “Selecionar arquivo XLSX”.
-- Preencha os parâmetros (Data-base, UF e ISD/ICD/ISE).
-- Clique em “Prévia — SINAPI”.
+- Clique no botão “SINAPI”.
 
 ETAPA 3 — O que preencher
-- Data-base: mês-base do arquivo SINAPI.
-- UF: estado desejado para o P.U. do insumo.
-- ISD/ICD/ISE: modo de preços de insumos.
+- Na tela Sinapi, ajuste os filtros (Código, Data-base, UF e ISD/ICD/ISE) se necessário.
 
 ETAPA 4 — O que esperar
-- O sistema monta uma prévia com os itens da composição (insumos e subcomposições), já cruzando o “Analítico” com a aba de preços (ISD/ICD/ISE) conforme UF.
-- Se a data-base do SINAPI estiver diferente da data-base configurada na planilha da obra, o sistema bloqueia a importação e exige marcar “Forçar importação (mês-base diferente)”.
+- A tela Sinapi abre já filtrada pelo serviço atual e mostra se a data-base está compatível com a planilha.
 
 ETAPA 5 — Como validar
-- Clique em “Confirmar importação” e verifique que os itens passaram a aparecer na composição do serviço na planilha.
+- Se o serviço já estiver importado, clique em “Aplicar na obra”.
+- Se ainda não estiver importado, importe via XLSX (Prévia → Importar) e depois aplique na obra.
 
 **Como usar — Tela Sinapi (Planilha orçamentária)**
 
@@ -3044,14 +3042,14 @@ ETAPA 1 — Onde acessar
 - Acesse: Engenharia → Obras → (selecione a obra) → Planilha orçamentária → Sinapi.
 
 ETAPA 2 — O que clicar
-- Clique em “Selecionar arquivo XLSX”.
-- Preencha os parâmetros e clique em “Prévia”.
+- Se o serviço já aparecer em “Serviços SINAPI importados”, clique em “Aplicar na obra”.
+- Caso contrário, clique em “Selecionar arquivo XLSX”, preencha as opções e clique em “Prévia”.
 
 ETAPA 3 — O que preencher
 - Data-base, UF e ISD/ICD/ISE (mesmas regras do atalho).
 
 ETAPA 4 — O que esperar
-- Após confirmar, a tela passa a listar os **serviços SINAPI importados** (com contagem de itens/insumos).
+- Após confirmar a importação, a tela passa a listar os **serviços SINAPI importados** (com contagem de itens/insumos).
 
 ETAPA 5 — Como validar
 - Recarregue a página “Sinapi” e verifique o serviço importado na lista.
