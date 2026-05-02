@@ -5309,6 +5309,13 @@ export default async function v1Routes(server: FastifyInstance) {
     const banco = String(fields.banco || 'SINAPI').trim().slice(0, 60) || 'SINAPI';
     const insumosModoRaw = String(fields.insumosModo || fields.insumos || 'ISD').trim().toUpperCase();
     const insumosModo = insumosModoRaw === 'ICD' ? 'ICD' : insumosModoRaw === 'ISE' ? 'ISE' : 'ISD';
+    const forceDataBaseMismatch =
+      String(fields.forceDataBaseMismatch || fields.forceParamsMismatch || fields.force || '')
+        .trim()
+        .toLowerCase() === 'true' ||
+      fields.forceDataBaseMismatch === true ||
+      fields.forceParamsMismatch === true ||
+      fields.force === true;
     const modeRaw = String(fields.mode || fields.modo || 'MISSING_ONLY').trim().toUpperCase();
     const mode = modeRaw === 'UPSERT' || modeRaw === 'REPLACE' ? 'UPSERT' : 'MISSING_ONLY';
     const importAllParsed = String(fields.importAllParsed || fields.importAll || '').toLowerCase() === 'true' || fields.importAllParsed === true || fields.importAll === true;
@@ -5617,7 +5624,18 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const skippedExisting = mode === 'MISSING_ONLY' ? Array.from(targetCodes).filter((c) => existing.has(c)).length : 0;
     const skippedNotInPlanilha = onlyCodigoServico ? 0 : importAllParsed ? 0 : parsedCodes.length - targetCodes.size;
-    const paramsMatch = planilhaParams?.dataBaseSinapi && sinapiDataBase ? String(planilhaParams.dataBaseSinapi).trim() === String(sinapiDataBase).trim() : null;
+    const planilhaDataBase = planilhaParams?.dataBaseSinapi ? String(planilhaParams.dataBaseSinapi || '').trim() : '';
+    const sinapiDataBaseNorm = sinapiDataBase ? String(sinapiDataBase || '').trim() : '';
+    const paramsMatch = planilhaDataBase && sinapiDataBaseNorm ? planilhaDataBase === sinapiDataBaseNorm : null;
+    const paramsStatus = paramsMatch === true ? 'MATCH' : paramsMatch === false ? 'MISMATCH' : 'UNKNOWN';
+
+    if (!dryRun && paramsStatus !== 'MATCH' && !forceDataBaseMismatch) {
+      const detalhe =
+        paramsStatus === 'UNKNOWN'
+          ? `Não foi possível validar a data-base (Planilha: ${planilhaDataBase || '—'} / SINAPI: ${sinapiDataBaseNorm || '—'}).`
+          : `Data-base diferente (Planilha: ${planilhaDataBase || '—'} / SINAPI: ${sinapiDataBaseNorm || '—'}).`;
+      return fail(reply, 422, `${detalhe} Para prosseguir, marque “Forçar importação (mês-base diferente)”.`);
+    }
 
     const totalItens = toImport.reduce((acc, code) => acc + (comps.get(code)?.itens.length || 0), 0);
     const sample = toImport.slice(0, 5).map((c) => ({ codigo: c, itens: (comps.get(c)?.itens || []).slice(0, 3) }));
@@ -5632,6 +5650,7 @@ export default async function v1Routes(server: FastifyInstance) {
           planilhaParams,
           sinapiDetected: { dataBase: sinapiDataBase },
           paramsMatch,
+          paramsStatus,
           insumosModo,
           parsedComposicoes: parsedCodes.length,
           targetComposicoes: targetCodes.size,

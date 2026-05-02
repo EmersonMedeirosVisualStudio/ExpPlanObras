@@ -21,6 +21,7 @@ type PreviewResult = {
   } | null;
   sinapiDetected: { dataBase: string | null };
   paramsMatch: boolean | null;
+  paramsStatus?: "MATCH" | "MISMATCH" | "UNKNOWN";
   insumosModo?: string | null;
   parsedComposicoes: number;
   targetComposicoes: number;
@@ -68,6 +69,7 @@ export default function SinapiImportPage() {
   const [insumosModo, setInsumosModo] = useState<"ISD" | "ICD" | "ISE">("ISD");
   const [mode, setMode] = useState<"MISSING_ONLY" | "UPSERT">("MISSING_ONLY");
   const [importAllParsed, setImportAllParsed] = useState<boolean>(false);
+  const [forceDataBaseMismatch, setForceDataBaseMismatch] = useState<boolean>(false);
   const [busy, setBusy] = useState<boolean>(false);
   const [err, setErr] = useState<string>("");
   const [okMsg, setOkMsg] = useState<string>("");
@@ -132,6 +134,7 @@ export default function SinapiImportPage() {
       fd.append("mode", mode);
       fd.append("importAllParsed", String(importAllParsed));
       fd.append("dryRun", String(dryRun));
+      fd.append("forceDataBaseMismatch", String(forceDataBaseMismatch));
 
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico`, {
         method: "POST",
@@ -158,6 +161,10 @@ export default function SinapiImportPage() {
     if (mode === "UPSERT") {
       const ok = window.confirm("Você escolheu atualizar/substituir composições existentes. Confirmar?");
       if (!ok) return;
+    }
+    if (preview && preview.paramsMatch !== true && !forceDataBaseMismatch) {
+      setErr("Mês-base diferente (ou não detectado). Marque “Forçar importação (mês-base diferente)” para prosseguir.");
+      return;
     }
     await doRequest(false);
   }
@@ -271,6 +278,12 @@ export default function SinapiImportPage() {
             <label className="flex items-center gap-2 text-sm rounded border bg-white px-3 py-2">
               <input type="checkbox" checked={importAllParsed} onChange={(e) => setImportAllParsed(Boolean(e.target.checked))} disabled={busy} />
               <span className="text-slate-700">Importar todas as composições encontradas no arquivo (não filtrar pelos itens da planilha atual)</span>
+            </label>
+          </div>
+          <div className="md:col-span-12">
+            <label className="flex items-center gap-2 text-sm rounded border bg-white px-3 py-2">
+              <input type="checkbox" checked={forceDataBaseMismatch} onChange={(e) => setForceDataBaseMismatch(Boolean(e.target.checked))} disabled={busy} />
+              <span className="text-slate-700">Forçar importação (mês-base diferente)</span>
             </label>
           </div>
         </div>

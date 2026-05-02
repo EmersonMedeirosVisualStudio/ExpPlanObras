@@ -187,6 +187,7 @@ async function readTextSmart(file: File) {
   const [sinapiUf, setSinapiUf] = useState<string>("AC");
   const [sinapiSheetName, setSinapiSheetName] = useState<string>("Analítico");
   const [sinapiInsumosModo, setSinapiInsumosModo] = useState<"ISD" | "ICD" | "ISE">("ISD");
+  const [sinapiForceDataBaseMismatch, setSinapiForceDataBaseMismatch] = useState<boolean>(false);
   const [sinapiPreview, setSinapiPreview] = useState<any | null>(null);
   const [sinapiBusy, setSinapiBusy] = useState(false);
   const [sinapiMsgOk, setSinapiMsgOk] = useState<string>("");
@@ -767,6 +768,7 @@ async function readTextSmart(file: File) {
       fd.append("importAllParsed", "true");
       fd.append("dryRun", "true");
       fd.append("codigoServico", String(codigoServico).trim().toUpperCase());
+      fd.append("forceDataBaseMismatch", String(sinapiForceDataBaseMismatch));
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico`, { method: "POST", body: fd });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao gerar prévia do SINAPI");
@@ -810,6 +812,7 @@ async function readTextSmart(file: File) {
       fd.append("importAllParsed", "true");
       fd.append("dryRun", "false");
       fd.append("codigoServico", String(codigoServico).trim().toUpperCase());
+      fd.append("forceDataBaseMismatch", String(sinapiForceDataBaseMismatch));
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico`, { method: "POST", body: fd });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao importar do SINAPI");
@@ -2846,6 +2849,12 @@ async function readTextSmart(file: File) {
                   <option value="ISE">ISE — Sem encargos sociais</option>
                 </select>
               </div>
+              <div className="md:col-span-12">
+                <label className="flex items-center gap-2 text-sm rounded border bg-white px-3 py-2">
+                  <input type="checkbox" checked={sinapiForceDataBaseMismatch} onChange={(e) => setSinapiForceDataBaseMismatch(Boolean(e.target.checked))} disabled={sinapiBusy} />
+                  <span className="text-slate-700">Forçar importação (mês-base diferente)</span>
+                </label>
+              </div>
               <div className="md:col-span-12 flex items-center justify-end gap-2 flex-wrap">
                 <button
                   className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
@@ -2869,12 +2878,17 @@ async function readTextSmart(file: File) {
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
                 type="button"
                 onClick={sinapiImportarAgora}
-                disabled={sinapiBusy}
+                disabled={sinapiBusy || (sinapiPreview?.paramsMatch !== true && !sinapiForceDataBaseMismatch)}
                 title="Importar e substituir a composição atual pelo SINAPI"
               >
                 Confirmar importação
               </button>
             </div>
+            {sinapiPreview?.paramsMatch !== true ? (
+              <div className="rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900">
+                Data-base diferente (ou não detectada). Para importar, marque “Forçar importação (mês-base diferente)”.
+              </div>
+            ) : null}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
               <div className="rounded border bg-white px-3 py-2">
                 <div className="text-[11px] text-slate-500">Data-base (Planilha/SINAPI)</div>
