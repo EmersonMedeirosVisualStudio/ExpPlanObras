@@ -22,6 +22,23 @@ function groupLabel(type: string) {
   return "Resultados";
 }
 
+function navigateSmart(router: ReturnType<typeof useRouter>, href: string) {
+  const raw = String(href || "").trim();
+  if (!raw) return;
+  const isExternal =
+    raw.startsWith("//") ||
+    /^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(raw) ||
+    /^[a-z][a-z0-9+.-]*:/i.test(raw);
+
+  if (isExternal) {
+    window.location.assign(raw);
+    return;
+  }
+
+  if (raw.startsWith("/") || raw.startsWith("?") || raw.startsWith("#")) return router.push(raw);
+  router.push(`/${raw}`);
+}
+
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -118,7 +135,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
           modulo: item.modulo,
         }).catch(() => {});
         onClose();
-        router.push(item.rota);
+        navigateSmart(router, item.rota);
       }
     } catch {}
   }
