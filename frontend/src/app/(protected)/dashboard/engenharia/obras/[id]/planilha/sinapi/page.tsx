@@ -97,6 +97,8 @@ export default function SinapiImportPage() {
   const [busy, setBusy] = useState<boolean>(false);
   const [err, setErr] = useState<string>("");
   const [okMsg, setOkMsg] = useState<string>("");
+  const [pageErr, setPageErr] = useState<string>("");
+  const [pageOkMsg, setPageOkMsg] = useState<string>("");
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [imported, setImported] = useState<ImportResult | null>(null);
   const [appliedBase, setAppliedBase] = useState<ApplyBaseResult | null>(null);
@@ -272,17 +274,17 @@ export default function SinapiImportPage() {
 
   async function aplicarDaBase(row: { codigo: string; dataBase: string; uf: string; insumosModo: string }) {
     if (!Number.isFinite(idObra) || idObra <= 0) {
-      setErr("Obra inválida.");
+      setPageErr("Obra inválida.");
       return;
     }
-    setErr("");
-    setOkMsg("");
+    setPageErr("");
+    setPageOkMsg("");
     setPreview(null);
     setImported(null);
     setAppliedBase(null);
 
     if (!row?.codigo?.trim()) {
-      setErr("Código inválido.");
+      setPageErr("Código inválido.");
       return;
     }
 
@@ -294,7 +296,7 @@ export default function SinapiImportPage() {
     const planDb = String(planilhaDataBaseSinapi || "").trim();
     const baseDb = String(row.dataBase || "").trim();
     if (planDb && baseDb && planDb !== baseDb && !forceDataBaseMismatch) {
-      setErr("Mês-base diferente. Marque “Forçar importação (mês-base diferente)” para prosseguir.");
+      setPageErr("Mês-base diferente. Marque “Forçar importação (mês-base diferente)” para prosseguir.");
       return;
     }
 
@@ -316,9 +318,9 @@ export default function SinapiImportPage() {
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Falha ao aplicar composição já importada");
       setAppliedBase(json.data as ApplyBaseResult);
-      setOkMsg("Composição aplicada na obra.");
+      setPageOkMsg("Composição aplicada na obra.");
     } catch (e: any) {
-      setErr(e?.message || "Erro ao aplicar composição");
+      setPageErr(e?.message || "Erro ao aplicar composição");
     } finally {
       setBusy(false);
     }
@@ -467,7 +469,11 @@ export default function SinapiImportPage() {
           <button
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
             type="button"
-            onClick={() => setImportOpen(true)}
+            onClick={() => {
+              setOkMsg("");
+              setErr("");
+              setImportOpen(true);
+            }}
             disabled={busy}
             title="Abrir opções de importação"
           >
@@ -485,8 +491,8 @@ export default function SinapiImportPage() {
         </div>
       </div>
 
-      {okMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{okMsg}</div> : null}
-      {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
+      {pageOkMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{pageOkMsg}</div> : null}
+      {pageErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{pageErr}</div> : null}
 
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -528,9 +534,9 @@ export default function SinapiImportPage() {
                 <div className="text-sm text-slate-600">Preços de insumos</div>
                 <select className="input bg-white" value={insumosModoFiltro} onChange={(e) => setInsumosModoFiltro(e.target.value as any)} disabled={busy}>
                   <option value="">(todos)</option>
-                  <option value="ISD">ISD — Preços de Insumos — Encargos sociais SEM desoneração</option>
-                  <option value="ICD">ICD — Preços de Insumos — Encargos sociais COM desoneração</option>
-                  <option value="ISE">ISE — Preços de Insumos — Sem encargos sociais</option>
+                  <option value="ISD">ISD — Encargos sociais SEM desoneração</option>
+                  <option value="ICD">ICD — Encargos sociais COM desoneração</option>
+                  <option value="ISE">ISE — Sem encargos sociais</option>
                 </select>
               </div>
               <div className="md:col-span-12 text-xs text-slate-600">
@@ -618,7 +624,11 @@ export default function SinapiImportPage() {
               <button
                 className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
                 type="button"
-                onClick={() => setImportOpen(false)}
+                onClick={() => {
+                  setImportOpen(false);
+                  setOkMsg("");
+                  setErr("");
+                }}
                 disabled={busy}
               >
                 Fechar
@@ -626,6 +636,8 @@ export default function SinapiImportPage() {
             </div>
 
             <div className="p-4 space-y-4">
+              {okMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{okMsg}</div> : null}
+              {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
               <div className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
                   <div className="md:col-span-6 space-y-1">
@@ -642,23 +654,24 @@ export default function SinapiImportPage() {
                       ))}
                     </select>
                   </div>
-                  <div className="md:col-span-3 space-y-1">
-                    <div className="text-sm text-slate-600">Preços de insumos</div>
-                    <select className="input bg-white" value={insumosModo} onChange={(e) => setInsumosModo(e.target.value as any)} disabled={busy}>
-                      <option value="ISD">ISD — Preços de Insumos — Encargos sociais SEM desoneração</option>
-                      <option value="ICD">ICD — Preços de Insumos — Encargos sociais COM desoneração</option>
-                      <option value="ISE">ISE — Preços de Insumos — Sem encargos sociais</option>
-                    </select>
-                    <div className="mt-2 space-y-1">
-                      <div className="text-xs text-slate-500">Nome da aba (preços de insumos)</div>
-                      <input
-                        className="input bg-white"
-                        value={insumosSheetName}
-                        onChange={(e) => setInsumosSheetName(e.target.value)}
-                        disabled={busy}
-                        placeholder={insumosModo}
-                      />
-                    </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-sm text-slate-600">Preços de insumos</div>
+                  <select className="input bg-white" value={insumosModo} onChange={(e) => setInsumosModo(e.target.value as any)} disabled={busy}>
+                    <option value="ISD">ISD — Encargos sociais SEM desoneração</option>
+                    <option value="ICD">ICD — Encargos sociais COM desoneração</option>
+                    <option value="ISE">ISE — Sem encargos sociais</option>
+                  </select>
+                  <div className="space-y-1">
+                    <div className="text-xs text-slate-500">Nome da aba (preços de insumos)</div>
+                    <input
+                      className="input bg-white"
+                      value={insumosSheetName}
+                      onChange={(e) => setInsumosSheetName(e.target.value)}
+                      disabled={busy}
+                      placeholder={insumosModo}
+                    />
                   </div>
                 </div>
 
@@ -705,7 +718,7 @@ export default function SinapiImportPage() {
                       <span>Atualizar/substituir composições existentes na obra</span>
                     </label>
                     <div className="mt-2">
-                      <div className="text-xs text-slate-500">Obra</div>
+                      <div className="text-xs text-slate-500">Obra/Licitação/Orçamento</div>
                       <select
                         className="input bg-white mt-1"
                         value={String(targetObraId || idObra)}
@@ -763,9 +776,6 @@ export default function SinapiImportPage() {
                   <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => doRequest(true)} disabled={busy}>
                     Prévia
                   </button>
-                  <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60" type="button" onClick={importar} disabled={busy}>
-                    Importar
-                  </button>
                 </div>
               </div>
 
@@ -791,6 +801,48 @@ export default function SinapiImportPage() {
                         <div className="text-sm font-semibold">{preview.insumosModo ? String(preview.insumosModo) : insumosModo}</div>
                       </div>
                     </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+                    <div className="rounded border bg-slate-50 p-3">
+                      <div className="text-[11px] text-slate-500">Composições no arquivo</div>
+                      <div className="mt-1 font-semibold">{Number(preview.parsedComposicoes || 0).toLocaleString("pt-BR")}</div>
+                    </div>
+                    <div className="rounded border bg-slate-50 p-3">
+                      <div className="text-[11px] text-slate-500">Alvo (planilha atual)</div>
+                      <div className="mt-1 font-semibold">{Number(preview.targetComposicoes || 0).toLocaleString("pt-BR")}</div>
+                    </div>
+                    <div className="rounded border bg-slate-50 p-3">
+                      <div className="text-[11px] text-slate-500">A importar</div>
+                      <div className="mt-1 font-semibold">{Number(preview.toImportComposicoes || 0).toLocaleString("pt-BR")}</div>
+                    </div>
+                    <div className="rounded border bg-slate-50 p-3">
+                      <div className="text-[11px] text-slate-500">Itens a importar</div>
+                      <div className="mt-1 font-semibold">{Number(preview.toImportItens || 0).toLocaleString("pt-BR")}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-2 flex-wrap">
+                    <button
+                      className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                      type="button"
+                      onClick={() => {
+                        setPreview(null);
+                        setImported(null);
+                        setOkMsg("");
+                        setErr("");
+                        setImportOpen(false);
+                      }}
+                      disabled={busy}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                      type="button"
+                      onClick={importar}
+                      disabled={busy}
+                    >
+                      Importar
+                    </button>
                   </div>
                 </section>
               ) : null}

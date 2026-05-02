@@ -3034,7 +3034,7 @@ ETAPA 4 — O que esperar
 
 ETAPA 5 — Como validar
 - Se o serviço já estiver importado, clique em “Aplicar na obra”.
-- Se ainda não estiver importado, importe via XLSX (Prévia → Importar) e depois aplique na obra.
+- Se ainda não estiver importado, importe via XLSX: gere a “Prévia” e, no card “Prévia”, clique em “Importar” (ou “Cancelar”).
 
 **Como usar — Tela Sinapi (Planilha orçamentária)**
 
@@ -3050,9 +3050,13 @@ ETAPA 3 — O que preencher
 - Em “Opções de importação”:
   - Aba (Relatório Analítico de Composições): normalmente “Analítico”.
   - UF: selecione a UF (lista completa). O sistema mantém a última UF selecionada.
-  - Preços de insumos: selecione ISD/ICD/ISE (com descrição completa). O sistema mantém a última opção selecionada.
+  - Preços de insumos (abaixo de “Analítico”): selecione:
+    - ISD — Encargos sociais SEM desoneração
+    - ICD — Encargos sociais COM desoneração
+    - ISE — Sem encargos sociais
+    O sistema mantém a última opção selecionada.
     - Nome da aba (preços de insumos): informe o nome da aba do XLSX (se necessário).
-  - Modo: escolha se vai importar apenas faltantes ou substituir existentes e selecione a obra.
+  - Modo: escolha se vai importar apenas faltantes ou substituir existentes e selecione a Obra/Licitação/Orçamento.
   - Escopo:
     - Marque “Selecionar um serviço” para informar o código.
     - Marque “Importar TODAS as composições…” para importar tudo do arquivo.
@@ -3061,7 +3065,7 @@ ETAPA 3 — O que preencher
 
 ETAPA 4 — O que esperar
 - A lista exibe os serviços importados como uma lista com colunas: Código, Descrição, un, Valor da composição, UF, Data-base e Preços de insumos.
-- Após importar (Prévia → Importar), o serviço passa a aparecer na lista conforme os filtros.
+- Após importar (no card “Prévia” → “Importar”), o serviço passa a aparecer na lista conforme os filtros.
 
 ETAPA 5 — Como validar
 - Recarregue a página “Sinapi” e verifique o serviço importado na lista.

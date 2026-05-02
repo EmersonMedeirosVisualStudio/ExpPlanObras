@@ -3375,37 +3375,24 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     const obraIds = !scope || scope.empresa ? null : Array.isArray(scope.obras) ? scope.obras.filter((x: any) => Number.isFinite(Number(x))) : [];
 
-    const params: any[] = [ctx.tenantId];
-    const where: string[] = ['o.tenant_id = $1'];
-    if (obraIds && obraIds.length > 0) {
-      params.push(obraIds.map((x: any) => Number(x)));
-      where.push(`o.id_obra = ANY($${params.length}::bigint[])`);
-    } else if (obraIds && obraIds.length === 0) {
-      where.push('1 = 0');
-    }
+    const where: any = { tenantId: ctx.tenantId };
+    if (obraIds && obraIds.length > 0) where.id = { in: obraIds.map((x: any) => Number(x)) };
+    if (obraIds && obraIds.length === 0) where.id = { in: [-1] };
 
-    const rows = (await prisma.$queryRawUnsafe(
-      `
-      SELECT
-        o.id_obra AS "idObra",
-        COALESCE(o.nome, CONCAT('Obra #', o.id_obra::text)) AS "nomeObra",
-        c.numero_contrato AS "numeroContrato"
-      FROM obras o
-      INNER JOIN contratos c ON c.id_contrato = o.id_contrato AND c.tenant_id = o.tenant_id
-      WHERE ${where.join(' AND ')}
-      ORDER BY o.id_obra DESC
-      LIMIT 500
-      `,
-      ...params
-    )) as any[];
+    const rows = await prisma.obra.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { id: true, name: true, contrato: { select: { numeroContrato: true } } },
+      take: 500,
+    });
 
     return ok(
       reply,
       {
         rows: (rows || []).map((r: any) => ({
-          idObra: r.idObra == null ? 0 : Number(r.idObra),
-          nomeObra: String(r.nomeObra || ''),
-          numeroContrato: r.numeroContrato == null ? null : String(r.numeroContrato || ''),
+          idObra: r?.id == null ? 0 : Number(r.id),
+          nomeObra: String(r?.name || '') || `Obra #${r?.id == null ? '' : String(r.id)}`,
+          numeroContrato: r?.contrato?.numeroContrato == null ? null : String(r.contrato.numeroContrato || ''),
         })),
       },
       { message: 'Obras' }
