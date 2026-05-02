@@ -3056,11 +3056,11 @@ ETAPA 3 — O que preencher
     - ISE — Sem encargos sociais
     O sistema mantém a última opção selecionada.
     - Nome da aba (preços de insumos): informe o nome da aba do XLSX (se necessário).
-  - Modo: escolha se vai importar apenas faltantes ou substituir existentes e selecione a Obra/Licitação/Orçamento.
-  - Escopo:
-    - Marque “Selecionar um serviço” para informar o código.
-    - Marque “Importar TODAS as composições…” para importar tudo do arquivo.
-    - Se não marcar nenhuma das duas opções, o sistema usa os serviços da planilha da obra.
+  - Opções (escolha apenas UMA):
+    - Importar somente as composições que faltam na obra (seleciona a Obra/Licitação/Orçamento).
+    - Atualizar/substituir composições existentes na obra (seleciona a Obra/Licitação/Orçamento).
+    - Selecionar um serviço (informa o código do serviço).
+    - Importar TODAS as composições encontradas no arquivo.
   - Arquivo XLSX: selecione o arquivo.
 
 ETAPA 4 — O que esperar

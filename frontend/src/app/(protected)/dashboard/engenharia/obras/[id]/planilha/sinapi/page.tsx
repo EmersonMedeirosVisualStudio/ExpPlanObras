@@ -91,8 +91,7 @@ export default function SinapiImportPage() {
   const [insumosModoFiltro, setInsumosModoFiltro] = useState<"" | "ISD" | "ICD" | "ISE">("");
   const [targetObraId, setTargetObraId] = useState<number>(Number.isFinite(idObra) && idObra > 0 ? idObra : 0);
   const [obrasLista, setObrasLista] = useState<ObraListaRow[]>([]);
-  const [escopo, setEscopo] = useState<"PLANILHA" | "SERVICO" | "ARQUIVO">(codigoParam ? "SERVICO" : "PLANILHA");
-  const [mode, setMode] = useState<"MISSING_ONLY" | "UPSERT">("MISSING_ONLY");
+  const [opcao, setOpcao] = useState<"FALTAM" | "SUBSTITUIR" | "SERVICO" | "ARQUIVO">(codigoParam ? "SERVICO" : "FALTAM");
   const [forceDataBaseMismatch, setForceDataBaseMismatch] = useState<boolean>(false);
   const [busy, setBusy] = useState<boolean>(false);
   const [err, setErr] = useState<string>("");
@@ -220,12 +219,16 @@ export default function SinapiImportPage() {
       setErr("Selecione o arquivo XLSX do SINAPI para importar.");
       return;
     }
-    if (escopo === "SERVICO" && !codigoServico.trim()) {
+    if (opcao === "SERVICO" && !codigoServico.trim()) {
       setErr("Informe o código do serviço.");
       return;
     }
     setBusy(true);
     try {
+      const computedMode: "MISSING_ONLY" | "UPSERT" = opcao === "SUBSTITUIR" || opcao === "SERVICO" ? "UPSERT" : "MISSING_ONLY";
+      const computedImportAllParsed = opcao === "ARQUIVO";
+      const computedCodigoServico = opcao === "SERVICO" ? codigoServico.trim().toUpperCase() : "";
+
       const fd = new FormData();
       fd.append("file", file);
       fd.append("sheetName", sheetName.trim() || "Analítico");
@@ -233,9 +236,9 @@ export default function SinapiImportPage() {
       fd.append("insumosModo", insumosModo);
       if (insumosSheetName.trim()) fd.append("insumosSheetName", insumosSheetName.trim());
       if (Number.isFinite(targetObraId) && targetObraId > 0) fd.append("targetObraId", String(targetObraId));
-      if (escopo === "SERVICO" && codigoServico.trim()) fd.append("codigoServico", codigoServico.trim().toUpperCase());
-      fd.append("mode", mode);
-      fd.append("importAllParsed", String(escopo === "ARQUIVO"));
+      if (computedCodigoServico) fd.append("codigoServico", computedCodigoServico);
+      fd.append("mode", computedMode);
+      fd.append("importAllParsed", String(computedImportAllParsed));
       fd.append("dryRun", String(dryRun));
       fd.append("forceDataBaseMismatch", String(forceDataBaseMismatch));
 
@@ -243,8 +246,17 @@ export default function SinapiImportPage() {
         method: "POST",
         body: fd,
       });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Falha ao processar importação SINAPI");
+      const raw = await res.text().catch(() => "");
+      let json: any = null;
+      try {
+        json = raw ? JSON.parse(raw) : null;
+      } catch {
+        json = null;
+      }
+      if (!res.ok || !json?.success) {
+        const msg = json?.message || raw || "Falha ao processar importação SINAPI";
+        throw new Error(msg);
+      }
 
       if (dryRun) {
         setPreview(json.data as PreviewResult);
@@ -261,7 +273,8 @@ export default function SinapiImportPage() {
   }
 
   async function importar() {
-    if (mode === "UPSERT") {
+    const computedMode: "MISSING_ONLY" | "UPSERT" = opcao === "SUBSTITUIR" || opcao === "SERVICO" ? "UPSERT" : "MISSING_ONLY";
+    if (computedMode === "UPSERT") {
       const ok = window.confirm("Você escolheu atualizar/substituir composições existentes. Confirmar?");
       if (!ok) return;
     }
@@ -288,11 +301,6 @@ export default function SinapiImportPage() {
       return;
     }
 
-    if (mode === "UPSERT") {
-      const ok = window.confirm("Você escolheu atualizar/substituir a composição existente na obra. Confirmar?");
-      if (!ok) return;
-    }
-
     const planDb = String(planilhaDataBaseSinapi || "").trim();
     const baseDb = String(row.dataBase || "").trim();
     if (planDb && baseDb && planDb !== baseDb && !forceDataBaseMismatch) {
@@ -311,7 +319,7 @@ export default function SinapiImportPage() {
           uf: String(row.uf || "").trim().toUpperCase(),
           insumosModo: String(row.insumosModo || "").trim().toUpperCase(),
           targetObraId: Number.isFinite(targetObraId) && targetObraId > 0 ? targetObraId : undefined,
-          mode,
+          mode: "MISSING_ONLY",
           forceDataBaseMismatch,
         }),
       });
@@ -409,7 +417,7 @@ export default function SinapiImportPage() {
     if (codigoParam) {
       setCodigoServico(codigoParam);
       setCodigoFiltro(codigoParam);
-      setEscopo("SERVICO");
+      setOpcao("SERVICO");
     }
   }, [codigoParam]);
 
@@ -706,17 +714,38 @@ export default function SinapiImportPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-                  <div className="md:col-span-12 space-y-2">
-                    <div className="text-sm text-slate-600">Modo</div>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input type="radio" name="mode" checked={mode === "MISSING_ONLY"} onChange={() => setMode("MISSING_ONLY")} disabled={busy} />
-                      <span>Importar somente as composições que faltam na obra</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input type="radio" name="mode" checked={mode === "UPSERT"} onChange={() => setMode("UPSERT")} disabled={busy} />
-                      <span>Atualizar/substituir composições existentes na obra</span>
-                    </label>
+                <div className="space-y-2">
+                  <div className="text-sm text-slate-600">Opções</div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="radio" name="opcao" checked={opcao === "FALTAM"} onChange={() => setOpcao("FALTAM")} disabled={busy} />
+                    <span>Importar somente as composições que faltam na obra</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="radio" name="opcao" checked={opcao === "SUBSTITUIR"} onChange={() => setOpcao("SUBSTITUIR")} disabled={busy} />
+                    <span>Atualizar/substituir composições existentes na obra</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="radio" name="opcao" checked={opcao === "SERVICO"} onChange={() => setOpcao("SERVICO")} disabled={busy} />
+                    <span>Selecionar um serviço</span>
+                  </label>
+                  {opcao === "SERVICO" ? (
+                    <div className="mt-1">
+                      <div className="text-xs text-slate-500">Código do serviço</div>
+                      <input
+                        className="input bg-white mt-1"
+                        value={codigoServico}
+                        onChange={(e) => setCodigoServico(e.target.value)}
+                        disabled={busy}
+                        placeholder="Ex: 100309"
+                      />
+                    </div>
+                  ) : null}
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="radio" name="opcao" checked={opcao === "ARQUIVO"} onChange={() => setOpcao("ARQUIVO")} disabled={busy} />
+                    <span>Importar TODAS as composições encontradas no arquivo</span>
+                  </label>
+
+                  {opcao === "FALTAM" || opcao === "SUBSTITUIR" ? (
                     <div className="mt-2">
                       <div className="text-xs text-slate-500">Obra/Licitação/Orçamento</div>
                       <select
@@ -736,35 +765,7 @@ export default function SinapiImportPage() {
                         )}
                       </select>
                     </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-sm text-slate-600">Escopo</div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={escopo === "SERVICO"}
-                      onChange={() => setEscopo((cur) => (cur === "SERVICO" ? "PLANILHA" : "SERVICO"))}
-                      disabled={busy}
-                    />
-                    <span>Selecionar um serviço</span>
-                  </label>
-                  {escopo === "SERVICO" ? (
-                    <div>
-                      <div className="text-xs text-slate-500">Código do serviço</div>
-                      <input className="input bg-white mt-1" value={codigoServico} onChange={(e) => setCodigoServico(e.target.value)} disabled={busy} placeholder="Ex: 100309" />
-                    </div>
                   ) : null}
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={escopo === "ARQUIVO"}
-                      onChange={() => setEscopo((cur) => (cur === "ARQUIVO" ? "PLANILHA" : "ARQUIVO"))}
-                      disabled={busy}
-                    />
-                    <span>Importar TODAS as composições encontradas no arquivo</span>
-                  </label>
                 </div>
 
                 <label className="flex items-center gap-2 text-sm rounded border bg-white px-3 py-2">
