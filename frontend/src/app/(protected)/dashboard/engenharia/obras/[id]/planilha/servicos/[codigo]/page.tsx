@@ -189,6 +189,7 @@ async function readTextSmart(file: File) {
   const [sinapiInsumosModo, setSinapiInsumosModo] = useState<"ISD" | "ICD" | "ISE">("ISD");
   const [sinapiForceDataBaseMismatch, setSinapiForceDataBaseMismatch] = useState<boolean>(false);
   const [sinapiPreview, setSinapiPreview] = useState<any | null>(null);
+  const [sinapiParsedPayload, setSinapiParsedPayload] = useState<any | null>(null);
   const [sinapiBusy, setSinapiBusy] = useState(false);
   const [sinapiMsgOk, setSinapiMsgOk] = useState<string>("");
   const [sinapiMsgErr, setSinapiMsgErr] = useState<string>("");
@@ -740,9 +741,238 @@ async function readTextSmart(file: File) {
     const raw = String(msg || "").trim();
     const lower = raw.toLowerCase();
     if (lower.includes("request file too large") || lower.includes("file too large")) {
-      return "Arquivo XLSX muito grande para upload. O servidor rejeitou por limite de tamanho. Tente novamente após atualizar o backend (limite maior) ou use um arquivo menor.";
+      return "Arquivo XLSX muito grande para upload. Use a importação local (sem upload) para capturar apenas o que precisa.";
     }
     return raw || "Erro inesperado.";
+  }
+
+  async function sinapiParseLocalOrThrow() {
+    if (!sinapiFile) throw new Error("Selecione o arquivo XLSX do SINAPI.");
+    const XLSX: any = await import("xlsx");
+
+    const buf = await sinapiFile.arrayBuffer();
+    let wb: any;
+    try {
+      wb = XLSX.read(buf, { type: "array", cellDates: false });
+    } catch {
+      throw new Error("Arquivo XLSX inválido ou corrompido.");
+    }
+
+    const normalizeSheetName = (n: string) => normalizeHeader(String(n || ""));
+    const allSheets = (wb.SheetNames || []).map((n: string) => ({ name: n, key: normalizeSheetName(n) }));
+    const pickInsumosSheetName = () => {
+      const isPreco = (k: string) => k.includes("precos") && k.includes("insumos");
+      if (sinapiInsumosModo === "ISD") {
+        const hit =
+          allSheets.find((s: any) => isPreco(s.key) && s.key.includes("sem_desoneracao")) ||
+          allSheets.find((s: any) => isPreco(s.key) && s.key.includes("encargos_sociais") && s.key.includes("sem_desoneracao")) ||
+          allSheets.find((s: any) => isPreco(s.key) && s.key.includes("sem_deson")) ||
+          allSheets.find((s: any) => isPreco(s.key) && s.key.includes("sem") && s.key.includes("desoneracao"));
+        return hit?.name || "";
+      }
+      if (sinapiInsumosModo === "ICD") {
+        const hit =
+          allSheets.find((s: any) => isPreco(s.key) && s.key.includes("com_desoneracao")) ||
+          allSheets.find((s: any) => isPreco(s.key) && s.key.includes("encargos_sociais") && s.key.includes("com_desoneracao")) ||
+          allSheets.find((s: any) => isPreco(s.key) && s.key.includes("com") && s.key.includes("desoneracao"));
+        return hit?.name || "";
+      }
+      const hit =
+        allSheets.find((s: any) => isPreco(s.key) && s.key.includes("sem_encargos")) ||
+        allSheets.find((s: any) => isPreco(s.key) && s.key.includes("sem_encargos_sociais")) ||
+        allSheets.find((s: any) => isPreco(s.key) && s.key.includes("sem") && s.key.includes("encargos"));
+      return hit?.name || "";
+    };
+
+    const analiticoSheet = wb.Sheets[sinapiSheetName] || wb.Sheets[String(sinapiSheetName || "").trim()] || null;
+    if (!analiticoSheet) {
+      const names = (wb.SheetNames || []).slice(0, 30).join(", ");
+      throw new Error(`Aba não encontrada: "${sinapiSheetName}". Abas disponíveis: ${names || "—"}`);
+    }
+    const insumosSheetName = pickInsumosSheetName();
+    const insumosSheet = insumosSheetName ? wb.Sheets[insumosSheetName] : null;
+    if (!insumosSheet) throw new Error(`Não foi possível localizar a aba de preços de insumos para ${sinapiInsumosModo}.`);
+
+    const readCell = (sheet: any, r: number, c: number) => {
+      const ref = XLSX.utils.encode_cell({ r, c });
+      const cell = sheet?.[ref];
+      return cell?.v ?? "";
+    };
+    const parseNum = (v: any) => {
+      if (v == null) return null;
+      if (typeof v === "number") return Number.isFinite(v) ? v : null;
+      return parseNumberLoose(v);
+    };
+
+    const detectDataBase = () => {
+      const rx = /\b(0[1-9]|1[0-2])\/\d{4}\b/;
+      const names = (wb.SheetNames || []).slice(0, 8);
+      for (const n of names) {
+        const s = wb.Sheets[n];
+        if (!s?.["!ref"]) continue;
+        const range = XLSX.utils.decode_range(s["!ref"]);
+        const maxR = Math.min(range.e.r, range.s.r + 30);
+        const maxC = Math.min(range.e.c, range.s.c + 20);
+        for (let r = range.s.r; r <= maxR; r++) {
+          let line = "";
+          for (let c = range.s.c; c <= maxC; c++) line += ` ${String(readCell(s, r, c) || "")}`;
+          const hit = line.match(rx);
+          if (hit?.[0]) return hit[0];
+        }
+      }
+      return null;
+    };
+
+    const sinapiDataBase = detectDataBase();
+
+    const findHeader = (sheet: any, maxScanRows: number) => {
+      if (!sheet?.["!ref"]) return null;
+      const range = XLSX.utils.decode_range(sheet["!ref"]);
+      const maxR = Math.min(range.e.r, range.s.r + maxScanRows);
+      const maxC = range.e.c;
+      for (let r = range.s.r; r <= maxR; r++) {
+        const headersNorm: string[] = [];
+        for (let c = range.s.c; c <= maxC; c++) headersNorm.push(normalizeHeader(String(readCell(sheet, r, c) || "")));
+        const keys = headersNorm.filter(Boolean);
+        const hasCodigo = keys.includes("codigo") || keys.includes("codigo_item") || keys.includes("codigo_da_composicao") || keys.includes("codigo_composicao");
+        const hasDesc = keys.includes("descricao") || keys.includes("descricao_item");
+        const hasCoef = keys.some((k) => k.includes("coef") || k === "quantidade");
+        if (hasCodigo && hasDesc && hasCoef) return { headerRow: r, headersNorm, range };
+      }
+      return null;
+    };
+
+    const anal = findHeader(analiticoSheet, 60);
+    if (!anal) throw new Error('Não foi possível identificar o cabeçalho da aba. Verifique se é a aba "Analítico".');
+    const findCol = (headersNorm: string[], cands: string[]) => {
+      for (const c of cands) {
+        const idx = headersNorm.findIndex((h) => h === c);
+        if (idx >= 0) return idx;
+      }
+      for (const c of cands) {
+        const idx = headersNorm.findIndex((h) => h.includes(c));
+        if (idx >= 0) return idx;
+      }
+      return -1;
+    };
+
+    const iCodigo = findCol(anal.headersNorm, ["codigo_da_composicao", "codigo_composicao", "codigo_item", "codigo"]);
+    const iDescricao = findCol(anal.headersNorm, ["descricao_item", "descricao"]);
+    const iUnd = findCol(anal.headersNorm, ["und", "unid", "unidade"]);
+    const iCoef = findCol(anal.headersNorm, ["coeficiente", "coef", "quantidade"]);
+    const iTipo = findCol(anal.headersNorm, ["tipo_item", "tipo"]);
+    const iNivel = findCol(anal.headersNorm, ["nivel"]);
+    const iUf = findCol(anal.headersNorm, ["uf", "estado"]);
+
+    const mapTipo = (raw: string) => {
+      const v = String(raw || "").trim().toUpperCase();
+      if (!v) return "";
+      if (v.includes("AUX")) return "COMPOSICAO_AUXILIAR";
+      if (v.includes("COMPOS")) return "COMPOSICAO";
+      if (v.includes("EQUIP")) return "EQUIPAMENTO";
+      if (v.includes("MAO") || v.includes("MÃO")) return "MAO_DE_OBRA";
+      if (v.includes("INSUM")) return "INSUMO";
+      return "";
+    };
+
+    const target = String(codigoServico || "").trim().toUpperCase();
+    const uf = String(sinapiUf || "").trim().toUpperCase();
+    const itensRaw: Array<{ tipoItem: string; codigoItem: string; coeficiente: number; descricao: string | null; und: string | null }> = [];
+    const insumosNeed = new Set<string>();
+    let current: string | null = null;
+    let captured = false;
+
+    const maxR = anal.range.e.r;
+    for (let r = anal.headerRow + 1; r <= maxR; r++) {
+      const rowUf = iUf >= 0 ? String(readCell(analiticoSheet, r, anal.range.s.c + iUf) || "").trim().toUpperCase() : "";
+      if (uf && iUf >= 0 && rowUf && rowUf !== uf) continue;
+
+      const codigo = String(readCell(analiticoSheet, r, anal.range.s.c + iCodigo) ?? "").trim().toUpperCase();
+      const descricao = String(readCell(analiticoSheet, r, anal.range.s.c + iDescricao) ?? "").trim();
+      const und = iUnd >= 0 ? String(readCell(analiticoSheet, r, anal.range.s.c + iUnd) ?? "").trim() : "";
+      const tipoRaw = iTipo >= 0 ? String(readCell(analiticoSheet, r, anal.range.s.c + iTipo) ?? "").trim() : "";
+      const tipoMapped = mapTipo(tipoRaw);
+      const nivel = iNivel >= 0 ? parseNum(readCell(analiticoSheet, r, anal.range.s.c + iNivel)) : null;
+      const coef = parseNum(readCell(analiticoSheet, r, anal.range.s.c + iCoef));
+
+      if (!codigo && !descricao) continue;
+
+      const isHeader = (nivel != null && Number.isFinite(nivel) && Math.round(Number(nivel)) === 0 && codigo) || (tipoMapped === "COMPOSICAO" && codigo && (coef == null || coef === 1));
+      if (isHeader) {
+        if (captured && current && current === target && codigo && codigo !== target) break;
+        current = codigo;
+        continue;
+      }
+
+      if (!current || current !== target) continue;
+      if (!codigo) continue;
+      const quantidade = coef == null ? null : Number(coef);
+      if (quantidade == null || !Number.isFinite(quantidade)) continue;
+
+      captured = true;
+      const tipoItem = tipoMapped || (descricao.toUpperCase().includes("AUX") ? "COMPOSICAO_AUXILIAR" : "INSUMO");
+      itensRaw.push({
+        tipoItem,
+        codigoItem: codigo,
+        coeficiente: Number(quantidade),
+        descricao: descricao ? descricao : null,
+        und: und ? und : null,
+      });
+      if (tipoItem !== "COMPOSICAO" && tipoItem !== "COMPOSICAO_AUXILIAR") insumosNeed.add(codigo);
+    }
+
+    if (!itensRaw.length) throw new Error(`Composição não encontrada no arquivo (código: ${target}).`);
+
+    const insHdr = findHeader(insumosSheet, 80);
+    if (!insHdr) throw new Error(`Não foi possível identificar o cabeçalho da aba de insumos (${insumosSheetName}).`);
+    const h = insHdr.headersNorm;
+    const iCod = findCol(h, ["codigo_item", "codigo"]);
+    const iDesc = findCol(h, ["descricao_item", "descricao", "insumo"]);
+    const iUnd2 = findCol(h, ["und", "unid", "unidade"]);
+    const ufLower = uf.toLowerCase();
+    let iPreco = h.findIndex((x) => x === ufLower);
+    if (iPreco < 0) iPreco = h.findIndex((x) => x.endsWith(`_${ufLower}`) || x.includes(`_${ufLower}_`) || x.includes(`preco_${ufLower}`) || x.includes(`valor_${ufLower}`));
+    if (iCod < 0 || iDesc < 0 || iUnd2 < 0 || iPreco < 0) throw new Error(`Não foi possível localizar colunas mínimas (código/descrição/und/preço ${uf}) na aba de insumos (${insumosSheetName}).`);
+
+    const insumosFound = new Map<string, { descricao: string; und: string; preco: number | null }>();
+    const rangeIns = insHdr.range;
+    for (let r = insHdr.headerRow + 1; r <= rangeIns.e.r; r++) {
+      if (!insumosNeed.size) break;
+      const code = String(readCell(insumosSheet, r, rangeIns.s.c + iCod) ?? "").trim().toUpperCase();
+      if (!code || !insumosNeed.has(code)) continue;
+      const desc = String(readCell(insumosSheet, r, rangeIns.s.c + iDesc) ?? "").trim();
+      const undV = String(readCell(insumosSheet, r, rangeIns.s.c + iUnd2) ?? "").trim();
+      const preco = parseNum(readCell(insumosSheet, r, rangeIns.s.c + iPreco));
+      insumosFound.set(code, { descricao: desc, und: undV, preco: preco == null ? null : Number(preco) });
+      insumosNeed.delete(code);
+    }
+
+    const itens = itensRaw.map((it) => {
+      const isComp = it.tipoItem === "COMPOSICAO" || it.tipoItem === "COMPOSICAO_AUXILIAR";
+      const ins = !isComp ? insumosFound.get(it.codigoItem) : null;
+      return {
+        tipoItem: it.tipoItem,
+        codigoItem: it.codigoItem,
+        coeficiente: it.coeficiente,
+        descricao: isComp ? it.descricao : (ins?.descricao || it.descricao || null),
+        und: isComp ? it.und : (ins?.und || it.und || null),
+        precoUnitario: isComp ? null : (ins?.preco == null ? null : ins.preco),
+      };
+    });
+
+    const payload = {
+      uf,
+      insumosModo: sinapiInsumosModo,
+      codigoServico: target,
+      sinapiDataBase: sinapiDataBase ? String(sinapiDataBase).trim() : null,
+      banco: "SINAPI",
+      mode: "UPSERT",
+      forceDataBaseMismatch: Boolean(sinapiForceDataBaseMismatch),
+      composicao: { codigo: target, descricao: null, und: null },
+      itens,
+    };
+
+    return { payload, sinapiDataBase: payload.sinapiDataBase };
   }
 
   async function sinapiGerarPrevia() {
@@ -759,17 +989,13 @@ async function readTextSmart(file: File) {
       setSinapiMsgOk("");
       setSinapiMsgErr("");
       setSinapiBusy(true);
-      const fd = new FormData();
-      fd.append("file", sinapiFile);
-      fd.append("sheetName", sinapiSheetName.trim() || "Analítico");
-      if (sinapiUf.trim()) fd.append("uf", sinapiUf.trim().toUpperCase());
-      fd.append("insumosModo", sinapiInsumosModo);
-      fd.append("mode", "UPSERT");
-      fd.append("importAllParsed", "true");
-      fd.append("dryRun", "true");
-      fd.append("codigoServico", String(codigoServico).trim().toUpperCase());
-      fd.append("forceDataBaseMismatch", String(sinapiForceDataBaseMismatch));
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico`, { method: "POST", body: fd });
+      const { payload } = await sinapiParseLocalOrThrow();
+      setSinapiParsedPayload(payload);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico-parsed`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, dryRun: true }),
+      });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao gerar prévia do SINAPI");
       setSinapiPreview(json.data);
@@ -803,17 +1029,13 @@ async function readTextSmart(file: File) {
       setSinapiMsgOk("");
       setSinapiMsgErr("");
       setSinapiBusy(true);
-      const fd = new FormData();
-      fd.append("file", sinapiFile);
-      fd.append("sheetName", sinapiSheetName.trim() || "Analítico");
-      if (sinapiUf.trim()) fd.append("uf", sinapiUf.trim().toUpperCase());
-      fd.append("insumosModo", sinapiInsumosModo);
-      fd.append("mode", "UPSERT");
-      fd.append("importAllParsed", "true");
-      fd.append("dryRun", "false");
-      fd.append("codigoServico", String(codigoServico).trim().toUpperCase());
-      fd.append("forceDataBaseMismatch", String(sinapiForceDataBaseMismatch));
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico`, { method: "POST", body: fd });
+      const local = sinapiParsedPayload ? { payload: sinapiParsedPayload } : await sinapiParseLocalOrThrow();
+      const payload = local.payload;
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico-parsed`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, dryRun: false, forceDataBaseMismatch: Boolean(sinapiForceDataBaseMismatch) }),
+      });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao importar do SINAPI");
       setOkMsg("Composição importada do SINAPI.");
@@ -821,6 +1043,7 @@ async function readTextSmart(file: File) {
       setSinapiMsgErr("");
       setSinapiImportOpen(false);
       setSinapiPreview(null);
+      setSinapiParsedPayload(null);
       await Promise.all([carregar(true), carregarPrevistoPlanilha(), carregarComposicoesDefinidas()]);
     } catch (e: any) {
       const msg = normalizeSinapiErrorMessage(e?.message || "Erro ao importar do SINAPI");

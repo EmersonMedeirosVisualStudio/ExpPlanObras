@@ -25,6 +25,7 @@
     "@xyflow/react": "^12.8.4",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.149",
+    "xlsx": "^0.18.5",
     "@capacitor/core": "^6.1.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",

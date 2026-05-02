@@ -5857,6 +5857,315 @@ export default async function v1Routes(server: FastifyInstance) {
     );
   });
 
+  server.post('/engenharia/obras/:id/planilha/sinapi/import-analitico-parsed', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensurePlanilhaOrcamentariaTables(prisma);
+    await ensurePlanilhaComposicaoTables(prisma);
+    await ensureSinapiBaseTables(prisma);
+
+    const body = (request.body || {}) as any;
+    const parsed = z
+      .object({
+        uf: z.string().min(2),
+        insumosModo: z.enum(['ISD', 'ICD', 'ISE']).default('ISD'),
+        codigoServico: z.string().min(1),
+        sinapiDataBase: z.string().optional().nullable(),
+        banco: z.string().optional().nullable(),
+        mode: z.enum(['UPSERT', 'MISSING_ONLY']).optional().default('UPSERT'),
+        dryRun: z.boolean().optional().default(false),
+        forceDataBaseMismatch: z.boolean().optional().default(false),
+        composicao: z
+          .object({
+            codigo: z.string().min(1),
+            descricao: z.string().optional().nullable(),
+            und: z.string().optional().nullable(),
+          })
+          .optional(),
+        itens: z
+          .array(
+            z.object({
+              tipoItem: z.string().min(1),
+              codigoItem: z.string().min(1),
+              coeficiente: z.number(),
+              descricao: z.string().optional().nullable(),
+              und: z.string().optional().nullable(),
+              precoUnitario: z.number().optional().nullable(),
+            })
+          )
+          .min(1),
+      })
+      .parse(body);
+
+    const uf = String(parsed.uf || '').trim().toUpperCase();
+    const insumosModo = parsed.insumosModo;
+    const codigoServico = String(parsed.codigoServico || '').trim().toUpperCase();
+    const banco = String(parsed.banco || 'SINAPI').trim().slice(0, 60) || 'SINAPI';
+    const mode = parsed.mode;
+    const dryRun = Boolean(parsed.dryRun);
+    const forceDataBaseMismatch = Boolean(parsed.forceDataBaseMismatch);
+    if (!uf) return fail(reply, 422, 'UF é obrigatória');
+    if (!codigoServico) return fail(reply, 422, 'codigoServico é obrigatório');
+
+    const vers = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        id_planilha AS "idPlanilha",
+        data_base_sbc AS "dataBaseSbc",
+        data_base_sinapi AS "dataBaseSinapi",
+        bdi_servicos_sbc AS "bdiServicosSbc",
+        bdi_servicos_sinapi AS "bdiServicosSinapi",
+        bdi_diferenciado_sbc AS "bdiDiferenciadoSbc",
+        bdi_diferenciado_sinapi AS "bdiDiferenciadoSinapi",
+        enc_sociais_sem_des_sbc AS "encSociaisSemDesSbc",
+        enc_sociais_sem_des_sinapi AS "encSociaisSemDesSinapi",
+        desconto_sbc AS "descontoSbc",
+        desconto_sinapi AS "descontoSinapi"
+      FROM obras_planilhas_versoes
+      WHERE tenant_id = $1 AND id_obra = $2 AND atual = TRUE
+      ORDER BY numero_versao DESC, id_planilha DESC
+      LIMIT 1
+      `,
+      ctx.tenantId,
+      idObra
+    )) as any[];
+    const versRow = vers?.[0] || null;
+    const planilhaId: number | null = versRow?.idPlanilha != null ? Number(versRow.idPlanilha) : null;
+    const planilhaParams = versRow
+      ? {
+          dataBaseSbc: versRow.dataBaseSbc == null ? null : String(versRow.dataBaseSbc || ''),
+          dataBaseSinapi: versRow.dataBaseSinapi == null ? null : String(versRow.dataBaseSinapi || ''),
+          bdiServicosSbc: versRow.bdiServicosSbc == null ? null : Number(versRow.bdiServicosSbc),
+          bdiServicosSinapi: versRow.bdiServicosSinapi == null ? null : Number(versRow.bdiServicosSinapi),
+          bdiDiferenciadoSbc: versRow.bdiDiferenciadoSbc == null ? null : Number(versRow.bdiDiferenciadoSbc),
+          bdiDiferenciadoSinapi: versRow.bdiDiferenciadoSinapi == null ? null : Number(versRow.bdiDiferenciadoSinapi),
+          encSociaisSemDesSbc: versRow.encSociaisSemDesSbc == null ? null : Number(versRow.encSociaisSemDesSbc),
+          encSociaisSemDesSinapi: versRow.encSociaisSemDesSinapi == null ? null : Number(versRow.encSociaisSemDesSinapi),
+          descontoSbc: versRow.descontoSbc == null ? null : Number(versRow.descontoSbc),
+          descontoSinapi: versRow.descontoSinapi == null ? null : Number(versRow.descontoSinapi),
+        }
+      : null;
+
+    const planilhaDataBase = planilhaParams?.dataBaseSinapi ? String(planilhaParams.dataBaseSinapi || '').trim() : '';
+    const sinapiDataBaseNorm = parsed.sinapiDataBase ? String(parsed.sinapiDataBase || '').trim() : '';
+    const paramsMatch = planilhaDataBase && sinapiDataBaseNorm ? planilhaDataBase === sinapiDataBaseNorm : null;
+    const paramsStatus = paramsMatch === true ? 'MATCH' : paramsMatch === false ? 'MISMATCH' : 'UNKNOWN';
+
+    if (!dryRun && paramsStatus !== 'MATCH' && !forceDataBaseMismatch) {
+      const detalhe =
+        paramsStatus === 'UNKNOWN'
+          ? `Não foi possível validar a data-base (Planilha: ${planilhaDataBase || '—'} / SINAPI: ${sinapiDataBaseNorm || '—'}).`
+          : `Data-base diferente (Planilha: ${planilhaDataBase || '—'} / SINAPI: ${sinapiDataBaseNorm || '—'}).`;
+      return fail(reply, 422, `${detalhe} Para prosseguir, marque “Forçar importação (mês-base diferente)”.`);
+    }
+
+    const itens = (parsed.itens || []).map((r) => ({
+      tipoItem: String(r.tipoItem || 'INSUMO').trim().toUpperCase().slice(0, 32) || 'INSUMO',
+      codigoItem: String(r.codigoItem || '').trim().toUpperCase().slice(0, 80),
+      coeficiente: r.coeficiente,
+      descricao: r.descricao == null ? null : String(r.descricao || '').trim().slice(0, 255),
+      und: r.und == null ? null : String(r.und || '').trim().slice(0, 40),
+      precoUnitario: r.precoUnitario == null ? null : Number(r.precoUnitario),
+    }));
+    const totalItens = itens.length;
+    const sample = [{ codigo: codigoServico, itens: itens.slice(0, 3).map((x) => ({ ...x, quantidade: x.coeficiente, valorUnitario: x.precoUnitario })) }];
+
+    if (dryRun) {
+      return ok(
+        reply,
+        {
+          sheetName: 'Analítico (local)',
+          uf: uf || null,
+          planilhaId,
+          planilhaParams,
+          sinapiDetected: { dataBase: sinapiDataBaseNorm || null },
+          paramsMatch,
+          paramsStatus,
+          insumosModo,
+          parsedComposicoes: 1,
+          targetComposicoes: 1,
+          toImportComposicoes: 1,
+          toImportItens: totalItens,
+          skippedExisting: 0,
+          skippedNotInPlanilha: 0,
+          sample,
+        },
+        { message: 'Prévia gerada' }
+      );
+    }
+
+    let importedItens = 0;
+    await prisma.$transaction(async (tx: any) => {
+      const compCodigo = parsed.composicao?.codigo ? String(parsed.composicao.codigo).trim().toUpperCase() : codigoServico;
+      const compDesc = parsed.composicao?.descricao == null ? null : String(parsed.composicao.descricao || '').trim().slice(0, 255);
+      const compUnd = parsed.composicao?.und == null ? null : String(parsed.composicao.und || '').trim().slice(0, 40);
+
+      await tx.$executeRawUnsafe(
+        `
+        INSERT INTO sinapi_composicoes (tenant_id, uf, data_base, codigo_composicao, descricao, und)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (tenant_id, uf, data_base, codigo_composicao)
+        DO UPDATE SET descricao = EXCLUDED.descricao, und = EXCLUDED.und, atualizado_em = NOW()
+        `,
+        ctx.tenantId,
+        uf,
+        sinapiDataBaseNorm,
+        compCodigo,
+        compDesc,
+        compUnd
+      );
+
+      await tx.$executeRawUnsafe(
+        `DELETE FROM sinapi_composicoes_itens WHERE tenant_id = $1 AND uf = $2 AND data_base = $3 AND UPPER(codigo_composicao) = $4`,
+        ctx.tenantId,
+        uf,
+        sinapiDataBaseNorm,
+        compCodigo
+      );
+
+      if (itens.length) {
+        const chunkSize = 500;
+        for (let start = 0; start < itens.length; start += chunkSize) {
+          const chunk = itens.slice(start, start + chunkSize);
+          const params: any[] = [];
+          let p = 1;
+          const values = chunk
+            .map((r) => {
+              const base = [ctx.tenantId, uf, sinapiDataBaseNorm, compCodigo, r.tipoItem, r.codigoItem, toDec(r.coeficiente)];
+              for (const v of base) params.push(v);
+              const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+              return `(${placeholders})`;
+            })
+            .join(',');
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO sinapi_composicoes_itens (tenant_id, uf, data_base, codigo_composicao, tipo_item, codigo_item, coeficiente)
+            VALUES ${values}
+            `,
+            ...params
+          );
+        }
+      }
+
+      const usedInsumos = new Map<string, { descricao: string | null; und: string | null; preco: number | null }>();
+      for (const it of itens) {
+        const t = String(it.tipoItem || '').toUpperCase();
+        if (t === 'COMPOSICAO' || t === 'COMPOSICAO_AUXILIAR') continue;
+        if (!it.codigoItem) continue;
+        usedInsumos.set(it.codigoItem, { descricao: it.descricao ?? null, und: it.und ?? null, preco: it.precoUnitario ?? null });
+      }
+
+      if (usedInsumos.size) {
+        const codes = Array.from(usedInsumos.keys());
+        const chunkSize = 500;
+        for (let start = 0; start < codes.length; start += chunkSize) {
+          const chunk = codes.slice(start, start + chunkSize);
+          const params: any[] = [];
+          let p = 1;
+          const values = chunk
+            .map((code) => {
+              const ins = usedInsumos.get(code);
+              const base = [ctx.tenantId, uf, sinapiDataBaseNorm, insumosModo, code, ins?.descricao ?? null, ins?.und ?? null, ins?.preco == null ? null : toDec(ins.preco)];
+              for (const v of base) params.push(v);
+              const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+              return `(${placeholders})`;
+            })
+            .join(',');
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO sinapi_insumos (tenant_id, uf, data_base, tipo_preco, codigo_item, descricao, und, preco_unitario)
+            VALUES ${values}
+            ON CONFLICT (tenant_id, uf, data_base, tipo_preco, codigo_item)
+            DO UPDATE SET descricao = EXCLUDED.descricao, und = EXCLUDED.und, preco_unitario = EXCLUDED.preco_unitario, atualizado_em = NOW()
+            `,
+            ...params
+          );
+        }
+      }
+
+      if (mode === 'UPSERT') {
+        await tx.$executeRawUnsafe(`DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND UPPER(codigo_servico) = $3`, ctx.tenantId, idObra, codigoServico);
+      }
+
+      if (itens.length) {
+        const normalized = itens
+          .map((r) => ({
+            etapa: '',
+            tipoItem: r.tipoItem,
+            codigoItem: r.codigoItem,
+            banco: banco || null,
+            descricao: r.descricao ?? null,
+            und: r.und ?? null,
+            quantidade: toDec(r.coeficiente),
+            valorUnitario: r.precoUnitario == null ? null : toDec(r.precoUnitario),
+            perda: 0,
+            codigoCentroCusto: null,
+          }))
+          .filter((i) => i.codigoItem && i.quantidade != null);
+
+        const chunkSize = 500;
+        for (let start = 0; start < normalized.length; start += chunkSize) {
+          const chunk = normalized.slice(start, start + chunkSize);
+          const params: any[] = [];
+          let p = 1;
+          const values = chunk
+            .map((r) => {
+              const base = [ctx.tenantId, idObra, codigoServico, r.etapa, r.tipoItem, r.codigoItem, r.banco, r.descricao, r.und, r.quantidade, r.valorUnitario, r.perda, r.codigoCentroCusto];
+              for (const v of base) params.push(v);
+              const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+              return `(${placeholders})`;
+            })
+            .join(',');
+
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO obras_planilhas_composicoes_itens
+              (tenant_id, id_obra, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo)
+            VALUES
+              ${values}
+            ON CONFLICT (tenant_id, id_obra, codigo_servico, etapa, tipo_item, codigo_item)
+            DO UPDATE SET
+              banco = EXCLUDED.banco,
+              descricao = EXCLUDED.descricao,
+              und = EXCLUDED.und,
+              quantidade = EXCLUDED.quantidade,
+              valor_unitario = EXCLUDED.valor_unitario,
+              perda_percentual = EXCLUDED.perda_percentual,
+              codigo_centro_custo = EXCLUDED.codigo_centro_custo,
+              atualizado_em = NOW()
+            `,
+            ...params
+          );
+          importedItens += chunk.length;
+        }
+      }
+    }, { timeout: 120000, maxWait: 20000 });
+
+    return ok(
+      reply,
+      {
+        uf: uf || null,
+        planilhaId,
+        planilhaParams,
+        sinapiDetected: { dataBase: sinapiDataBaseNorm || null },
+        paramsMatch,
+        paramsStatus,
+        insumosModo,
+        importedComposicoes: 1,
+        importedItens,
+        skippedExisting: 0,
+        skippedNotInPlanilha: 0,
+      },
+      { message: 'Importação SINAPI concluída' }
+    );
+  });
+
   server.get('/engenharia/obras/:id/planilha/insumos/consolidado', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
