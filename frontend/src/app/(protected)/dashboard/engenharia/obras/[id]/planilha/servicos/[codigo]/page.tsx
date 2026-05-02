@@ -761,23 +761,29 @@ async function readTextSmart(file: File) {
     const normalizeSheetName = (n: string) => normalizeHeader(String(n || ""));
     const allSheets = (wb.SheetNames || []).map((n: string) => ({ name: n, key: normalizeSheetName(n) }));
     const pickInsumosSheetName = () => {
-      const isPreco = (k: string) => k.includes("precos") && k.includes("insumos");
+      const isPreco = (k: string) => (k.includes("preco") || k.includes("precos")) && (k.includes("insumo") || k.includes("insumos"));
+      const hasToken = (k: string, token: string) => k === token || k.startsWith(`${token}_`) || k.endsWith(`_${token}`) || k.includes(`_${token}_`);
       if (sinapiInsumosModo === "ISD") {
         const hit =
+          allSheets.find((s: any) => isPreco(s.key) && hasToken(s.key, "isd")) ||
           allSheets.find((s: any) => isPreco(s.key) && s.key.includes("sem_desoneracao")) ||
           allSheets.find((s: any) => isPreco(s.key) && s.key.includes("encargos_sociais") && s.key.includes("sem_desoneracao")) ||
           allSheets.find((s: any) => isPreco(s.key) && s.key.includes("sem_deson")) ||
-          allSheets.find((s: any) => isPreco(s.key) && s.key.includes("sem") && s.key.includes("desoneracao"));
+          allSheets.find((s: any) => isPreco(s.key) && s.key.includes("sem") && s.key.includes("desoneracao")) ||
+          allSheets.find((s: any) => isPreco(s.key) && s.key.includes("encargos") && s.key.includes("sem") && s.key.includes("desoner"));
         return hit?.name || "";
       }
       if (sinapiInsumosModo === "ICD") {
         const hit =
+          allSheets.find((s: any) => isPreco(s.key) && hasToken(s.key, "icd")) ||
           allSheets.find((s: any) => isPreco(s.key) && s.key.includes("com_desoneracao")) ||
           allSheets.find((s: any) => isPreco(s.key) && s.key.includes("encargos_sociais") && s.key.includes("com_desoneracao")) ||
-          allSheets.find((s: any) => isPreco(s.key) && s.key.includes("com") && s.key.includes("desoneracao"));
+          allSheets.find((s: any) => isPreco(s.key) && s.key.includes("com") && s.key.includes("desoneracao")) ||
+          allSheets.find((s: any) => isPreco(s.key) && s.key.includes("encargos") && s.key.includes("com") && s.key.includes("desoner"));
         return hit?.name || "";
       }
       const hit =
+        allSheets.find((s: any) => isPreco(s.key) && hasToken(s.key, "ise")) ||
         allSheets.find((s: any) => isPreco(s.key) && s.key.includes("sem_encargos")) ||
         allSheets.find((s: any) => isPreco(s.key) && s.key.includes("sem_encargos_sociais")) ||
         allSheets.find((s: any) => isPreco(s.key) && s.key.includes("sem") && s.key.includes("encargos"));
@@ -791,7 +797,20 @@ async function readTextSmart(file: File) {
     }
     const insumosSheetName = pickInsumosSheetName();
     const insumosSheet = insumosSheetName ? wb.Sheets[insumosSheetName] : null;
-    if (!insumosSheet) throw new Error(`Não foi possível localizar a aba de preços de insumos para ${sinapiInsumosModo}.`);
+    if (!insumosSheet) {
+      const sugestoes = allSheets
+        .filter((s: any) => String(s.key || "").includes("preco") || String(s.key || "").includes("precos"))
+        .slice(0, 30)
+        .map((s: any) => String(s.name || ""))
+        .filter(Boolean)
+        .join(", ");
+      const names = (wb.SheetNames || []).slice(0, 30).join(", ");
+      throw new Error(
+        `Não foi possível localizar a aba de preços de insumos para ${sinapiInsumosModo}. ` +
+          `Sugestões (abinhas com "preço"): ${sugestoes || "—"}. ` +
+          `Abas disponíveis: ${names || "—"}.`
+      );
+    }
 
     const readCell = (sheet: any, r: number, c: number) => {
       const ref = XLSX.utils.encode_cell({ r, c });

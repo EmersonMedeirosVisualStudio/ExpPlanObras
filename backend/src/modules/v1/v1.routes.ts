@@ -5368,23 +5368,29 @@ export default async function v1Routes(server: FastifyInstance) {
     const normalizeSheetName = (n: string) => normalizeHeader(String(n || ''));
     const allSheets = (wb.SheetNames || []).map((n) => ({ name: n, key: normalizeSheetName(n) }));
     const pickInsumosSheetName = () => {
-      const isPreco = (k: string) => k.includes('precos') && k.includes('insumos');
+      const isPreco = (k: string) => (k.includes('preco') || k.includes('precos')) && (k.includes('insumo') || k.includes('insumos'));
+      const hasToken = (k: string, token: string) => k === token || k.startsWith(`${token}_`) || k.endsWith(`_${token}`) || k.includes(`_${token}_`);
       if (insumosModo === 'ISD') {
         const hit =
+          allSheets.find((s) => isPreco(s.key) && hasToken(s.key, 'isd')) ||
           allSheets.find((s) => isPreco(s.key) && s.key.includes('sem_desoneracao')) ||
           allSheets.find((s) => isPreco(s.key) && s.key.includes('encargos_sociais') && s.key.includes('sem_desoneracao')) ||
           allSheets.find((s) => isPreco(s.key) && s.key.includes('sem_deson')) ||
-          allSheets.find((s) => isPreco(s.key) && s.key.includes('sem') && s.key.includes('desoneracao'));
+          allSheets.find((s) => isPreco(s.key) && s.key.includes('sem') && s.key.includes('desoneracao')) ||
+          allSheets.find((s) => isPreco(s.key) && s.key.includes('encargos') && s.key.includes('sem') && s.key.includes('desoner'));
         return hit?.name || '';
       }
       if (insumosModo === 'ICD') {
         const hit =
+          allSheets.find((s) => isPreco(s.key) && hasToken(s.key, 'icd')) ||
           allSheets.find((s) => isPreco(s.key) && s.key.includes('com_desoneracao')) ||
           allSheets.find((s) => isPreco(s.key) && s.key.includes('encargos_sociais') && s.key.includes('com_desoneracao')) ||
-          allSheets.find((s) => isPreco(s.key) && s.key.includes('com') && s.key.includes('desoneracao'));
+          allSheets.find((s) => isPreco(s.key) && s.key.includes('com') && s.key.includes('desoneracao')) ||
+          allSheets.find((s) => isPreco(s.key) && s.key.includes('encargos') && s.key.includes('com') && s.key.includes('desoner'));
         return hit?.name || '';
       }
       const hit =
+        allSheets.find((s) => isPreco(s.key) && hasToken(s.key, 'ise')) ||
         allSheets.find((s) => isPreco(s.key) && s.key.includes('sem_encargos')) ||
         allSheets.find((s) => isPreco(s.key) && s.key.includes('sem_encargos_sociais')) ||
         allSheets.find((s) => isPreco(s.key) && s.key.includes('sem') && s.key.includes('encargos'));
@@ -5394,7 +5400,14 @@ export default async function v1Routes(server: FastifyInstance) {
     const insumosSheetName = pickInsumosSheetName();
     const insumosSheet = insumosSheetName ? wb.Sheets[insumosSheetName] : null;
     if (!insumosSheet) {
-      return fail(reply, 422, `Não foi possível localizar a aba de preços de insumos para ${insumosModo}.`);
+      const sugestoes = allSheets
+        .filter((s) => String(s.key || '').includes('preco') || String(s.key || '').includes('precos'))
+        .slice(0, 30)
+        .map((s) => String(s.name || ''))
+        .filter(Boolean)
+        .join(', ');
+      const names = (wb.SheetNames || []).slice(0, 30).join(', ');
+      return fail(reply, 422, `Não foi possível localizar a aba de preços de insumos para ${insumosModo}. Sugestões: ${sugestoes || '—'}. Abas disponíveis: ${names || '—'}.`);
     }
 
     const parseInsumos = () => {
