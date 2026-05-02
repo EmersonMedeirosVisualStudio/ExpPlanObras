@@ -67,6 +67,8 @@ type ApplyBaseResult = {
   skippedExisting: boolean;
 };
 
+type ObraListaRow = { idObra: number; nomeObra: string; numeroContrato: string | null };
+
 export default function SinapiImportPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -81,10 +83,16 @@ export default function SinapiImportPage() {
   const [sheetName, setSheetName] = useState<string>("Analítico");
   const [uf, setUf] = useState<string>("AC");
   const [insumosModo, setInsumosModo] = useState<"ISD" | "ICD" | "ISE">("ISD");
+  const [insumosSheetName, setInsumosSheetName] = useState<string>("ISD");
   const [codigoServico, setCodigoServico] = useState<string>(codigoParam);
+  const [codigoFiltro, setCodigoFiltro] = useState<string>(codigoParam);
   const [dataBaseFiltro, setDataBaseFiltro] = useState<string>(dataBaseParam);
+  const [ufFiltro, setUfFiltro] = useState<string>("");
+  const [insumosModoFiltro, setInsumosModoFiltro] = useState<"" | "ISD" | "ICD" | "ISE">("");
+  const [targetObraId, setTargetObraId] = useState<number>(Number.isFinite(idObra) && idObra > 0 ? idObra : 0);
+  const [obrasLista, setObrasLista] = useState<ObraListaRow[]>([]);
+  const [importScope, setImportScope] = useState<"SERVICO" | "PLANILHA" | "ARQUIVO">(codigoParam ? "SERVICO" : "PLANILHA");
   const [mode, setMode] = useState<"MISSING_ONLY" | "UPSERT">("MISSING_ONLY");
-  const [importAllParsed, setImportAllParsed] = useState<boolean>(false);
   const [forceDataBaseMismatch, setForceDataBaseMismatch] = useState<boolean>(false);
   const [busy, setBusy] = useState<boolean>(false);
   const [err, setErr] = useState<string>("");
@@ -92,9 +100,13 @@ export default function SinapiImportPage() {
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [imported, setImported] = useState<ImportResult | null>(null);
   const [appliedBase, setAppliedBase] = useState<ApplyBaseResult | null>(null);
-  const [importados, setImportados] = useState<Array<{ codigo: string; descricao: string; und: string; dataBase: string; uf: string; insumosModo: string; itens: number; insumos: number }>>([]);
+  const [importados, setImportados] = useState<
+    Array<{ codigo: string; descricao: string; und: string; valorComposicao: number | null; dataBase: string; uf: string; insumosModo: string }>
+  >([]);
   const [importadosErr, setImportadosErr] = useState<string>("");
   const [planilhaDataBaseSinapi, setPlanilhaDataBaseSinapi] = useState<string>("");
+  const [showFiltros, setShowFiltros] = useState<boolean>(false);
+  const [importOpen, setImportOpen] = useState<boolean>(false);
 
   const breadcrumb = useMemo(() => {
     return "Engenharia → Obras → Obra selecionada → Planilha orçamentária → Sinapi";
@@ -152,9 +164,11 @@ export default function SinapiImportPage() {
       fd.append("sheetName", sheetName.trim() || "Analítico");
       if (uf.trim()) fd.append("uf", uf.trim().toUpperCase());
       fd.append("insumosModo", insumosModo);
-      if (codigoServico.trim()) fd.append("codigoServico", codigoServico.trim().toUpperCase());
+      if (insumosSheetName.trim()) fd.append("insumosSheetName", insumosSheetName.trim());
+      if (Number.isFinite(targetObraId) && targetObraId > 0) fd.append("targetObraId", String(targetObraId));
+      if (importScope === "SERVICO" && codigoServico.trim()) fd.append("codigoServico", codigoServico.trim().toUpperCase());
       fd.append("mode", mode);
-      fd.append("importAllParsed", String(importAllParsed));
+      fd.append("importAllParsed", String(importScope === "ARQUIVO"));
       fd.append("dryRun", String(dryRun));
       fd.append("forceDataBaseMismatch", String(forceDataBaseMismatch));
 
@@ -229,6 +243,7 @@ export default function SinapiImportPage() {
           dataBase: String(row.dataBase || "").trim(),
           uf: String(row.uf || "").trim().toUpperCase(),
           insumosModo: String(row.insumosModo || "").trim().toUpperCase(),
+          targetObraId: Number.isFinite(targetObraId) && targetObraId > 0 ? targetObraId : undefined,
           mode,
           forceDataBaseMismatch,
         }),
@@ -250,10 +265,10 @@ export default function SinapiImportPage() {
     (async () => {
       try {
         const qs = new URLSearchParams();
-        if (codigoServico.trim()) qs.set("codigo", codigoServico.trim().toUpperCase());
+        if (codigoFiltro.trim()) qs.set("codigo", codigoFiltro.trim().toUpperCase());
         if (dataBaseFiltro.trim()) qs.set("dataBase", dataBaseFiltro.trim());
-        if (uf.trim()) qs.set("uf", uf.trim().toUpperCase());
-        if (insumosModo.trim()) qs.set("insumosModo", insumosModo.trim());
+        if (ufFiltro.trim()) qs.set("uf", ufFiltro.trim().toUpperCase());
+        if (insumosModoFiltro.trim()) qs.set("insumosModo", insumosModoFiltro.trim());
         const url = `/api/v1/engenharia/obras/${idObra}/planilha/sinapi/importados${qs.toString() ? `?${qs.toString()}` : ""}`;
         const res = await authFetch(url);
         const json = await res.json().catch(() => null);
@@ -266,11 +281,10 @@ export default function SinapiImportPage() {
               codigo: String(r.codigo || "").trim(),
               descricao: String(r.descricao || ""),
               und: String(r.und || ""),
+              valorComposicao: r.valorComposicao == null ? null : Number(r.valorComposicao),
               dataBase: String(r.dataBase || ""),
               uf: String(r.uf || ""),
               insumosModo: String(r.insumosModo || ""),
-              itens: r.itens == null ? 0 : Number(r.itens),
-              insumos: r.insumos == null ? 0 : Number(r.insumos),
             }))
             .filter((r: any) => r.codigo)
         );
@@ -284,7 +298,7 @@ export default function SinapiImportPage() {
     return () => {
       alive = false;
     };
-  }, [idObra, codigoServico, dataBaseFiltro, uf, insumosModo]);
+  }, [idObra, codigoFiltro, dataBaseFiltro, ufFiltro, insumosModoFiltro]);
 
   useEffect(() => {
     if (!Number.isFinite(idObra) || idObra <= 0) return;
@@ -325,12 +339,90 @@ export default function SinapiImportPage() {
   }, [planilhaDataBaseSinapi, dataBaseParam]);
 
   useEffect(() => {
-    if (codigoParam) setCodigoServico(codigoParam);
+    if (codigoParam) {
+      setCodigoServico(codigoParam);
+      setCodigoFiltro(codigoParam);
+      setImportScope("SERVICO");
+    }
   }, [codigoParam]);
 
   useEffect(() => {
     if (dataBaseParam) setDataBaseFiltro(dataBaseParam);
   }, [dataBaseParam]);
+
+  useEffect(() => {
+    if (!Number.isFinite(idObra) || idObra <= 0) return;
+    setTargetObraId((cur) => (Number.isFinite(cur) && cur > 0 ? cur : idObra));
+  }, [idObra]);
+
+  useEffect(() => {
+    setInsumosSheetName((cur) => {
+      const norm = String(cur || "").trim().toUpperCase();
+      if (!norm || norm === "ISD" || norm === "ICD" || norm === "ISE") return insumosModo;
+      return cur;
+    });
+  }, [insumosModo]);
+
+  useEffect(() => {
+    if (!Number.isFinite(idObra) || idObra <= 0) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await authFetch(`/api/v1/engenharia/obras/lista`);
+        const json = await res.json().catch(() => null);
+        if (!alive) return;
+        if (!res.ok || !json?.success) throw new Error(json?.message || "Falha ao carregar obras");
+        const rows = Array.isArray(json?.data?.rows) ? json.data.rows : [];
+        const list = rows
+          .map((r: any) => ({
+            idObra: r.idObra == null ? 0 : Number(r.idObra),
+            nomeObra: String(r.nomeObra || ""),
+            numeroContrato: r.numeroContrato == null ? null : String(r.numeroContrato || ""),
+          }))
+          .filter((r: any) => Number(r.idObra) > 0);
+        setObrasLista(list);
+      } catch {
+        if (!alive) return;
+        setObrasLista([]);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [idObra]);
+
+  const ufs = useMemo(
+    () => [
+      "AC",
+      "AL",
+      "AP",
+      "AM",
+      "BA",
+      "CE",
+      "DF",
+      "ES",
+      "GO",
+      "MA",
+      "MT",
+      "MS",
+      "MG",
+      "PA",
+      "PB",
+      "PR",
+      "PE",
+      "PI",
+      "RJ",
+      "RN",
+      "RS",
+      "RO",
+      "RR",
+      "SC",
+      "SP",
+      "SE",
+      "TO",
+    ],
+    []
+  );
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-5xl text-slate-900">
@@ -340,6 +432,15 @@ export default function SinapiImportPage() {
           <h1 className="text-2xl font-semibold">Sinapi</h1>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+            type="button"
+            onClick={() => setImportOpen(true)}
+            disabled={busy}
+            title="Abrir opções de importação"
+          >
+            Importar
+          </button>
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
@@ -356,212 +457,102 @@ export default function SinapiImportPage() {
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
 
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-        <div className="text-lg font-semibold">Serviços SINAPI importados</div>
-        {importadosErr ? <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{importadosErr}</div> : null}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-          <div className="md:col-span-3 space-y-1">
-            <div className="text-sm text-slate-600">Código</div>
-            <input className="input bg-white" value={codigoServico} onChange={(e) => setCodigoServico(e.target.value)} disabled={busy} placeholder="Ex: 100309" />
-          </div>
-          <div className="md:col-span-3 space-y-1">
-            <div className="text-sm text-slate-600">Data-base</div>
-            <input className="input bg-white" value={dataBaseFiltro} onChange={(e) => setDataBaseFiltro(e.target.value)} disabled={busy} placeholder={planilhaDataBaseSinapi || "Ex: 04/2025"} />
-          </div>
-          <div className="md:col-span-2 space-y-1">
-            <div className="text-sm text-slate-600">UF</div>
-            <input className="input bg-white" value={uf} onChange={(e) => setUf(e.target.value)} disabled={busy} list="ufs" />
-          </div>
-          <div className="md:col-span-4 space-y-1">
-            <div className="text-sm text-slate-600">Preços de insumos</div>
-            <select className="input bg-white" value={insumosModo} onChange={(e) => setInsumosModo(e.target.value as any)} disabled={busy}>
-              <option value="ISD">ISD — Encargos sociais sem desoneração</option>
-              <option value="ICD">ICD — Encargos sociais com desoneração</option>
-              <option value="ISE">ISE — Sem encargos sociais</option>
-            </select>
-          </div>
-          <div className="md:col-span-12 text-xs text-slate-600">
-            Data-base da planilha (SINAPI): {planilhaDataBaseSinapi || "—"} {dataBaseFiltro.trim() ? `• Filtro: ${dataBaseFiltro.trim()}` : ""}{" "}
-            {planilhaDataBaseSinapi && dataBaseFiltro.trim() ? (planilhaDataBaseSinapi.trim() === dataBaseFiltro.trim() ? "• Compatível" : "• Diferente") : ""}
-          </div>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="text-lg font-semibold">Serviços SINAPI importados</div>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => setShowFiltros((v) => !v)}
+            disabled={busy}
+          >
+            {showFiltros ? "Ocultar filtros" : "Exibir filtros"}
+          </button>
         </div>
+
+        {importadosErr ? <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{importadosErr}</div> : null}
+
+        {showFiltros ? (
+          <div className="rounded-lg border bg-slate-50 p-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+              <div className="md:col-span-3 space-y-1">
+                <div className="text-sm text-slate-600">Código</div>
+                <input className="input bg-white" value={codigoFiltro} onChange={(e) => setCodigoFiltro(e.target.value)} disabled={busy} placeholder="Ex: 100309" />
+              </div>
+              <div className="md:col-span-3 space-y-1">
+                <div className="text-sm text-slate-600">Data-base</div>
+                <input
+                  className="input bg-white"
+                  value={dataBaseFiltro}
+                  onChange={(e) => setDataBaseFiltro(e.target.value)}
+                  disabled={busy}
+                  placeholder={planilhaDataBaseSinapi || "Ex: 04/2025"}
+                />
+              </div>
+              <div className="md:col-span-2 space-y-1">
+                <div className="text-sm text-slate-600">UF</div>
+                <input className="input bg-white" value={ufFiltro} onChange={(e) => setUfFiltro(e.target.value)} disabled={busy} list="ufs" />
+              </div>
+              <div className="md:col-span-4 space-y-1">
+                <div className="text-sm text-slate-600">Preços de insumos</div>
+                <select className="input bg-white" value={insumosModoFiltro} onChange={(e) => setInsumosModoFiltro(e.target.value as any)} disabled={busy}>
+                  <option value="">(todos)</option>
+                  <option value="ISD">ISD — Encargos sociais sem desoneração</option>
+                  <option value="ICD">ICD — Encargos sociais com desoneração</option>
+                  <option value="ISE">ISE — Sem encargos sociais</option>
+                </select>
+              </div>
+              <div className="md:col-span-12 text-xs text-slate-600">
+                Data-base da planilha (SINAPI): {planilhaDataBaseSinapi || "—"} {dataBaseFiltro.trim() ? `• Filtro: ${dataBaseFiltro.trim()}` : ""}{" "}
+                {planilhaDataBaseSinapi && dataBaseFiltro.trim() ? (planilhaDataBaseSinapi.trim() === dataBaseFiltro.trim() ? "• Compatível" : "• Diferente") : ""}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {importados.length ? (
-          <div className="overflow-auto">
-            <table className="min-w-[860px] w-full border-collapse text-xs">
-              <thead className="bg-slate-50 text-center text-slate-700">
-                <tr>
-                  <th className="border px-2 py-1">Código</th>
-                  <th className="border px-2 py-1">Descrição</th>
-                  <th className="border px-2 py-1">UND</th>
-                  <th className="border px-2 py-1">Data-base</th>
-                  <th className="border px-2 py-1">UF</th>
-                  <th className="border px-2 py-1">Preços</th>
-                  <th className="border px-2 py-1">Itens</th>
-                  <th className="border px-2 py-1">Insumos</th>
-                  <th className="border px-2 py-1">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {importados.map((r) => (
-                  <tr key={`${r.dataBase}:${r.uf}:${r.insumosModo}:${r.codigo}`} className="border-t">
-                    <td className="border px-2 py-1 text-center">{r.codigo}</td>
-                    <td className="border px-2 py-1">{r.descricao}</td>
-                    <td className="border px-2 py-1 text-center">{r.und}</td>
-                    <td className="border px-2 py-1 text-center">{r.dataBase || "—"}</td>
-                    <td className="border px-2 py-1 text-center">{r.uf || "—"}</td>
-                    <td className="border px-2 py-1 text-center">{r.insumosModo || "—"}</td>
-                    <td className="border px-2 py-1 text-right">{Number(r.itens || 0).toLocaleString("pt-BR")}</td>
-                    <td className="border px-2 py-1 text-right">{Number(r.insumos || 0).toLocaleString("pt-BR")}</td>
-                    <td className="border px-2 py-1 text-center">
-                      <button
-                        className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
-                        type="button"
-                        disabled={busy}
-                        onClick={() => aplicarDaBase(r)}
-                        title="Aplicar esta composição já importada diretamente na obra (sem XLSX)"
-                      >
-                        Aplicar na obra
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="rounded-lg border overflow-hidden">
+            <div className="hidden md:grid grid-cols-[110px_1fr_70px_150px_60px_110px_140px_140px] bg-slate-50 text-xs font-semibold text-slate-700">
+              <div className="px-2 py-2 border-r">Código</div>
+              <div className="px-2 py-2 border-r">Descrição</div>
+              <div className="px-2 py-2 border-r text-center">un</div>
+              <div className="px-2 py-2 border-r text-right">Valor da composição</div>
+              <div className="px-2 py-2 border-r text-center">UF</div>
+              <div className="px-2 py-2 border-r text-center">Data-base</div>
+              <div className="px-2 py-2 border-r text-center">Preços de insumos</div>
+              <div className="px-2 py-2 text-center">Ações</div>
+            </div>
+            <div className="divide-y">
+              {importados.map((r) => (
+                <div
+                  key={`${r.dataBase}:${r.uf}:${r.insumosModo}:${r.codigo}`}
+                  className="grid grid-cols-1 md:grid-cols-[110px_1fr_70px_150px_60px_110px_140px_140px] text-sm"
+                >
+                  <div className="px-2 py-2 md:border-r text-center">{r.codigo}</div>
+                  <div className="px-2 py-2 md:border-r">{r.descricao}</div>
+                  <div className="px-2 py-2 md:border-r text-center">{r.und}</div>
+                  <div className="px-2 py-2 md:border-r text-right">
+                    {r.valorComposicao == null ? "—" : Number(r.valorComposicao).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                  </div>
+                  <div className="px-2 py-2 md:border-r text-center">{r.uf || "—"}</div>
+                  <div className="px-2 py-2 md:border-r text-center">{r.dataBase || "—"}</div>
+                  <div className="px-2 py-2 md:border-r text-center">{r.insumosModo || "—"}</div>
+                  <div className="px-2 py-2 flex items-center justify-center gap-2">
+                    <button
+                      className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => aplicarDaBase({ codigo: r.codigo, dataBase: r.dataBase, uf: r.uf, insumosModo: r.insumosModo })}
+                    >
+                      Aplicar na obra
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="text-sm text-slate-600">Nenhum serviço SINAPI importado ainda.</div>
         )}
-      </section>
-
-      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
-        <div className="text-lg font-semibold">Arquivo</div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-          <div className="md:col-span-12 space-y-1">
-            <div className="text-sm text-slate-600 flex items-center gap-2">
-              <span>Arquivo XLSX</span>
-              {file ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
-              <span className="text-xs text-slate-500">{file ? String(file.name || "") : "Nenhum arquivo selecionado"}</span>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={busy}
-                title="Selecionar arquivo XLSX"
-              >
-                Selecionar arquivo XLSX
-              </button>
-              <input
-                ref={fileInputRef}
-                className="hidden"
-                type="file"
-                accept=".xlsx"
-                onChange={(e) => {
-                  const f = e.target.files?.[0] || null;
-                  setFile(f);
-                  setPreview(null);
-                  setImported(null);
-                  setOkMsg("");
-                  setErr("");
-                }}
-                disabled={busy}
-              />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
-        <div className="text-lg font-semibold">Opções</div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-          <div className="md:col-span-6 space-y-1">
-            <div className="text-sm text-slate-600">Aba</div>
-            <input className="input bg-white" value={sheetName} onChange={(e) => setSheetName(e.target.value)} disabled={busy} />
-          </div>
-          <div className="md:col-span-2 space-y-1">
-            <div className="text-sm text-slate-600">UF</div>
-            <input className="input bg-white" value={uf} onChange={(e) => setUf(e.target.value)} disabled={busy} list="ufs" />
-            <datalist id="ufs">
-              {[
-                "AC",
-                "AL",
-                "AP",
-                "AM",
-                "BA",
-                "CE",
-                "DF",
-                "ES",
-                "GO",
-                "MA",
-                "MT",
-                "MS",
-                "MG",
-                "PA",
-                "PB",
-                "PR",
-                "PE",
-                "PI",
-                "RJ",
-                "RN",
-                "RS",
-                "RO",
-                "RR",
-                "SC",
-                "SP",
-                "SE",
-                "TO",
-              ].map((x) => (
-                <option key={x} value={x} />
-              ))}
-            </datalist>
-          </div>
-          <div className="md:col-span-4 space-y-1">
-            <div className="text-sm text-slate-600">Preços de insumos</div>
-            <select className="input bg-white" value={insumosModo} onChange={(e) => setInsumosModo(e.target.value as any)} disabled={busy} title="Escolha qual aba de preços de insumos usar">
-              <option value="ISD">ISD — Encargos sociais sem desoneração</option>
-              <option value="ICD">ICD — Encargos sociais com desoneração</option>
-              <option value="ISE">ISE — Sem encargos sociais</option>
-            </select>
-          </div>
-          <div className="md:col-span-12 space-y-2">
-            <div className="text-sm text-slate-600">Modo</div>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="radio" name="mode" checked={mode === "MISSING_ONLY"} onChange={() => setMode("MISSING_ONLY")} disabled={busy} />
-              <span>Importar somente as composições que faltam na obra</span>
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="radio" name="mode" checked={mode === "UPSERT"} onChange={() => setMode("UPSERT")} disabled={busy} />
-              <span>Atualizar/substituir composições existentes na obra</span>
-            </label>
-          </div>
-          <div className="md:col-span-12">
-            <label className="flex items-center gap-2 text-sm rounded border bg-white px-3 py-2">
-              <input type="checkbox" checked={importAllParsed} onChange={(e) => setImportAllParsed(Boolean(e.target.checked))} disabled={busy} />
-              <span className="text-slate-700">Importar todas as composições encontradas no arquivo (não filtrar pelos itens da planilha atual)</span>
-            </label>
-          </div>
-          <div className="md:col-span-12">
-            <label className="flex items-center gap-2 text-sm rounded border bg-white px-3 py-2">
-              <input type="checkbox" checked={forceDataBaseMismatch} onChange={(e) => setForceDataBaseMismatch(Boolean(e.target.checked))} disabled={busy} />
-              <span className="text-slate-700">Forçar importação (mês-base diferente)</span>
-            </label>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-2 flex-wrap">
-          <button
-            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-            type="button"
-            onClick={() => doRequest(true)}
-            disabled={busy}
-            title="Gerar uma prévia antes de importar"
-          >
-            Prévia
-          </button>
-          <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60" type="button" onClick={importar} disabled={busy} title="Importar no banco">
-            Importar
-          </button>
-        </div>
       </section>
 
       {appliedBase ? (
@@ -587,101 +578,211 @@ export default function SinapiImportPage() {
         </section>
       ) : null}
 
-      {preview ? (
-        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-          <div className="text-lg font-semibold">Prévia</div>
-          <div className="rounded-lg border bg-slate-50 p-3 text-sm">
-            <div className="font-semibold text-slate-700">Parâmetros</div>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <div className="rounded border bg-white px-3 py-2">
-                <div className="text-[11px] text-slate-500">Data-base (Planilha/SINAPI)</div>
-                <div className="text-sm font-semibold">
-                  {preview.planilhaParams?.dataBaseSinapi ? preview.planilhaParams.dataBaseSinapi : "—"} {" / "}
-                  {preview.sinapiDetected?.dataBase ? preview.sinapiDetected.dataBase : "—"}
-                </div>
-              </div>
-              <div className="rounded border bg-white px-3 py-2">
-                <div className="text-[11px] text-slate-500">Parâmetros compatíveis</div>
-                <div className="text-sm font-semibold">
-                  {preview.paramsMatch == null ? "—" : preview.paramsMatch ? "Sim" : "Não"}
-                </div>
-              </div>
-              <div className="rounded border bg-white px-3 py-2">
-                <div className="text-[11px] text-slate-500">Preços de insumos</div>
-                <div className="text-sm font-semibold">{preview.insumosModo ? String(preview.insumosModo) : insumosModo}</div>
-              </div>
+      {importOpen ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-auto">
+          <div className="w-full max-w-5xl rounded-xl border bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-3 border-b p-4">
+              <div className="text-lg font-semibold">Opções de importação</div>
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                type="button"
+                onClick={() => setImportOpen(false)}
+                disabled={busy}
+              >
+                Fechar
+              </button>
             </div>
-          </div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg border bg-white px-3 py-2">
-              <div className="text-[11px] text-slate-500">Composições no arquivo</div>
-              <div className="text-sm font-semibold">{preview.parsedComposicoes}</div>
-            </div>
-            <div className="rounded-lg border bg-white px-3 py-2">
-              <div className="text-[11px] text-slate-500">Alvo (planilha atual)</div>
-              <div className="text-sm font-semibold">{preview.targetComposicoes}</div>
-            </div>
-            <div className="rounded-lg border bg-white px-3 py-2">
-              <div className="text-[11px] text-slate-500">A importar</div>
-              <div className="text-sm font-semibold">{preview.toImportComposicoes}</div>
-            </div>
-            <div className="rounded-lg border bg-white px-3 py-2">
-              <div className="text-[11px] text-slate-500">Itens a importar</div>
-              <div className="text-sm font-semibold">{preview.toImportItens}</div>
-            </div>
-          </div>
 
-          {preview.sample?.length ? (
-            <div className="rounded-lg border bg-slate-50 p-3 text-sm">
-              <div className="font-semibold text-slate-700">Exemplos</div>
-              <div className="mt-2 space-y-2">
-                {preview.sample.map((c) => (
-                  <div key={c.codigo} className="rounded border bg-white p-2">
-                    <div className="text-sm font-semibold">Composição {c.codigo}</div>
-                    <div className="mt-2 overflow-auto">
-                      <table className="min-w-[700px] w-full border-collapse text-xs">
-                        <thead className="bg-slate-100 text-slate-700 text-center">
-                          <tr>
-                            <th className="border px-2 py-1">Tipo</th>
-                            <th className="border px-2 py-1">Código</th>
-                            <th className="border px-2 py-1">UND</th>
-                            <th className="border px-2 py-1">Qtd</th>
-                            <th className="border px-2 py-1">Valor Unit</th>
-                            <th className="border px-2 py-1">Descrição</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(c.itens || []).map((it, idx) => (
-                            <tr key={idx}>
-                              <td className="border px-2 py-1 text-center">{it.tipoItem}</td>
-                              <td className="border px-2 py-1 text-center">{it.codigoItem}</td>
-                              <td className="border px-2 py-1 text-center">{it.und || ""}</td>
-                              <td className="border px-2 py-1 text-right">{Number(it.quantidade || 0).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</td>
-                              <td className="border px-2 py-1 text-right">
-                                {it.valorUnitario == null ? "" : Number(it.valorUnitario).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </td>
-                              <td className="border px-2 py-1">{it.descricao || ""}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+            <div className="p-4 space-y-4">
+              <div className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+                  <div className="md:col-span-6 space-y-1">
+                    <div className="text-sm text-slate-600">Aba (Relatório Analítico de Composições)</div>
+                    <input className="input bg-white" value={sheetName} onChange={(e) => setSheetName(e.target.value)} disabled={busy} placeholder="Analítico" />
+                  </div>
+                  <div className="md:col-span-3 space-y-1">
+                    <div className="text-sm text-slate-600">UF</div>
+                    <input className="input bg-white" value={uf} onChange={(e) => setUf(e.target.value)} disabled={busy} list="ufs" />
+                  </div>
+                  <div className="md:col-span-3 space-y-1">
+                    <div className="text-sm text-slate-600">Preços de insumos</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select className="input bg-white" value={insumosModo} onChange={(e) => setInsumosModo(e.target.value as any)} disabled={busy}>
+                        <option value="ISD">ISD</option>
+                        <option value="ICD">ICD</option>
+                        <option value="ISE">ISE</option>
+                      </select>
+                      <input
+                        className="input bg-white"
+                        value={insumosSheetName}
+                        onChange={(e) => setInsumosSheetName(e.target.value)}
+                        disabled={busy}
+                        placeholder={insumosModo}
+                      />
                     </div>
                   </div>
-                ))}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-sm text-slate-600">Arquivo XLSX</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {file ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
+                    <div className="text-sm text-slate-700">{file ? String(file.name || "") : "Nenhum arquivo selecionado"}</div>
+                    <button
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={busy}
+                    >
+                      Selecionar arquivo XLSX
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      className="hidden"
+                      type="file"
+                      accept=".xlsx"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] || null;
+                        setFile(f);
+                        setPreview(null);
+                        setImported(null);
+                        setOkMsg("");
+                        setErr("");
+                      }}
+                      disabled={busy}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+                  <div className="md:col-span-12 space-y-2">
+                    <div className="text-sm text-slate-600">Modo</div>
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                      <label className="flex items-start gap-2 text-sm rounded border bg-white px-3 py-2">
+                        <input type="radio" name="mode" checked={mode === "MISSING_ONLY"} onChange={() => setMode("MISSING_ONLY")} disabled={busy} />
+                        <span className="flex-1">
+                          <div className="font-medium">Importar somente as composições que faltam na obra</div>
+                          <div className="mt-2">
+                            <div className="text-xs text-slate-500">Obra</div>
+                            <select className="input bg-white mt-1" value={String(targetObraId || idObra)} onChange={(e) => setTargetObraId(Number(e.target.value || 0))} disabled={busy}>
+                              {obrasLista.length ? (
+                                obrasLista.map((o) => (
+                                  <option key={o.idObra} value={o.idObra}>
+                                    {o.nomeObra} {o.numeroContrato ? `• ${o.numeroContrato}` : ""}
+                                  </option>
+                                ))
+                              ) : (
+                                <option value={idObra}>Obra #{idObra}</option>
+                              )}
+                            </select>
+                          </div>
+                        </span>
+                      </label>
+                      <label className="flex items-start gap-2 text-sm rounded border bg-white px-3 py-2">
+                        <input type="radio" name="mode" checked={mode === "UPSERT"} onChange={() => setMode("UPSERT")} disabled={busy} />
+                        <span className="flex-1">
+                          <div className="font-medium">Atualizar/substituir composições existentes na obra</div>
+                          <div className="mt-2">
+                            <div className="text-xs text-slate-500">Obra</div>
+                            <select className="input bg-white mt-1" value={String(targetObraId || idObra)} onChange={(e) => setTargetObraId(Number(e.target.value || 0))} disabled={busy}>
+                              {obrasLista.length ? (
+                                obrasLista.map((o) => (
+                                  <option key={o.idObra} value={o.idObra}>
+                                    {o.nomeObra} {o.numeroContrato ? `• ${o.numeroContrato}` : ""}
+                                  </option>
+                                ))
+                              ) : (
+                                <option value={idObra}>Obra #{idObra}</option>
+                              )}
+                            </select>
+                          </div>
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-sm text-slate-600">Escopo</div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="radio" name="importScope" checked={importScope === "SERVICO"} onChange={() => setImportScope("SERVICO")} disabled={busy} />
+                    <span>Selecionar um serviço</span>
+                  </label>
+                  {importScope === "SERVICO" ? (
+                    <div>
+                      <div className="text-xs text-slate-500">Código do serviço</div>
+                      <input className="input bg-white mt-1" value={codigoServico} onChange={(e) => setCodigoServico(e.target.value)} disabled={busy} placeholder="Ex: 100309" />
+                    </div>
+                  ) : null}
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="radio" name="importScope" checked={importScope === "PLANILHA"} onChange={() => setImportScope("PLANILHA")} disabled={busy} />
+                    <span>Usar os serviços da planilha da obra</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="radio" name="importScope" checked={importScope === "ARQUIVO"} onChange={() => setImportScope("ARQUIVO")} disabled={busy} />
+                    <span>Importar todas as composições encontradas no arquivo</span>
+                  </label>
+                </div>
+
+                <label className="flex items-center gap-2 text-sm rounded border bg-white px-3 py-2">
+                  <input type="checkbox" checked={forceDataBaseMismatch} onChange={(e) => setForceDataBaseMismatch(Boolean(e.target.checked))} disabled={busy} />
+                  <span className="text-slate-700">Forçar importação (mês-base diferente)</span>
+                </label>
+
+                <div className="flex items-center justify-end gap-2 flex-wrap">
+                  <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => doRequest(true)} disabled={busy}>
+                    Prévia
+                  </button>
+                  <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60" type="button" onClick={importar} disabled={busy}>
+                    Importar
+                  </button>
+                </div>
               </div>
+
+              {preview ? (
+                <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+                  <div className="text-lg font-semibold">Prévia</div>
+                  <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+                    <div className="font-semibold text-slate-700">Parâmetros</div>
+                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      <div className="rounded border bg-white px-3 py-2">
+                        <div className="text-[11px] text-slate-500">Data-base (Planilha/SINAPI)</div>
+                        <div className="text-sm font-semibold">
+                          {preview.planilhaParams?.dataBaseSinapi ? preview.planilhaParams.dataBaseSinapi : "—"} {" / "}
+                          {preview.sinapiDetected?.dataBase ? preview.sinapiDetected.dataBase : "—"}
+                        </div>
+                      </div>
+                      <div className="rounded border bg-white px-3 py-2">
+                        <div className="text-[11px] text-slate-500">Parâmetros compatíveis</div>
+                        <div className="text-sm font-semibold">{preview.paramsMatch == null ? "—" : preview.paramsMatch ? "Sim" : "Não"}</div>
+                      </div>
+                      <div className="rounded border bg-white px-3 py-2">
+                        <div className="text-[11px] text-slate-500">Preços de insumos</div>
+                        <div className="text-sm font-semibold">{preview.insumosModo ? String(preview.insumosModo) : insumosModo}</div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
+
+              {imported ? (
+                <section className="rounded-xl border bg-white p-4 shadow-sm space-y-2">
+                  <div className="text-lg font-semibold">Resultado</div>
+                  <div className="text-sm text-slate-700">
+                    Importadas {imported.importedComposicoes} composições e {imported.importedItens} itens.
+                  </div>
+                </section>
+              ) : null}
             </div>
-          ) : null}
-        </section>
+          </div>
+        </div>
       ) : null}
 
-      {imported ? (
-        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-2">
-          <div className="text-lg font-semibold">Resultado</div>
-          <div className="text-sm text-slate-700">
-            Importadas {imported.importedComposicoes} composições e {imported.importedItens} itens.
-          </div>
-        </section>
-      ) : null}
+      <datalist id="ufs">
+        {ufs.map((x) => (
+          <option key={x} value={x} />
+        ))}
+      </datalist>
     </div>
   );
 }

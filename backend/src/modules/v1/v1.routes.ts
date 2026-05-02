@@ -3368,6 +3368,50 @@ export default async function v1Routes(server: FastifyInstance) {
     );
   });
 
+  server.get('/engenharia/obras/lista', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const scope = (request.user as any)?.abrangencia as any;
+    const obraIds = !scope || scope.empresa ? null : Array.isArray(scope.obras) ? scope.obras.filter((x: any) => Number.isFinite(Number(x))) : [];
+
+    const params: any[] = [ctx.tenantId];
+    const where: string[] = ['o.tenant_id = $1'];
+    if (obraIds && obraIds.length > 0) {
+      params.push(obraIds.map((x: any) => Number(x)));
+      where.push(`o.id_obra = ANY($${params.length}::bigint[])`);
+    } else if (obraIds && obraIds.length === 0) {
+      where.push('1 = 0');
+    }
+
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        o.id_obra AS "idObra",
+        COALESCE(o.nome, CONCAT('Obra #', o.id_obra::text)) AS "nomeObra",
+        c.numero_contrato AS "numeroContrato"
+      FROM obras o
+      INNER JOIN contratos c ON c.id_contrato = o.id_contrato AND c.tenant_id = o.tenant_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY o.id_obra DESC
+      LIMIT 500
+      `,
+      ...params
+    )) as any[];
+
+    return ok(
+      reply,
+      {
+        rows: (rows || []).map((r: any) => ({
+          idObra: r.idObra == null ? 0 : Number(r.idObra),
+          nomeObra: String(r.nomeObra || ''),
+          numeroContrato: r.numeroContrato == null ? null : String(r.numeroContrato || ''),
+        })),
+      },
+      { message: 'Obras' }
+    );
+  });
+
   server.post('/engenharia/obras/responsaveis', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
@@ -5381,6 +5425,9 @@ export default async function v1Routes(server: FastifyInstance) {
     const banco = String(fields.banco || 'SINAPI').trim().slice(0, 60) || 'SINAPI';
     const insumosModoRaw = String(fields.insumosModo || fields.insumos || 'ISD').trim().toUpperCase();
     const insumosModo = insumosModoRaw === 'ICD' ? 'ICD' : insumosModoRaw === 'ISE' ? 'ISE' : 'ISD';
+    const targetObraId = Number(fields.targetObraId || fields.idObra || 0);
+    const obraId = Number.isFinite(targetObraId) && targetObraId > 0 ? targetObraId : idObra;
+    if (!canAccessObraId(obraId, scope)) return fail(reply, 403, 'Sem acesso à obra');
     const forceDataBaseMismatch =
       String(fields.forceDataBaseMismatch || fields.forceParamsMismatch || fields.force || '')
         .trim()
@@ -5476,9 +5523,14 @@ export default async function v1Routes(server: FastifyInstance) {
       return hit?.name || '';
     };
 
-    const insumosSheetName = pickInsumosSheetName();
+    const insumosSheetNameInput = String(fields.insumosSheetName || fields.abaInsumos || '').trim();
+    const insumosSheetName = insumosSheetNameInput || pickInsumosSheetName();
     const insumosSheet = insumosSheetName ? wb.Sheets[insumosSheetName] : null;
     if (!insumosSheet) {
+      if (insumosSheetNameInput) {
+        const names = (wb.SheetNames || []).slice(0, 30).join(', ');
+        return fail(reply, 422, `Aba de insumos não encontrada: "${insumosSheetNameInput}". Abas disponíveis: ${names || '—'}`);
+      }
       const sugestoes = allSheets
         .filter((s) => String(s.key || '').includes('preco') || String(s.key || '').includes('precos'))
         .slice(0, 30)
@@ -5692,7 +5744,7 @@ export default async function v1Routes(server: FastifyInstance) {
       LIMIT 1
       `,
       ctx.tenantId,
-      idObra
+      obraId
     )) as any[];
     const versRow = vers?.[0] || null;
     const planilhaId: number | null = versRow?.idPlanilha != null ? Number(versRow.idPlanilha) : null;
@@ -5738,7 +5790,7 @@ export default async function v1Routes(server: FastifyInstance) {
       WHERE tenant_id = $1 AND id_obra = $2
       `,
       ctx.tenantId,
-      idObra
+      obraId
     )) as any[];
     const existing = new Set((existingRows || []).map((r: any) => String(r.codigo || '').trim()).filter(Boolean));
 
@@ -6117,8 +6169,13 @@ export default async function v1Routes(server: FastifyInstance) {
         const entry = comps.get(code);
         const itens = entry?.itens || [];
         if (!itens.length) continue;
-        if (mode === 'UPSERT') {
-          await tx.$executeRawUnsafe(`DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND UPPER(codigo_servico) = $3`, ctx.tenantId, idObra, code);
+      if (mode === 'UPSERT') {
+        await tx.$executeRawUnsafe(
+          `DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND UPPER(codigo_servico) = $3`,
+          ctx.tenantId,
+          obraId,
+          code
+        );
         }
 
         const chunkSize = 500;
@@ -6150,7 +6207,7 @@ export default async function v1Routes(server: FastifyInstance) {
           let p = 1;
           const values = chunk
             .map((r) => {
-              const base = [ctx.tenantId, idObra, code, r.etapa, r.tipoItem, r.codigoItem, r.banco, r.descricao, r.und, r.quantidade, r.valorUnitario, r.perda, r.codigoCentroCusto];
+              const base = [ctx.tenantId, obraId, code, r.etapa, r.tipoItem, r.codigoItem, r.banco, r.descricao, r.und, r.quantidade, r.valorUnitario, r.perda, r.codigoCentroCusto];
               for (const v of base) params.push(v);
               const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
               return `(${placeholders})`;
@@ -6222,6 +6279,7 @@ export default async function v1Routes(server: FastifyInstance) {
         codigoServico: z.string().min(1),
         sinapiDataBase: z.string().optional().nullable(),
         banco: z.string().optional().nullable(),
+        targetObraId: z.coerce.number().int().positive().optional().nullable(),
         mode: z.enum(['UPSERT', 'MISSING_ONLY']).optional().default('UPSERT'),
         dryRun: z.boolean().optional().default(false),
         forceDataBaseMismatch: z.boolean().optional().default(false),
@@ -6255,6 +6313,10 @@ export default async function v1Routes(server: FastifyInstance) {
       })
       .parse(body);
 
+    const targetObraId = parsed.targetObraId != null ? Number(parsed.targetObraId) : 0;
+    const obraId = Number.isFinite(targetObraId) && targetObraId > 0 ? targetObraId : idObra;
+    if (!canAccessObraId(obraId, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
     const uf = String(parsed.uf || '').trim().toUpperCase();
     const insumosModo = parsed.insumosModo;
     const codigoServico = String(parsed.codigoServico || '').trim().toUpperCase();
@@ -6285,7 +6347,7 @@ export default async function v1Routes(server: FastifyInstance) {
       LIMIT 1
       `,
       ctx.tenantId,
-      idObra
+      obraId
     )) as any[];
     const versRow = vers?.[0] || null;
     const planilhaId: number | null = versRow?.idPlanilha != null ? Number(versRow.idPlanilha) : null;
@@ -6474,7 +6536,12 @@ export default async function v1Routes(server: FastifyInstance) {
       }
 
       if (mode === 'UPSERT') {
-        await tx.$executeRawUnsafe(`DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND UPPER(codigo_servico) = $3`, ctx.tenantId, idObra, codigoServico);
+        await tx.$executeRawUnsafe(
+          `DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND UPPER(codigo_servico) = $3`,
+          ctx.tenantId,
+          obraId,
+          codigoServico
+        );
       }
 
       if (itens.length) {
@@ -6500,7 +6567,7 @@ export default async function v1Routes(server: FastifyInstance) {
           let p = 1;
           const values = chunk
             .map((r) => {
-              const base = [ctx.tenantId, idObra, codigoServico, r.etapa, r.tipoItem, r.codigoItem, r.banco, r.descricao, r.und, r.quantidade, r.valorUnitario, r.perda, r.codigoCentroCusto];
+              const base = [ctx.tenantId, obraId, codigoServico, r.etapa, r.tipoItem, r.codigoItem, r.banco, r.descricao, r.und, r.quantidade, r.valorUnitario, r.perda, r.codigoCentroCusto];
               for (const v of base) params.push(v);
               const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
               return `(${placeholders})`;
@@ -6784,10 +6851,15 @@ export default async function v1Routes(server: FastifyInstance) {
         dataBase: z.string().min(1),
         uf: z.string().min(2),
         insumosModo: z.enum(['ISD', 'ICD', 'ISE']),
+        targetObraId: z.coerce.number().int().positive().optional().nullable(),
         mode: z.enum(['UPSERT', 'MISSING_ONLY']).optional().default('MISSING_ONLY'),
         forceDataBaseMismatch: z.boolean().optional().default(false),
       })
       .parse(body);
+
+    const targetObraId = parsed.targetObraId != null ? Number(parsed.targetObraId) : 0;
+    const obraId = Number.isFinite(targetObraId) && targetObraId > 0 ? targetObraId : idObra;
+    if (!canAccessObraId(obraId, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
     const codigoServico = String(parsed.codigoServico || '').trim().toUpperCase();
     const dataBase = String(parsed.dataBase || '').trim();
@@ -6807,7 +6879,7 @@ export default async function v1Routes(server: FastifyInstance) {
       LIMIT 1
       `,
       ctx.tenantId,
-      idObra
+      obraId
     )) as any[];
     const versRow = vers?.[0] || null;
     const planilhaId: number | null = versRow?.idPlanilha != null ? Number(versRow.idPlanilha) : null;
@@ -6937,7 +7009,7 @@ export default async function v1Routes(server: FastifyInstance) {
       LIMIT 1
       `,
       ctx.tenantId,
-      idObra,
+      obraId,
       codigoServico
     )) as any[];
     const already = Boolean(existing?.[0]?.ok);
@@ -6964,7 +7036,7 @@ export default async function v1Routes(server: FastifyInstance) {
         await tx.$executeRawUnsafe(
           `DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND UPPER(codigo_servico) = $3`,
           ctx.tenantId,
-          idObra,
+          obraId,
           codigoServico
         );
       }
@@ -7089,12 +7161,16 @@ export default async function v1Routes(server: FastifyInstance) {
         c.uf AS "uf",
         c.tipo_preco AS "insumosModo",
         COUNT(DISTINCT c.codigo_item) AS "itens",
-        COUNT(DISTINCT c.id_insumo_sinapi) FILTER (WHERE c.id_insumo_sinapi IS NOT NULL) AS "insumos"
+        COUNT(DISTINCT c.id_insumo_sinapi) FILTER (WHERE c.id_insumo_sinapi IS NOT NULL) AS "insumos",
+        SUM((c.coeficiente * COALESCE(pu.pu, 0))) FILTER (WHERE c.id_pu IS NOT NULL) AS "valorComposicao"
       FROM sinapi_servicos_base s
       JOIN sinapi_composicoes_base c
         ON c.tenant_id = s.tenant_id
         AND c.data_base = s.data_base
         AND c.id_serv_sinapi = s.id_serv_sinapi
+      LEFT JOIN sinapi_insumos_pu pu
+        ON pu.tenant_id = c.tenant_id
+        AND pu.id_pu = c.id_pu
       WHERE ${where.join(' AND ')}
       GROUP BY s.codigo_servico, s.descricao, s.und, s.data_base, c.uf, c.tipo_preco
       HAVING COUNT(*) > 0 AND COUNT(*) FILTER (WHERE c.id_insumo_sinapi IS NOT NULL) > 0
@@ -7116,6 +7192,7 @@ export default async function v1Routes(server: FastifyInstance) {
           insumosModo: String(r.insumosModo || ''),
           itens: r.itens == null ? 0 : Number(r.itens),
           insumos: r.insumos == null ? 0 : Number(r.insumos),
+          valorComposicao: r.valorComposicao == null ? null : Number(r.valorComposicao),
         })),
       },
       { message: 'Serviços SINAPI importados' }

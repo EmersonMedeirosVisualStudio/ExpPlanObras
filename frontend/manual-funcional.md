@@ -3027,7 +3027,7 @@ ETAPA 2 — O que clicar
 - Clique no botão “SINAPI”.
 
 ETAPA 3 — O que preencher
-- Na tela Sinapi, ajuste os filtros (Código, Data-base, UF e ISD/ICD/ISE) se necessário.
+- Na tela Sinapi, clique em “Exibir filtros” (se necessário) e ajuste: Código, Data-base, UF e ISD/ICD/ISE.
 
 ETAPA 4 — O que esperar
 - A tela Sinapi abre já filtrada pelo serviço atual e mostra se a data-base está compatível com a planilha.
@@ -3042,14 +3042,22 @@ ETAPA 1 — Onde acessar
 - Acesse: Engenharia → Obras → (selecione a obra) → Planilha orçamentária → Sinapi.
 
 ETAPA 2 — O que clicar
-- Se o serviço já aparecer em “Serviços SINAPI importados”, clique em “Aplicar na obra”.
-- Caso contrário, clique em “Selecionar arquivo XLSX”, preencha as opções e clique em “Prévia”.
+- Na lista “Serviços SINAPI importados”, use “Aplicar na obra” quando o serviço já estiver importado.
+- Para importar via XLSX, clique no botão “Importar” (abre o card “Opções de importação”).
+- Se precisar filtrar a lista, clique em “Exibir filtros”.
 
 ETAPA 3 — O que preencher
-- Data-base, UF e ISD/ICD/ISE (mesmas regras do atalho).
+- Em “Opções de importação”:
+  - Aba (Relatório Analítico de Composições): normalmente “Analítico”.
+  - UF.
+  - Preços de insumos: selecione ISD/ICD/ISE e, ao lado, informe o nome da aba de preços (se necessário).
+  - Modo: escolha se vai importar apenas faltantes ou substituir existentes e selecione a obra.
+  - Escopo: selecione um serviço (código) ou use a planilha da obra / todo o arquivo.
+  - Arquivo XLSX: selecione o arquivo.
 
 ETAPA 4 — O que esperar
-- Após confirmar a importação, a tela passa a listar os **serviços SINAPI importados** (com contagem de itens/insumos).
+- A lista exibe os serviços importados como uma lista com colunas: Código, Descrição, un, Valor da composição, UF, Data-base e Preços de insumos.
+- Após importar (Prévia → Importar), o serviço passa a aparecer na lista conforme os filtros.
 
 ETAPA 5 — Como validar
 - Recarregue a página “Sinapi” e verifique o serviço importado na lista.
