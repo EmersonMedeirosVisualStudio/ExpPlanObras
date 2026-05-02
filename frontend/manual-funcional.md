@@ -2999,7 +2999,9 @@ O arquivo oficial do SINAPI (Excel) é grande. Enviar esse arquivo para o backen
 
 **Oportunidade de melhoria**
 
-Manter o padrão do sistema **Frontend ↔ Backend ↔ Banco de dados** e reduzir risco em produção: o frontend lê o Excel localmente (no navegador) e envia ao backend apenas um **payload JSON pequeno** com os dados já extraídos.
+Manter o padrão do sistema **Frontend ↔ Backend ↔ Banco de dados** e reduzir risco em produção:
+- o backend valida, persiste e aplica a composição na obra;
+- a tela Sinapi guia o usuário com filtros, prévia e aplicação.
 
 **Solução sugerida (implementada)**
 
@@ -3048,6 +3050,7 @@ ETAPA 2 — O que clicar
 
 ETAPA 3 — O que preencher
 - Em “Opções de importação”:
+  - Data-base (SINAPI): é preenchida automaticamente com a data-base da obra, mas pode ser alterada manualmente.
   - Aba (Relatório Analítico de Composições): normalmente “Analítico”.
   - UF: selecione a UF (lista completa). O sistema mantém a última UF selecionada.
   - Preços de insumos (abaixo de “Analítico”): selecione:
@@ -3076,6 +3079,108 @@ ETAPA 5 — Como validar
   - **Aba Analítico**: filtra por “Código da Composição” igual ao código do serviço e extrai Tipo Item, Código do Item, Descrição, Unidade e Coeficiente.
   - **Abas ISD/ICD/ISE**: localiza cabeçalho com Classificação, Código do Insumo, Descrição do Insumo, Unidade e a coluna UF do preço unitário (P.U.).
 - Persistência: além de gravar a composição na planilha da obra, o backend mantém uma **base SINAPI interna** para reuso (serviços/insumos/PU/composições) vinculada à data-base.
+
+**Detalhamento — o que o sistema procura e como procura no XLSX do SINAPI**
+
+Este é o comportamento real da importação ao ler o arquivo XLSX (regras de busca/heurísticas).
+
+**1) Descoberta de Data-base (mês-base)**
+
+- O sistema tenta identificar um texto no formato `MM/AAAA` (ex.: `04/2025`).
+- Para isso, ele varre as **primeiras 8 abas** do arquivo e, em cada uma, lê até **30 linhas iniciais**, juntando as células em texto e procurando um `MM/AAAA`.
+- Se não encontrar, a data-base pode ficar “não detectada” (e aí a validação pode exigir “Forçar importação” conforme o caso).
+
+**2) Como ele decide qual aba de Preços de Insumos (ISD/ICD/ISE) usar**
+
+- Primeiro, se você informar manualmente o “Nome da aba (preços de insumos)”, o sistema tenta usar exatamente esse nome.
+- Se você não informar, o sistema tenta “adivinhar” a aba correta olhando o nome das abas:
+  - ele normaliza o nome (sem acentos, minúsculo, espaços viram `_`) e busca padrões como “preços/insumos” + o token do modo (ISD/ICD/ISE) e variações (“com_desoneracao”, “sem_desoneracao”, “sem_encargos”).
+- Se não achar, ele retorna erro informando as abas disponíveis e sugestões.
+
+**3) Como ele encontra o cabeçalho dentro da aba de Preços de Insumos**
+
+- Ele transforma a aba em uma “matriz” (linhas e colunas) e varre até **80 linhas** iniciais procurando uma linha que pareça cabeçalho.
+- Considera uma linha como cabeçalho quando acha (após normalizar) indícios de:
+  - coluna de código (algo como “código do insumo / código do item / código”)
+  - coluna de descrição
+  - coluna de unidade
+- Depois que localiza o cabeçalho, ele identifica as colunas:
+  - **Classificação** (se existir)
+  - **Código** (código do insumo/item)
+  - **Descrição**
+  - **Unidade**
+  - **Preço unitário (P.U.) da UF escolhida**
+    - tenta achar uma coluna exatamente com o nome da UF (ex.: `ac`, `sp`);
+    - se não achar na mesma linha, ele tenta achar a UF nas **próximas 3 linhas** (caso seja um cabeçalho em duas linhas);
+    - se ainda não achar, tenta colunas genéricas como “preço unitário / preço / valor / custo”.
+- Só depois disso ele começa a ler os dados das linhas e monta um mapa:
+  - chave = **código do insumo**
+  - valor = `{ classificação, descrição, unidade, preço(UF) }`
+
+**4) Como ele encontra o cabeçalho dentro da aba Analítico**
+
+- A aba “Analítico” é lida como matriz e o sistema varre até **60 linhas** iniciais procurando uma linha que pareça cabeçalho.
+- Ele considera “cabeçalho válido” quando encontra indícios de:
+  - “código” (ex.: “código da composição/código item/código”)
+  - “descrição”
+  - “coeficiente” ou “quantidade”
+- Depois disso, ele busca as colunas (por igualdade ou “contém” após normalização):
+  - **Código da composição / código**
+  - **Descrição**
+  - **Unidade**
+  - **Coeficiente / quantidade**
+  - **Tipo item** (quando existir)
+  - **UF** (quando existir na aba analítico; se existir e for diferente da UF escolhida, a linha é ignorada)
+
+**5) Como ele entende “onde começa uma composição” e “quais são os itens dela”**
+
+- O sistema percorre as linhas após o cabeçalho e tenta identificar “linhas de título” (o cabeçalho da composição) para definir qual composição está “ativa” naquele momento.
+- Uma linha é tratada como “título da composição” quando:
+  - `nível = 0` (quando a coluna “nível” existe), ou
+  - o tipo é “COMPOSIÇÃO” e o coeficiente é vazio/1 (heurística).
+- Quando encontra um título, ele guarda `current = código da composição`.
+- As linhas seguintes (até o próximo título) são itens dessa composição.
+
+**6) Como ele decide se um item é INSUMO ou COMPOSIÇÃO**
+
+- Ele tenta mapear o “Tipo Item” (quando existe) para:
+  - COMPOSIÇÃO
+  - COMPOSIÇÃO AUXILIAR
+  - INSUMO
+  - MÃO DE OBRA
+  - EQUIPAMENTO
+- Se não conseguir mapear, ele usa uma heurística simples (ex.: descrição contendo “AUX” vira composição auxiliar; senão vira insumo).
+
+**7) Como ele cruza Analítico com Preços de Insumos (ISD/ICD/ISE)**
+
+- Para cada item:
+  - Se for **COMPOSIÇÃO/COMPOSIÇÃO AUXILIAR**, ele mantém o coeficiente e **não define valor unitário** (fica nulo).
+  - Se for **INSUMO**, ele procura o código do item no mapa de insumos (preços):
+    - se encontrar, usa classificação/descrição/unidade/preço da UF;
+    - se não encontrar, mantém descrição/unidade do analítico e o valor unitário pode ficar vazio.
+
+**8) Erros comuns que o sistema devolve (e o que significam)**
+
+- “Aba não encontrada: ‘Analítico’…”: o nome da aba analítica não bate com o informado.
+- “Não foi possível localizar a aba de preços de insumos para ISD/ICD/ISE…”: não achou a aba automaticamente e você não informou o nome.
+- “Não foi possível identificar o cabeçalho…”: o arquivo não segue o padrão esperado (ou está em outra aba/relatório).
+- “Não foi possível ler os preços do UF XX…”: não achou a coluna de UF (ou o P.U.) na aba de insumos.
+
+**Tarefa: Importação SINAPI — evolução**
+
+A importação SINAPI evoluiu em etapas (commits principais):
+
+- 57c585b — Importação inicial a partir do Excel.
+- deecdb9 — Upload + prévia + parâmetros.
+- dab67db — Importar analítico + preços (ISD/ICD/ISE) e prévia em card.
+- e38c670 — Melhorias de UX (validações de prévia, mensagens e KPIs).
+- d3364d4 — Bloquear quando mês-base é diferente (com opção de forçar).
+- c5b701b — Alternativa “Opção A”: parse local no navegador e envio de JSON (sem upload do XLSX).
+- 0fe24ba — Reestruturação do fluxo: Sinapi centralizado + aplicar base na obra.
+- d20aaa6 — Lista de importados + filtros ocultos + modal de importação.
+- 02532fd — Preferências persistidas (UF/insumos).
+- 584b886 — Correções de rota/UX (obras, mensagens no modal, ajustes de rótulos).
+- 07c1291 — Opções exclusivas (sem “Escopo”) + erro de importação mais detalhado.
 
 ### 18.3 Documentos e acervos
 

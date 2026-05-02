@@ -87,6 +87,7 @@ export default function SinapiImportPage() {
   const [codigoServico, setCodigoServico] = useState<string>(codigoParam);
   const [codigoFiltro, setCodigoFiltro] = useState<string>(codigoParam);
   const [dataBaseFiltro, setDataBaseFiltro] = useState<string>(dataBaseParam);
+  const [dataBaseImport, setDataBaseImport] = useState<string>(dataBaseParam);
   const [ufFiltro, setUfFiltro] = useState<string>("");
   const [insumosModoFiltro, setInsumosModoFiltro] = useState<"" | "ISD" | "ICD" | "ISE">("");
   const [targetObraId, setTargetObraId] = useState<number>(Number.isFinite(idObra) && idObra > 0 ? idObra : 0);
@@ -232,6 +233,7 @@ export default function SinapiImportPage() {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("sheetName", sheetName.trim() || "Analítico");
+      if (dataBaseImport.trim()) fd.append("sinapiDataBase", dataBaseImport.trim());
       if (uf.trim()) fd.append("uf", uf.trim().toUpperCase());
       fd.append("insumosModo", insumosModo);
       if (insumosSheetName.trim()) fd.append("insumosSheetName", insumosSheetName.trim());
@@ -411,6 +413,7 @@ export default function SinapiImportPage() {
     if (!planilhaDataBaseSinapi.trim()) return;
     if (String(dataBaseParam || "").trim()) return;
     setDataBaseFiltro((cur) => (String(cur || "").trim() ? cur : planilhaDataBaseSinapi.trim()));
+    setDataBaseImport((cur) => (String(cur || "").trim() ? cur : planilhaDataBaseSinapi.trim()));
   }, [planilhaDataBaseSinapi, dataBaseParam]);
 
   useEffect(() => {
@@ -480,6 +483,7 @@ export default function SinapiImportPage() {
             onClick={() => {
               setOkMsg("");
               setErr("");
+              setDataBaseImport((cur) => (String(cur || "").trim() ? cur : String(planilhaDataBaseSinapi || "").trim()));
               setImportOpen(true);
             }}
             disabled={busy}
@@ -490,7 +494,14 @@ export default function SinapiImportPage() {
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() => router.push(backHref)}
+            onClick={() => {
+              const href = String(backHref || "").trim();
+              if (/^https?:\/\//i.test(href) || href.startsWith("//")) {
+                window.location.assign(href);
+                return;
+              }
+              router.push(href);
+            }}
             disabled={busy}
             title="Voltar"
           >
@@ -647,6 +658,19 @@ export default function SinapiImportPage() {
               {okMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{okMsg}</div> : null}
               {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
               <div className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
+                <div className="space-y-1">
+                  <div className="text-sm text-slate-600">Data-base (SINAPI)</div>
+                  <input
+                    className="input bg-white"
+                    value={dataBaseImport}
+                    onChange={(e) => setDataBaseImport(e.target.value)}
+                    disabled={busy}
+                    placeholder={planilhaDataBaseSinapi || "Ex: 04/2025"}
+                  />
+                  <div className="text-xs text-slate-500">
+                    Padrão da obra: {planilhaDataBaseSinapi || "—"} (pode ser alterado manualmente)
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
                   <div className="md:col-span-6 space-y-1">
                     <div className="text-sm text-slate-600">Aba (Relatório Analítico de Composições)</div>

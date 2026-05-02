@@ -5468,7 +5468,9 @@ export default async function v1Routes(server: FastifyInstance) {
       }
       return null;
     };
-    const sinapiDataBase = detectDataBase();
+    const sinapiDataBaseDetected = detectDataBase();
+    const sinapiDataBaseInput = String(fields.sinapiDataBase || fields.dataBase || fields.data_base || '').trim();
+    const sinapiDataBase = sinapiDataBaseInput || sinapiDataBaseDetected;
     const sinapiDataBaseKey = sinapiDataBase ? String(sinapiDataBase).trim() : '';
 
     const normalizeSheetName = (n: string) => normalizeHeader(String(n || ''));
