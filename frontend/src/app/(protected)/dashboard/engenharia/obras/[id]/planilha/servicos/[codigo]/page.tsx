@@ -37,6 +37,15 @@ type PlanilhaParams = {
   encSociaisSemDesSinapi: number | null;
 };
 
+type EmpresaDocumentosLayout = {
+  logoDataUrl: string | null;
+  cabecalhoHtml: string | null;
+  rodapeHtml: string | null;
+  cabecalhoAlturaMm: number | null;
+  rodapeAlturaMm: number | null;
+  atualizadoEm: string | null;
+};
+
  function toNum(v: string) {
    const s = String(v || "").trim();
    if (!s) return null;
@@ -165,6 +174,7 @@ async function readTextSmart(file: File) {
   const [navIdx, setNavIdx] = useState<number>(-1);
   const [planilhaParams, setPlanilhaParams] = useState<PlanilhaParams | null>(null);
   const [definedComposicoesCodes, setDefinedComposicoesCodes] = useState<Set<string>>(new Set());
+  const [empresaDocumentosLayout, setEmpresaDocumentosLayout] = useState<EmpresaDocumentosLayout | null>(null);
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
   const [editingBancoOutroIdx, setEditingBancoOutroIdx] = useState<number | null>(null);
   const [bancoOutroValue, setBancoOutroValue] = useState("");
@@ -245,7 +255,8 @@ async function readTextSmart(file: File) {
     headerFontSizePx: number;
     headerFontWeight: "normal" | "semibold" | "bold";
     topToHeaderPx: number;
-  }>({ headerFontFamily: "Arial", headerFontSizePx: 11, headerFontWeight: "semibold", topToHeaderPx: 0 });
+    includeEmpresaHeader: boolean;
+  }>({ headerFontFamily: "Arial", headerFontSizePx: 11, headerFontWeight: "semibold", topToHeaderPx: 0, includeEmpresaHeader: true });
 
   const [primitiveOpen, setPrimitiveOpen] = useState(false);
   const [primitiveLoading, setPrimitiveLoading] = useState(false);
@@ -323,22 +334,22 @@ async function readTextSmart(file: File) {
        const json = await res.json().catch(() => null);
        if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar composição");
        const list = Array.isArray(json.data?.itens) ? json.data.itens : [];
-       setItens(
-         list.map((i: any) => ({
-          idItemBase: Number(i.idItemBase || 0),
-           etapa: String(i.etapa || ""),
-           tipoItem: String(i.tipoItem || "INSUMO"),
-           codigoItem: String(i.codigoItem || ""),
-          banco: String(i.banco || ""),
-           descricao: String(i.descricao || ""),
-           und: String(i.und || ""),
-           quantidade: i.quantidade == null ? "" : String(i.quantidade),
-          valorUnitario: i.valorUnitario == null ? "" : String(i.valorUnitario),
-           perdaPercentual: i.perdaPercentual == null ? "" : String(i.perdaPercentual),
-           codigoCentroCusto: String(i.codigoCentroCusto || ""),
-          codigoCentroCustoBase: String(i.codigoCentroCustoBase || ""),
-         }))
-       );
+      const mapped = list.map((i: any) => ({
+        idItemBase: Number(i.idItemBase || 0),
+        etapa: String(i.etapa || ""),
+        tipoItem: String(i.tipoItem || "INSUMO"),
+        codigoItem: String(i.codigoItem || ""),
+        banco: String(i.banco || ""),
+        descricao: String(i.descricao || ""),
+        und: String(i.und || ""),
+        quantidade: i.quantidade == null ? "" : String(i.quantidade),
+        valorUnitario: i.valorUnitario == null ? "" : String(i.valorUnitario),
+        perdaPercentual: i.perdaPercentual == null ? "" : String(i.perdaPercentual),
+        codigoCentroCusto: String(i.codigoCentroCusto || ""),
+        codigoCentroCustoBase: String(i.codigoCentroCustoBase || ""),
+      }));
+      setItens(mapped);
+      sincronizarValoresComposicoes(mapped);
       if (!silent) setOkMsg("Composição carregada.");
      } catch (e: any) {
        setErr(e?.message || "Erro ao carregar composição");
@@ -665,6 +676,42 @@ async function readTextSmart(file: File) {
     }
   }
 
+  async function carregarEmpresaDocumentosLayout() {
+    try {
+      const res = await authFetch(`/api/v1/empresa/documentos-layout`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        setEmpresaDocumentosLayout(null);
+        return;
+      }
+      const dl = (json.data?.documentosLayout || null) as any;
+      if (!dl) {
+        setEmpresaDocumentosLayout(null);
+        return;
+      }
+      setEmpresaDocumentosLayout({
+        logoDataUrl: dl.logoDataUrl == null ? null : String(dl.logoDataUrl || ""),
+        cabecalhoHtml: dl.cabecalhoHtml == null ? null : String(dl.cabecalhoHtml || ""),
+        rodapeHtml: dl.rodapeHtml == null ? null : String(dl.rodapeHtml || ""),
+        cabecalhoAlturaMm: dl.cabecalhoAlturaMm == null ? null : Number(dl.cabecalhoAlturaMm),
+        rodapeAlturaMm: dl.rodapeAlturaMm == null ? null : Number(dl.rodapeAlturaMm),
+        atualizadoEm: dl.atualizadoEm == null ? null : String(dl.atualizadoEm || ""),
+      });
+    } catch {
+      setEmpresaDocumentosLayout(null);
+    }
+  }
+
+  function applyEmpresaDocTokens(html: string, layout: EmpresaDocumentosLayout | null) {
+    const dataHora = new Date().toLocaleString("pt-BR");
+    const logoHtml = layout?.logoDataUrl ? `<img alt="Logo" src="${escapeHtml(layout.logoDataUrl)}" style="max-height:100%;max-width:100%;object-fit:contain;" />` : "";
+    return String(html || "")
+      .replaceAll("{{DATA_HORA}}", escapeHtml(dataHora))
+      .replaceAll("{{PAGINA}}", "")
+      .replaceAll("{{TOTAL_PAGINAS}}", "")
+      .replaceAll("{{LOGO}}", logoHtml);
+  }
+
   function baixarModeloComposicoesCsv() {
     const sep = "\t";
     const lines = [
@@ -774,11 +821,13 @@ async function readTextSmart(file: File) {
       const fwRaw = String(p?.headerFontWeight || "").trim().toLowerCase();
       const fw = fwRaw === "bold" ? "bold" : fwRaw === "normal" ? "normal" : "semibold";
       const top = p?.topToHeaderPx != null ? Number(p.topToHeaderPx) : NaN;
+      const inc = p?.includeEmpresaHeader;
       setPrintPrefs((cur) => ({
         headerFontFamily: ff || cur.headerFontFamily,
         headerFontSizePx: Number.isFinite(fs) ? Math.max(8, Math.min(16, Math.round(fs))) : cur.headerFontSizePx,
         headerFontWeight: fw,
         topToHeaderPx: Number.isFinite(top) ? Math.max(0, Math.min(80, Math.round(top))) : cur.topToHeaderPx,
+        includeEmpresaHeader: typeof inc === "boolean" ? inc : cur.includeEmpresaHeader,
       }));
     } catch {}
   }, []);
@@ -795,6 +844,7 @@ async function readTextSmart(file: File) {
     carregar(true);
     carregarPrevistoPlanilha();
     carregarComposicoesDefinidas();
+    carregarEmpresaDocumentosLayout();
   }, [idObra, codigoServico]);
 
   useEffect(() => {
@@ -934,6 +984,11 @@ async function readTextSmart(file: File) {
     return Number(t.toFixed(2));
   }, [totalComLS, bdiPercent]);
 
+  useEffect(() => {
+    if (!itens.length) return;
+    sincronizarValoresComposicoes(itens);
+  }, [lsPercent]);
+
   async function calcularTotalComLSDeComposicao(codigo: string) {
     const code = String(codigo || "").trim().toUpperCase();
     if (!code) return null;
@@ -982,8 +1037,42 @@ async function readTextSmart(file: File) {
       });
       setOkMsg(`Valor da composição ${code} atualizado (Total com LS, sem BDI).`);
     } catch (e: any) {
+      setItens((p) => p.map((x, i) => (i === rowIdx ? { ...x, valorUnitario: "" } : x)));
       setErr(e?.message || "Erro ao atualizar valor da composição");
     }
+  }
+
+  async function sincronizarValoresComposicoes(itensBase: ItemRow[]) {
+    const codes = Array.from(
+      new Set(
+        itensBase
+          .filter((r) => ["COMPOSICAO", "COMPOSICAO_AUXILIAR"].includes(String(r.tipoItem || "").toUpperCase()))
+          .map((r) => String(r.codigoItem || "").trim().toUpperCase())
+          .filter(Boolean)
+      )
+    );
+    if (!codes.length) return;
+    const nextByCode = new Map<string, string>();
+    for (const code of codes) {
+      try {
+        const totalComLSLocal = await calcularTotalComLSDeComposicao(code);
+        if (totalComLSLocal == null) continue;
+        nextByCode.set(code, totalComLSLocal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      } catch {
+        nextByCode.set(code, "");
+      }
+    }
+    setItens((p) =>
+      p.map((r) => {
+        const t = String(r.tipoItem || "").toUpperCase();
+        if (t !== "COMPOSICAO" && t !== "COMPOSICAO_AUXILIAR") return r;
+        const code = String(r.codigoItem || "").trim().toUpperCase();
+        if (!code) return { ...r, valorUnitario: "" };
+        if (!nextByCode.has(code)) return r;
+        const vu = nextByCode.get(code) ?? "";
+        return vu === r.valorUnitario ? r : { ...r, valorUnitario: vu };
+      })
+    );
   }
 
   function navegarParaIndice(next: number) {
@@ -1117,14 +1206,16 @@ async function readTextSmart(file: File) {
           <tbody>
             {list.map(({ r, idx }) => {
               const q = parseNumberLoose(r.quantidade);
-              const v = parseNumberLoose(r.valorUnitario);
-              const total = q != null && v != null ? q * v : null;
               const bancoInOptions = !r.banco || bancosOptions.includes(r.banco);
               const selectBancoValue = bancoInOptions ? r.banco : "__OUTRO__";
               const meta = tipoMeta(r.tipoItem);
               const isComposicao = meta.key === "COMPOSICAO" || meta.key === "COMPOSICAO_AUXILIAR";
               const codigoComposicao = String(r.codigoItem || "").trim().toUpperCase();
-              const isDefinida = Boolean(codigoComposicao) && definedComposicoesCodes.has(codigoComposicao);
+              const isDefinida = Boolean(codigoComposicao) && (definedComposicoesCodes.has(codigoComposicao) || compTotalCacheRef.current.has(codigoComposicao));
+              const vRaw = parseNumberLoose(r.valorUnitario);
+              const v = isComposicao && !isDefinida ? null : vRaw;
+              const total = q != null && v != null ? q * v : null;
+              const displayValorUnit = isComposicao ? (isDefinida ? r.valorUnitario : "") : r.valorUnitario;
               return (
                 <tr key={idx} className="border-t" style={{ backgroundColor: rowBg }}>
                   {displayPrefs.colTipo ? (
@@ -1267,12 +1358,39 @@ async function readTextSmart(file: File) {
                   ) : null}
                   {displayPrefs.colValorUnit ? (
                     <td className="px-3 py-2 text-right" style={{ ...cellW(w.valorUnit), fontSize: px(fs.valorUnit) }}>
-                    <input
-                      className="input bg-white text-right"
-                      value={r.valorUnitario}
-                      onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, valorUnitario: e.target.value } : x)))}
-                      style={{ ...cellW(w.valorUnit), fontSize: px(fs.valorUnit) }}
-                    />
+                    {isComposicao ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          className="input bg-white text-right flex-1 min-w-0 disabled:opacity-70"
+                          value={displayValorUnit}
+                          disabled
+                          title={
+                            !codigoComposicao
+                              ? "Informe o código da composição para calcular o valor unitário (Total com LS, sem BDI)"
+                              : isDefinida
+                                ? "Valor unitário calculado da composição (Total com LS, sem BDI)"
+                                : "Composição não definida. Defina a composição para calcular o valor unitário (sem BDI)"
+                          }
+                          style={{ fontSize: px(fs.valorUnit) }}
+                        />
+                        <button
+                          className="rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60"
+                          type="button"
+                          disabled={loading || !codigoComposicao || !isDefinida}
+                          title="Atualizar valor unitário pela composição (Total com LS, sem BDI)"
+                          onClick={() => atualizarValorComposicaoNoItem(idx, codigoComposicao)}
+                        >
+                          ↻
+                        </button>
+                      </div>
+                    ) : (
+                      <input
+                        className="input bg-white text-right"
+                        value={r.valorUnitario}
+                        onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, valorUnitario: e.target.value } : x)))}
+                        style={{ ...cellW(w.valorUnit), fontSize: px(fs.valorUnit) }}
+                      />
+                    )}
                   </td>
                   ) : null}
                   {displayPrefs.colTotal ? (
@@ -1382,7 +1500,21 @@ async function readTextSmart(file: File) {
     setOkMsg("CSV exportado.");
   }
 
-  function imprimirComposicao(title: string, groups: Array<{ label: string; itens: ItemRow[]; bg: string }>) {
+  function imprimirComposicao(
+    title: string,
+    groups: Array<{ label: string; itens: ItemRow[]; bg: string }>,
+    summary?: {
+      totalMateriaisBase: number;
+      totalEquipBase: number;
+      totalComposicoesBase: number;
+      totalMaoBase: number;
+      totalBase: number;
+      lsPercent: number;
+      totalComLS: number;
+      bdiPercent: number;
+      totalComLSComBDI: number;
+    }
+  ) {
     const w = window.open("", "_blank");
     if (!w) {
       window.print();
@@ -1391,6 +1523,37 @@ async function readTextSmart(file: File) {
     const fw = printPrefs.headerFontWeight === "bold" ? 700 : printPrefs.headerFontWeight === "normal" ? 400 : 600;
     const top = Math.max(0, Number(printPrefs.topToHeaderPx || 0));
     const headerFontSize = Math.max(8, Math.min(16, Number(printPrefs.headerFontSizePx || 11)));
+    const cabecalhoEmpresaHtml =
+      printPrefs.includeEmpresaHeader && (empresaDocumentosLayout?.cabecalhoHtml || empresaDocumentosLayout?.logoDataUrl)
+        ? `<div class="empresa-cabecalho" style="${empresaDocumentosLayout?.cabecalhoAlturaMm ? `min-height:${Number(empresaDocumentosLayout.cabecalhoAlturaMm)}mm;` : ""}">
+            ${empresaDocumentosLayout?.cabecalhoHtml ? applyEmpresaDocTokens(empresaDocumentosLayout.cabecalhoHtml, empresaDocumentosLayout) : ""}
+          </div>`
+        : "";
+    const acrescLS = summary ? Number((summary.totalComLS - summary.totalBase).toFixed(2)) : 0;
+    const acrescBDI = summary ? Number((summary.totalComLSComBDI - summary.totalComLS).toFixed(2)) : 0;
+    const resumoHtml = summary
+      ? `
+      <div class="resumo">
+        <div class="cards">
+          <div class="card"><div class="lab">Materiais</div><div class="val">${escapeHtml(moeda(Number(summary.totalMateriaisBase || 0)))}</div></div>
+          <div class="card"><div class="lab">Equipamentos</div><div class="val">${escapeHtml(moeda(Number(summary.totalEquipBase || 0)))}</div></div>
+          <div class="card"><div class="lab">Composições</div><div class="val">${escapeHtml(moeda(Number(summary.totalComposicoesBase || 0)))}</div></div>
+          <div class="card"><div class="lab">Mão de obra (base)</div><div class="val">${escapeHtml(moeda(Number(summary.totalMaoBase || 0)))}</div></div>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><div class="lab">Subtotal (sem LS + BDI)</div><div class="val">${escapeHtml(moeda(Number(summary.totalBase || 0)))}</div></div>
+          <div class="sep">→</div>
+          <div class="kpi"><div class="lab">LS</div><div class="val">${escapeHtml(Number(summary.lsPercent || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}%</div><div class="sub">Acréscimo: ${escapeHtml(moeda(Number(acrescLS || 0)))}</div></div>
+          <div class="sep">→</div>
+          <div class="kpi kpi-hi"><div class="lab">Total (com LS)</div><div class="val">${escapeHtml(moeda(Number(summary.totalComLS || 0)))}</div></div>
+          <div class="sep">→</div>
+          <div class="kpi"><div class="lab">BDI</div><div class="val">${escapeHtml(Number(summary.bdiPercent || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}%</div><div class="sub">Acréscimo: ${escapeHtml(moeda(Number(acrescBDI || 0)))}</div></div>
+          <div class="sep">→</div>
+          <div class="kpi kpi-final"><div class="lab">Total final (LS + BDI)</div><div class="val">${escapeHtml(moeda(Number(summary.totalComLSComBDI || 0)))}</div></div>
+        </div>
+      </div>
+    `
+      : "";
 
     const cols = [
       displayPrefs.colTipo ? "Tipo" : null,
@@ -1453,6 +1616,19 @@ async function readTextSmart(file: File) {
       .h-title { font-weight: ${fw}; }
       .c { padding: 6px 10px; position: relative; z-index: 1; }
       .sp { height: var(--print-header-offset); }
+      .empresa-cabecalho { width: 100%; }
+      .resumo { margin-top: 10px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; }
+      .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+      .card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 8px; }
+      .lab { font-size: 10px; color: #475569; }
+      .val { font-size: 12px; font-weight: 700; color: #0f172a; }
+      .kpis { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; }
+      .kpi { border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 8px; }
+      .kpi .sub { margin-top: 2px; font-size: 10px; color: #64748b; }
+      .kpi-hi { border-color: #6366f1; background: #eef2ff; }
+      .kpi-final { border-color: #0f172a; background: #0f172a; }
+      .kpi-final .lab, .kpi-final .val { color: #ffffff; }
+      .sep { align-self: center; color: #94a3b8; padding: 0 2px; }
       .g-title { margin: 10px 0 6px 0; padding: 6px 8px; border: 1px solid #e2e8f0; font-weight: 700; }
       .t { width: 100%; border-collapse: collapse; }
       th, td { border: 1px solid #e2e8f0; padding: 4px 6px; vertical-align: top; }
@@ -1461,11 +1637,13 @@ async function readTextSmart(file: File) {
   </head>
   <body>
     <div class="h">
+      ${cabecalhoEmpresaHtml}
       <div class="h-title">${escapeHtml(title)}</div>
       <div style="font-size:10px;color:#334155">Serviço: ${escapeHtml(codigoServico)} • Obra #${escapeHtml(idObra)}</div>
     </div>
     <div class="c">
       <div class="sp"></div>
+      ${resumoHtml}
       ${groupsHtml}
     </div>
     <script>
@@ -1578,10 +1756,9 @@ async function readTextSmart(file: File) {
          <div>
           <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Análise de composição</div>
           <h1 className="text-2xl font-semibold">Análise de composição — {codigoServico || "—"}</h1>
-           <div className="text-sm text-slate-600">Importe por CSV ou cadastre manualmente os insumos do serviço.</div>
          </div>
          <div className="flex items-center gap-2 flex-wrap">
-           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={voltar}>
+           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={voltar} title="Voltar para a tela anterior">
              Voltar
            </button>
           <button
@@ -1591,6 +1768,7 @@ async function readTextSmart(file: File) {
               await Promise.all([carregar(), carregarPrevistoPlanilha()]);
             }}
             disabled={loading}
+            title="Recarregar composição e dados previstos da planilha"
           >
              Carregar
            </button>
@@ -1604,10 +1782,10 @@ async function readTextSmart(file: File) {
                if (f) prepararImportacaoCsv(f);
              }}
            />
-           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => fileInputRef.current?.click()} disabled={loading}>
+           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => fileInputRef.current?.click()} disabled={loading} title="Importar itens por CSV (com prévia)">
              Importar CSV
            </button>
-           <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60" type="button" onClick={salvar} disabled={loading}>
+           <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60" type="button" onClick={salvar} disabled={loading} title="Salvar alterações da composição">
              Salvar
            </button>
           <button
@@ -1623,12 +1801,26 @@ async function readTextSmart(file: File) {
             className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
             onClick={() =>
-              imprimirComposicao(`Composição do serviço ${codigoServico || ""}`, [
-                { label: "Composições", itens: itensComposicoes.map((x) => x.r), bg: displayPrefs.bgComposicoes },
-                { label: "Material", itens: itensMateriais.map((x) => x.r), bg: displayPrefs.bgMateriais },
-                { label: "Equipamento", itens: itensEquip.map((x) => x.r), bg: displayPrefs.bgEquipamentos },
-                { label: "Mão de obra", itens: itensMao.map((x) => x.r), bg: displayPrefs.bgMao },
-              ])
+              imprimirComposicao(
+                `Composição do serviço ${codigoServico || ""}`,
+                [
+                  { label: "Composições", itens: itensComposicoes.map((x) => x.r), bg: displayPrefs.bgComposicoes },
+                  { label: "Material", itens: itensMateriais.map((x) => x.r), bg: displayPrefs.bgMateriais },
+                  { label: "Equipamento", itens: itensEquip.map((x) => x.r), bg: displayPrefs.bgEquipamentos },
+                  { label: "Mão de obra", itens: itensMao.map((x) => x.r), bg: displayPrefs.bgMao },
+                ],
+                {
+                  totalMateriaisBase,
+                  totalEquipBase,
+                  totalComposicoesBase,
+                  totalMaoBase,
+                  totalBase,
+                  lsPercent,
+                  totalComLS,
+                  bdiPercent,
+                  totalComLSComBDI,
+                }
+              )
             }
             disabled={loading}
             title="Imprimir"
@@ -1649,7 +1841,7 @@ async function readTextSmart(file: File) {
  
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex flex-wrap gap-2">
-          <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={baixarModeloComposicoesCsv} disabled={loading}>
+          <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={baixarModeloComposicoesCsv} disabled={loading} title="Baixar um modelo de CSV para importar composição">
             Modelo CSV (composição)
           </button>
           <button
@@ -1657,6 +1849,7 @@ async function readTextSmart(file: File) {
             type="button"
             onClick={() => setShowDisplayConfig((v) => !v)}
             disabled={loading}
+            title="Abrir/ocultar configurações de exibição"
           >
             {showDisplayConfig ? "⯆" : "⯈"} Configurações de exibição
           </button>
@@ -1667,6 +1860,7 @@ async function readTextSmart(file: File) {
             type="button"
             onClick={abrirComposicaoPrimitiva}
             disabled={loading || primitiveLoading}
+            title="Gerar composição primitiva (consolidado de insumos)"
           >
             Composição primitiva
           </button>
@@ -1706,7 +1900,7 @@ async function readTextSmart(file: File) {
               <div className="text-lg font-semibold">Configurações de exibição</div>
               <div className="text-sm text-slate-600">Escolha quais colunas exibir e defina as cores de fundo padrão por tipo.</div>
             </div>
-            <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setShowDisplayConfig(false)}>
+            <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setShowDisplayConfig(false)} title="Ocultar configurações de exibição">
               Ocultar
             </button>
           </div>
@@ -1848,12 +2042,22 @@ async function readTextSmart(file: File) {
               <div className="text-lg font-semibold">Configurar impressão</div>
               <div className="text-sm text-slate-600">Ajusta fonte do cabeçalho e espaçamento do topo na impressão desta tela.</div>
             </div>
-            <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setShowPrintConfig(false)}>
+            <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setShowPrintConfig(false)} title="Ocultar configurações de impressão">
               Ocultar
             </button>
           </div>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+            <div className="md:col-span-12">
+              <label className="flex items-center gap-2 text-sm rounded border bg-white px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={printPrefs.includeEmpresaHeader}
+                  onChange={(e) => setPrintPrefs((p) => ({ ...p, includeEmpresaHeader: Boolean(e.target.checked) }))}
+                />
+                <span className="text-slate-700">Incluir cabeçalho padronizado da empresa na impressão</span>
+              </label>
+            </div>
             <div className="md:col-span-5 space-y-1">
               <div className="text-sm text-slate-600">Fonte</div>
               <select className="input bg-white" value={printPrefs.headerFontFamily} onChange={(e) => setPrintPrefs((p) => ({ ...p, headerFontFamily: e.target.value }))}>
@@ -1963,7 +2167,7 @@ async function readTextSmart(file: File) {
                 >
                   <FileSpreadsheet className="h-4 w-4" />
                 </button>
-                <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setPrimitiveOpen(false)} disabled={primitiveLoading}>
+                <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setPrimitiveOpen(false)} disabled={primitiveLoading} title="Fechar composição primitiva">
                   Fechar
                 </button>
               </div>
@@ -2033,6 +2237,7 @@ async function readTextSmart(file: File) {
                 type="button"
                 onClick={() => setImportPreview({ file: null, rows: [] })}
                 disabled={loading}
+                title="Cancelar prévia"
               >
                 Cancelar
               </button>
@@ -2050,6 +2255,7 @@ async function readTextSmart(file: File) {
                   confirmarImportacao("REPLACE");
                 }}
                 disabled={loading || !importPreview.rows.filter((r) => !Object.keys(r.errors || {}).length).length}
+                title="Confirmar importação do CSV"
               >
                 Confirmar importação
               </button>
@@ -2114,7 +2320,7 @@ async function readTextSmart(file: File) {
                   <span className="font-medium">{importChoiceInfo?.incomingCount ?? 0}</span> itens válidos
                 </div>
               </div>
-              <button className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setImportChoiceOpen(false)} disabled={loading}>
+              <button className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setImportChoiceOpen(false)} disabled={loading} title="Fechar opções de importação">
                 Fechar
               </button>
             </div>
@@ -2127,6 +2333,7 @@ async function readTextSmart(file: File) {
                 type="button"
                 onClick={() => confirmarImportacao("MERGE")}
                 disabled={loading}
+                title="Mesclar: soma as quantidades quando a linha já existe"
               >
                 Mesclar (somar)
               </button>
@@ -2135,6 +2342,7 @@ async function readTextSmart(file: File) {
                 type="button"
                 onClick={() => confirmarImportacao("REPLACE")}
                 disabled={loading}
+                title="Substituir: apaga a composição atual e importa apenas o CSV"
               >
                 Apagar e importar
               </button>
@@ -2262,7 +2470,7 @@ async function readTextSmart(file: File) {
                 <div className="text-[11px] text-slate-500">Acréscimo: {moeda(Number((totalComLS - totalBase) || 0))}</div>
               </div>
               <div className="self-center px-1 text-slate-400">→</div>
-              <div className="rounded-lg border bg-white px-3 py-2">
+              <div className="rounded-lg border border-indigo-600 bg-indigo-50 px-3 py-2">
                 <div className="text-[11px] text-slate-500">Total (com LS)</div>
                 <div className="text-sm font-semibold text-slate-900">{moeda(Number(totalComLS || 0))}</div>
               </div>
@@ -2302,6 +2510,7 @@ async function readTextSmart(file: File) {
               ])
             }
             disabled={loading}
+            title="Adicionar um novo item na composição"
           >
             Adicionar item
           </button>

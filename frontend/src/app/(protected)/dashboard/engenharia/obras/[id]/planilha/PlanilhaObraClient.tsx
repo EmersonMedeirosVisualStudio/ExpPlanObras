@@ -276,6 +276,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       topToHeaderPx: number;
       headerToDadosPx: number;
       dadosToTabelaPx: number;
+      includeEmpresaHeader: boolean;
     };
   }>({
     fontSizePx: 12,
@@ -288,6 +289,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       topToHeaderPx: 0,
       headerToDadosPx: 6,
       dadosToTabelaPx: 10,
+      includeEmpresaHeader: true,
     },
   });
 
@@ -373,6 +375,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       const topToHeaderPx = pf?.topToHeaderPx != null ? Number(pf.topToHeaderPx) : NaN;
       const headerToDadosPx = pf?.headerToDadosPx != null ? Number(pf.headerToDadosPx) : NaN;
       const dadosToTabelaPx = pf?.dadosToTabelaPx != null ? Number(pf.dadosToTabelaPx) : NaN;
+      const includeEmpresaHeader = pf?.includeEmpresaHeader;
       setUiPrefs((p) => ({
         fontSizePx: Number.isFinite(fontSizePx) && fontSizePx >= 10 && fontSizePx <= 22 ? fontSizePx : p.fontSizePx,
         itemBg: itemBg && itemBg.startsWith("#") ? itemBg : p.itemBg,
@@ -384,6 +387,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
           topToHeaderPx: Number.isFinite(topToHeaderPx) ? Math.max(0, Math.min(80, Math.round(topToHeaderPx))) : p.print.topToHeaderPx,
           headerToDadosPx: Number.isFinite(headerToDadosPx) ? Math.max(0, Math.min(80, Math.round(headerToDadosPx))) : p.print.headerToDadosPx,
           dadosToTabelaPx: Number.isFinite(dadosToTabelaPx) ? Math.max(0, Math.min(120, Math.round(dadosToTabelaPx))) : p.print.dadosToTabelaPx,
+          includeEmpresaHeader: typeof includeEmpresaHeader === "boolean" ? includeEmpresaHeader : p.print.includeEmpresaHeader,
         },
       }));
     } catch {}
@@ -560,7 +564,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       return t ? escapeHtml(t) : "-";
     };
     const cabecalhoEmpresaHtml =
-      empresaDocumentosLayout?.cabecalhoHtml || empresaDocumentosLayout?.logoDataUrl
+      pp.includeEmpresaHeader && (empresaDocumentosLayout?.cabecalhoHtml || empresaDocumentosLayout?.logoDataUrl)
         ? `<div class="empresa-cabecalho" style="${empresaDocumentosLayout?.cabecalhoAlturaMm ? `min-height:${Number(empresaDocumentosLayout.cabecalhoAlturaMm)}mm;` : ""}">
             ${empresaDocumentosLayout?.cabecalhoHtml ? applyEmpresaDocTokens(empresaDocumentosLayout.cabecalhoHtml, empresaDocumentosLayout) : ""}
           </div>`
@@ -1757,6 +1761,16 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                   <div className="text-sm font-semibold">Impressão — ajustes finos</div>
 
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+                    <div className="md:col-span-12">
+                      <label className="flex items-center gap-2 text-sm rounded border bg-white px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={uiPrefs.print.includeEmpresaHeader}
+                          onChange={(e) => setUiPrefs((p) => ({ ...p, print: { ...p.print, includeEmpresaHeader: Boolean(e.target.checked) } }))}
+                        />
+                        <span className="text-slate-700">Incluir cabeçalho padronizado da empresa na impressão</span>
+                      </label>
+                    </div>
                     <div className="md:col-span-5 space-y-2">
                       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Fonte do cabeçalho</div>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
