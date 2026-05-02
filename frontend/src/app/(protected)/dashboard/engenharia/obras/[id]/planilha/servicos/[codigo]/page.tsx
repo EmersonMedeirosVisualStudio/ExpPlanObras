@@ -1478,10 +1478,12 @@ async function readTextSmart(file: File) {
     if (!code) return null;
     const cached = compTotalCacheRef.current.get(code);
     if (cached != null) return cached;
+    if (!definedComposicoesCodes.has(code)) return null;
     const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}/composicao-itens`);
     const json = await res.json().catch(() => null);
     if (!res.ok || !json?.success) throw new Error(json?.message || `Erro ao carregar composição ${code}`);
     const list = Array.isArray(json.data?.itens) ? json.data.itens : [];
+    if (!list.length) return null;
     let totalBaseLocal = 0;
     let totalMaoLocal = 0;
     for (const it of list) {
@@ -1506,6 +1508,7 @@ async function readTextSmart(file: File) {
       if (!idObra) return;
       const code = String(codigo || "").trim().toUpperCase();
       if (!code) return;
+      if (!definedComposicoesCodes.has(code)) return;
       const totalComLSLocal = await calcularTotalComLSDeComposicao(code);
       if (totalComLSLocal == null) return;
       setItens((p) => {
@@ -1539,6 +1542,10 @@ async function readTextSmart(file: File) {
     const nextByCode = new Map<string, string>();
     for (const code of codes) {
       try {
+        if (!definedComposicoesCodes.has(code)) {
+          nextByCode.set(code, "");
+          continue;
+        }
         const totalComLSLocal = await calcularTotalComLSDeComposicao(code);
         if (totalComLSLocal == null) continue;
         nextByCode.set(code, totalComLSLocal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -1695,7 +1702,7 @@ async function readTextSmart(file: File) {
               const meta = tipoMeta(r.tipoItem);
               const isComposicao = meta.key === "COMPOSICAO" || meta.key === "COMPOSICAO_AUXILIAR";
               const codigoComposicao = String(r.codigoItem || "").trim().toUpperCase();
-              const isDefinida = Boolean(codigoComposicao) && (definedComposicoesCodes.has(codigoComposicao) || compTotalCacheRef.current.has(codigoComposicao));
+              const isDefinida = Boolean(codigoComposicao) && definedComposicoesCodes.has(codigoComposicao);
               const vRaw = parseNumberLoose(r.valorUnitario);
               const v = isComposicao && !isDefinida ? null : vRaw;
               const total = q != null && v != null ? q * v : null;
