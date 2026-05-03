@@ -74,6 +74,7 @@ export default function SinapiImportPage() {
   const router = useRouter();
   const sp = useSearchParams();
   const idObra = Number(params?.id);
+  const apiOriginPublic = String(process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
   const returnTo = sp.get("returnTo") || "";
   const codigoParam = String(sp.get("codigo") || "").trim().toUpperCase();
   const dataBaseParam = String(sp.get("dataBase") || "").trim();
@@ -309,7 +310,12 @@ export default function SinapiImportPage() {
       fd.append("dryRun", String(dryRun));
       fd.append("forceDataBaseMismatch", String(forceDataBaseMismatch));
 
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico`, {
+      const needsDirectUpload = Boolean(apiOriginPublic) && file.size >= 4 * 1024 * 1024;
+      const uploadUrl = needsDirectUpload
+        ? `${apiOriginPublic}/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico`
+        : `/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico`;
+
+      const res = await authFetch(uploadUrl, {
         method: "POST",
         body: fd,
       });
