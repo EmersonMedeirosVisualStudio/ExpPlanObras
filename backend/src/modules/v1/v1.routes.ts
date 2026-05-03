@@ -5807,8 +5807,14 @@ export default async function v1Routes(server: FastifyInstance) {
     const sample = toImport.slice(0, 5).map((c) => {
       const entry = comps.get(c);
       const all = entry?.itens || [];
+      const valorSemBdi = all.reduce((acc: number, it: any) => {
+        const q = it?.quantidade == null ? 0 : Number(it.quantidade);
+        const vu = it?.valorUnitario == null ? 0 : Number(it.valorUnitario);
+        if (!Number.isFinite(q) || !Number.isFinite(vu)) return acc;
+        return acc + q * vu;
+      }, 0);
       const itens = onlyCodigoServico || targetCodes.size === 1 ? all : all.slice(0, 3);
-      return { codigo: c, descricao: entry?.descricao ?? null, und: entry?.und ?? null, itens };
+      return { codigo: c, descricao: entry?.descricao ?? null, und: entry?.und ?? null, valorSemBdi: Number.isFinite(valorSemBdi) ? valorSemBdi : null, itens };
     });
 
     if (dryRun) {
@@ -6392,11 +6398,18 @@ export default async function v1Routes(server: FastifyInstance) {
       };
     });
     const totalItens = itens.length;
+    const valorSemBdi = itens.reduce((acc, it: any) => {
+      const q = it?.coeficiente == null ? 0 : Number(it.coeficiente);
+      const vu = it?.expValorUnitario == null ? (it?.insumoPu == null ? 0 : Number(it.insumoPu)) : Number(it.expValorUnitario);
+      if (!Number.isFinite(q) || !Number.isFinite(vu)) return acc;
+      return acc + q * vu;
+    }, 0);
     const sample = [
       {
         codigo: codigoServico,
         descricao: parsed.composicao?.descricao == null ? null : String(parsed.composicao.descricao || '').trim().slice(0, 255),
         und: parsed.composicao?.und == null ? null : String(parsed.composicao.und || '').trim().slice(0, 40),
+        valorSemBdi: Number.isFinite(valorSemBdi) ? valorSemBdi : null,
         itens: itens.slice(0, 3).map((x) => ({
           tipoItem: x.expTipo,
           codigoItem: x.expCodigo,

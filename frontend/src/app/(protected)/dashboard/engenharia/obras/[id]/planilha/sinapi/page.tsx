@@ -35,6 +35,7 @@ type PreviewResult = {
     codigo: string;
     descricao?: string | null;
     und?: string | null;
+    valorSemBdi?: number | null;
     itens: Array<{
       tipoItem: string;
       codigoItem: string;
@@ -176,8 +177,12 @@ export default function SinapiImportPage() {
   const [previewItensLocal, setPreviewItensLocal] = useState<
     Array<{ tipoItem: string; codigoItem: string; descricao: string | null; und: string | null; coeficiente: number; valorUnitario: number | null }>
   >([]);
-  const [previewCompLocal, setPreviewCompLocal] = useState<{ codigo: string; descricao: string | null; und: string | null } | null>(null);
+  const [previewCompLocal, setPreviewCompLocal] = useState<{ codigo: string; descricao: string | null; und: string | null; valorSemBdi: number | null } | null>(null);
   const [previewSelectedCodigo, setPreviewSelectedCodigo] = useState<string>("");
+
+  const importadosCodes = useMemo(() => {
+    return new Set(importados.map((r) => String(r.codigo || "").trim().toUpperCase()).filter(Boolean));
+  }, [importados]);
 
   const breadcrumb = useMemo(() => {
     return "Engenharia → Obras → Obra selecionada → Planilha orçamentária → Sinapi";
@@ -264,6 +269,11 @@ export default function SinapiImportPage() {
           codigo: String(c?.codigo || "").trim().toUpperCase(),
           descricao: c?.descricao ?? null,
           und: c?.und ?? null,
+          valorSemBdi: (() => {
+            if (c?.valorSemBdi == null) return null;
+            const n = Number(c.valorSemBdi);
+            return Number.isFinite(n) ? n : null;
+          })(),
         }))
       : [];
     const list = fromServer.filter((x) => x.codigo);
@@ -276,6 +286,18 @@ export default function SinapiImportPage() {
     if (!codigo) return null;
     return previewComposicoesParaLista.find((c) => String(c.codigo || "").trim().toUpperCase() === codigo) || null;
   }, [previewComposicoesParaLista, previewSelectedCodigo]);
+
+  const previewValorSemBdiSelecionado = useMemo(() => {
+    const fromList = previewSelectedComposicao?.valorSemBdi;
+    if (fromList != null && Number.isFinite(Number(fromList))) return Number(fromList);
+    const total = previewItensDoSelecionado.reduce((acc, it) => {
+      const q = Number(it.coeficiente || 0);
+      const vu = it.valorUnitario == null ? 0 : Number(it.valorUnitario);
+      if (!Number.isFinite(q) || !Number.isFinite(vu)) return acc;
+      return acc + q * vu;
+    }, 0);
+    return Number.isFinite(total) ? total : null;
+  }, [previewItensDoSelecionado, previewSelectedComposicao]);
 
   const previewItensDoSelecionado = useMemo(() => {
     const codigo = String(previewSelectedCodigo || "").trim().toUpperCase();
@@ -584,6 +606,10 @@ export default function SinapiImportPage() {
           codigo: parsedLocal.composicao?.codigo ? String(parsedLocal.composicao.codigo).trim().toUpperCase() : computedCodigoServico,
           descricao: parsedLocal.composicao?.descricao ?? null,
           und: parsedLocal.composicao?.und ?? null,
+          valorSemBdi: (() => {
+            const total = parsedLocal.itens.reduce((acc: number, it: any) => acc + Number(it.coeficiente || 0) * Number(it.expValorUnitario ?? it.insumoPu ?? 0), 0);
+            return Number.isFinite(total) ? total : null;
+          })(),
         });
         setPreviewSelectedCodigo(computedCodigoServico);
 
@@ -1072,6 +1098,9 @@ export default function SinapiImportPage() {
                 <span className="font-mono text-xs">{previewSelectedComposicao?.codigo ? previewSelectedComposicao.codigo : "—"}</span>
                 {previewSelectedComposicao?.descricao ? ` — ${previewSelectedComposicao.descricao}` : ""}
                 {previewSelectedComposicao?.und ? ` (${previewSelectedComposicao.und})` : ""}
+                {previewValorSemBdiSelecionado != null
+                  ? ` • Valor sem BDI: ${Number(previewValorSemBdiSelecionado).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`
+                  : ""}
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -1149,6 +1178,8 @@ export default function SinapiImportPage() {
                 <div className="max-h-72 overflow-auto divide-y bg-white">
                   {previewComposicoesParaLista.map((c) => {
                     const active = String(c.codigo || "").trim().toUpperCase() === String(previewSelectedCodigo || "").trim().toUpperCase();
+                    const jaImportado = importadosCodes.has(String(c.codigo || "").trim().toUpperCase());
+                    const valor = c.valorSemBdi == null || !Number.isFinite(Number(c.valorSemBdi)) ? null : Number(c.valorSemBdi);
                     return (
                       <button
                         key={c.codigo}
@@ -1158,10 +1189,20 @@ export default function SinapiImportPage() {
                         disabled={busy}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <div className="font-mono text-xs text-slate-700">{c.codigo}</div>
-                          <div className="text-xs text-slate-500">{c.und || "—"}</div>
+                          <div className="min-w-0 flex items-center gap-2">
+                            {jaImportado ? <span className="rounded-full border bg-white px-2 py-0.5 text-[11px] text-slate-700">Já importado</span> : null}
+                            <div className="min-w-0 truncate">
+                              <span className="font-mono text-xs text-slate-700">{c.codigo}</span>
+                              <span className="text-slate-800">{c.descricao ? ` — ${c.descricao}` : ""}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="text-xs text-slate-500">{c.und || "—"}</div>
+                          </div>
                         </div>
-                        <div className="text-slate-800 truncate">{c.descricao || "—"}</div>
+                        <div className="mt-0.5 text-xs text-slate-600">
+                          Valor sem BDI: {valor == null ? "—" : Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </div>
                       </button>
                     );
                   })}
@@ -1173,27 +1214,43 @@ export default function SinapiImportPage() {
               <div className="rounded-lg border overflow-hidden">
                 <div className="bg-slate-50 px-3 py-2 text-sm font-semibold">Itens da prévia (confira antes de importar)</div>
                 <div className="max-h-72 overflow-auto">
-                  <div className="grid grid-cols-[86px_110px_1fr_60px_110px_120px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
-                    <div>Tipo</div>
-                    <div>Código</div>
-                    <div>Descrição</div>
-                    <div>Un</div>
-                    <div className="text-right">Coeficiente</div>
-                    <div className="text-right">V. unit</div>
-                  </div>
-                  <div className="divide-y bg-white">
-                    {previewItensDoSelecionado.map((it, idx) => (
-                      <div key={`${idx}:${it.codigoItem}`} className="grid grid-cols-[86px_110px_1fr_60px_110px_120px] gap-x-2 px-3 py-2 text-sm">
-                        <div className="text-xs text-slate-700">{it.tipoItem || "—"}</div>
-                        <div className="font-mono text-xs text-slate-700">{it.codigoItem}</div>
-                        <div className="text-slate-800">{it.descricao || "—"}</div>
-                        <div className="text-slate-700">{it.und || "—"}</div>
-                        <div className="text-right tabular-nums text-slate-800">{Number(it.coeficiente || 0).toLocaleString("pt-BR")}</div>
-                        <div className="text-right tabular-nums text-slate-800">
-                          {it.valorUnitario == null ? "—" : Number(it.valorUnitario).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                        </div>
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[920px]">
+                      <div className="grid grid-cols-[86px_110px_1fr_60px_110px_120px_120px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
+                        <div>Tipo</div>
+                        <div>Código</div>
+                        <div>Descrição</div>
+                        <div>Un</div>
+                        <div className="text-right">Coeficiente</div>
+                        <div className="text-right">V. unit</div>
+                        <div className="text-right">Valor</div>
                       </div>
-                    ))}
+                      <div className="divide-y bg-white">
+                        {previewItensDoSelecionado.map((it, idx) => {
+                          const q = Number(it.coeficiente || 0);
+                          const vu = it.valorUnitario == null ? null : Number(it.valorUnitario);
+                          const valor = vu == null || !Number.isFinite(vu) || !Number.isFinite(q) ? null : vu * q;
+                          return (
+                            <div
+                              key={`${idx}:${it.codigoItem}`}
+                              className="grid grid-cols-[86px_110px_1fr_60px_110px_120px_120px] gap-x-2 px-3 py-2 text-sm"
+                            >
+                              <div className="text-xs text-slate-700">{it.tipoItem || "—"}</div>
+                              <div className="font-mono text-xs text-slate-700">{it.codigoItem}</div>
+                              <div className="text-slate-800">{it.descricao || "—"}</div>
+                              <div className="text-slate-700">{it.und || "—"}</div>
+                              <div className="text-right tabular-nums text-slate-800">{Number(it.coeficiente || 0).toLocaleString("pt-BR")}</div>
+                              <div className="text-right tabular-nums text-slate-800">
+                                {it.valorUnitario == null ? "—" : Number(it.valorUnitario).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                              </div>
+                              <div className="text-right tabular-nums text-slate-800">
+                                {valor == null ? "—" : Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
