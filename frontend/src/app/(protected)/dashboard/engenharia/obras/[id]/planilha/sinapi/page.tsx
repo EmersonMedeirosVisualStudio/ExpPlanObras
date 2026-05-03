@@ -719,57 +719,46 @@ export default function SinapiImportPage() {
           <div className="w-full max-w-5xl rounded-xl border bg-white shadow-sm">
             <div className="flex items-center justify-between gap-3 border-b p-4">
               <div className="text-lg font-semibold">Opções de importação</div>
-              <button
-                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-                type="button"
-                onClick={() => {
-                  setImportOpen(false);
-                  setOkMsg("");
-                  setErr("");
-                }}
-                disabled={busy}
-              >
-                Fechar
-              </button>
             </div>
 
             <div className="p-4 space-y-4">
               {okMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{okMsg}</div> : null}
               {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
-              <div className="rounded-xl border bg-white p-4 shadow-sm space-y-4">
-                <div className="space-y-1">
-                  <div className="text-sm text-slate-600">Data-base (SINAPI)</div>
-                  <input
-                    className="input bg-white"
-                    value={dataBaseImport}
-                    onChange={(e) => setDataBaseImport(e.target.value)}
-                    disabled={busy}
-                    placeholder={planilhaDataBaseSinapi || "Ex: 04/2025"}
-                  />
-                  <div className="text-xs text-slate-500">
-                    Padrão da obra: {planilhaDataBaseSinapi || "—"} (pode ser alterado manualmente)
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-                  <div className="md:col-span-6 space-y-1">
-                    <div className="text-sm text-slate-600">Aba (Relatório Analítico de Composições)</div>
-                    <input className="input bg-white" value={sheetName} onChange={(e) => setSheetName(e.target.value)} disabled={busy} placeholder="Analítico" />
-                  </div>
-                  <div className="md:col-span-3 space-y-1">
-                    <div className="text-sm text-slate-600">UF</div>
-                    <select className="input bg-white w-[92px]" value={uf} onChange={(e) => setUf(e.target.value)} disabled={busy}>
-                      {ufs.map((x) => (
-                        <option key={x} value={x}>
-                          {x}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+              <div className="rounded-xl border bg-white p-4 shadow-sm">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+                  <div className="md:col-span-7 space-y-4">
+                    <div className="space-y-1">
+                      <div className="text-sm text-slate-600">Data-base (SINAPI)</div>
+                      <input
+                        className="input bg-white"
+                        value={dataBaseImport}
+                        onChange={(e) => setDataBaseImport(e.target.value)}
+                        disabled={busy}
+                        placeholder={planilhaDataBaseSinapi || "Ex: 04/2025"}
+                      />
+                      <div className="text-xs text-slate-500">
+                        Padrão da obra: {planilhaDataBaseSinapi || "—"} (pode ser alterado manualmente)
+                      </div>
+                    </div>
 
-                <div className="space-y-2">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-                    <div className="md:col-span-7 space-y-2">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+                      <div className="md:col-span-7 space-y-1">
+                        <div className="text-sm text-slate-600">Aba (Relatório Analítico de Composições)</div>
+                        <input className="input bg-white" value={sheetName} onChange={(e) => setSheetName(e.target.value)} disabled={busy} placeholder="Analítico" />
+                      </div>
+                      <div className="md:col-span-5 space-y-1">
+                        <div className="text-sm text-slate-600">UF</div>
+                        <select className="input bg-white w-[92px]" value={uf} onChange={(e) => setUf(e.target.value)} disabled={busy}>
+                          {ufs.map((x) => (
+                            <option key={x} value={x}>
+                              {x}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
                       <div className="text-sm text-slate-600">Preços de insumos</div>
                       <select className="input bg-white" value={insumosModo} onChange={(e) => setInsumosModo(e.target.value as any)} disabled={busy}>
                         <option value="ISD">ISD — Encargos sociais SEM desoneração</option>
@@ -787,140 +776,149 @@ export default function SinapiImportPage() {
                         />
                       </div>
                     </div>
-                    <div className="md:col-span-5">
-                      <div className="rounded-xl border bg-slate-50 p-3">
-                        <div className="text-sm font-semibold text-slate-800">Checklist interno da importação</div>
-                        <div className="mt-1 text-xs text-slate-600">
-                          Mostra o que o sistema valida e executa internamente (principalmente ao gerar a Prévia).
+
+                    <div className="space-y-2">
+                      <div className="text-sm text-slate-600">Arquivo XLSX</div>
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-2 min-w-[240px]">
+                          {file ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
+                          <div className="text-sm text-slate-700 truncate max-w-[320px]">{file ? String(file.name || "") : "Nenhum arquivo selecionado"}</div>
                         </div>
-                        <div className="mt-3 space-y-2">
-                          {checklistInterno.map((it, idx) => (
-                            <div key={`${idx}:${it.titulo}`} className="flex items-start gap-2 text-sm">
-                              {it.status === "OK" ? (
-                                <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5" />
-                              ) : it.status === "PENDENTE" ? (
-                                <XCircle className="h-4 w-4 text-red-600 mt-0.5" />
-                              ) : (
-                                <div className="h-4 w-4 mt-0.5 rounded-full border border-slate-300 bg-white" />
-                              )}
-                              <div className="min-w-0">
-                                <div className="text-slate-800">{it.titulo}</div>
-                                {it.status === "NA_PREVIA" ? <div className="text-xs text-slate-500">Executa ao clicar em “Prévia”.</div> : null}
-                              </div>
+                        <button
+                          className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={busy}
+                        >
+                          Selecionar arquivo XLSX
+                        </button>
+                        <input
+                          ref={fileInputRef}
+                          className="hidden"
+                          type="file"
+                          accept=".xlsx"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0] || null;
+                            setFile(f);
+                            setPreview(null);
+                            setImported(null);
+                            setOkMsg("");
+                            setErr("");
+                          }}
+                          disabled={busy}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-sm text-slate-600">Opções</div>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="radio" name="opcao" checked={opcao === "FALTAM"} onChange={() => setOpcao("FALTAM")} disabled={busy} />
+                        <span>Importar somente as composições que faltam na obra</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="radio" name="opcao" checked={opcao === "SUBSTITUIR"} onChange={() => setOpcao("SUBSTITUIR")} disabled={busy} />
+                        <span>Atualizar/substituir composições existentes na obra</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="radio" name="opcao" checked={opcao === "SERVICO"} onChange={() => setOpcao("SERVICO")} disabled={busy} />
+                        <span>Selecionar um serviço</span>
+                      </label>
+                      {opcao === "SERVICO" ? (
+                        <div className="mt-1">
+                          <div className="text-xs text-slate-500">Código do serviço</div>
+                          <input
+                            className="input bg-white mt-1"
+                            value={codigoServico}
+                            onChange={(e) => setCodigoServico(e.target.value)}
+                            disabled={busy}
+                            placeholder="Ex: 100309"
+                          />
+                        </div>
+                      ) : null}
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="radio" name="opcao" checked={opcao === "ARQUIVO"} onChange={() => setOpcao("ARQUIVO")} disabled={busy} />
+                        <span>Importar TODAS as composições encontradas no arquivo</span>
+                      </label>
+
+                      {opcao === "FALTAM" || opcao === "SUBSTITUIR" ? (
+                        <div className="mt-2">
+                          <div className="text-xs text-slate-500">Obra/Licitação/Orçamento</div>
+                          <select
+                            className="input bg-white mt-1"
+                            value={String(targetObraId || idObra)}
+                            onChange={(e) => setTargetObraId(Number(e.target.value || 0))}
+                            disabled={busy}
+                          >
+                            {obrasLista.length ? (
+                              obrasLista.map((o) => (
+                                <option key={o.idObra} value={o.idObra}>
+                                  #{o.idObra} - {o.nomeObra} - {o.numeroContrato || "—"}
+                                </option>
+                              ))
+                            ) : (
+                              <option value={idObra}>#{idObra} - Obra #{idObra} - —</option>
+                            )}
+                          </select>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <label className="flex items-center gap-2 text-sm rounded border bg-white px-3 py-2">
+                      <input type="checkbox" checked={forceDataBaseMismatch} onChange={(e) => setForceDataBaseMismatch(Boolean(e.target.checked))} disabled={busy} />
+                      <span className="text-slate-700">Forçar importação (mês-base diferente)</span>
+                    </label>
+                  </div>
+
+                  <div className="md:col-span-5">
+                    <div className="rounded-xl border bg-slate-50 p-3">
+                      <div className="text-sm font-semibold text-slate-800">Checklist interno da importação</div>
+                      <div className="mt-1 text-xs text-slate-600">Mostra o que o sistema valida e executa internamente (principalmente ao gerar a Prévia).</div>
+                      <div className="mt-3 space-y-2">
+                        {checklistInterno.map((it, idx) => (
+                          <div key={`${idx}:${it.titulo}`} className="flex items-start gap-2 text-sm">
+                            {it.status === "OK" ? (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5" />
+                            ) : it.status === "PENDENTE" ? (
+                              <XCircle className="h-4 w-4 text-red-600 mt-0.5" />
+                            ) : (
+                              <div className="h-4 w-4 mt-0.5 rounded-full border border-slate-300 bg-white" />
+                            )}
+                            <div className="min-w-0">
+                              <div className="text-slate-800">{it.titulo}</div>
+                              {it.status === "NA_PREVIA" ? <div className="text-xs text-slate-500">Executa ao clicar em “Prévia”.</div> : null}
                             </div>
-                          ))}
-                        </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <div className="text-sm text-slate-600">Arquivo XLSX</div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {file ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
-                    <div className="text-sm text-slate-700">{file ? String(file.name || "") : "Nenhum arquivo selecionado"}</div>
+                  <div className="md:col-span-12 flex items-center justify-end gap-2 flex-wrap border-t pt-3">
                     <button
-                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                      className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
                       type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={busy}
-                    >
-                      Selecionar arquivo XLSX
-                    </button>
-                    <input
-                      ref={fileInputRef}
-                      className="hidden"
-                      type="file"
-                      accept=".xlsx"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0] || null;
-                        setFile(f);
-                        setPreview(null);
-                        setImported(null);
+                      onClick={() => {
+                        setImportOpen(false);
                         setOkMsg("");
                         setErr("");
                       }}
                       disabled={busy}
-                    />
+                    >
+                      Fechar
+                    </button>
+                    <button
+                      className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                      type="button"
+                      onClick={() => doRequest(true)}
+                      disabled={busy || !previewRequirements.ok}
+                      title={
+                        busy ? "Processando..." : previewRequirements.ok ? "Gerar prévia" : `Preencha: ${previewRequirements.missing.join(", ")}`
+                      }
+                    >
+                      Prévia
+                    </button>
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-sm text-slate-600">Opções</div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="radio" name="opcao" checked={opcao === "FALTAM"} onChange={() => setOpcao("FALTAM")} disabled={busy} />
-                    <span>Importar somente as composições que faltam na obra</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="radio" name="opcao" checked={opcao === "SUBSTITUIR"} onChange={() => setOpcao("SUBSTITUIR")} disabled={busy} />
-                    <span>Atualizar/substituir composições existentes na obra</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="radio" name="opcao" checked={opcao === "SERVICO"} onChange={() => setOpcao("SERVICO")} disabled={busy} />
-                    <span>Selecionar um serviço</span>
-                  </label>
-                  {opcao === "SERVICO" ? (
-                    <div className="mt-1">
-                      <div className="text-xs text-slate-500">Código do serviço</div>
-                      <input
-                        className="input bg-white mt-1"
-                        value={codigoServico}
-                        onChange={(e) => setCodigoServico(e.target.value)}
-                        disabled={busy}
-                        placeholder="Ex: 100309"
-                      />
-                    </div>
-                  ) : null}
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="radio" name="opcao" checked={opcao === "ARQUIVO"} onChange={() => setOpcao("ARQUIVO")} disabled={busy} />
-                    <span>Importar TODAS as composições encontradas no arquivo</span>
-                  </label>
-
-                  {opcao === "FALTAM" || opcao === "SUBSTITUIR" ? (
-                    <div className="mt-2">
-                      <div className="text-xs text-slate-500">Obra/Licitação/Orçamento</div>
-                      <select
-                        className="input bg-white mt-1"
-                        value={String(targetObraId || idObra)}
-                        onChange={(e) => setTargetObraId(Number(e.target.value || 0))}
-                        disabled={busy}
-                      >
-                        {obrasLista.length ? (
-                          obrasLista.map((o) => (
-                            <option key={o.idObra} value={o.idObra}>
-                              #{o.idObra} - {o.nomeObra} - {o.numeroContrato || "—"}
-                            </option>
-                          ))
-                        ) : (
-                          <option value={idObra}>#{idObra} - Obra #{idObra} - —</option>
-                        )}
-                      </select>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="flex items-center justify-between gap-3 flex-wrap border-t pt-3">
-                  <label className="flex items-center gap-2 text-sm rounded border bg-white px-3 py-2">
-                    <input type="checkbox" checked={forceDataBaseMismatch} onChange={(e) => setForceDataBaseMismatch(Boolean(e.target.checked))} disabled={busy} />
-                    <span className="text-slate-700">Forçar importação (mês-base diferente)</span>
-                  </label>
-
-                  <button
-                    className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-                    type="button"
-                    onClick={() => doRequest(true)}
-                    disabled={busy || !previewRequirements.ok}
-                    title={
-                      busy
-                        ? "Processando..."
-                        : previewRequirements.ok
-                          ? "Gerar prévia"
-                          : `Preencha: ${previewRequirements.missing.join(", ")}`
-                    }
-                  >
-                    Prévia
-                  </button>
                 </div>
               </div>
 
