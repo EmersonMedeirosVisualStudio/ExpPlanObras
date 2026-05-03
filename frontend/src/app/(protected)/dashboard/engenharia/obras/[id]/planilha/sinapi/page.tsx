@@ -33,6 +33,8 @@ type PreviewResult = {
   skippedNotInPlanilha: number;
   sample: Array<{
     codigo: string;
+    descricao?: string | null;
+    und?: string | null;
     itens: Array<{
       tipoItem: string;
       codigoItem: string;
@@ -174,6 +176,8 @@ export default function SinapiImportPage() {
   const [previewItensLocal, setPreviewItensLocal] = useState<
     Array<{ tipoItem: string; codigoItem: string; descricao: string | null; und: string | null; coeficiente: number; valorUnitario: number | null }>
   >([]);
+  const [previewCompLocal, setPreviewCompLocal] = useState<{ codigo: string; descricao: string | null; und: string | null } | null>(null);
+  const [previewSelectedCodigo, setPreviewSelectedCodigo] = useState<string>("");
 
   const breadcrumb = useMemo(() => {
     return "Engenharia → Obras → Obra selecionada → Planilha orçamentária → Sinapi";
@@ -254,23 +258,57 @@ export default function SinapiImportPage() {
     return items;
   }, [dataBaseImport, uf, sheetName, insumosModo, insumosSheetName, file, opcao, codigoServico, targetObraId, preview]);
 
-  const previewItensParaConferencia = useMemo(() => {
-    if (previewItensLocal.length) return previewItensLocal;
-    const samples = Array.isArray(preview?.sample) ? preview!.sample : [];
-    const itens = samples.flatMap((c) =>
-      Array.isArray(c?.itens)
-        ? c.itens.map((it: any) => ({
-            tipoItem: String(it?.tipoItem || "").trim() || "—",
-            codigoItem: String(it?.codigoItem || "").trim(),
-            descricao: it?.descricao ?? null,
-            und: it?.und ?? null,
-            coeficiente: Number(it?.quantidade ?? 0),
-            valorUnitario: it?.valorUnitario ?? null,
-          }))
-        : []
-    );
-    return itens;
-  }, [preview, previewItensLocal]);
+  const previewComposicoesParaLista = useMemo(() => {
+    const fromServer = Array.isArray(preview?.sample)
+      ? preview!.sample.map((c) => ({
+          codigo: String(c?.codigo || "").trim().toUpperCase(),
+          descricao: c?.descricao ?? null,
+          und: c?.und ?? null,
+        }))
+      : [];
+    const list = fromServer.filter((x) => x.codigo);
+    if (!list.length && previewCompLocal?.codigo) return [previewCompLocal];
+    return list;
+  }, [preview, previewCompLocal]);
+
+  const previewSelectedComposicao = useMemo(() => {
+    const codigo = String(previewSelectedCodigo || "").trim().toUpperCase();
+    if (!codigo) return null;
+    return previewComposicoesParaLista.find((c) => String(c.codigo || "").trim().toUpperCase() === codigo) || null;
+  }, [previewComposicoesParaLista, previewSelectedCodigo]);
+
+  const previewItensDoSelecionado = useMemo(() => {
+    const codigo = String(previewSelectedCodigo || "").trim().toUpperCase();
+    if (!codigo) return [];
+    if (previewCompLocal?.codigo && previewCompLocal.codigo === codigo && previewItensLocal.length) return previewItensLocal;
+    const entry = Array.isArray(preview?.sample)
+      ? preview!.sample.find((c) => String(c?.codigo || "").trim().toUpperCase() === codigo)
+      : null;
+    const itens = Array.isArray(entry?.itens) ? entry!.itens : [];
+    return itens.map((it: any) => ({
+      tipoItem: String(it?.tipoItem || "").trim() || "—",
+      codigoItem: String(it?.codigoItem || "").trim(),
+      descricao: it?.descricao ?? null,
+      und: it?.und ?? null,
+      coeficiente: Number(it?.quantidade ?? 0),
+      valorUnitario: it?.valorUnitario ?? null,
+    }));
+  }, [preview, previewCompLocal, previewItensLocal, previewSelectedCodigo]);
+
+  useEffect(() => {
+    const list = previewComposicoesParaLista;
+    if (!list.length) {
+      setPreviewSelectedCodigo("");
+      return;
+    }
+    const cur = String(previewSelectedCodigo || "").trim().toUpperCase();
+    if (!cur) {
+      setPreviewSelectedCodigo(list[0].codigo);
+      return;
+    }
+    const exists = list.some((c) => String(c.codigo || "").trim().toUpperCase() === cur);
+    if (!exists) setPreviewSelectedCodigo(list[0].codigo);
+  }, [previewComposicoesParaLista, previewSelectedCodigo]);
 
   useEffect(() => {
     if (apiOrigin) return;
@@ -485,13 +523,19 @@ export default function SinapiImportPage() {
           const iDescItem = findCol(["descricao_item", "descricao_do_item", "descricao"]);
           const iUndItem = findCol(["unidade", "und", "unid"]);
           const iCoef = findCol(["coeficiente", "coef"]);
+          const iDescComp = headersNorm.findIndex((h) => h.includes("descricao") && h.includes("compos"));
+          const iUndComp = headersNorm.findIndex((h) => (h.includes("unidade") || h === "und" || h.includes("und_")) && h.includes("compos"));
 
+          let compDescricao = "";
+          let compUnd = "";
           const out: any[] = [];
           for (let i = headerIdx + 1; i < m.length; i++) {
             const r = Array.isArray(m[i]) ? m[i] : [];
             const comp = iCodigoComp >= 0 ? String(r[iCodigoComp] || "").trim().toUpperCase() : "";
             if (!comp) continue;
             if (comp !== computedCodigoServico) continue;
+            if (!compDescricao && iDescComp >= 0) compDescricao = String(r[iDescComp] || "").trim();
+            if (!compUnd && iUndComp >= 0) compUnd = String(r[iUndComp] || "").trim();
             const codigoItem = iCodigoItem >= 0 ? String(r[iCodigoItem] || "").trim().toUpperCase() : "";
             if (!codigoItem) continue;
             const coef = iCoef >= 0 ? parseNumberLoose(r[iCoef]) : null;
@@ -520,7 +564,7 @@ export default function SinapiImportPage() {
               expValorUnitario: tipoItem === "INSUMO" ? insumoPu : null,
             });
           }
-          return { composicao: { codigo: computedCodigoServico }, itens: out };
+          return { composicao: { codigo: computedCodigoServico, descricao: compDescricao || null, und: compUnd || null }, itens: out };
         };
 
         const parsedLocal = parseAnaliticoServico();
@@ -536,6 +580,12 @@ export default function SinapiImportPage() {
             valorUnitario: it.expValorUnitario ?? it.insumoPu ?? null,
           }))
         );
+        setPreviewCompLocal({
+          codigo: parsedLocal.composicao?.codigo ? String(parsedLocal.composicao.codigo).trim().toUpperCase() : computedCodigoServico,
+          descricao: parsedLocal.composicao?.descricao ?? null,
+          und: parsedLocal.composicao?.und ?? null,
+        });
+        setPreviewSelectedCodigo(computedCodigoServico);
 
         const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico-parsed`, {
           method: "POST",
@@ -559,7 +609,10 @@ export default function SinapiImportPage() {
 
         if (dryRun) {
           setPreview(json.data as PreviewResult);
-          setOkMsg("Prévia gerada.");
+          setOkMsg("");
+          setErr("");
+          setPageOkMsg("Prévia gerada.");
+          setImportOpen(false);
         } else {
           setImported(json.data as ImportResult);
           setOkMsg("Importação concluída.");
@@ -568,6 +621,8 @@ export default function SinapiImportPage() {
           setImportOpen(false);
           setPreview(null);
           setPreviewItensLocal([]);
+          setPreviewCompLocal(null);
+          setPreviewSelectedCodigo("");
         }
         return;
       }
@@ -609,7 +664,18 @@ export default function SinapiImportPage() {
 
       if (dryRun) {
         setPreview(json.data as PreviewResult);
-        setOkMsg("Prévia gerada.");
+        setPreviewItensLocal([]);
+        setPreviewCompLocal(null);
+        const data = json.data as PreviewResult;
+        const sampleCodes = Array.isArray(data?.sample)
+          ? data.sample.map((x: any) => String(x?.codigo || "").trim().toUpperCase()).filter(Boolean)
+          : [];
+        if (computedCodigoServico) setPreviewSelectedCodigo(computedCodigoServico);
+        else if (sampleCodes.length) setPreviewSelectedCodigo(sampleCodes[0]);
+        setOkMsg("");
+        setErr("");
+        setPageOkMsg("Prévia gerada.");
+        setImportOpen(false);
       } else {
         setImported(json.data as ImportResult);
         setOkMsg("Importação concluída.");
@@ -618,6 +684,8 @@ export default function SinapiImportPage() {
         setImportOpen(false);
         setPreview(null);
         setPreviewItensLocal([]);
+        setPreviewCompLocal(null);
+        setPreviewSelectedCodigo("");
       }
     } catch (e: any) {
       const msg = String(e?.message || "");
@@ -994,6 +1062,148 @@ export default function SinapiImportPage() {
         </section>
       ) : null}
 
+      {preview ? (
+        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-[240px]">
+              <div className="text-lg font-semibold">Prévia</div>
+              <div className="text-sm text-slate-700">
+                Serviço:{" "}
+                <span className="font-mono text-xs">{previewSelectedComposicao?.codigo ? previewSelectedComposicao.codigo : "—"}</span>
+                {previewSelectedComposicao?.descricao ? ` — ${previewSelectedComposicao.descricao}` : ""}
+                {previewSelectedComposicao?.und ? ` (${previewSelectedComposicao.und})` : ""}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                type="button"
+                onClick={() => {
+                  setPreview(null);
+                  setPreviewItensLocal([]);
+                  setPreviewCompLocal(null);
+                  setPreviewSelectedCodigo("");
+                  setImported(null);
+                  setOkMsg("");
+                  setErr("");
+                }}
+                disabled={busy}
+              >
+                Cancelar
+              </button>
+              <button
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                type="button"
+                onClick={importar}
+                disabled={busy}
+              >
+                Importar
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+            <div className="font-semibold text-slate-700">Parâmetros</div>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="rounded border bg-white px-3 py-2">
+                <div className="text-[11px] text-slate-500">Data-base (Planilha/SINAPI)</div>
+                <div className="text-sm font-semibold">
+                  {preview.planilhaParams?.dataBaseSinapi ? preview.planilhaParams.dataBaseSinapi : "—"} {" / "}
+                  {preview.sinapiDetected?.dataBase ? preview.sinapiDetected.dataBase : "—"}
+                </div>
+              </div>
+              <div className="rounded border bg-white px-3 py-2">
+                <div className="text-[11px] text-slate-500">Parâmetros compatíveis</div>
+                <div className="text-sm font-semibold">{preview.paramsMatch == null ? "—" : preview.paramsMatch ? "Sim" : "Não"}</div>
+              </div>
+              <div className="rounded border bg-white px-3 py-2">
+                <div className="text-[11px] text-slate-500">Preços de insumos</div>
+                <div className="text-sm font-semibold">{preview.insumosModo ? String(preview.insumosModo) : insumosModo}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+            <div className="rounded border bg-slate-50 p-3">
+              <div className="text-[11px] text-slate-500">Composições no arquivo</div>
+              <div className="mt-1 font-semibold">{Number(preview.parsedComposicoes || 0).toLocaleString("pt-BR")}</div>
+            </div>
+            <div className="rounded border bg-slate-50 p-3">
+              <div className="text-[11px] text-slate-500">Alvo (planilha atual)</div>
+              <div className="mt-1 font-semibold">{Number(preview.targetComposicoes || 0).toLocaleString("pt-BR")}</div>
+            </div>
+            <div className="rounded border bg-slate-50 p-3">
+              <div className="text-[11px] text-slate-500">A importar</div>
+              <div className="mt-1 font-semibold">{Number(preview.toImportComposicoes || 0).toLocaleString("pt-BR")}</div>
+            </div>
+            <div className="rounded border bg-slate-50 p-3">
+              <div className="text-[11px] text-slate-500">Itens a importar</div>
+              <div className="mt-1 font-semibold">{Number(preview.toImportItens || 0).toLocaleString("pt-BR")}</div>
+            </div>
+          </div>
+
+          <div className={previewComposicoesParaLista.length > 1 ? "grid grid-cols-1 gap-3 md:grid-cols-[320px_1fr]" : ""}>
+            {previewComposicoesParaLista.length > 1 ? (
+              <div className="rounded-lg border overflow-hidden">
+                <div className="bg-slate-50 px-3 py-2 text-sm font-semibold">Serviços na prévia</div>
+                <div className="max-h-72 overflow-auto divide-y bg-white">
+                  {previewComposicoesParaLista.map((c) => {
+                    const active = String(c.codigo || "").trim().toUpperCase() === String(previewSelectedCodigo || "").trim().toUpperCase();
+                    return (
+                      <button
+                        key={c.codigo}
+                        type="button"
+                        className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-50 ${active ? "bg-blue-50" : ""}`}
+                        onClick={() => setPreviewSelectedCodigo(c.codigo)}
+                        disabled={busy}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-mono text-xs text-slate-700">{c.codigo}</div>
+                          <div className="text-xs text-slate-500">{c.und || "—"}</div>
+                        </div>
+                        <div className="text-slate-800 truncate">{c.descricao || "—"}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {previewItensDoSelecionado.length ? (
+              <div className="rounded-lg border overflow-hidden">
+                <div className="bg-slate-50 px-3 py-2 text-sm font-semibold">Itens da prévia (confira antes de importar)</div>
+                <div className="max-h-72 overflow-auto">
+                  <div className="grid grid-cols-[86px_110px_1fr_60px_110px_120px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
+                    <div>Tipo</div>
+                    <div>Código</div>
+                    <div>Descrição</div>
+                    <div>Un</div>
+                    <div className="text-right">Coeficiente</div>
+                    <div className="text-right">V. unit</div>
+                  </div>
+                  <div className="divide-y bg-white">
+                    {previewItensDoSelecionado.map((it, idx) => (
+                      <div key={`${idx}:${it.codigoItem}`} className="grid grid-cols-[86px_110px_1fr_60px_110px_120px] gap-x-2 px-3 py-2 text-sm">
+                        <div className="text-xs text-slate-700">{it.tipoItem || "—"}</div>
+                        <div className="font-mono text-xs text-slate-700">{it.codigoItem}</div>
+                        <div className="text-slate-800">{it.descricao || "—"}</div>
+                        <div className="text-slate-700">{it.und || "—"}</div>
+                        <div className="text-right tabular-nums text-slate-800">{Number(it.coeficiente || 0).toLocaleString("pt-BR")}</div>
+                        <div className="text-right tabular-nums text-slate-800">
+                          {it.valorUnitario == null ? "—" : Number(it.valorUnitario).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border bg-slate-50 px-3 py-3 text-sm text-slate-700">Nenhum item na prévia para o serviço selecionado.</div>
+            )}
+          </div>
+        </section>
+      ) : null}
+
       {importOpen ? (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-auto">
           <div className="w-full max-w-5xl rounded-xl border bg-white shadow-sm">
@@ -1083,6 +1293,8 @@ export default function SinapiImportPage() {
                             setFile(f);
                             setPreview(null);
                             setPreviewItensLocal([]);
+                            setPreviewCompLocal(null);
+                            setPreviewSelectedCodigo("");
                             setImported(null);
                             setOkMsg("");
                             setErr("");
@@ -1203,97 +1415,6 @@ export default function SinapiImportPage() {
                   </div>
                 </div>
               </div>
-
-              {preview ? (
-                <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-                  <div className="text-lg font-semibold">Prévia</div>
-                  <div className="rounded-lg border bg-slate-50 p-3 text-sm">
-                    <div className="font-semibold text-slate-700">Parâmetros</div>
-                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      <div className="rounded border bg-white px-3 py-2">
-                        <div className="text-[11px] text-slate-500">Data-base (Planilha/SINAPI)</div>
-                        <div className="text-sm font-semibold">
-                          {preview.planilhaParams?.dataBaseSinapi ? preview.planilhaParams.dataBaseSinapi : "—"} {" / "}
-                          {preview.sinapiDetected?.dataBase ? preview.sinapiDetected.dataBase : "—"}
-                        </div>
-                      </div>
-                      <div className="rounded border bg-white px-3 py-2">
-                        <div className="text-[11px] text-slate-500">Parâmetros compatíveis</div>
-                        <div className="text-sm font-semibold">{preview.paramsMatch == null ? "—" : preview.paramsMatch ? "Sim" : "Não"}</div>
-                      </div>
-                      <div className="rounded border bg-white px-3 py-2">
-                        <div className="text-[11px] text-slate-500">Preços de insumos</div>
-                        <div className="text-sm font-semibold">{preview.insumosModo ? String(preview.insumosModo) : insumosModo}</div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
-                    <div className="rounded border bg-slate-50 p-3">
-                      <div className="text-[11px] text-slate-500">Composições no arquivo</div>
-                      <div className="mt-1 font-semibold">{Number(preview.parsedComposicoes || 0).toLocaleString("pt-BR")}</div>
-                    </div>
-                    <div className="rounded border bg-slate-50 p-3">
-                      <div className="text-[11px] text-slate-500">Alvo (planilha atual)</div>
-                      <div className="mt-1 font-semibold">{Number(preview.targetComposicoes || 0).toLocaleString("pt-BR")}</div>
-                    </div>
-                    <div className="rounded border bg-slate-50 p-3">
-                      <div className="text-[11px] text-slate-500">A importar</div>
-                      <div className="mt-1 font-semibold">{Number(preview.toImportComposicoes || 0).toLocaleString("pt-BR")}</div>
-                    </div>
-                    <div className="rounded border bg-slate-50 p-3">
-                      <div className="text-[11px] text-slate-500">Itens a importar</div>
-                      <div className="mt-1 font-semibold">{Number(preview.toImportItens || 0).toLocaleString("pt-BR")}</div>
-                    </div>
-                  </div>
-                  {previewItensParaConferencia.length ? (
-                    <div className="rounded-lg border overflow-hidden">
-                      <div className="bg-slate-50 px-3 py-2 text-sm font-semibold">Itens da prévia (confira antes de importar)</div>
-                      <div className="max-h-72 overflow-auto">
-                        <div className="grid grid-cols-[110px_1fr_60px_110px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
-                          <div>Código</div>
-                          <div>Descrição</div>
-                          <div>Un</div>
-                          <div className="text-right">Coeficiente</div>
-                        </div>
-                        <div className="divide-y bg-white">
-                          {previewItensParaConferencia.map((it, idx) => (
-                            <div key={`${idx}:${it.codigoItem}`} className="grid grid-cols-[110px_1fr_60px_110px] gap-x-2 px-3 py-2 text-sm">
-                              <div className="font-mono text-xs text-slate-700">{it.codigoItem}</div>
-                              <div className="text-slate-800">{it.descricao || "—"}</div>
-                              <div className="text-slate-700">{it.und || "—"}</div>
-                              <div className="text-right tabular-nums text-slate-800">{Number(it.coeficiente || 0).toLocaleString("pt-BR")}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                  <div className="flex items-center justify-end gap-2 flex-wrap">
-                    <button
-                      className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-                      type="button"
-                      onClick={() => {
-                        setPreview(null);
-                        setPreviewItensLocal([]);
-                        setImported(null);
-                        setOkMsg("");
-                        setErr("");
-                      }}
-                      disabled={busy}
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
-                      type="button"
-                      onClick={importar}
-                      disabled={busy}
-                    >
-                      Importar
-                    </button>
-                  </div>
-                </section>
-              ) : null}
 
               {imported ? (
                 <section className="rounded-xl border bg-white p-4 shadow-sm space-y-2">

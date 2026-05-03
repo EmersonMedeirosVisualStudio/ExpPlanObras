@@ -5805,9 +5805,10 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const totalItens = toImport.reduce((acc, code) => acc + (comps.get(code)?.itens.length || 0), 0);
     const sample = toImport.slice(0, 5).map((c) => {
-      const all = comps.get(c)?.itens || [];
+      const entry = comps.get(c);
+      const all = entry?.itens || [];
       const itens = onlyCodigoServico || targetCodes.size === 1 ? all : all.slice(0, 3);
-      return { codigo: c, itens };
+      return { codigo: c, descricao: entry?.descricao ?? null, und: entry?.und ?? null, itens };
     });
 
     if (dryRun) {
@@ -6394,6 +6395,8 @@ export default async function v1Routes(server: FastifyInstance) {
     const sample = [
       {
         codigo: codigoServico,
+        descricao: parsed.composicao?.descricao == null ? null : String(parsed.composicao.descricao || '').trim().slice(0, 255),
+        und: parsed.composicao?.und == null ? null : String(parsed.composicao.und || '').trim().slice(0, 40),
         itens: itens.slice(0, 3).map((x) => ({
           tipoItem: x.expTipo,
           codigoItem: x.expCodigo,
