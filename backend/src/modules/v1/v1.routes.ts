@@ -5679,7 +5679,8 @@ export default async function v1Routes(server: FastifyInstance) {
 
       const isHeader =
         (nivel != null && Number.isFinite(nivel) && Math.round(nivel) === 0 && codigo) ||
-        (tipoMapped === 'COMPOSICAO' && codigo && (coef == null || coef === 1));
+        (tipoMapped === 'COMPOSICAO' && codigo && (coef == null || coef === 1)) ||
+        (codigo && descricao && !tipoRaw && (coef == null || !Number.isFinite(coef)));
 
       if (isHeader) {
         current = codigo;

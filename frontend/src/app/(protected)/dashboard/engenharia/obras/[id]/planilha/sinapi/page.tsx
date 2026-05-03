@@ -575,8 +575,8 @@ export default function SinapiImportPage() {
           const iDescItem = findCol(["descricao_item", "descricao_do_item", "descricao"]);
           const iUndItem = findCol(["unidade", "und", "unid"]);
           const iCoef = findCol(["coeficiente", "coef"]);
-          const iDescComp = headersNorm.findIndex((h) => h.includes("descricao") && h.includes("compos"));
-          const iUndComp = headersNorm.findIndex((h) => (h.includes("unidade") || h === "und" || h.includes("und_")) && h.includes("compos"));
+          const iDescComp = findCol(["descricao_da_composicao", "descricao_composicao", "desc_composicao", "descricao_compos"]);
+          const iUndComp = findCol(["unidade_da_composicao", "unidade_composicao", "und_composicao", "unidade_compos", "und_compos"]);
 
           let compDescricao = "";
           let compUnd = "";
@@ -586,13 +586,24 @@ export default function SinapiImportPage() {
             const comp = iCodigoComp >= 0 ? String(r[iCodigoComp] || "").trim().toUpperCase() : "";
             if (!comp) continue;
             if (comp !== computedCodigoServico) continue;
+            const codigoItem = iCodigoItem >= 0 ? String(r[iCodigoItem] || "").trim().toUpperCase() : "";
+            const coef = iCoef >= 0 ? parseNumberLoose(r[iCoef]) : null;
+            const tipoRaw = iTipo >= 0 ? String(r[iTipo] || "").trim() : "";
             if (!compDescricao && iDescComp >= 0) compDescricao = String(r[iDescComp] || "").trim();
             if (!compUnd && iUndComp >= 0) compUnd = String(r[iUndComp] || "").trim();
-            const codigoItem = iCodigoItem >= 0 ? String(r[iCodigoItem] || "").trim().toUpperCase() : "";
+            if (!codigoItem && coef == null && !tipoRaw) {
+              if (!compDescricao) {
+                if (iDescComp >= 0) compDescricao = String(r[iDescComp] || "").trim();
+                else if (iDescItem >= 0) compDescricao = String(r[iDescItem] || "").trim();
+              }
+              if (!compUnd) {
+                if (iUndComp >= 0) compUnd = String(r[iUndComp] || "").trim();
+                else if (iUndItem >= 0) compUnd = String(r[iUndItem] || "").trim();
+              }
+              continue;
+            }
             if (!codigoItem) continue;
-            const coef = iCoef >= 0 ? parseNumberLoose(r[iCoef]) : null;
             if (coef == null) continue;
-            const tipoRaw = iTipo >= 0 ? String(r[iTipo] || "").trim() : "";
             const tipoKey = normalizeHeader(tipoRaw);
             const tipoItem = tipoKey.includes("insumo") ? "INSUMO" : "COMPOSICAO";
             const desc = iDescItem >= 0 ? String(r[iDescItem] || "").trim() : "";
