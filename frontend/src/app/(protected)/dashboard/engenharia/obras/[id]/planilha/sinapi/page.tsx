@@ -72,6 +72,7 @@ type ApplyBaseResult = {
 };
 
 type ObraListaRow = { idObra: number; nomeObra: string; numeroContrato: string | null };
+type ObraContratoInfo = { idObra: number; nomeObra: string; idContrato: number | null; numeroContrato: string; objeto: string | null };
 
 function normalizeHeader(input: string) {
   const s = String(input || "")
@@ -174,11 +175,13 @@ export default function SinapiImportPage() {
   const [showFiltros, setShowFiltros] = useState<boolean>(false);
   const [importOpen, setImportOpen] = useState<boolean>(false);
   const [importadosReloadTick, setImportadosReloadTick] = useState<number>(0);
+  const [obraContrato, setObraContrato] = useState<ObraContratoInfo | null>(null);
   const [previewItensLocal, setPreviewItensLocal] = useState<
     Array<{ tipoItem: string; codigoItem: string; descricao: string | null; und: string | null; coeficiente: number; valorUnitario: number | null }>
   >([]);
   const [previewCompLocal, setPreviewCompLocal] = useState<{ codigo: string; descricao: string | null; und: string | null; valorSemBdi: number | null } | null>(null);
   const [previewSelectedCodigo, setPreviewSelectedCodigo] = useState<string>("");
+  const [previewOpen, setPreviewOpen] = useState<boolean>(false);
 
   const importadosCodes = useMemo(() => {
     return new Set(importados.map((r) => String(r.codigo || "").trim().toUpperCase()).filter(Boolean));
@@ -404,7 +407,34 @@ export default function SinapiImportPage() {
     });
   }
 
-  async function doRequest(dryRun: boolean) {
+  useEffect(() => {
+    if (!Number.isFinite(idObra) || idObra <= 0) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/contrato`);
+        const json = await res.json().catch(() => null);
+        if (!alive) return;
+        if (!res.ok || !json?.success) throw new Error(json?.message || "Falha ao carregar dados da obra/contrato");
+        const data = json.data || {};
+        setObraContrato({
+          idObra,
+          nomeObra: String(data?.nomeObra || ""),
+          idContrato: data?.idContrato != null ? Number(data.idContrato) : null,
+          numeroContrato: String(data?.numeroContrato || ""),
+          objeto: data?.objeto != null ? String(data.objeto) : null,
+        });
+      } catch {
+        if (!alive) return;
+        setObraContrato(null);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [idObra]);
+
+  async function doRequest(dryRun: boolean, override?: { codigoServico?: string }) {
     if (!Number.isFinite(idObra) || idObra <= 0) {
       setErr("Obra inválida.");
       return;
@@ -417,18 +447,18 @@ export default function SinapiImportPage() {
       setErr("Selecione o arquivo XLSX do SINAPI para importar.");
       return;
     }
-    if (opcao === "SERVICO" && !codigoServico.trim()) {
-      setErr("Informe o código do serviço.");
-      return;
-    }
     setBusy(true);
     try {
       const computedMode: "MISSING_ONLY" | "UPSERT" = opcao === "SUBSTITUIR" || opcao === "SERVICO" ? "UPSERT" : "MISSING_ONLY";
       const computedImportAllParsed = opcao === "ARQUIVO";
-      const computedCodigoServico = opcao === "SERVICO" ? codigoServico.trim().toUpperCase() : "";
+      const overrideCodigoServico = String(override?.codigoServico || "").trim().toUpperCase();
+      const computedCodigoServico = overrideCodigoServico || (opcao === "SERVICO" ? codigoServico.trim().toUpperCase() : "");
+      if (opcao === "SERVICO" && !computedCodigoServico) {
+        setErr("Informe o código do serviço.");
+        return;
+      }
 
       const shouldUseParsed =
-        opcao === "SERVICO" &&
         Boolean(computedCodigoServico) &&
         file.size >= 4 * 1024 * 1024;
 
@@ -639,12 +669,14 @@ export default function SinapiImportPage() {
           setErr("");
           setPageOkMsg("Prévia gerada.");
           setImportOpen(false);
+          setPreviewOpen(true);
         } else {
           setImported(json.data as ImportResult);
           setOkMsg("Importação concluída.");
           setPageOkMsg("Importação realizada com sucesso. Lista de serviços importados atualizada.");
           setImportadosReloadTick((n) => n + 1);
           setImportOpen(false);
+          setPreviewOpen(false);
           setPreview(null);
           setPreviewItensLocal([]);
           setPreviewCompLocal(null);
@@ -702,12 +734,14 @@ export default function SinapiImportPage() {
         setErr("");
         setPageOkMsg("Prévia gerada.");
         setImportOpen(false);
+        setPreviewOpen(true);
       } else {
         setImported(json.data as ImportResult);
         setOkMsg("Importação concluída.");
         setPageOkMsg("Importação realizada com sucesso. Lista de serviços importados atualizada.");
         setImportadosReloadTick((n) => n + 1);
         setImportOpen(false);
+        setPreviewOpen(false);
         setPreview(null);
         setPreviewItensLocal([]);
         setPreviewCompLocal(null);
@@ -727,7 +761,12 @@ export default function SinapiImportPage() {
     }
   }
 
-  async function importar() {
+  async function importar(codigoServicoOverride?: string) {
+    const overrideCodigo = String(codigoServicoOverride || "").trim().toUpperCase();
+    if (codigoServicoOverride != null && !overrideCodigo) {
+      setErr("Selecione um serviço para importar.");
+      return;
+    }
     const computedMode: "MISSING_ONLY" | "UPSERT" = opcao === "SUBSTITUIR" || opcao === "SERVICO" ? "UPSERT" : "MISSING_ONLY";
     if (computedMode === "UPSERT") {
       const ok = window.confirm("Você escolheu atualizar/substituir composições existentes. Confirmar?");
@@ -737,7 +776,7 @@ export default function SinapiImportPage() {
       setErr("Mês-base diferente (ou não detectado). Marque “Forçar importação (mês-base diferente)” para prosseguir.");
       return;
     }
-    await doRequest(false);
+    await doRequest(false, overrideCodigo ? { codigoServico: overrideCodigo } : undefined);
   }
 
   async function aplicarDaBase(row: { codigo: string; dataBase: string; uf: string; insumosModo: string }) {
@@ -929,6 +968,15 @@ export default function SinapiImportPage() {
         <div className="flex-1 min-w-[260px]">
           <div className="text-xs text-slate-500">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Sinapi</h1>
+          <div className="mt-1 text-sm text-slate-700">
+            <div>
+              Obra: #{idObra} - {obraContrato?.nomeObra ? obraContrato.nomeObra : `Obra #${idObra}`}
+            </div>
+            <div>
+              Contrato: #{obraContrato?.idContrato != null ? obraContrato.idContrato : "—"} - {obraContrato?.numeroContrato || "—"}
+              {obraContrato?.objeto ? ` - ${obraContrato.objeto}` : ""}
+            </div>
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
@@ -1088,179 +1136,6 @@ export default function SinapiImportPage() {
         </section>
       ) : null}
 
-      {preview ? (
-        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div className="min-w-[240px]">
-              <div className="text-lg font-semibold">Prévia</div>
-              <div className="text-sm text-slate-700">
-                Serviço:{" "}
-                <span className="font-mono text-xs">{previewSelectedComposicao?.codigo ? previewSelectedComposicao.codigo : "—"}</span>
-                {previewSelectedComposicao?.descricao ? ` — ${previewSelectedComposicao.descricao}` : ""}
-                {previewSelectedComposicao?.und ? ` (${previewSelectedComposicao.und})` : ""}
-                {previewValorSemBdiSelecionado != null
-                  ? ` • Valor sem BDI: ${Number(previewValorSemBdiSelecionado).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`
-                  : ""}
-              </div>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-                type="button"
-                onClick={() => {
-                  setPreview(null);
-                  setPreviewItensLocal([]);
-                  setPreviewCompLocal(null);
-                  setPreviewSelectedCodigo("");
-                  setImported(null);
-                  setOkMsg("");
-                  setErr("");
-                }}
-                disabled={busy}
-              >
-                Cancelar
-              </button>
-              <button
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
-                type="button"
-                onClick={importar}
-                disabled={busy}
-              >
-                Importar
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded-lg border bg-slate-50 p-3 text-sm">
-            <div className="font-semibold text-slate-700">Parâmetros</div>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <div className="rounded border bg-white px-3 py-2">
-                <div className="text-[11px] text-slate-500">Data-base (Planilha/SINAPI)</div>
-                <div className="text-sm font-semibold">
-                  {preview.planilhaParams?.dataBaseSinapi ? preview.planilhaParams.dataBaseSinapi : "—"} {" / "}
-                  {preview.sinapiDetected?.dataBase ? preview.sinapiDetected.dataBase : "—"}
-                </div>
-              </div>
-              <div className="rounded border bg-white px-3 py-2">
-                <div className="text-[11px] text-slate-500">Parâmetros compatíveis</div>
-                <div className="text-sm font-semibold">{preview.paramsMatch == null ? "—" : preview.paramsMatch ? "Sim" : "Não"}</div>
-              </div>
-              <div className="rounded border bg-white px-3 py-2">
-                <div className="text-[11px] text-slate-500">Preços de insumos</div>
-                <div className="text-sm font-semibold">{preview.insumosModo ? String(preview.insumosModo) : insumosModo}</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
-            <div className="rounded border bg-slate-50 p-3">
-              <div className="text-[11px] text-slate-500">Composições no arquivo</div>
-              <div className="mt-1 font-semibold">{Number(preview.parsedComposicoes || 0).toLocaleString("pt-BR")}</div>
-            </div>
-            <div className="rounded border bg-slate-50 p-3">
-              <div className="text-[11px] text-slate-500">Alvo (planilha atual)</div>
-              <div className="mt-1 font-semibold">{Number(preview.targetComposicoes || 0).toLocaleString("pt-BR")}</div>
-            </div>
-            <div className="rounded border bg-slate-50 p-3">
-              <div className="text-[11px] text-slate-500">A importar</div>
-              <div className="mt-1 font-semibold">{Number(preview.toImportComposicoes || 0).toLocaleString("pt-BR")}</div>
-            </div>
-            <div className="rounded border bg-slate-50 p-3">
-              <div className="text-[11px] text-slate-500">Itens a importar</div>
-              <div className="mt-1 font-semibold">{Number(preview.toImportItens || 0).toLocaleString("pt-BR")}</div>
-            </div>
-          </div>
-
-          <div className={previewComposicoesParaLista.length > 1 ? "grid grid-cols-1 gap-3 md:grid-cols-[320px_1fr]" : ""}>
-            {previewComposicoesParaLista.length > 1 ? (
-              <div className="rounded-lg border overflow-hidden">
-                <div className="bg-slate-50 px-3 py-2 text-sm font-semibold">Serviços na prévia</div>
-                <div className="max-h-72 overflow-auto divide-y bg-white">
-                  {previewComposicoesParaLista.map((c) => {
-                    const active = String(c.codigo || "").trim().toUpperCase() === String(previewSelectedCodigo || "").trim().toUpperCase();
-                    const jaImportado = importadosCodes.has(String(c.codigo || "").trim().toUpperCase());
-                    const valor = c.valorSemBdi == null || !Number.isFinite(Number(c.valorSemBdi)) ? null : Number(c.valorSemBdi);
-                    return (
-                      <button
-                        key={c.codigo}
-                        type="button"
-                        className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-50 ${active ? "bg-blue-50" : ""}`}
-                        onClick={() => setPreviewSelectedCodigo(c.codigo)}
-                        disabled={busy}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0 flex items-center gap-2">
-                            {jaImportado ? <span className="rounded-full border bg-white px-2 py-0.5 text-[11px] text-slate-700">Já importado</span> : null}
-                            <div className="min-w-0 truncate">
-                              <span className="font-mono text-xs text-slate-700">{c.codigo}</span>
-                              <span className="text-slate-800">{c.descricao ? ` — ${c.descricao}` : ""}</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <div className="text-xs text-slate-500">{c.und || "—"}</div>
-                          </div>
-                        </div>
-                        <div className="mt-0.5 text-xs text-slate-600">
-                          Valor sem BDI: {valor == null ? "—" : Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-
-            {previewItensDoSelecionado.length ? (
-              <div className="rounded-lg border overflow-hidden">
-                <div className="bg-slate-50 px-3 py-2 text-sm font-semibold">Itens da prévia (confira antes de importar)</div>
-                <div className="max-h-72 overflow-auto">
-                  <div className="overflow-x-auto">
-                    <div className="min-w-[920px]">
-                      <div className="grid grid-cols-[86px_110px_1fr_60px_110px_120px_120px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
-                        <div>Tipo</div>
-                        <div>Código</div>
-                        <div>Descrição</div>
-                        <div>Un</div>
-                        <div className="text-right">Coeficiente</div>
-                        <div className="text-right">V. unit</div>
-                        <div className="text-right">Valor</div>
-                      </div>
-                      <div className="divide-y bg-white">
-                        {previewItensDoSelecionado.map((it, idx) => {
-                          const q = Number(it.coeficiente || 0);
-                          const vu = it.valorUnitario == null ? null : Number(it.valorUnitario);
-                          const valor = vu == null || !Number.isFinite(vu) || !Number.isFinite(q) ? null : vu * q;
-                          return (
-                            <div
-                              key={`${idx}:${it.codigoItem}`}
-                              className="grid grid-cols-[86px_110px_1fr_60px_110px_120px_120px] gap-x-2 px-3 py-2 text-sm"
-                            >
-                              <div className="text-xs text-slate-700">{it.tipoItem || "—"}</div>
-                              <div className="font-mono text-xs text-slate-700">{it.codigoItem}</div>
-                              <div className="text-slate-800">{it.descricao || "—"}</div>
-                              <div className="text-slate-700">{it.und || "—"}</div>
-                              <div className="text-right tabular-nums text-slate-800">{Number(it.coeficiente || 0).toLocaleString("pt-BR")}</div>
-                              <div className="text-right tabular-nums text-slate-800">
-                                {it.valorUnitario == null ? "—" : Number(it.valorUnitario).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                              </div>
-                              <div className="text-right tabular-nums text-slate-800">
-                                {valor == null ? "—" : Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-lg border bg-slate-50 px-3 py-3 text-sm text-slate-700">Nenhum item na prévia para o serviço selecionado.</div>
-            )}
-          </div>
-        </section>
-      ) : null}
-
       {importOpen ? (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-auto">
           <div className="w-full max-w-5xl rounded-xl border bg-white shadow-sm">
@@ -1352,6 +1227,7 @@ export default function SinapiImportPage() {
                             setPreviewItensLocal([]);
                             setPreviewCompLocal(null);
                             setPreviewSelectedCodigo("");
+                            setPreviewOpen(false);
                             setImported(null);
                             setOkMsg("");
                             setErr("");
@@ -1481,6 +1357,215 @@ export default function SinapiImportPage() {
                   </div>
                 </section>
               ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {previewOpen && preview ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-auto">
+          <div className="w-full max-w-6xl rounded-xl border bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-3 border-b p-4">
+              <div className="text-lg font-semibold">Prévia</div>
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                type="button"
+                onClick={() => {
+                  setPreviewOpen(false);
+                  setPreview(null);
+                  setPreviewItensLocal([]);
+                  setPreviewCompLocal(null);
+                  setPreviewSelectedCodigo("");
+                  setImported(null);
+                  setOkMsg("");
+                  setErr("");
+                }}
+                disabled={busy}
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
+
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-[240px] text-sm text-slate-700">
+                  Serviço selecionado:{" "}
+                  <span className="font-mono text-xs">{previewSelectedComposicao?.codigo ? previewSelectedComposicao.codigo : "—"}</span>
+                  {previewSelectedComposicao?.descricao ? ` — ${previewSelectedComposicao.descricao}` : ""}
+                  {previewSelectedComposicao?.und ? ` (${previewSelectedComposicao.und})` : ""}
+                  {previewValorSemBdiSelecionado != null
+                    ? ` • Valor sem BDI: ${Number(previewValorSemBdiSelecionado).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`
+                    : ""}
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                    type="button"
+                    onClick={() => {
+                      setPreviewOpen(false);
+                      setPreview(null);
+                      setPreviewItensLocal([]);
+                      setPreviewCompLocal(null);
+                      setPreviewSelectedCodigo("");
+                      setImported(null);
+                      setOkMsg("");
+                      setErr("");
+                    }}
+                    disabled={busy}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                    type="button"
+                    onClick={() => importar(previewSelectedCodigo)}
+                    disabled={busy || !String(previewSelectedCodigo || "").trim()}
+                    title={!String(previewSelectedCodigo || "").trim() ? "Selecione um serviço para importar" : "Importar serviço selecionado"}
+                  >
+                    Importar selecionado
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+                <div className="font-semibold text-slate-700">Parâmetros</div>
+                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <div className="rounded border bg-white px-3 py-2">
+                    <div className="text-[11px] text-slate-500">Data-base (Planilha/SINAPI)</div>
+                    <div className="text-sm font-semibold">
+                      {preview.planilhaParams?.dataBaseSinapi ? preview.planilhaParams.dataBaseSinapi : "—"} {" / "}
+                      {preview.sinapiDetected?.dataBase ? preview.sinapiDetected.dataBase : "—"}
+                    </div>
+                  </div>
+                  <div className="rounded border bg-white px-3 py-2">
+                    <div className="text-[11px] text-slate-500">Parâmetros compatíveis</div>
+                    <div className="text-sm font-semibold">{preview.paramsMatch == null ? "—" : preview.paramsMatch ? "Sim" : "Não"}</div>
+                  </div>
+                  <div className="rounded border bg-white px-3 py-2">
+                    <div className="text-[11px] text-slate-500">Preços de insumos</div>
+                    <div className="text-sm font-semibold">{preview.insumosModo ? String(preview.insumosModo) : insumosModo}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+                <div className="rounded border bg-slate-50 p-3">
+                  <div className="text-[11px] text-slate-500">Composições no arquivo</div>
+                  <div className="mt-1 font-semibold">{Number(preview.parsedComposicoes || 0).toLocaleString("pt-BR")}</div>
+                </div>
+                <div className="rounded border bg-slate-50 p-3">
+                  <div className="text-[11px] text-slate-500">Alvo (planilha atual)</div>
+                  <div className="mt-1 font-semibold">{Number(preview.targetComposicoes || 0).toLocaleString("pt-BR")}</div>
+                </div>
+                <div className="rounded border bg-slate-50 p-3">
+                  <div className="text-[11px] text-slate-500">A importar</div>
+                  <div className="mt-1 font-semibold">{Number(preview.toImportComposicoes || 0).toLocaleString("pt-BR")}</div>
+                </div>
+                <div className="rounded border bg-slate-50 p-3">
+                  <div className="text-[11px] text-slate-500">Itens a importar</div>
+                  <div className="mt-1 font-semibold">{Number(preview.toImportItens || 0).toLocaleString("pt-BR")}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-[520px_1fr]">
+                <div className="rounded-lg border overflow-hidden">
+                  <div className="bg-slate-50 px-3 py-2 text-sm font-semibold">Serviços na prévia</div>
+                  <div className="max-h-72 overflow-auto">
+                    <div className="grid grid-cols-[46px_120px_110px_1fr_60px_160px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
+                      <div className="text-center">Sel</div>
+                      <div>Status</div>
+                      <div>Código</div>
+                      <div>Serviço</div>
+                      <div>Un</div>
+                      <div className="text-right">Valor sem BDI</div>
+                    </div>
+                    <div className="divide-y bg-white">
+                      {previewComposicoesParaLista.map((c, idx) => {
+                        const codigo = String(c.codigo || "").trim().toUpperCase();
+                        const checked = codigo && codigo === String(previewSelectedCodigo || "").trim().toUpperCase();
+                        const jaImportado = codigo ? importadosCodes.has(codigo) : false;
+                        const valor = c.valorSemBdi == null ? null : Number(c.valorSemBdi);
+                        const valorOk = valor != null && Number.isFinite(valor);
+                        return (
+                          <button
+                            key={codigo || `row-${idx}`}
+                            type="button"
+                            className={`w-full text-left grid grid-cols-[46px_120px_110px_1fr_60px_160px] gap-x-2 px-3 py-2 text-sm hover:bg-slate-50 ${checked ? "bg-blue-50" : ""}`}
+                            onClick={() => (codigo ? setPreviewSelectedCodigo(codigo) : null)}
+                            disabled={busy || !codigo}
+                          >
+                            <div className="flex items-center justify-center">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => (codigo ? setPreviewSelectedCodigo(codigo) : null)}
+                                disabled={busy || !codigo}
+                              />
+                            </div>
+                            <div className="text-xs text-slate-700">{jaImportado ? "Já importado" : "—"}</div>
+                            <div className="font-mono text-xs text-slate-700">{codigo || "—"}</div>
+                            <div className="text-slate-800 truncate">{c.descricao || "—"}</div>
+                            <div className="text-slate-700">{c.und || "—"}</div>
+                            <div className="text-right tabular-nums text-slate-800">
+                              {valorOk ? Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {previewItensDoSelecionado.length ? (
+                  <div className="rounded-lg border overflow-hidden">
+                    <div className="bg-slate-50 px-3 py-2 text-sm font-semibold">Itens da prévia (confira antes de importar)</div>
+                    <div className="max-h-72 overflow-auto">
+                      <div className="overflow-x-auto">
+                        <div className="min-w-[920px]">
+                          <div className="grid grid-cols-[86px_110px_1fr_60px_110px_120px_120px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
+                            <div>Tipo</div>
+                            <div>Código</div>
+                            <div>Descrição</div>
+                            <div>Un</div>
+                            <div className="text-right">Coeficiente</div>
+                            <div className="text-right">V. unit</div>
+                            <div className="text-right">Valor</div>
+                          </div>
+                          <div className="divide-y bg-white">
+                            {previewItensDoSelecionado.map((it, idx) => {
+                              const q = Number(it.coeficiente || 0);
+                              const vu = it.valorUnitario == null ? null : Number(it.valorUnitario);
+                              const valor = vu == null || !Number.isFinite(vu) || !Number.isFinite(q) ? null : vu * q;
+                              return (
+                                <div
+                                  key={`${idx}:${it.codigoItem}`}
+                                  className="grid grid-cols-[86px_110px_1fr_60px_110px_120px_120px] gap-x-2 px-3 py-2 text-sm"
+                                >
+                                  <div className="text-xs text-slate-700">{it.tipoItem || "—"}</div>
+                                  <div className="font-mono text-xs text-slate-700">{it.codigoItem}</div>
+                                  <div className="text-slate-800">{it.descricao || "—"}</div>
+                                  <div className="text-slate-700">{it.und || "—"}</div>
+                                  <div className="text-right tabular-nums text-slate-800">{Number(it.coeficiente || 0).toLocaleString("pt-BR")}</div>
+                                  <div className="text-right tabular-nums text-slate-800">
+                                    {it.valorUnitario == null ? "—" : Number(it.valorUnitario).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                                  </div>
+                                  <div className="text-right tabular-nums text-slate-800">
+                                    {valor == null ? "—" : Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border bg-slate-50 px-3 py-3 text-sm text-slate-700">Nenhum item na prévia para o serviço selecionado.</div>
+                )}
+              </div>
             </div>
           </div>
         </div>
