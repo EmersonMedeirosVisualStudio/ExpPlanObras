@@ -203,6 +203,7 @@ export default function SinapiImportPage() {
   const [telaPrefs, setTelaPrefs] = useState<{ [K in keyof typeof SINAPI_TELA_PREFS_DEFAULT]: (typeof SINAPI_TELA_PREFS_DEFAULT)[K] }>(
     SINAPI_TELA_PREFS_DEFAULT
   );
+  const [showTelaConfig, setShowTelaConfig] = useState<boolean>(false);
   const [showFiltros, setShowFiltros] = useState<boolean>(false);
   const [importOpen, setImportOpen] = useState<boolean>(false);
   const [importadosReloadTick, setImportadosReloadTick] = useState<number>(0);
@@ -517,6 +518,30 @@ export default function SinapiImportPage() {
     };
   }, [idObra]);
 
+  async function persistPlanilhaUfSinapiIfMissing(nextUf: string) {
+    const ufValue = String(nextUf || "").trim().toUpperCase();
+    if (!ufValue) return;
+    const idPlanilha = planilhaCallerInfo?.idPlanilha != null ? Number(planilhaCallerInfo.idPlanilha) : 0;
+    if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return;
+    if (String(planilhaUfSinapi || "").trim()) return;
+    try {
+      const resP = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${idPlanilha}`);
+      const jsonP = await resP.json().catch(() => null);
+      if (!resP.ok || !jsonP?.success) return;
+      const currentParams = (jsonP.data?.planilha?.parametros || {}) as any;
+      if (String(currentParams?.ufSinapi || "").trim()) return;
+      const merged = { ...currentParams, ufSinapi: ufValue };
+      const resU = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "ATUALIZAR_PARAMETROS", idPlanilha, parametros: merged }),
+      });
+      const jsonU = await resU.json().catch(() => null);
+      if (!resU.ok || !jsonU?.success) return;
+      setPlanilhaUfSinapi(ufValue);
+    } catch {}
+  }
+
   async function doRequest(dryRun: boolean, override?: { codigoServico?: string }) {
     if (!Number.isFinite(idObra) || idObra <= 0) {
       setErr("Obra inválida.");
@@ -768,6 +793,7 @@ export default function SinapiImportPage() {
           setImported(json.data as ImportResult);
           setOkMsg("Importação concluída.");
           setPageOkMsg("Importação realizada com sucesso. Lista de serviços importados atualizada.");
+          await persistPlanilhaUfSinapiIfMissing(String(uf || "").trim().toUpperCase());
           setImportadosReloadTick((n) => n + 1);
           setImportOpen(false);
           setPreviewOpen(false);
@@ -833,6 +859,7 @@ export default function SinapiImportPage() {
         setImported(json.data as ImportResult);
         setOkMsg("Importação concluída.");
         setPageOkMsg("Importação realizada com sucesso. Lista de serviços importados atualizada.");
+        await persistPlanilhaUfSinapiIfMissing(String(uf || "").trim().toUpperCase());
         setImportadosReloadTick((n) => n + 1);
         setImportOpen(false);
         setPreviewOpen(false);
@@ -1033,6 +1060,15 @@ export default function SinapiImportPage() {
   }, [planilhaUfSinapi, fromImportar]);
 
   useEffect(() => {
+    const ufPlan = String(planilhaUfSinapi || "").trim().toUpperCase();
+    if (ufPlan) return;
+    if (!fromImportar) return;
+    const ufLocal = String(uf || "").trim().toUpperCase();
+    if (!ufLocal) return;
+    setUfFiltro((cur) => (String(cur || "").trim() ? cur : ufLocal));
+  }, [planilhaUfSinapi, fromImportar, uf]);
+
+  useEffect(() => {
     if (codigoParam) {
       setCodigoServico(codigoParam);
       setCodigoFiltro(codigoParam);
@@ -1105,7 +1141,7 @@ export default function SinapiImportPage() {
               {planilhaCallerInfo?.numeroVersao ? `v${planilhaCallerInfo.numeroVersao}` : "—"} {planilhaCallerInfo?.nome ? `- ${planilhaCallerInfo.nome}` : ""}
             </div>
             <div>
-              SINAPI (planilha): {planilhaDataBaseSinapi || "—"} • UF: {planilhaUfSinapi || "—"}
+              SINAPI (planilha): {planilhaDataBaseSinapi || "—"} • UF: {planilhaUfSinapi || ufFiltro || uf || "—"}
             </div>
           </div>
         </div>
@@ -1145,18 +1181,19 @@ export default function SinapiImportPage() {
       {pageOkMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{pageOkMsg}</div> : null}
       {pageErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{pageErr}</div> : null}
 
-      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-lg font-semibold">Configuração de tela</div>
-          <button
-            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-            type="button"
-            onClick={() => setTelaPrefs(SINAPI_TELA_PREFS_DEFAULT)}
-            disabled={busy}
-          >
-            Restaurar padrão
-          </button>
-        </div>
+      {showTelaConfig ? (
+        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="text-lg font-semibold">Configuração de tela</div>
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+              type="button"
+              onClick={() => setShowTelaConfig(false)}
+              disabled={busy}
+            >
+              Fechar
+            </button>
+          </div>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <div className="rounded-lg border bg-slate-50 p-3">
             <div className="text-sm font-semibold text-slate-800">Colunas</div>
@@ -1216,12 +1253,18 @@ export default function SinapiImportPage() {
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div className="space-y-1">
                 <div className="text-xs text-slate-600">Código</div>
-                <input className="input bg-white" type="number" value={telaPrefs.wCodigoPx} onChange={(e) => setTelaPrefs((p) => ({ ...p, wCodigoPx: Number(e.target.value || 0) }))} disabled={busy} />
+                <input
+                  className="input bg-white w-[90px]"
+                  type="number"
+                  value={telaPrefs.wCodigoPx}
+                  onChange={(e) => setTelaPrefs((p) => ({ ...p, wCodigoPx: Number(e.target.value || 0) }))}
+                  disabled={busy}
+                />
               </div>
               <div className="space-y-1">
                 <div className="text-xs text-slate-600">Descrição</div>
                 <input
-                  className="input bg-white"
+                  className="input bg-white w-[90px]"
                   type="number"
                   value={telaPrefs.wDescricaoPx}
                   onChange={(e) => setTelaPrefs((p) => ({ ...p, wDescricaoPx: Number(e.target.value || 0) }))}
@@ -1230,20 +1273,32 @@ export default function SinapiImportPage() {
               </div>
               <div className="space-y-1">
                 <div className="text-xs text-slate-600">Unidade</div>
-                <input className="input bg-white" type="number" value={telaPrefs.wUndPx} onChange={(e) => setTelaPrefs((p) => ({ ...p, wUndPx: Number(e.target.value || 0) }))} disabled={busy} />
+                <input
+                  className="input bg-white w-[90px]"
+                  type="number"
+                  value={telaPrefs.wUndPx}
+                  onChange={(e) => setTelaPrefs((p) => ({ ...p, wUndPx: Number(e.target.value || 0) }))}
+                  disabled={busy}
+                />
               </div>
               <div className="space-y-1">
                 <div className="text-xs text-slate-600">Valor</div>
-                <input className="input bg-white" type="number" value={telaPrefs.wValorPx} onChange={(e) => setTelaPrefs((p) => ({ ...p, wValorPx: Number(e.target.value || 0) }))} disabled={busy} />
+                <input
+                  className="input bg-white w-[90px]"
+                  type="number"
+                  value={telaPrefs.wValorPx}
+                  onChange={(e) => setTelaPrefs((p) => ({ ...p, wValorPx: Number(e.target.value || 0) }))}
+                  disabled={busy}
+                />
               </div>
               <div className="space-y-1">
                 <div className="text-xs text-slate-600">UF</div>
-                <input className="input bg-white" type="number" value={telaPrefs.wUfPx} onChange={(e) => setTelaPrefs((p) => ({ ...p, wUfPx: Number(e.target.value || 0) }))} disabled={busy} />
+                <input className="input bg-white w-[90px]" type="number" value={telaPrefs.wUfPx} onChange={(e) => setTelaPrefs((p) => ({ ...p, wUfPx: Number(e.target.value || 0) }))} disabled={busy} />
               </div>
               <div className="space-y-1">
                 <div className="text-xs text-slate-600">Data-base</div>
                 <input
-                  className="input bg-white"
+                  className="input bg-white w-[90px]"
                   type="number"
                   value={telaPrefs.wDataBasePx}
                   onChange={(e) => setTelaPrefs((p) => ({ ...p, wDataBasePx: Number(e.target.value || 0) }))}
@@ -1253,7 +1308,7 @@ export default function SinapiImportPage() {
               <div className="space-y-1">
                 <div className="text-xs text-slate-600">Preços de insumos</div>
                 <input
-                  className="input bg-white"
+                  className="input bg-white w-[90px]"
                   type="number"
                   value={telaPrefs.wInsumosModoPx}
                   onChange={(e) => setTelaPrefs((p) => ({ ...p, wInsumosModoPx: Number(e.target.value || 0) }))}
@@ -1262,24 +1317,35 @@ export default function SinapiImportPage() {
               </div>
               <div className="space-y-1">
                 <div className="text-xs text-slate-600">Ações</div>
-                <input className="input bg-white" type="number" value={telaPrefs.wAcoesPx} onChange={(e) => setTelaPrefs((p) => ({ ...p, wAcoesPx: Number(e.target.value || 0) }))} disabled={busy} />
+                <input className="input bg-white w-[90px]" type="number" value={telaPrefs.wAcoesPx} onChange={(e) => setTelaPrefs((p) => ({ ...p, wAcoesPx: Number(e.target.value || 0) }))} disabled={busy} />
               </div>
             </div>
           </div>
         </div>
-      </section>
+        </section>
+      ) : null}
 
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="text-lg font-semibold">Serviços SINAPI importados</div>
-          <button
-            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-            type="button"
-            onClick={() => setShowFiltros((v) => !v)}
-            disabled={busy}
-          >
-            {showFiltros ? "Ocultar filtros" : "Exibir filtros"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+              type="button"
+              onClick={() => setShowTelaConfig((v) => !v)}
+              disabled={busy}
+            >
+              Configurar tela
+            </button>
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+              type="button"
+              onClick={() => setShowFiltros((v) => !v)}
+              disabled={busy}
+            >
+              {showFiltros ? "Ocultar filtros" : "Exibir filtros"}
+            </button>
+          </div>
         </div>
 
         {importadosErr ? <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{importadosErr}</div> : null}
@@ -1353,13 +1419,14 @@ export default function SinapiImportPage() {
                       {telaPrefs.colAcoes ? (
                         <div className="px-2 py-2 flex items-center justify-center">
                           <button
-                            className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60 inline-flex items-center gap-1"
+                            className="rounded border bg-white p-2 text-xs hover:bg-slate-50 disabled:opacity-60 inline-flex items-center"
                             type="button"
                             disabled={busy}
                             onClick={() => aplicarDaBase({ codigo: r.codigo, dataBase: r.dataBase, uf: r.uf, insumosModo: r.insumosModo })}
+                            title="Aplicar na planilha"
+                            aria-label="Aplicar na planilha"
                           >
                             <ArrowLeft className="h-4 w-4" />
-                            <span>Aplicar na obra</span>
                           </button>
                         </div>
                       ) : null}
@@ -1421,13 +1488,14 @@ export default function SinapiImportPage() {
                   {telaPrefs.colAcoes ? (
                     <div className="flex justify-end">
                       <button
-                        className="rounded border bg-white px-3 py-2 text-xs hover:bg-slate-50 disabled:opacity-60 inline-flex items-center gap-2"
+                        className="rounded border bg-white p-2 text-xs hover:bg-slate-50 disabled:opacity-60 inline-flex items-center"
                         type="button"
                         disabled={busy}
                         onClick={() => aplicarDaBase({ codigo: r.codigo, dataBase: r.dataBase, uf: r.uf, insumosModo: r.insumosModo })}
+                        title="Aplicar na planilha"
+                        aria-label="Aplicar na planilha"
                       >
                         <ArrowLeft className="h-4 w-4" />
-                        <span>Aplicar na obra</span>
                       </button>
                     </div>
                   ) : null}

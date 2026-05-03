@@ -11,6 +11,19 @@ function parseId(v: string) {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
+async function contratosHasIdObra() {
+  const [[row]]: any = await db.query(
+    `
+    SELECT COUNT(*) AS cnt
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'contratos'
+      AND COLUMN_NAME = 'id_obra'
+    `
+  );
+  return Number(row?.cnt || 0) > 0;
+}
+
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const current = await requireApiPermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
@@ -43,6 +56,37 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 
     const row = Array.isArray(rows) && rows.length ? rows[0] : null;
     if (!row) return fail(404, "Obra não encontrada.");
+
+    if ((row.idContrato === null || row.idContrato === undefined) && (await contratosHasIdObra().catch(() => false))) {
+      const [cRows]: any = await db.query(
+        `
+        SELECT
+          id_contrato AS idContrato,
+          numero_contrato AS numeroContrato,
+          objeto AS objeto,
+          status_contrato AS statusContrato,
+          valor_atualizado AS valorContratado,
+          valor_executado AS valorExecutado,
+          valor_pago AS valorPago
+        FROM contratos
+        WHERE tenant_id = ?
+          AND id_obra = ?
+        ORDER BY id_contrato DESC
+        LIMIT 1
+        `,
+        [current.tenantId, idObra]
+      );
+      const c = Array.isArray(cRows) && cRows.length ? cRows[0] : null;
+      if (c) {
+        row.idContrato = c.idContrato;
+        row.numeroContrato = c.numeroContrato;
+        row.objeto = c.objeto;
+        row.statusContrato = c.statusContrato;
+        row.valorContratado = c.valorContratado;
+        row.valorExecutado = c.valorExecutado;
+        row.valorPago = c.valorPago;
+      }
+    }
 
     return ok({
       idObra: Number(row.idObra),
