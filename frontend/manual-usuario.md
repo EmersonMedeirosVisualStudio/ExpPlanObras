@@ -136,6 +136,10 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
 - O topo da tela mostra:
   - **Obra: #id - nome da obra**
   - **Contrato: #id - número do contrato - objeto**
+- O topo da tela também mostra:
+  - **Planilha: #id - vN - nome da versão**
+  - **SINAPI (planilha): data-base e UF** (usados como padrão para filtros/importação)
+- Existe um card **Configuração de tela** para ajustar colunas (exibir/ocultar) e larguras, e isso fica gravado.
 - Ao clicar em **Prévia**, o sistema abre um modal “Prévia” com:
   - tabela “Serviços na prévia” (com status “Já importado” quando for o caso)
   - itens do serviço selecionado para conferência

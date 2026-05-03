@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
 import * as XLSX from "xlsx";
 
 type PreviewResult = {
@@ -74,6 +74,25 @@ type ApplyBaseResult = {
 type ObraListaRow = { idObra: number; nomeObra: string; numeroContrato: string | null };
 type ObraContratoInfo = { idObra: number; nomeObra: string; idContrato: number | null; numeroContrato: string; objeto: string | null };
 
+const SINAPI_TELA_PREFS_DEFAULT = {
+  colCodigo: true,
+  colDescricao: true,
+  colUnd: true,
+  colValor: true,
+  colUf: true,
+  colDataBase: true,
+  colInsumosModo: true,
+  colAcoes: true,
+  wCodigoPx: 110,
+  wDescricaoPx: 520,
+  wUndPx: 70,
+  wValorPx: 160,
+  wUfPx: 60,
+  wDataBasePx: 110,
+  wInsumosModoPx: 140,
+  wAcoesPx: 150,
+};
+
 function normalizeHeader(input: string) {
   const s = String(input || "")
     .trim()
@@ -142,6 +161,13 @@ export default function SinapiImportPage() {
   const returnTo = sp.get("returnTo") || "";
   const codigoParam = String(sp.get("codigo") || "").trim().toUpperCase();
   const dataBaseParam = String(sp.get("dataBase") || "").trim();
+  const planilhaIdParam = sp.get("planilhaId");
+  const fromParam = String(sp.get("from") || "").trim().toLowerCase();
+  const fromImportar = fromParam === "importar";
+  const planilhaIdCaller = (() => {
+    const n = Number(planilhaIdParam || 0);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  })();
 
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -172,6 +198,11 @@ export default function SinapiImportPage() {
   >([]);
   const [importadosErr, setImportadosErr] = useState<string>("");
   const [planilhaDataBaseSinapi, setPlanilhaDataBaseSinapi] = useState<string>("");
+  const [planilhaUfSinapi, setPlanilhaUfSinapi] = useState<string>("");
+  const [planilhaCallerInfo, setPlanilhaCallerInfo] = useState<{ idPlanilha: number; numeroVersao: number; nome: string } | null>(null);
+  const [telaPrefs, setTelaPrefs] = useState<{ [K in keyof typeof SINAPI_TELA_PREFS_DEFAULT]: (typeof SINAPI_TELA_PREFS_DEFAULT)[K] }>(
+    SINAPI_TELA_PREFS_DEFAULT
+  );
   const [showFiltros, setShowFiltros] = useState<boolean>(false);
   const [importOpen, setImportOpen] = useState<boolean>(false);
   const [importadosReloadTick, setImportadosReloadTick] = useState<number>(0);
@@ -186,6 +217,21 @@ export default function SinapiImportPage() {
   const importadosCodes = useMemo(() => {
     return new Set(importados.map((r) => String(r.codigo || "").trim().toUpperCase()).filter(Boolean));
   }, [importados]);
+
+  const importadosLayout = useMemo(() => {
+    const cols: Array<{ key: string; label: string; widthPx: number; align?: "left" | "center" | "right" }> = [];
+    if (telaPrefs.colCodigo) cols.push({ key: "codigo", label: "Código", widthPx: telaPrefs.wCodigoPx, align: "center" });
+    if (telaPrefs.colDescricao) cols.push({ key: "descricao", label: "Descrição", widthPx: telaPrefs.wDescricaoPx, align: "left" });
+    if (telaPrefs.colUnd) cols.push({ key: "und", label: "un", widthPx: telaPrefs.wUndPx, align: "center" });
+    if (telaPrefs.colValor) cols.push({ key: "valor", label: "Valor da composição", widthPx: telaPrefs.wValorPx, align: "right" });
+    if (telaPrefs.colUf) cols.push({ key: "uf", label: "UF", widthPx: telaPrefs.wUfPx, align: "center" });
+    if (telaPrefs.colDataBase) cols.push({ key: "dataBase", label: "Data-base", widthPx: telaPrefs.wDataBasePx, align: "center" });
+    if (telaPrefs.colInsumosModo) cols.push({ key: "insumosModo", label: "Preços de insumos", widthPx: telaPrefs.wInsumosModoPx, align: "center" });
+    if (telaPrefs.colAcoes) cols.push({ key: "acoes", label: "Ações", widthPx: telaPrefs.wAcoesPx, align: "center" });
+    const gridTemplateColumns = cols.map((c) => `${Math.max(40, Number(c.widthPx || 0))}px`).join(" ");
+    const minWidthPx = cols.reduce((acc, c) => acc + Math.max(40, Number(c.widthPx || 0)), 0);
+    return { cols, gridTemplateColumns, minWidthPx };
+  }, [telaPrefs]);
 
   const breadcrumb = useMemo(() => {
     return "Engenharia → Obras → Obra selecionada → Planilha orçamentária → Sinapi";
@@ -391,6 +437,43 @@ export default function SinapiImportPage() {
       );
     } catch {}
   }, [importPrefsKey, uf, insumosModo, insumosSheetName]);
+
+  const telaPrefsKey = useMemo(() => `expplanobras:sinapi:telaPrefs:v1`, []);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(telaPrefsKey);
+      if (!raw) return;
+      const p = JSON.parse(raw) as any;
+      const n = (v: unknown, min: number, max: number, fallback: number) => {
+        const x = Number(v);
+        return Number.isFinite(x) ? Math.max(min, Math.min(max, Math.round(x))) : fallback;
+      };
+      setTelaPrefs((cur) => ({
+        colCodigo: p?.colCodigo !== false,
+        colDescricao: p?.colDescricao !== false,
+        colUnd: p?.colUnd !== false,
+        colValor: p?.colValor !== false,
+        colUf: p?.colUf !== false,
+        colDataBase: p?.colDataBase !== false,
+        colInsumosModo: p?.colInsumosModo !== false,
+        colAcoes: p?.colAcoes !== false,
+        wCodigoPx: n(p?.wCodigoPx, 70, 220, cur.wCodigoPx),
+        wDescricaoPx: n(p?.wDescricaoPx, 220, 1200, cur.wDescricaoPx),
+        wUndPx: n(p?.wUndPx, 40, 120, cur.wUndPx),
+        wValorPx: n(p?.wValorPx, 110, 240, cur.wValorPx),
+        wUfPx: n(p?.wUfPx, 44, 100, cur.wUfPx),
+        wDataBasePx: n(p?.wDataBasePx, 84, 160, cur.wDataBasePx),
+        wInsumosModoPx: n(p?.wInsumosModoPx, 110, 220, cur.wInsumosModoPx),
+        wAcoesPx: n(p?.wAcoesPx, 110, 240, cur.wAcoesPx),
+      }));
+    } catch {}
+  }, [telaPrefsKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(telaPrefsKey, JSON.stringify(telaPrefs));
+    } catch {}
+  }, [telaPrefsKey, telaPrefs]);
 
   async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     let token: string | null = null;
@@ -891,9 +974,11 @@ export default function SinapiImportPage() {
         if (!resV.ok || !jsonV?.success) throw new Error(jsonV?.message || "Erro ao carregar versões da planilha");
         const versoes = Array.isArray(jsonV.data?.versoes) ? jsonV.data.versoes : [];
         const atual = versoes.find((v: any) => Boolean(v.atual)) || versoes[0] || null;
-        const planilhaId = atual?.idPlanilha != null ? Number(atual.idPlanilha) : 0;
+        const planilhaId = planilhaIdCaller || (atual?.idPlanilha != null ? Number(atual.idPlanilha) : 0);
         if (!planilhaId) {
           setPlanilhaDataBaseSinapi("");
+          setPlanilhaUfSinapi("");
+          setPlanilhaCallerInfo(null);
           return;
         }
         const resP = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${planilhaId}`);
@@ -901,23 +986,51 @@ export default function SinapiImportPage() {
         if (!alive) return;
         if (!resP.ok || !jsonP?.success) throw new Error(jsonP?.message || "Erro ao carregar planilha");
         const p = (jsonP.data?.planilha?.parametros || {}) as any;
-        setPlanilhaDataBaseSinapi(p?.dataBaseSinapi ? String(p.dataBaseSinapi || "") : "");
+        const dataBase = p?.dataBaseSinapi ? String(p.dataBaseSinapi || "") : "";
+        const ufPlan = p?.ufSinapi ? String(p.ufSinapi || "").trim().toUpperCase() : "";
+        const plan = jsonP.data?.planilha || null;
+        setPlanilhaDataBaseSinapi(dataBase);
+        setPlanilhaUfSinapi(ufPlan);
+        setPlanilhaCallerInfo(
+          plan
+            ? { idPlanilha: Number(plan.idPlanilha || planilhaId), numeroVersao: Number(plan.numeroVersao || 0), nome: String(plan.nome || "") }
+            : null
+        );
       } catch {
         if (!alive) return;
         setPlanilhaDataBaseSinapi("");
+        setPlanilhaUfSinapi("");
+        setPlanilhaCallerInfo(null);
       }
     })();
     return () => {
       alive = false;
     };
-  }, [idObra]);
+  }, [idObra, planilhaIdCaller]);
 
   useEffect(() => {
-    if (!planilhaDataBaseSinapi.trim()) return;
+    const base = String(planilhaDataBaseSinapi || "").trim();
+    if (!base) return;
+    if (fromImportar) {
+      setDataBaseFiltro(base);
+      setDataBaseImport(base);
+      return;
+    }
     if (String(dataBaseParam || "").trim()) return;
-    setDataBaseFiltro((cur) => (String(cur || "").trim() ? cur : planilhaDataBaseSinapi.trim()));
-    setDataBaseImport((cur) => (String(cur || "").trim() ? cur : planilhaDataBaseSinapi.trim()));
-  }, [planilhaDataBaseSinapi, dataBaseParam]);
+    setDataBaseFiltro((cur) => (String(cur || "").trim() ? cur : base));
+    setDataBaseImport((cur) => (String(cur || "").trim() ? cur : base));
+  }, [planilhaDataBaseSinapi, dataBaseParam, fromImportar]);
+
+  useEffect(() => {
+    const ufPlan = String(planilhaUfSinapi || "").trim().toUpperCase();
+    if (!ufPlan) return;
+    if (fromImportar) {
+      setUf(ufPlan);
+      setUfFiltro(ufPlan);
+      return;
+    }
+    setUfFiltro((cur) => (String(cur || "").trim() ? cur : ufPlan));
+  }, [planilhaUfSinapi, fromImportar]);
 
   useEffect(() => {
     if (codigoParam) {
@@ -974,7 +1087,7 @@ export default function SinapiImportPage() {
   }, [idObra]);
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-5xl text-slate-900">
+    <div className="p-4 md:p-6 space-y-6 w-full max-w-none text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex-1 min-w-[260px]">
           <div className="text-xs text-slate-500">{breadcrumb}</div>
@@ -986,6 +1099,13 @@ export default function SinapiImportPage() {
             <div>
               Contrato: #{obraContrato?.idContrato != null ? obraContrato.idContrato : "—"} - {obraContrato?.numeroContrato || "—"}
               {obraContrato?.objeto ? ` - ${obraContrato.objeto}` : ""}
+            </div>
+            <div>
+              Planilha: #{planilhaCallerInfo?.idPlanilha != null ? planilhaCallerInfo.idPlanilha : "—"} -{" "}
+              {planilhaCallerInfo?.numeroVersao ? `v${planilhaCallerInfo.numeroVersao}` : "—"} {planilhaCallerInfo?.nome ? `- ${planilhaCallerInfo.nome}` : ""}
+            </div>
+            <div>
+              SINAPI (planilha): {planilhaDataBaseSinapi || "—"} • UF: {planilhaUfSinapi || "—"}
             </div>
           </div>
         </div>
@@ -1024,6 +1144,130 @@ export default function SinapiImportPage() {
 
       {pageOkMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{pageOkMsg}</div> : null}
       {pageErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{pageErr}</div> : null}
+
+      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="text-lg font-semibold">Configuração de tela</div>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => setTelaPrefs(SINAPI_TELA_PREFS_DEFAULT)}
+            disabled={busy}
+          >
+            Restaurar padrão
+          </button>
+        </div>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <div className="rounded-lg border bg-slate-50 p-3">
+            <div className="text-sm font-semibold text-slate-800">Colunas</div>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={telaPrefs.colCodigo} onChange={(e) => setTelaPrefs((p) => ({ ...p, colCodigo: Boolean(e.target.checked) }))} disabled={busy} />
+                <span>Código</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={telaPrefs.colDescricao}
+                  onChange={(e) => setTelaPrefs((p) => ({ ...p, colDescricao: Boolean(e.target.checked) }))}
+                  disabled={busy}
+                />
+                <span>Descrição</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={telaPrefs.colUnd} onChange={(e) => setTelaPrefs((p) => ({ ...p, colUnd: Boolean(e.target.checked) }))} disabled={busy} />
+                <span>Unidade</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={telaPrefs.colValor} onChange={(e) => setTelaPrefs((p) => ({ ...p, colValor: Boolean(e.target.checked) }))} disabled={busy} />
+                <span>Valor</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={telaPrefs.colUf} onChange={(e) => setTelaPrefs((p) => ({ ...p, colUf: Boolean(e.target.checked) }))} disabled={busy} />
+                <span>UF</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={telaPrefs.colDataBase}
+                  onChange={(e) => setTelaPrefs((p) => ({ ...p, colDataBase: Boolean(e.target.checked) }))}
+                  disabled={busy}
+                />
+                <span>Data-base</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={telaPrefs.colInsumosModo}
+                  onChange={(e) => setTelaPrefs((p) => ({ ...p, colInsumosModo: Boolean(e.target.checked) }))}
+                  disabled={busy}
+                />
+                <span>Preços de insumos</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={telaPrefs.colAcoes} onChange={(e) => setTelaPrefs((p) => ({ ...p, colAcoes: Boolean(e.target.checked) }))} disabled={busy} />
+                <span>Ações</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="rounded-lg border bg-slate-50 p-3">
+            <div className="text-sm font-semibold text-slate-800">Largura das colunas (px)</div>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="space-y-1">
+                <div className="text-xs text-slate-600">Código</div>
+                <input className="input bg-white" type="number" value={telaPrefs.wCodigoPx} onChange={(e) => setTelaPrefs((p) => ({ ...p, wCodigoPx: Number(e.target.value || 0) }))} disabled={busy} />
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-slate-600">Descrição</div>
+                <input
+                  className="input bg-white"
+                  type="number"
+                  value={telaPrefs.wDescricaoPx}
+                  onChange={(e) => setTelaPrefs((p) => ({ ...p, wDescricaoPx: Number(e.target.value || 0) }))}
+                  disabled={busy}
+                />
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-slate-600">Unidade</div>
+                <input className="input bg-white" type="number" value={telaPrefs.wUndPx} onChange={(e) => setTelaPrefs((p) => ({ ...p, wUndPx: Number(e.target.value || 0) }))} disabled={busy} />
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-slate-600">Valor</div>
+                <input className="input bg-white" type="number" value={telaPrefs.wValorPx} onChange={(e) => setTelaPrefs((p) => ({ ...p, wValorPx: Number(e.target.value || 0) }))} disabled={busy} />
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-slate-600">UF</div>
+                <input className="input bg-white" type="number" value={telaPrefs.wUfPx} onChange={(e) => setTelaPrefs((p) => ({ ...p, wUfPx: Number(e.target.value || 0) }))} disabled={busy} />
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-slate-600">Data-base</div>
+                <input
+                  className="input bg-white"
+                  type="number"
+                  value={telaPrefs.wDataBasePx}
+                  onChange={(e) => setTelaPrefs((p) => ({ ...p, wDataBasePx: Number(e.target.value || 0) }))}
+                  disabled={busy}
+                />
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-slate-600">Preços de insumos</div>
+                <input
+                  className="input bg-white"
+                  type="number"
+                  value={telaPrefs.wInsumosModoPx}
+                  onChange={(e) => setTelaPrefs((p) => ({ ...p, wInsumosModoPx: Number(e.target.value || 0) }))}
+                  disabled={busy}
+                />
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-slate-600">Ações</div>
+                <input className="input bg-white" type="number" value={telaPrefs.wAcoesPx} onChange={(e) => setTelaPrefs((p) => ({ ...p, wAcoesPx: Number(e.target.value || 0) }))} disabled={busy} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -1080,41 +1324,113 @@ export default function SinapiImportPage() {
 
         {importados.length ? (
           <div className="rounded-lg border overflow-hidden">
-            <div className="hidden md:grid grid-cols-[110px_1fr_70px_150px_60px_110px_140px_140px] bg-slate-50 text-xs font-semibold text-slate-700">
-              <div className="px-2 py-2 border-r">Código</div>
-              <div className="px-2 py-2 border-r">Descrição</div>
-              <div className="px-2 py-2 border-r text-center">un</div>
-              <div className="px-2 py-2 border-r text-right">Valor da composição</div>
-              <div className="px-2 py-2 border-r text-center">UF</div>
-              <div className="px-2 py-2 border-r text-center">Data-base</div>
-              <div className="px-2 py-2 border-r text-center">Preços de insumos</div>
-              <div className="px-2 py-2 text-center">Ações</div>
-            </div>
-            <div className="divide-y">
-              {importados.map((r) => (
-                <div
-                  key={`${r.dataBase}:${r.uf}:${r.insumosModo}:${r.codigo}`}
-                  className="grid grid-cols-1 md:grid-cols-[110px_1fr_70px_150px_60px_110px_140px_140px] text-sm"
-                >
-                  <div className="px-2 py-2 md:border-r text-center">{r.codigo}</div>
-                  <div className="px-2 py-2 md:border-r">{r.descricao}</div>
-                  <div className="px-2 py-2 md:border-r text-center">{r.und}</div>
-                  <div className="px-2 py-2 md:border-r text-right">
-                    {r.valorComposicao == null ? "—" : Number(r.valorComposicao).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                  </div>
-                  <div className="px-2 py-2 md:border-r text-center">{r.uf || "—"}</div>
-                  <div className="px-2 py-2 md:border-r text-center">{r.dataBase || "—"}</div>
-                  <div className="px-2 py-2 md:border-r text-center">{r.insumosModo || "—"}</div>
-                  <div className="px-2 py-2 flex items-center justify-center gap-2">
-                    <button
-                      className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
-                      type="button"
-                      disabled={busy}
-                      onClick={() => aplicarDaBase({ codigo: r.codigo, dataBase: r.dataBase, uf: r.uf, insumosModo: r.insumosModo })}
+            <div className="hidden md:block overflow-x-auto">
+              <div style={{ minWidth: importadosLayout.minWidthPx }}>
+                <div className="grid bg-slate-50 text-xs font-semibold text-slate-700" style={{ gridTemplateColumns: importadosLayout.gridTemplateColumns }}>
+                  {importadosLayout.cols.map((c) => (
+                    <div
+                      key={c.key}
+                      className={`px-2 py-2 border-r last:border-r-0 ${c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : ""}`}
                     >
-                      Aplicar na obra
-                    </button>
+                      {c.label}
+                    </div>
+                  ))}
+                </div>
+                <div className="divide-y bg-white">
+                  {importados.map((r) => (
+                    <div key={`${r.dataBase}:${r.uf}:${r.insumosModo}:${r.codigo}`} className="grid text-sm" style={{ gridTemplateColumns: importadosLayout.gridTemplateColumns }}>
+                      {telaPrefs.colCodigo ? <div className="px-2 py-2 border-r last:border-r-0 text-center">{r.codigo}</div> : null}
+                      {telaPrefs.colDescricao ? <div className="px-2 py-2 border-r last:border-r-0">{r.descricao}</div> : null}
+                      {telaPrefs.colUnd ? <div className="px-2 py-2 border-r last:border-r-0 text-center">{r.und}</div> : null}
+                      {telaPrefs.colValor ? (
+                        <div className="px-2 py-2 border-r last:border-r-0 text-right">
+                          {r.valorComposicao == null ? "—" : Number(r.valorComposicao).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </div>
+                      ) : null}
+                      {telaPrefs.colUf ? <div className="px-2 py-2 border-r last:border-r-0 text-center">{r.uf || "—"}</div> : null}
+                      {telaPrefs.colDataBase ? <div className="px-2 py-2 border-r last:border-r-0 text-center">{r.dataBase || "—"}</div> : null}
+                      {telaPrefs.colInsumosModo ? <div className="px-2 py-2 border-r last:border-r-0 text-center">{r.insumosModo || "—"}</div> : null}
+                      {telaPrefs.colAcoes ? (
+                        <div className="px-2 py-2 flex items-center justify-center">
+                          <button
+                            className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60 inline-flex items-center gap-1"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => aplicarDaBase({ codigo: r.codigo, dataBase: r.dataBase, uf: r.uf, insumosModo: r.insumosModo })}
+                          >
+                            <ArrowLeft className="h-4 w-4" />
+                            <span>Aplicar na obra</span>
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="md:hidden divide-y bg-white">
+              {importados.map((r) => (
+                <div key={`${r.dataBase}:${r.uf}:${r.insumosModo}:${r.codigo}`} className="p-3 space-y-2 text-sm">
+                  {telaPrefs.colCodigo ? (
+                    <div>
+                      <div className="text-xs text-slate-500">Código</div>
+                      <div className="font-mono">{r.codigo || "—"}</div>
+                    </div>
+                  ) : null}
+                  {telaPrefs.colDescricao ? (
+                    <div>
+                      <div className="text-xs text-slate-500">Descrição</div>
+                      <div className="text-slate-800">{r.descricao || "—"}</div>
+                    </div>
+                  ) : null}
+                  <div className="grid grid-cols-2 gap-2">
+                    {telaPrefs.colUnd ? (
+                      <div>
+                        <div className="text-xs text-slate-500">Unidade</div>
+                        <div>{r.und || "—"}</div>
+                      </div>
+                    ) : null}
+                    {telaPrefs.colValor ? (
+                      <div>
+                        <div className="text-xs text-slate-500">Valor</div>
+                        <div className="tabular-nums">
+                          {r.valorComposicao == null ? "—" : Number(r.valorComposicao).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                        </div>
+                      </div>
+                    ) : null}
+                    {telaPrefs.colUf ? (
+                      <div>
+                        <div className="text-xs text-slate-500">UF</div>
+                        <div>{r.uf || "—"}</div>
+                      </div>
+                    ) : null}
+                    {telaPrefs.colDataBase ? (
+                      <div>
+                        <div className="text-xs text-slate-500">Data-base</div>
+                        <div>{r.dataBase || "—"}</div>
+                      </div>
+                    ) : null}
+                    {telaPrefs.colInsumosModo ? (
+                      <div className="col-span-2">
+                        <div className="text-xs text-slate-500">Preços de insumos</div>
+                        <div>{r.insumosModo || "—"}</div>
+                      </div>
+                    ) : null}
                   </div>
+                  {telaPrefs.colAcoes ? (
+                    <div className="flex justify-end">
+                      <button
+                        className="rounded border bg-white px-3 py-2 text-xs hover:bg-slate-50 disabled:opacity-60 inline-flex items-center gap-2"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => aplicarDaBase({ codigo: r.codigo, dataBase: r.dataBase, uf: r.uf, insumosModo: r.insumosModo })}
+                      >
+                        <ArrowLeft className="h-4 w-4" />
+                        <span>Aplicar na obra</span>
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -1181,7 +1497,7 @@ export default function SinapiImportPage() {
                       </div>
                       <div className="md:col-span-5 space-y-1">
                         <div className="text-sm text-slate-600">UF</div>
-                        <select className="input bg-white w-[92px]" value={uf} onChange={(e) => setUf(e.target.value)} disabled={busy}>
+                        <select className="input bg-white w-full sm:w-[92px]" value={uf} onChange={(e) => setUf(e.target.value)} disabled={busy}>
                           {ufs.map((x) => (
                             <option key={x} value={x}>
                               {x}
@@ -1475,60 +1791,64 @@ export default function SinapiImportPage() {
               <div className="space-y-3">
                 <div className="rounded-lg border overflow-hidden">
                   <div className="bg-slate-50 px-3 py-2 text-sm font-semibold">Serviços na prévia</div>
-                  <div className="max-h-72 overflow-auto">
-                    <div className="grid grid-cols-[46px_46px_110px_1fr_60px_160px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
-                      <div className="text-center">Sel</div>
-                      <div className="text-center">Imp.</div>
-                      <div>Código</div>
-                      <div>Serviço</div>
-                      <div>Un</div>
-                      <div className="text-right">Valor sem BDI</div>
-                    </div>
-                    <div className="divide-y bg-white">
-                      {previewComposicoesParaLista.map((c, idx) => {
-                        const codigo = String(c.codigo || "").trim().toUpperCase();
-                        const checked = Boolean(codigo) && codigo === String(previewSelectedCodigo || "").trim().toUpperCase();
-                        const jaImportado = codigo ? importadosCodes.has(codigo) : false;
-                        const valor = c.valorSemBdi == null ? null : Number(c.valorSemBdi);
-                        const valorOk = valor != null && Number.isFinite(valor);
-                        const descServico = c.descricao == null ? "" : String(c.descricao).trim();
-                        return (
-                          <button
-                            key={codigo || `row-${idx}`}
-                            type="button"
-                            className={`w-full text-left grid grid-cols-[46px_46px_110px_1fr_60px_160px] gap-x-2 px-3 py-2 text-sm hover:bg-slate-50 ${checked ? "bg-blue-50" : ""}`}
-                            onClick={() => (codigo ? setPreviewSelectedCodigo(codigo) : null)}
-                            disabled={busy || !codigo}
-                          >
-                            <div className="flex items-center justify-center">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => (codigo ? setPreviewSelectedCodigo(codigo) : null)}
+                  <div className="max-h-72 overflow-y-auto">
+                    <div className="overflow-x-auto">
+                      <div className="min-w-[720px]">
+                        <div className="grid grid-cols-[46px_46px_110px_1fr_60px_160px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
+                          <div className="text-center">Sel</div>
+                          <div className="text-center">Imp.</div>
+                          <div>Código</div>
+                          <div>Serviço</div>
+                          <div>Un</div>
+                          <div className="text-right">Valor sem BDI</div>
+                        </div>
+                        <div className="divide-y bg-white">
+                          {previewComposicoesParaLista.map((c, idx) => {
+                            const codigo = String(c.codigo || "").trim().toUpperCase();
+                            const checked = Boolean(codigo) && codigo === String(previewSelectedCodigo || "").trim().toUpperCase();
+                            const jaImportado = codigo ? importadosCodes.has(codigo) : false;
+                            const valor = c.valorSemBdi == null ? null : Number(c.valorSemBdi);
+                            const valorOk = valor != null && Number.isFinite(valor);
+                            const descServico = c.descricao == null ? "" : String(c.descricao).trim();
+                            return (
+                              <button
+                                key={codigo || `row-${idx}`}
+                                type="button"
+                                className={`w-full text-left grid grid-cols-[46px_46px_110px_1fr_60px_160px] gap-x-2 px-3 py-2 text-sm hover:bg-slate-50 ${checked ? "bg-blue-50" : ""}`}
+                                onClick={() => (codigo ? setPreviewSelectedCodigo(codigo) : null)}
                                 disabled={busy || !codigo}
-                              />
-                            </div>
-                            <div className="flex items-center justify-center">
-                              <span
-                                className={
-                                  jaImportado
-                                    ? "inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"
-                                    : "inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-slate-500"
-                                }
-                                title={jaImportado ? "Já importado" : "Não importado"}
                               >
-                                {jaImportado ? "✓" : "—"}
-                              </span>
-                            </div>
-                            <div className="font-mono text-xs text-slate-700">{codigo || "—"}</div>
-                            <div className="text-slate-800 leading-snug">{descServico || "—"}</div>
-                            <div className="text-slate-700">{c.und || "—"}</div>
-                            <div className="text-right tabular-nums text-slate-800">
-                              {valorOk ? Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
-                            </div>
-                          </button>
-                        );
-                      })}
+                                <div className="flex items-center justify-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => (codigo ? setPreviewSelectedCodigo(codigo) : null)}
+                                    disabled={busy || !codigo}
+                                  />
+                                </div>
+                                <div className="flex items-center justify-center">
+                                  <span
+                                    className={
+                                      jaImportado
+                                        ? "inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"
+                                        : "inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-slate-500"
+                                    }
+                                    title={jaImportado ? "Já importado" : "Não importado"}
+                                  >
+                                    {jaImportado ? "✓" : "—"}
+                                  </span>
+                                </div>
+                                <div className="font-mono text-xs text-slate-700">{codigo || "—"}</div>
+                                <div className="text-slate-800 leading-snug">{descServico || "—"}</div>
+                                <div className="text-slate-700">{c.und || "—"}</div>
+                                <div className="text-right tabular-nums text-slate-800">
+                                  {valorOk ? Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

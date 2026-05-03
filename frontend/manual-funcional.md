@@ -3009,10 +3009,14 @@ Manter o padrão do sistema **Frontend ↔ Backend ↔ Banco de dados** e reduzi
   - importa o SINAPI (Excel) para uma base interna (por data-base/UF/ISD-ICD-ISE);
   - lista os **serviços SINAPI já importados** (com filtros);
   - permite **aplicar na obra** uma composição que já esteja importada (sem reimportar o XLSX).
-- A tela **Análise de composição** possui um botão “SINAPI” que abre a tela **Sinapi** já filtrada pelo serviço atual.
+- A tela **Análise de composição** possui um botão “SINAPI” que abre a tela **Sinapi** já filtrada pelo serviço atual e com o contexto da planilha (versão).
 - O sistema valida os parâmetros **Data-base, UF e modo ISD/ICD/ISE**.
 - O botão de **Prévia** só habilita quando os requisitos estão preenchidos e um arquivo XLSX foi selecionado.
 - Se o serviço não existir no SINAPI para a base informada, o sistema informa: “O serviço X não é cadastrado no SINAPI, na base informada”.
+- A tela **Sinapi** possui um card **Configuração de tela** para controlar:
+  - largura das colunas (px);
+  - exibição/ocultação de colunas (checkbox);
+  - persistência automática das preferências (fica gravado).
 
 **Benefício da mudança**
 
@@ -3030,6 +3034,7 @@ ETAPA 2 — O que clicar
 
 ETAPA 3 — O que preencher
 - Na tela Sinapi, clique em “Exibir filtros” (se necessário) e ajuste: Código, Data-base, UF e ISD/ICD/ISE.
+- Ao abrir a tela a partir do botão “SINAPI”, a **Data-base e UF da planilha** são preenchidas automaticamente nos filtros e no modal “Opções de importação” (você pode alterar, se necessário).
 
 ETAPA 4 — O que esperar
 - A tela Sinapi abre já filtrada pelo serviço atual e mostra se a data-base está compatível com a planilha.
@@ -3052,15 +3057,19 @@ ETAPA 2 — O que clicar
 - No topo da tela, confira:
   - Obra: `#id da obra - nome da obra`;
   - Contrato: `#id do contrato - número do contrato - objeto`.
+- No topo da tela, confira também:
+  - Planilha: `#id da planilha - vN - nome da versão`;
+  - SINAPI (planilha): `data-base` e `UF` (usados como padrão para filtros/importação).
+- Use o card “Configuração de tela” para ajustar colunas e larguras conforme sua preferência.
 - Na lista “Serviços SINAPI importados”, use “Aplicar na obra” quando o serviço já estiver importado.
 - Para importar via XLSX, clique no botão “Importar” (abre o modal “Opções de importação”).
 - Se precisar filtrar a lista, clique em “Exibir filtros”.
 
 ETAPA 3 — O que preencher
 - Em “Opções de importação”:
-  - Data-base (SINAPI): é preenchida automaticamente com a data-base da obra, mas pode ser alterada manualmente.
+  - Data-base (SINAPI): é preenchida automaticamente com a data-base da planilha, mas pode ser alterada manualmente.
   - Aba (Relatório Analítico de Composições): normalmente “Analítico”.
-  - UF: selecione a UF (lista completa). O sistema mantém a última UF selecionada.
+  - UF: é preenchida automaticamente com a UF da planilha (quando cadastrada), mas pode ser alterada. O sistema também mantém a última UF selecionada.
   - Preços de insumos (abaixo de “Analítico”): selecione:
     - ISD — Encargos sociais SEM desoneração
     - ICD — Encargos sociais COM desoneração

@@ -21,6 +21,7 @@ async function ensureTables() {
       origem ENUM('MANUAL','CSV','MIGRACAO') NOT NULL DEFAULT 'MANUAL',
       data_base_sbc VARCHAR(16) NULL,
       data_base_sinapi VARCHAR(16) NULL,
+      uf_sinapi VARCHAR(2) NULL,
       bdi_servicos_sbc DECIMAL(10,4) NULL,
       bdi_servicos_sinapi DECIMAL(10,4) NULL,
       bdi_diferenciado_sbc DECIMAL(10,4) NULL,
@@ -39,6 +40,7 @@ async function ensureTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `
   );
+  await db.query(`ALTER TABLE obras_planilhas_versoes ADD COLUMN uf_sinapi VARCHAR(2) NULL`).catch(() => null);
 
   await db.query(
     `
@@ -438,6 +440,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         origem,
         data_base_sbc AS dataBaseSbc,
         data_base_sinapi AS dataBaseSinapi,
+        uf_sinapi AS ufSinapi,
         bdi_servicos_sbc AS bdiServicosSbc,
         bdi_servicos_sinapi AS bdiServicosSinapi,
         bdi_diferenciado_sbc AS bdiDiferenciadoSbc,
@@ -490,6 +493,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         parametros: {
           dataBaseSbc: v.dataBaseSbc ? String(v.dataBaseSbc) : null,
           dataBaseSinapi: v.dataBaseSinapi ? String(v.dataBaseSinapi) : null,
+          ufSinapi: v.ufSinapi ? String(v.ufSinapi) : null,
           bdiServicosSbc: v.bdiServicosSbc == null ? null : Number(v.bdiServicosSbc),
           bdiServicosSinapi: v.bdiServicosSinapi == null ? null : Number(v.bdiServicosSinapi),
           bdiDiferenciadoSbc: v.bdiDiferenciadoSbc == null ? null : Number(v.bdiDiferenciadoSbc),
@@ -756,12 +760,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
 
       const p = jsonBody?.parametros || {};
+      const ufSinapi = p.ufSinapi ? String(p.ufSinapi).trim().toUpperCase().slice(0, 2) : null;
       await conn.query(
         `
         UPDATE obras_planilhas_versoes
         SET
           data_base_sbc = ?,
           data_base_sinapi = ?,
+          uf_sinapi = ?,
           bdi_servicos_sbc = ?,
           bdi_servicos_sinapi = ?,
           bdi_diferenciado_sbc = ?,
@@ -775,6 +781,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         [
           p.dataBaseSbc ? String(p.dataBaseSbc).trim() : null,
           p.dataBaseSinapi ? String(p.dataBaseSinapi).trim() : null,
+          ufSinapi,
           p.bdiServicosSbc == null ? null : toDec(p.bdiServicosSbc),
           p.bdiServicosSinapi == null ? null : toDec(p.bdiServicosSinapi),
           p.bdiDiferenciadoSbc == null ? null : toDec(p.bdiDiferenciadoSbc),

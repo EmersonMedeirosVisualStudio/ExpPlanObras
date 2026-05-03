@@ -180,6 +180,7 @@ async function readTextSmart(file: File) {
   const [navPlanilhaServicos, setNavPlanilhaServicos] = useState<Array<{ item: string; codigo: string; servicos: string }>>([]);
   const [navIdx, setNavIdx] = useState<number>(-1);
   const [planilhaParams, setPlanilhaParams] = useState<PlanilhaParams | null>(null);
+  const [planilhaInfo, setPlanilhaInfo] = useState<{ idPlanilha: number; numeroVersao: number; dataBaseSinapi: string | null; ufSinapi: string | null } | null>(null);
   const [definedComposicoesCodes, setDefinedComposicoesCodes] = useState<Set<string>>(new Set());
   const [empresaDocumentosLayout, setEmpresaDocumentosLayout] = useState<EmpresaDocumentosLayout | null>(null);
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
@@ -632,6 +633,17 @@ async function readTextSmart(file: File) {
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar planilha");
       const p = (json.data?.planilha?.parametros || {}) as any;
+      const plan = json.data?.planilha || null;
+      setPlanilhaInfo(
+        plan
+          ? {
+              idPlanilha: Number(plan.idPlanilha || planilhaId),
+              numeroVersao: Number(plan.numeroVersao || 0),
+              dataBaseSinapi: p.dataBaseSinapi == null ? null : String(p.dataBaseSinapi || ""),
+              ufSinapi: p.ufSinapi == null ? null : String(p.ufSinapi || "").trim().toUpperCase(),
+            }
+          : null
+      );
       setPlanilhaParams({
         dataBaseSbc: p.dataBaseSbc == null ? null : String(p.dataBaseSbc || ""),
         dataBaseSinapi: p.dataBaseSinapi == null ? null : String(p.dataBaseSinapi || ""),
@@ -669,6 +681,7 @@ async function readTextSmart(file: File) {
     } catch {
       setPrevistoRows([]);
       setPlanilhaParams(null);
+      setPlanilhaInfo(null);
       setNavPlanilhaServicos([]);
       setNavIdx(-1);
     }
@@ -2517,13 +2530,14 @@ async function readTextSmart(file: File) {
                 <button
                   className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
                   type="button"
-                  onClick={() =>
-                    router.push(
-                      `/dashboard/engenharia/obras/${idObra}/planilha/sinapi?codigo=${encodeURIComponent(codigoServico)}&returnTo=${encodeURIComponent(
-                        `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}`
-                      )}`
-                    )
-                  }
+                  onClick={() => {
+                    const qs = new URLSearchParams();
+                    qs.set("codigo", String(codigoServico || "").trim());
+                    qs.set("returnTo", `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}`);
+                    qs.set("from", "importar");
+                    if (planilhaInfo?.idPlanilha) qs.set("planilhaId", String(planilhaInfo.idPlanilha));
+                    router.push(`/dashboard/engenharia/obras/${idObra}/planilha/sinapi?${qs.toString()}`);
+                  }}
                   disabled={loading}
                   title="Abrir Sinapi"
                 >

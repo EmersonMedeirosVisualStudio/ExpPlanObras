@@ -386,6 +386,7 @@ async function ensurePlanilhaOrcamentariaTables(tx: any) {
       origem VARCHAR(16) NOT NULL DEFAULT 'MANUAL',
       data_base_sbc VARCHAR(16) NULL,
       data_base_sinapi VARCHAR(16) NULL,
+      uf_sinapi VARCHAR(2) NULL,
       bdi_servicos_sbc NUMERIC(10,4) NULL,
       bdi_servicos_sinapi NUMERIC(10,4) NULL,
       bdi_diferenciado_sbc NUMERIC(10,4) NULL,
@@ -402,6 +403,7 @@ async function ensurePlanilhaOrcamentariaTables(tx: any) {
   await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_planilhas_versoes_uk_versao ON obras_planilhas_versoes (tenant_id, id_obra, numero_versao)`);
   await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_versoes_idx_atual ON obras_planilhas_versoes (tenant_id, id_obra, atual)`);
   await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_versoes_idx_obra ON obras_planilhas_versoes (tenant_id, id_obra)`);
+  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_versoes ADD COLUMN IF NOT EXISTS uf_sinapi VARCHAR(2) NULL`).catch(() => null);
 
   await tx.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS obras_planilhas_linhas (
@@ -4270,6 +4272,7 @@ export default async function v1Routes(server: FastifyInstance) {
           origem,
           data_base_sbc AS "dataBaseSbc",
           data_base_sinapi AS "dataBaseSinapi",
+          uf_sinapi AS "ufSinapi",
           bdi_servicos_sbc AS "bdiServicosSbc",
           bdi_servicos_sinapi AS "bdiServicosSinapi",
           bdi_diferenciado_sbc AS "bdiDiferenciadoSbc",
@@ -4327,6 +4330,7 @@ export default async function v1Routes(server: FastifyInstance) {
           parametros: {
             dataBaseSbc: v.dataBaseSbc ? String(v.dataBaseSbc) : null,
             dataBaseSinapi: v.dataBaseSinapi ? String(v.dataBaseSinapi) : null,
+            ufSinapi: v.ufSinapi ? String(v.ufSinapi) : null,
             bdiServicosSbc: v.bdiServicosSbc == null ? null : Number(v.bdiServicosSbc),
             bdiServicosSinapi: v.bdiServicosSinapi == null ? null : Number(v.bdiServicosSinapi),
             bdiDiferenciadoSbc: v.bdiDiferenciadoSbc == null ? null : Number(v.bdiDiferenciadoSbc),
@@ -4616,6 +4620,7 @@ export default async function v1Routes(server: FastifyInstance) {
         const p = (body.parametros || {}) as any;
         const dataBaseSbc = p.dataBaseSbc ? String(p.dataBaseSbc).trim().slice(0, 16) : null;
         const dataBaseSinapi = p.dataBaseSinapi ? String(p.dataBaseSinapi).trim().slice(0, 16) : null;
+        const ufSinapi = p.ufSinapi ? String(p.ufSinapi).trim().toUpperCase().slice(0, 2) : null;
 
         await prisma.$executeRawUnsafe(
           `
@@ -4623,14 +4628,15 @@ export default async function v1Routes(server: FastifyInstance) {
           SET
             data_base_sbc = $4,
             data_base_sinapi = $5,
-            bdi_servicos_sbc = $6,
-            bdi_servicos_sinapi = $7,
-            bdi_diferenciado_sbc = $8,
-            bdi_diferenciado_sinapi = $9,
-            enc_sociais_sem_des_sbc = $10,
-            enc_sociais_sem_des_sinapi = $11,
-            desconto_sbc = $12,
-            desconto_sinapi = $13,
+            uf_sinapi = $6,
+            bdi_servicos_sbc = $7,
+            bdi_servicos_sinapi = $8,
+            bdi_diferenciado_sbc = $9,
+            bdi_diferenciado_sinapi = $10,
+            enc_sociais_sem_des_sbc = $11,
+            enc_sociais_sem_des_sinapi = $12,
+            desconto_sbc = $13,
+            desconto_sinapi = $14,
             atualizado_em = NOW()
           WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
           `,
@@ -4639,6 +4645,7 @@ export default async function v1Routes(server: FastifyInstance) {
           idPlanilha,
           dataBaseSbc,
           dataBaseSinapi,
+          ufSinapi,
           p.bdiServicosSbc == null || p.bdiServicosSbc === '' ? null : toDec(p.bdiServicosSbc),
           p.bdiServicosSinapi == null || p.bdiServicosSinapi === '' ? null : toDec(p.bdiServicosSinapi),
           p.bdiDiferenciadoSbc == null || p.bdiDiferenciadoSbc === '' ? null : toDec(p.bdiDiferenciadoSbc),
@@ -7056,7 +7063,7 @@ export default async function v1Routes(server: FastifyInstance) {
           .map((r) => {
             const base = [
               ctx.tenantId,
-              idObra,
+              obraId,
               codigoServico,
               r.etapa,
               r.tipoItem,

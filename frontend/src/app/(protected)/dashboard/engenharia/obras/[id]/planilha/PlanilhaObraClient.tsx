@@ -320,6 +320,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   const [parametros, setParametros] = useState({
     dataBaseSbc: "",
     dataBaseSinapi: "",
+    ufSinapi: "",
     bdiServicosSbc: "",
     bdiServicosSinapi: "",
     bdiDiferenciadoSbc: "",
@@ -342,6 +343,39 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   const paramsSectionRef = useRef<HTMLDivElement | null>(null);
   const planilhaSectionRef = useRef<HTMLDivElement | null>(null);
   const adicionarLinhaRef = useRef<HTMLDivElement | null>(null);
+
+  const ufs = useMemo(
+    () => [
+      "AC",
+      "AL",
+      "AP",
+      "AM",
+      "BA",
+      "CE",
+      "DF",
+      "ES",
+      "GO",
+      "MA",
+      "MT",
+      "MS",
+      "MG",
+      "PA",
+      "PB",
+      "PR",
+      "PE",
+      "PI",
+      "RJ",
+      "RN",
+      "RS",
+      "RO",
+      "RR",
+      "SC",
+      "SP",
+      "SE",
+      "TO",
+    ],
+    []
+  );
 
   const podeEditar = useMemo(() => {
     return true;
@@ -813,6 +847,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       setParametros({
         dataBaseSbc: p.dataBaseSbc ?? "",
         dataBaseSinapi: p.dataBaseSinapi ?? "",
+        ufSinapi: p.ufSinapi ?? "",
         bdiServicosSbc: p.bdiServicosSbc == null ? "" : String(p.bdiServicosSbc),
         bdiServicosSinapi: p.bdiServicosSinapi == null ? "" : String(p.bdiServicosSinapi),
         bdiDiferenciadoSbc: p.bdiDiferenciadoSbc == null ? "" : String(p.bdiDiferenciadoSbc),
@@ -949,6 +984,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
           parametros: {
             dataBaseSbc: parametros.dataBaseSbc || null,
             dataBaseSinapi: parametros.dataBaseSinapi || null,
+            ufSinapi: parametros.ufSinapi || null,
             bdiServicosSbc: parametros.bdiServicosSbc || null,
             bdiServicosSinapi: parametros.bdiServicosSinapi || null,
             bdiDiferenciadoSbc: parametros.bdiDiferenciadoSbc || null,
@@ -1654,6 +1690,33 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                       </tr>
                     </thead>
                     <tbody>
+                      <tr className="border-t">
+                        <td className="px-3 py-2">UF (SINAPI)</td>
+                        <td className="px-3 py-2 text-slate-500">—</td>
+                        <td className="px-3 py-2">
+                          <input
+                            className={`input bg-white ${paramErrors.ufSinapi ? "border-red-300 bg-red-50" : ""}`}
+                            value={parametros.ufSinapi}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setParametros((p) => ({ ...p, ufSinapi: v }));
+                              setParamErrors((p) => {
+                                if (!("ufSinapi" in p)) return p;
+                                const { ufSinapi: _, ...rest } = p as any;
+                                return rest;
+                              });
+                            }}
+                            disabled={!podeEditar}
+                            list="planilha-ufs"
+                            placeholder="SP"
+                          />
+                          <datalist id="planilha-ufs">
+                            {ufs.map((x) => (
+                              <option key={x} value={x} />
+                            ))}
+                          </datalist>
+                        </td>
+                      </tr>
                       {[
                         ["Data-base", "dataBaseSbc", "dataBaseSinapi"],
                         ["BDI de Serviços (%)", "bdiServicosSbc", "bdiServicosSinapi"],
