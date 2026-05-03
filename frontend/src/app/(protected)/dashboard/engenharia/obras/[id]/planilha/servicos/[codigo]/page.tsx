@@ -877,10 +877,15 @@ async function readTextSmart(file: File) {
     }
   }, [idObra, returnTo]);
 
+  function isExternalHref(href: string) {
+    const raw = String(href || "").trim();
+    return raw.startsWith("//") || /^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(raw) || /^[a-z][a-z0-9+.-]*:/i.test(raw);
+  }
+
   function voltar() {
     const target = String(returnTo || "").trim() || String(returnToMem || "").trim();
     if (target) {
-      router.push(target);
+      if (!isExternalHref(target)) router.push(target);
       return;
     }
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -891,7 +896,9 @@ async function readTextSmart(file: File) {
   }
 
   function getBackTargetUrl() {
-    return String(returnTo || "").trim() || String(returnToMem || "").trim() || `/dashboard/engenharia/obras/${idObra}/planilha`;
+    const target = String(returnTo || "").trim() || String(returnToMem || "").trim();
+    if (target && !isExternalHref(target)) return target;
+    return `/dashboard/engenharia/obras/${idObra}/planilha`;
   }
 
   const bancosBase = useMemo(() => ["SINAPI", "Próprio", "SBC", "SICRO3"], []);

@@ -109,6 +109,7 @@ export default function SinapiImportPage() {
   const [planilhaDataBaseSinapi, setPlanilhaDataBaseSinapi] = useState<string>("");
   const [showFiltros, setShowFiltros] = useState<boolean>(false);
   const [importOpen, setImportOpen] = useState<boolean>(false);
+  const [evolucaoOpen, setEvolucaoOpen] = useState<boolean>(false);
 
   const breadcrumb = useMemo(() => {
     return "Engenharia → Obras → Obra selecionada → Planilha orçamentária → Sinapi";
@@ -146,6 +147,43 @@ export default function SinapiImportPage() {
     ],
     []
   );
+
+  const evolucaoChecklist = useMemo(
+    () => [
+      { etapa: 1, entrega: "Importação inicial a partir do Excel", status: "Concluído", commit: "57c585b" },
+      { etapa: 2, entrega: "Upload + prévia + parâmetros", status: "Concluído", commit: "deecdb9" },
+      { etapa: 3, entrega: "Importar analítico + preços (ISD/ICD/ISE) + prévia em card", status: "Concluído", commit: "dab67db" },
+      { etapa: 4, entrega: "Melhorias de UX (validações de prévia, mensagens e KPIs)", status: "Concluído", commit: "e38c670" },
+      { etapa: 5, entrega: "Bloqueio quando mês-base é diferente (com opção de forçar)", status: "Em uso", commit: "d3364d4" },
+      { etapa: 6, entrega: "“Opção A”: parse local no navegador e envio de JSON (sem upload do XLSX)", status: "Alternativa", commit: "c5b701b" },
+      { etapa: 7, entrega: "Reestruturação do fluxo: Sinapi centralizado + aplicar base na obra", status: "Em uso", commit: "0fe24ba" },
+      { etapa: 8, entrega: "Lista de importados + filtros ocultos + modal de importação", status: "Em uso", commit: "d20aaa6" },
+      { etapa: 9, entrega: "Preferências persistidas (UF/insumos)", status: "Em uso", commit: "02532fd" },
+      { etapa: 10, entrega: "Correções de rota/UX (obras, mensagens no modal, ajustes de rótulos)", status: "Em uso", commit: "584b886" },
+      { etapa: 11, entrega: "Opções exclusivas (sem “Escopo”) + erro de importação mais detalhado", status: "Em uso", commit: "07c1291" },
+      { etapa: 12, entrega: "Data-base primeiro no modal + override manual da data-base informada", status: "Em uso", commit: "81b7b19" },
+      {
+        etapa: 13,
+        entrega: "Correção de navegação externa (evitar ROUTER_EXTERNAL_TARGET_ERROR em rotas externas)",
+        status: "Em uso",
+        commit: "2609b2f",
+      },
+    ],
+    []
+  );
+
+  const previewRequirements = useMemo(() => {
+    const missing: string[] = [];
+    if (!String(dataBaseImport || "").trim()) missing.push("Data-base (SINAPI)");
+    if (!String(sheetName || "").trim()) missing.push("Aba (Relatório Analítico)");
+    if (!String(uf || "").trim()) missing.push("UF");
+    if (!String(insumosModo || "").trim()) missing.push("Preços de insumos (modo)");
+    if (!String(insumosSheetName || "").trim()) missing.push("Nome da aba (preços de insumos)");
+    if (!file) missing.push("Arquivo XLSX");
+    if (opcao === "SERVICO" && !String(codigoServico || "").trim()) missing.push("Código do serviço");
+    if ((opcao === "FALTAM" || opcao === "SUBSTITUIR") && !(Number.isFinite(targetObraId) && targetObraId > 0)) missing.push("Obra/Licitação/Orçamento");
+    return { ok: missing.length === 0, missing };
+  }, [dataBaseImport, sheetName, uf, insumosModo, insumosSheetName, file, opcao, codigoServico, targetObraId]);
 
   const returnToKey = useMemo(() => `expplanobras:sinapi:returnTo:${idObra}`, [idObra]);
   useEffect(() => {
@@ -494,12 +532,20 @@ export default function SinapiImportPage() {
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
+            onClick={() => setEvolucaoOpen(true)}
+            disabled={busy}
+            title="Ver checklist visual da evolução"
+          >
+            Evolução
+          </button>
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
             onClick={() => {
               const href = String(backHref || "").trim();
-              if (/^https?:\/\//i.test(href) || href.startsWith("//")) {
-                window.location.assign(href);
-                return;
-              }
+              const isExternal = href.startsWith("//") || /^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(href) || /^[a-z][a-z0-9+.-]*:/i.test(href);
+              if (isExternal) return router.push(`/dashboard/engenharia/obras/${idObra}/planilha`);
+              if (!href) return router.push(`/dashboard/engenharia/obras/${idObra}/planilha`);
               router.push(href);
             }}
             disabled={busy}
@@ -798,7 +844,19 @@ export default function SinapiImportPage() {
                 </label>
 
                 <div className="flex items-center justify-end gap-2 flex-wrap">
-                  <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => doRequest(true)} disabled={busy}>
+                  <button
+                    className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                    type="button"
+                    onClick={() => doRequest(true)}
+                    disabled={busy || !previewRequirements.ok}
+                    title={
+                      busy
+                        ? "Processando..."
+                        : previewRequirements.ok
+                          ? "Gerar prévia"
+                          : `Preencha: ${previewRequirements.missing.join(", ")}`
+                    }
+                  >
                     Prévia
                   </button>
                 </div>
@@ -880,6 +938,47 @@ export default function SinapiImportPage() {
                   </div>
                 </section>
               ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {evolucaoOpen ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-auto">
+          <div className="w-full max-w-5xl rounded-xl border bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-3 border-b p-4">
+              <div className="text-lg font-semibold">Evolução da importação SINAPI (checklist visual)</div>
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                type="button"
+                onClick={() => setEvolucaoOpen(false)}
+                disabled={busy}
+              >
+                Fechar
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="text-sm text-slate-700">
+                Este checklist serve para rastrear o que já foi entregue e qual commit está associado a cada etapa.
+              </div>
+              <div className="rounded-lg border overflow-hidden">
+                <div className="grid grid-cols-[80px_1fr_120px_110px] bg-slate-50 text-xs font-semibold text-slate-700">
+                  <div className="px-2 py-2 border-r text-center">Etapa</div>
+                  <div className="px-2 py-2 border-r">O que foi entregue</div>
+                  <div className="px-2 py-2 border-r text-center">Status</div>
+                  <div className="px-2 py-2 text-center">Commit</div>
+                </div>
+                <div className="divide-y">
+                  {evolucaoChecklist.map((r) => (
+                    <div key={r.etapa} className="grid grid-cols-[80px_1fr_120px_110px] text-sm">
+                      <div className="px-2 py-2 border-r text-center">{r.etapa}</div>
+                      <div className="px-2 py-2 border-r">{r.entrega}</div>
+                      <div className="px-2 py-2 border-r text-center">{r.status}</div>
+                      <div className="px-2 py-2 text-center font-mono text-xs">{r.commit}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>

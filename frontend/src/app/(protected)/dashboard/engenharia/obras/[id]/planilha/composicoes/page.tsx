@@ -27,6 +27,11 @@ export default function Page() {
 
   const idObra = useMemo(() => Number((params as any)?.id || 0), [params]);
   const returnTo = search.get("returnTo");
+  const safeReturnTo = useMemo(() => {
+    const raw = String(returnTo || "").trim();
+    const isExternal = raw.startsWith("//") || /^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(raw) || /^[a-z][a-z0-9+.-]*:/i.test(raw);
+    return raw && !isExternal ? raw : null;
+  }, [returnTo]);
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -184,7 +189,7 @@ export default function Page() {
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha?returnTo=${encodeURIComponent(returnTo || "")}`)}
+            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha?returnTo=${encodeURIComponent(safeReturnTo || "")}`)}
             disabled={loading}
           >
             Planilha
@@ -192,7 +197,7 @@ export default function Page() {
           <button
             className="rounded-lg border bg-blue-600 px-4 py-2 text-sm text-white border-blue-600 hover:bg-blue-500 disabled:opacity-60"
             type="button"
-            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(returnTo || "")}`)}
+            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(safeReturnTo || "")}`)}
             disabled={loading}
           >
             Composições
@@ -200,7 +205,7 @@ export default function Page() {
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(returnTo || "")}`)}
+            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(safeReturnTo || "")}`)}
             disabled={loading}
           >
             Insumos
@@ -208,7 +213,7 @@ export default function Page() {
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() => router.push(returnTo || `/dashboard/engenharia/obras/${idObra}/planilha`)}
+            onClick={() => router.push(safeReturnTo || `/dashboard/engenharia/obras/${idObra}/planilha`)}
             disabled={loading}
           >
             Voltar

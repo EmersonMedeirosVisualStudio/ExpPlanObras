@@ -1294,7 +1294,17 @@ export default function EngenhariaObraHomePage() {
             <Clock className="h-4 w-4" />
             Histórico
           </button>
-          <button className="rounded-lg border px-4 py-2 text-sm" type="button" onClick={() => router.push(backHref)}>
+          <button
+            className="rounded-lg border px-4 py-2 text-sm"
+            type="button"
+            onClick={() => {
+              const href = String(backHref || "").trim();
+              const isExternal = href.startsWith("//") || /^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(href) || /^[a-z][a-z0-9+.-]*:/i.test(href);
+              if (isExternal) return router.push("/dashboard/engenharia/obras");
+              if (!href) return router.push("/dashboard/engenharia/obras");
+              router.push(href);
+            }}
+          >
             Voltar
           </button>
         </div>
