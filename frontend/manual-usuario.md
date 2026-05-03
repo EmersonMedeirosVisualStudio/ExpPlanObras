@@ -112,6 +112,39 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 - Clique em **Confirmar importação**
 - A nova versão aparece na lista de versões e pode ser selecionada
 
+---
+
+## 3.2 SINAPI (Excel) — Importar composições para a obra (com prévia)
+
+Use esta tela quando você precisa trazer a composição de um serviço do SINAPI para a planilha da obra.
+
+### ETAPA 1 — Onde acessar
+- Engenharia → Obras → (abra a obra) → **Planilha orçamentária** → **Sinapi**
+
+### ETAPA 2 — O que clicar
+- Se o serviço já estiver na lista “Serviços SINAPI importados”, clique em **Aplicar na obra**
+- Se não estiver, clique em **Importar**
+
+### ETAPA 3 — O que preencher
+- Data-base (SINAPI)
+- Aba (Relatório Analítico de Composições): normalmente “Analítico”
+- UF
+- Preços de insumos: ISD / ICD / ISE
+- Arquivo XLSX (SINAPI)
+
+### ETAPA 4 — O que esperar
+- O topo da tela mostra:
+  - **Obra: #id - nome da obra**
+  - **Contrato: #id - número do contrato - objeto**
+- Ao clicar em **Prévia**, o sistema abre um modal “Prévia” com:
+  - tabela “Serviços na prévia” (com status “Já importado” quando for o caso)
+  - itens do serviço selecionado para conferência
+
+### ETAPA 5 — Como validar
+- Marque (selecione) o serviço na tabela “Serviços na prévia”
+- Clique em **Importar selecionado**
+- Volte para a lista “Serviços SINAPI importados” e confirme que o serviço aparece (ou atualiza)
+
 ## 4. Contrato da obra (ver detalhes)
 
 O contrato é uma informação associada à obra. Para ver:

@@ -1495,7 +1495,7 @@ export default function SinapiImportPage() {
                     <div className="divide-y bg-white">
                       {previewComposicoesParaLista.map((c, idx) => {
                         const codigo = String(c.codigo || "").trim().toUpperCase();
-                        const checked = codigo && codigo === String(previewSelectedCodigo || "").trim().toUpperCase();
+                        const checked = Boolean(codigo) && codigo === String(previewSelectedCodigo || "").trim().toUpperCase();
                         const jaImportado = codigo ? importadosCodes.has(codigo) : false;
                         const valor = c.valorSemBdi == null ? null : Number(c.valorSemBdi);
                         const valorOk = valor != null && Number.isFinite(valor);

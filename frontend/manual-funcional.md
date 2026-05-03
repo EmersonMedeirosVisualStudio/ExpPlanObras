@@ -3036,7 +3036,12 @@ ETAPA 4 — O que esperar
 
 ETAPA 5 — Como validar
 - Se o serviço já estiver importado, clique em “Aplicar na obra”.
-- Se ainda não estiver importado, importe via XLSX: gere a “Prévia” e, no card “Prévia”, clique em “Importar” (ou “Cancelar”).
+- Se ainda não estiver importado, importe via XLSX:
+  - clique em “Importar”;
+  - preencha os campos;
+  - clique em “Prévia” (abre a **Prévia em um modal separado**);
+  - na tabela “Serviços na prévia”, marque o serviço que deseja importar (caixa de seleção);
+  - clique em “Importar selecionado”.
 
 **Como usar — Tela Sinapi (Planilha orçamentária)**
 
@@ -3044,8 +3049,11 @@ ETAPA 1 — Onde acessar
 - Acesse: Engenharia → Obras → (selecione a obra) → Planilha orçamentária → Sinapi.
 
 ETAPA 2 — O que clicar
+- No topo da tela, confira:
+  - Obra: `#id da obra - nome da obra`;
+  - Contrato: `#id do contrato - número do contrato - objeto`.
 - Na lista “Serviços SINAPI importados”, use “Aplicar na obra” quando o serviço já estiver importado.
-- Para importar via XLSX, clique no botão “Importar” (abre o card “Opções de importação”).
+- Para importar via XLSX, clique no botão “Importar” (abre o modal “Opções de importação”).
 - Se precisar filtrar a lista, clique em “Exibir filtros”.
 
 ETAPA 3 — O que preencher
@@ -3068,15 +3076,19 @@ ETAPA 3 — O que preencher
 
 ETAPA 4 — O que esperar
 - A lista exibe os serviços importados como uma lista com colunas: Código, Descrição, un, Valor da composição, UF, Data-base e Preços de insumos.
-- Após importar (no card “Prévia” → “Importar”), o serviço passa a aparecer na lista conforme os filtros.
+- Após importar (na **Prévia (modal)** → “Importar selecionado”), o serviço passa a aparecer na lista conforme os filtros.
 
 ETAPA 5 — Como validar
-- Recarregue a página “Sinapi” e verifique o serviço importado na lista.
+- Verifique se:
+  - o serviço aparece/atualiza na lista “Serviços SINAPI importados”;
+  - ao clicar em “Aplicar na obra”, o sistema confirma “Composição aplicada na obra”.
 
 **Validações e regras técnicas (para consistência do dado)**
 
 - O sistema usa:
-  - **Aba Analítico**: filtra por “Código da Composição” igual ao código do serviço e extrai Tipo Item, Código do Item, Descrição, Unidade e Coeficiente.
+  - **Aba Analítico (Relatório Analítico de Composições)**:
+    - para o **serviço (cabeçalho da composição)**: usa a linha onde `Código da Composição = Código do serviço` e `Tipo Item`, `Código do Item` e `Coeficiente` estão vazios para capturar **Descrição (nome do serviço)** e **Unidade**;
+    - para os **itens da composição**: usa as linhas onde `Código do Item` e `Coeficiente` estão preenchidos para capturar itens (insumos/composições) e coeficientes.
   - **Abas ISD/ICD/ISE**: localiza cabeçalho com Classificação, Código do Insumo, Descrição do Insumo, Unidade e a coluna UF do preço unitário (P.U.).
 - Persistência: além de gravar a composição na planilha da obra, o backend mantém uma **base SINAPI interna** para reuso (serviços/insumos/PU/composições) vinculada à data-base.
 
@@ -3138,6 +3150,8 @@ Este é o comportamento real da importação ao ler o arquivo XLSX (regras de bu
 - Uma linha é tratada como “título da composição” quando:
   - `nível = 0` (quando a coluna “nível” existe), ou
   - o tipo é “COMPOSIÇÃO” e o coeficiente é vazio/1 (heurística).
+- Ou (caso comum no relatório Analítico do SINAPI):
+  - a linha tem `Código da Composição` e `Descrição`, mas `Tipo Item`, `Código do Item` e `Coeficiente` vazios (essa linha é o “cabeçalho do serviço” e é onde o sistema captura **Descrição** e **Unidade** do serviço).
 - Quando encontra um título, ele guarda `current = código da composição`.
 - As linhas seguintes (até o próximo título) são itens dessa composição.
 
@@ -3197,7 +3211,7 @@ Legenda:
 |---|---|---|---|
 | 1 | Importação inicial a partir do Excel | Concluído | 57c585b |
 | 2 | Upload + prévia + parâmetros | Concluído | deecdb9 |
-| 3 | Importar analítico + preços (ISD/ICD/ISE) + prévia em card | Concluído | dab67db |
+| 3 | Importar analítico + preços (ISD/ICD/ISE) + prévia (modal) | Concluído | dab67db |
 | 4 | Melhorias de UX (validações de prévia, mensagens e KPIs) | Concluído | e38c670 |
 | 5 | Bloqueio quando mês-base é diferente (com opção de forçar) | Em uso | d3364d4 |
 | 6 | “Opção A”: parse local no navegador e envio de JSON (sem upload do XLSX) | Alternativa | c5b701b |
