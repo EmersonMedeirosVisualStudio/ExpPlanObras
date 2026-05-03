@@ -75,6 +75,7 @@ export default function SinapiImportPage() {
   const sp = useSearchParams();
   const idObra = Number(params?.id);
   const apiOriginPublic = String(process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+  const [apiOrigin, setApiOrigin] = useState<string>(apiOriginPublic);
   const returnTo = sp.get("returnTo") || "";
   const codigoParam = String(sp.get("codigo") || "").trim().toUpperCase();
   const dataBaseParam = String(sp.get("dataBase") || "").trim();
@@ -84,7 +85,7 @@ export default function SinapiImportPage() {
   const [sheetName, setSheetName] = useState<string>("Analítico");
   const [uf, setUf] = useState<string>("AC");
   const [insumosModo, setInsumosModo] = useState<"ISD" | "ICD" | "ISE">("ISD");
-  const [insumosSheetName, setInsumosSheetName] = useState<string>("ISD");
+  const [insumosSheetName, setInsumosSheetName] = useState<string>("");
   const [codigoServico, setCodigoServico] = useState<string>(codigoParam);
   const [codigoFiltro, setCodigoFiltro] = useState<string>(codigoParam);
   const [dataBaseFiltro, setDataBaseFiltro] = useState<string>(dataBaseParam);
@@ -179,20 +180,20 @@ export default function SinapiImportPage() {
     if (!String(sheetName || "").trim()) missing.push("Aba (Relatório Analítico)");
     if (!String(uf || "").trim()) missing.push("UF");
     if (!String(insumosModo || "").trim()) missing.push("Preços de insumos (modo)");
-    if (!String(insumosSheetName || "").trim()) missing.push("Nome da aba (preços de insumos)");
     if (!file) missing.push("Arquivo XLSX");
     if (opcao === "SERVICO" && !String(codigoServico || "").trim()) missing.push("Código do serviço");
     if ((opcao === "FALTAM" || opcao === "SUBSTITUIR") && !(Number.isFinite(targetObraId) && targetObraId > 0)) missing.push("Obra/Licitação/Orçamento");
     return { ok: missing.length === 0, missing };
-  }, [dataBaseImport, sheetName, uf, insumosModo, insumosSheetName, file, opcao, codigoServico, targetObraId]);
+  }, [dataBaseImport, sheetName, uf, insumosModo, file, opcao, codigoServico, targetObraId]);
 
   const checklistInterno = useMemo(() => {
+    const sheetInsumos = String(insumosSheetName || "").trim();
     const items: Array<{ titulo: string; status: "OK" | "PENDENTE" | "NA_PREVIA" }> = [
       { titulo: "Data-base informada", status: String(dataBaseImport || "").trim() ? "OK" : "PENDENTE" },
       { titulo: "UF selecionada", status: String(uf || "").trim() ? "OK" : "PENDENTE" },
       { titulo: "Aba do Analítico definida", status: String(sheetName || "").trim() ? "OK" : "PENDENTE" },
       { titulo: `Modo de insumos (${String(insumosModo || "").trim() || "—"})`, status: String(insumosModo || "").trim() ? "OK" : "PENDENTE" },
-      { titulo: "Nome da aba (preços de insumos) definido", status: String(insumosSheetName || "").trim() ? "OK" : "PENDENTE" },
+      { titulo: sheetInsumos ? "Nome da aba (preços de insumos) informado" : "Nome da aba (preços de insumos): automático", status: "OK" },
       { titulo: "Arquivo XLSX selecionado", status: file ? "OK" : "PENDENTE" },
     ];
 
@@ -201,8 +202,9 @@ export default function SinapiImportPage() {
       items.push({ titulo: "Obra/Licitação/Orçamento selecionada", status: Number.isFinite(targetObraId) && targetObraId > 0 ? "OK" : "PENDENTE" });
 
     const previewStatus: "OK" | "NA_PREVIA" = preview ? "OK" : "NA_PREVIA";
+    const localizarAbaStatus: "OK" | "NA_PREVIA" = sheetInsumos ? "OK" : previewStatus;
     items.push(
-      { titulo: "Localizar aba ISD/ICD/ISE automaticamente (quando não informar)", status: previewStatus },
+      { titulo: sheetInsumos ? "Aba de insumos informada (não precisa localizar automaticamente)" : "Localizar aba ISD/ICD/ISE automaticamente (quando não informar)", status: localizarAbaStatus },
       { titulo: "Percorrer linhas/colunas para encontrar o cabeçalho de insumos", status: previewStatus },
       { titulo: "Validar itens do cabeçalho (classificação, código, descrição, unidade, UF/P.U.)", status: previewStatus },
       { titulo: "Ler preços da UF selecionada (P.U.)", status: previewStatus },
@@ -212,6 +214,18 @@ export default function SinapiImportPage() {
 
     return items;
   }, [dataBaseImport, uf, sheetName, insumosModo, insumosSheetName, file, opcao, codigoServico, targetObraId, preview]);
+
+  useEffect(() => {
+    if (apiOrigin) return;
+    (async () => {
+      try {
+        const res = await fetch("/health", { cache: "no-store" });
+        const json = await res.json().catch(() => null);
+        const origin = String(json?.apiOrigin || "").replace(/\/$/, "");
+        if (origin) setApiOrigin(origin);
+      } catch {}
+    })();
+  }, [apiOrigin]);
 
   const returnToKey = useMemo(() => `expplanobras:sinapi:returnTo:${idObra}`, [idObra]);
   useEffect(() => {
@@ -310,9 +324,9 @@ export default function SinapiImportPage() {
       fd.append("dryRun", String(dryRun));
       fd.append("forceDataBaseMismatch", String(forceDataBaseMismatch));
 
-      const needsDirectUpload = Boolean(apiOriginPublic) && file.size >= 4 * 1024 * 1024;
+      const needsDirectUpload = Boolean(apiOrigin) && file.size >= 4 * 1024 * 1024;
       const uploadUrl = needsDirectUpload
-        ? `${apiOriginPublic}/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico`
+        ? `${apiOrigin}/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico`
         : `/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico`;
 
       const res = await authFetch(uploadUrl, {
@@ -339,7 +353,14 @@ export default function SinapiImportPage() {
         setOkMsg("Importação concluída.");
       }
     } catch (e: any) {
-      setErr(e?.message || "Erro ao importar SINAPI");
+      const msg = String(e?.message || "");
+      if (msg.toLowerCase().includes("failed to fetch")) {
+        setErr(
+          "Falha de rede ao conectar no backend. Se você está em produção, aguarde 10 segundos e tente novamente. Se persistir, confirme se o backend (Render) está acessível e se a variável NEXT_PUBLIC_API_URL está configurada."
+        );
+      } else {
+        setErr(msg || "Erro ao importar SINAPI");
+      }
     } finally {
       setBusy(false);
     }
@@ -507,7 +528,8 @@ export default function SinapiImportPage() {
   useEffect(() => {
     setInsumosSheetName((cur) => {
       const norm = String(cur || "").trim().toUpperCase();
-      if (!norm || norm === "ISD" || norm === "ICD" || norm === "ISE") return insumosModo;
+      if (!norm) return cur;
+      if (norm === "ISD" || norm === "ICD" || norm === "ISE") return insumosModo;
       return cur;
     });
   }, [insumosModo]);
@@ -774,6 +796,7 @@ export default function SinapiImportPage() {
                           disabled={busy}
                           placeholder={insumosModo}
                         />
+                        <div className="text-xs text-slate-500">Deixe em branco para o sistema localizar automaticamente.</div>
                       </div>
                     </div>
 
