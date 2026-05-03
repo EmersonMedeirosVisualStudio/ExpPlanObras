@@ -894,12 +894,12 @@ export default function SinapiImportPage() {
                   ) : null}
                 </div>
 
-                <label className="flex items-center gap-2 text-sm rounded border bg-white px-3 py-2">
-                  <input type="checkbox" checked={forceDataBaseMismatch} onChange={(e) => setForceDataBaseMismatch(Boolean(e.target.checked))} disabled={busy} />
-                  <span className="text-slate-700">Forçar importação (mês-base diferente)</span>
-                </label>
+                <div className="flex items-center justify-between gap-3 flex-wrap border-t pt-3">
+                  <label className="flex items-center gap-2 text-sm rounded border bg-white px-3 py-2">
+                    <input type="checkbox" checked={forceDataBaseMismatch} onChange={(e) => setForceDataBaseMismatch(Boolean(e.target.checked))} disabled={busy} />
+                    <span className="text-slate-700">Forçar importação (mês-base diferente)</span>
+                  </label>
 
-                <div className="flex items-center justify-end gap-2 flex-wrap">
                   <button
                     className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
                     type="button"
