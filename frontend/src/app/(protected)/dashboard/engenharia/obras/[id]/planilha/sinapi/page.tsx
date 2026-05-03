@@ -287,18 +287,6 @@ export default function SinapiImportPage() {
     return previewComposicoesParaLista.find((c) => String(c.codigo || "").trim().toUpperCase() === codigo) || null;
   }, [previewComposicoesParaLista, previewSelectedCodigo]);
 
-  const previewValorSemBdiSelecionado = useMemo(() => {
-    const fromList = previewSelectedComposicao?.valorSemBdi;
-    if (fromList != null && Number.isFinite(Number(fromList))) return Number(fromList);
-    const total = previewItensDoSelecionado.reduce((acc, it) => {
-      const q = Number(it.coeficiente || 0);
-      const vu = it.valorUnitario == null ? 0 : Number(it.valorUnitario);
-      if (!Number.isFinite(q) || !Number.isFinite(vu)) return acc;
-      return acc + q * vu;
-    }, 0);
-    return Number.isFinite(total) ? total : null;
-  }, [previewItensDoSelecionado, previewSelectedComposicao]);
-
   const previewItensDoSelecionado = useMemo(() => {
     const codigo = String(previewSelectedCodigo || "").trim().toUpperCase();
     if (!codigo) return [];
@@ -316,6 +304,18 @@ export default function SinapiImportPage() {
       valorUnitario: it?.valorUnitario ?? null,
     }));
   }, [preview, previewCompLocal, previewItensLocal, previewSelectedCodigo]);
+
+  const previewValorSemBdiSelecionado = useMemo(() => {
+    const fromList = previewSelectedComposicao?.valorSemBdi;
+    if (fromList != null && Number.isFinite(Number(fromList))) return Number(fromList);
+    const total = previewItensDoSelecionado.reduce((acc, it) => {
+      const q = Number(it.coeficiente || 0);
+      const vu = it.valorUnitario == null ? 0 : Number(it.valorUnitario);
+      if (!Number.isFinite(q) || !Number.isFinite(vu)) return acc;
+      return acc + q * vu;
+    }, 0);
+    return Number.isFinite(total) ? total : null;
+  }, [previewItensDoSelecionado, previewSelectedComposicao]);
 
   useEffect(() => {
     const list = previewComposicoesParaLista;
