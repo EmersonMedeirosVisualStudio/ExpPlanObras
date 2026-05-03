@@ -1401,15 +1401,7 @@ export default function SinapiImportPage() {
               {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
 
               <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div className="min-w-[240px] text-sm text-slate-700">
-                  Serviço selecionado:{" "}
-                  <span className="font-mono text-xs">{previewSelectedComposicao?.codigo ? previewSelectedComposicao.codigo : "—"}</span>
-                  {previewSelectedComposicao?.descricao ? ` — ${previewSelectedComposicao.descricao}` : ""}
-                  {previewSelectedComposicao?.und ? ` (${previewSelectedComposicao.und})` : ""}
-                  {previewValorSemBdiSelecionado != null
-                    ? ` • Valor sem BDI: ${Number(previewValorSemBdiSelecionado).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`
-                    : ""}
-                </div>
+                <div className="min-w-[240px] text-sm text-slate-700">Selecione um serviço na tabela “Serviços na prévia” para conferir os itens.</div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
                     className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
@@ -1480,13 +1472,13 @@ export default function SinapiImportPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-[520px_1fr]">
+              <div className="space-y-3">
                 <div className="rounded-lg border overflow-hidden">
                   <div className="bg-slate-50 px-3 py-2 text-sm font-semibold">Serviços na prévia</div>
                   <div className="max-h-72 overflow-auto">
-                    <div className="grid grid-cols-[46px_120px_110px_1fr_60px_160px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
+                    <div className="grid grid-cols-[46px_46px_110px_1fr_60px_160px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
                       <div className="text-center">Sel</div>
-                      <div>Status</div>
+                      <div className="text-center">Imp.</div>
                       <div>Código</div>
                       <div>Serviço</div>
                       <div>Un</div>
@@ -1499,11 +1491,12 @@ export default function SinapiImportPage() {
                         const jaImportado = codigo ? importadosCodes.has(codigo) : false;
                         const valor = c.valorSemBdi == null ? null : Number(c.valorSemBdi);
                         const valorOk = valor != null && Number.isFinite(valor);
+                        const descServico = c.descricao == null ? "" : String(c.descricao).trim();
                         return (
                           <button
                             key={codigo || `row-${idx}`}
                             type="button"
-                            className={`w-full text-left grid grid-cols-[46px_120px_110px_1fr_60px_160px] gap-x-2 px-3 py-2 text-sm hover:bg-slate-50 ${checked ? "bg-blue-50" : ""}`}
+                            className={`w-full text-left grid grid-cols-[46px_46px_110px_1fr_60px_160px] gap-x-2 px-3 py-2 text-sm hover:bg-slate-50 ${checked ? "bg-blue-50" : ""}`}
                             onClick={() => (codigo ? setPreviewSelectedCodigo(codigo) : null)}
                             disabled={busy || !codigo}
                           >
@@ -1515,9 +1508,20 @@ export default function SinapiImportPage() {
                                 disabled={busy || !codigo}
                               />
                             </div>
-                            <div className="text-xs text-slate-700">{jaImportado ? "Já importado" : "—"}</div>
+                            <div className="flex items-center justify-center">
+                              <span
+                                className={
+                                  jaImportado
+                                    ? "inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"
+                                    : "inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-slate-500"
+                                }
+                                title={jaImportado ? "Já importado" : "Não importado"}
+                              >
+                                {jaImportado ? "✓" : "—"}
+                              </span>
+                            </div>
                             <div className="font-mono text-xs text-slate-700">{codigo || "—"}</div>
-                            <div className="text-slate-800 truncate">{c.descricao || "—"}</div>
+                            <div className="text-slate-800 leading-snug">{descServico || "—"}</div>
                             <div className="text-slate-700">{c.und || "—"}</div>
                             <div className="text-right tabular-nums text-slate-800">
                               {valorOk ? Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
