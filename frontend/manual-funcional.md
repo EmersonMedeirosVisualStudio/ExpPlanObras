@@ -3166,6 +3166,24 @@ Este é o comportamento real da importação ao ler o arquivo XLSX (regras de bu
 - “Não foi possível identificar o cabeçalho…”: o arquivo não segue o padrão esperado (ou está em outra aba/relatório).
 - “Não foi possível ler os preços do UF XX…”: não achou a coluna de UF (ou o P.U.) na aba de insumos.
 
+**8.1) Checklist interno da importação (na tela Sinapi)**
+
+Além deste manual, o próprio sistema mostra um card “**Checklist interno da importação**” dentro de **Opções de importação**, ao lado do campo **Nome da aba (preços de insumos)**.
+
+Objetivo:
+
+- deixar visível o que o sistema valida e executa internamente para importar SINAPI;
+- mostrar o que está “OK”, o que está “Pendente”, e o que “executa ao clicar em Prévia”.
+
+Etapas que o checklist cobre (resumo):
+
+- validar parâmetros informados (data-base, UF, abas e arquivo);
+- localizar a aba ISD/ICD/ISE automaticamente (quando necessário);
+- percorrer linhas/colunas para encontrar o cabeçalho de insumos;
+- testar/validar itens do cabeçalho (classificação, código, descrição, unidade e UF/P.U.);
+- ler o preço unitário da UF selecionada;
+- ler o Analítico, cruzar itens com os preços e gerar a prévia.
+
 **Tarefa: Importação SINAPI — evolução**
 
 A importação SINAPI evoluiu em etapas. Este checklist mostra o que está **em uso**, o que ficou como **alternativa**, e o que está **concluído** como parte da evolução.
@@ -3325,6 +3343,7 @@ Implementação SINAPI (Planilha da Obra):
   - Frontend (Vercel): lê o XLSX localmente (no navegador) e envia apenas um JSON pequeno.
   - Backend (Render): valida parâmetros (ex.: data-base) e grava no Postgres (Neon).
 - Motivo: reduzir risco de erro por tamanho de upload e evitar consumo alto de memória no backend ao processar o Excel completo.
+- Para reduzir erro operacional, o botão **Prévia** só habilita quando todos os campos obrigatórios da importação estiverem preenchidos.
 
 ### 21.1 Contratos (módulo de Engenharia)
 
@@ -3356,6 +3375,7 @@ Navegação (padrão de usabilidade):
 
 - Botões **Voltar** e subtítulos (breadcrumb) usam `returnTo` para retornar à tela chamadora e exibir o **caminho real**.
 - Se `returnTo` não existir, o sistema volta para o padrão do módulo (ou usa `back()` do navegador quando aplicável).
+- Para evitar erro em produção (**ROUTER_EXTERNAL_TARGET_ERROR**), o sistema ignora `returnTo` quando ele vier como URL externa (ex.: `https://...`) e volta para uma rota interna padrão.
 - Dentro do contexto de um contrato, os botões de navegação ficam à direita do título, na ordem: **Contrato**, **Documentos**, **Programação financeira**, **Aditivos**, **Medições**, **Eventos** e **Voltar**. Ao navegar entre as telas, apenas o botão da tela atual fica em estado ativo.
 
 Menu (padrão):

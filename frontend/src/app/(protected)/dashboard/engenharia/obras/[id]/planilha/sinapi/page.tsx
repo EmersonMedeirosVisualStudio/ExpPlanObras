@@ -185,6 +185,33 @@ export default function SinapiImportPage() {
     return { ok: missing.length === 0, missing };
   }, [dataBaseImport, sheetName, uf, insumosModo, insumosSheetName, file, opcao, codigoServico, targetObraId]);
 
+  const checklistInterno = useMemo(() => {
+    const items: Array<{ titulo: string; status: "OK" | "PENDENTE" | "NA_PREVIA" }> = [
+      { titulo: "Data-base informada", status: String(dataBaseImport || "").trim() ? "OK" : "PENDENTE" },
+      { titulo: "UF selecionada", status: String(uf || "").trim() ? "OK" : "PENDENTE" },
+      { titulo: "Aba do Analítico definida", status: String(sheetName || "").trim() ? "OK" : "PENDENTE" },
+      { titulo: `Modo de insumos (${String(insumosModo || "").trim() || "—"})`, status: String(insumosModo || "").trim() ? "OK" : "PENDENTE" },
+      { titulo: "Nome da aba (preços de insumos) definido", status: String(insumosSheetName || "").trim() ? "OK" : "PENDENTE" },
+      { titulo: "Arquivo XLSX selecionado", status: file ? "OK" : "PENDENTE" },
+    ];
+
+    if (opcao === "SERVICO") items.push({ titulo: "Código do serviço informado", status: String(codigoServico || "").trim() ? "OK" : "PENDENTE" });
+    if (opcao === "FALTAM" || opcao === "SUBSTITUIR")
+      items.push({ titulo: "Obra/Licitação/Orçamento selecionada", status: Number.isFinite(targetObraId) && targetObraId > 0 ? "OK" : "PENDENTE" });
+
+    const previewStatus: "OK" | "NA_PREVIA" = preview ? "OK" : "NA_PREVIA";
+    items.push(
+      { titulo: "Localizar aba ISD/ICD/ISE automaticamente (quando não informar)", status: previewStatus },
+      { titulo: "Percorrer linhas/colunas para encontrar o cabeçalho de insumos", status: previewStatus },
+      { titulo: "Validar itens do cabeçalho (classificação, código, descrição, unidade, UF/P.U.)", status: previewStatus },
+      { titulo: "Ler preços da UF selecionada (P.U.)", status: previewStatus },
+      { titulo: "Ler itens do Analítico e cruzar com preços de insumos", status: previewStatus },
+      { titulo: "Gerar prévia com contadores e amostras", status: previewStatus }
+    );
+
+    return items;
+  }, [dataBaseImport, uf, sheetName, insumosModo, insumosSheetName, file, opcao, codigoServico, targetObraId, preview]);
+
   const returnToKey = useMemo(() => `expplanobras:sinapi:returnTo:${idObra}`, [idObra]);
   useEffect(() => {
     if (!returnTo) return;
@@ -735,21 +762,50 @@ export default function SinapiImportPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <div className="text-sm text-slate-600">Preços de insumos</div>
-                  <select className="input bg-white" value={insumosModo} onChange={(e) => setInsumosModo(e.target.value as any)} disabled={busy}>
-                    <option value="ISD">ISD — Encargos sociais SEM desoneração</option>
-                    <option value="ICD">ICD — Encargos sociais COM desoneração</option>
-                    <option value="ISE">ISE — Sem encargos sociais</option>
-                  </select>
-                  <div className="space-y-1">
-                    <div className="text-xs text-slate-500">Nome da aba (preços de insumos)</div>
-                    <input
-                      className="input bg-white"
-                      value={insumosSheetName}
-                      onChange={(e) => setInsumosSheetName(e.target.value)}
-                      disabled={busy}
-                      placeholder={insumosModo}
-                    />
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+                    <div className="md:col-span-7 space-y-2">
+                      <div className="text-sm text-slate-600">Preços de insumos</div>
+                      <select className="input bg-white" value={insumosModo} onChange={(e) => setInsumosModo(e.target.value as any)} disabled={busy}>
+                        <option value="ISD">ISD — Encargos sociais SEM desoneração</option>
+                        <option value="ICD">ICD — Encargos sociais COM desoneração</option>
+                        <option value="ISE">ISE — Sem encargos sociais</option>
+                      </select>
+                      <div className="space-y-1">
+                        <div className="text-xs text-slate-500">Nome da aba (preços de insumos)</div>
+                        <input
+                          className="input bg-white"
+                          value={insumosSheetName}
+                          onChange={(e) => setInsumosSheetName(e.target.value)}
+                          disabled={busy}
+                          placeholder={insumosModo}
+                        />
+                      </div>
+                    </div>
+                    <div className="md:col-span-5">
+                      <div className="rounded-xl border bg-slate-50 p-3">
+                        <div className="text-sm font-semibold text-slate-800">Checklist interno da importação</div>
+                        <div className="mt-1 text-xs text-slate-600">
+                          Mostra o que o sistema valida e executa internamente (principalmente ao gerar a Prévia).
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {checklistInterno.map((it, idx) => (
+                            <div key={`${idx}:${it.titulo}`} className="flex items-start gap-2 text-sm">
+                              {it.status === "OK" ? (
+                                <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5" />
+                              ) : it.status === "PENDENTE" ? (
+                                <XCircle className="h-4 w-4 text-red-600 mt-0.5" />
+                              ) : (
+                                <div className="h-4 w-4 mt-0.5 rounded-full border border-slate-300 bg-white" />
+                              )}
+                              <div className="min-w-0">
+                                <div className="text-slate-800">{it.titulo}</div>
+                                {it.status === "NA_PREVIA" ? <div className="text-xs text-slate-500">Executa ao clicar em “Prévia”.</div> : null}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
