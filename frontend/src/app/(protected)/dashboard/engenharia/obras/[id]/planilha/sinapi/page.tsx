@@ -170,7 +170,10 @@ export default function SinapiImportPage() {
   const [planilhaDataBaseSinapi, setPlanilhaDataBaseSinapi] = useState<string>("");
   const [showFiltros, setShowFiltros] = useState<boolean>(false);
   const [importOpen, setImportOpen] = useState<boolean>(false);
-  const [evolucaoOpen, setEvolucaoOpen] = useState<boolean>(false);
+  const [importadosReloadTick, setImportadosReloadTick] = useState<number>(0);
+  const [previewItensLocal, setPreviewItensLocal] = useState<
+    Array<{ tipoItem: string; codigoItem: string; descricao: string | null; und: string | null; coeficiente: number; valorUnitario: number | null }>
+  >([]);
 
   const breadcrumb = useMemo(() => {
     return "Engenharia → Obras → Obra selecionada → Planilha orçamentária → Sinapi";
@@ -209,29 +212,6 @@ export default function SinapiImportPage() {
     []
   );
 
-  const evolucaoChecklist = useMemo(
-    () => [
-      { etapa: 1, entrega: "Importação inicial a partir do Excel", status: "Concluído", commit: "57c585b" },
-      { etapa: 2, entrega: "Upload + prévia + parâmetros", status: "Concluído", commit: "deecdb9" },
-      { etapa: 3, entrega: "Importar analítico + preços (ISD/ICD/ISE) + prévia em card", status: "Concluído", commit: "dab67db" },
-      { etapa: 4, entrega: "Melhorias de UX (validações de prévia, mensagens e KPIs)", status: "Concluído", commit: "e38c670" },
-      { etapa: 5, entrega: "Bloqueio quando mês-base é diferente (com opção de forçar)", status: "Em uso", commit: "d3364d4" },
-      { etapa: 6, entrega: "“Opção A”: parse local no navegador e envio de JSON (sem upload do XLSX)", status: "Alternativa", commit: "c5b701b" },
-      { etapa: 7, entrega: "Reestruturação do fluxo: Sinapi centralizado + aplicar base na obra", status: "Em uso", commit: "0fe24ba" },
-      { etapa: 8, entrega: "Lista de importados + filtros ocultos + modal de importação", status: "Em uso", commit: "d20aaa6" },
-      { etapa: 9, entrega: "Preferências persistidas (UF/insumos)", status: "Em uso", commit: "02532fd" },
-      { etapa: 10, entrega: "Correções de rota/UX (obras, mensagens no modal, ajustes de rótulos)", status: "Em uso", commit: "584b886" },
-      { etapa: 11, entrega: "Opções exclusivas (sem “Escopo”) + erro de importação mais detalhado", status: "Em uso", commit: "07c1291" },
-      { etapa: 12, entrega: "Data-base primeiro no modal + override manual da data-base informada", status: "Em uso", commit: "81b7b19" },
-      {
-        etapa: 13,
-        entrega: "Correção de navegação externa (evitar ROUTER_EXTERNAL_TARGET_ERROR em rotas externas)",
-        status: "Em uso",
-        commit: "2609b2f",
-      },
-    ],
-    []
-  );
 
   const previewRequirements = useMemo(() => {
     const missing: string[] = [];
@@ -273,6 +253,24 @@ export default function SinapiImportPage() {
 
     return items;
   }, [dataBaseImport, uf, sheetName, insumosModo, insumosSheetName, file, opcao, codigoServico, targetObraId, preview]);
+
+  const previewItensParaConferencia = useMemo(() => {
+    if (previewItensLocal.length) return previewItensLocal;
+    const samples = Array.isArray(preview?.sample) ? preview!.sample : [];
+    const itens = samples.flatMap((c) =>
+      Array.isArray(c?.itens)
+        ? c.itens.map((it: any) => ({
+            tipoItem: String(it?.tipoItem || "").trim() || "—",
+            codigoItem: String(it?.codigoItem || "").trim(),
+            descricao: it?.descricao ?? null,
+            und: it?.und ?? null,
+            coeficiente: Number(it?.quantidade ?? 0),
+            valorUnitario: it?.valorUnitario ?? null,
+          }))
+        : []
+    );
+    return itens;
+  }, [preview, previewItensLocal]);
 
   useEffect(() => {
     if (apiOrigin) return;
@@ -528,6 +526,17 @@ export default function SinapiImportPage() {
         const parsedLocal = parseAnaliticoServico();
         if (!parsedLocal.itens.length) throw new Error(`Serviço ${computedCodigoServico} não encontrado na aba "${sheetName}".`);
 
+        setPreviewItensLocal(
+          parsedLocal.itens.map((it: any) => ({
+            tipoItem: String(it.expTipo || it.tipoItemSinapi || "").trim() || "—",
+            codigoItem: String(it.expCodigo || it.codigoItem || "").trim(),
+            descricao: it.expDescricao ?? it.insumoDescricao ?? it.descricaoSinapi ?? null,
+            und: it.expUnd ?? it.insumoUnd ?? it.undSinapi ?? null,
+            coeficiente: Number(it.coeficiente),
+            valorUnitario: it.expValorUnitario ?? it.insumoPu ?? null,
+          }))
+        );
+
         const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico-parsed`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -554,6 +563,11 @@ export default function SinapiImportPage() {
         } else {
           setImported(json.data as ImportResult);
           setOkMsg("Importação concluída.");
+          setPageOkMsg("Importação realizada com sucesso. Lista de serviços importados atualizada.");
+          setImportadosReloadTick((n) => n + 1);
+          setImportOpen(false);
+          setPreview(null);
+          setPreviewItensLocal([]);
         }
         return;
       }
@@ -599,6 +613,11 @@ export default function SinapiImportPage() {
       } else {
         setImported(json.data as ImportResult);
         setOkMsg("Importação concluída.");
+        setPageOkMsg("Importação realizada com sucesso. Lista de serviços importados atualizada.");
+        setImportadosReloadTick((n) => n + 1);
+        setImportOpen(false);
+        setPreview(null);
+        setPreviewItensLocal([]);
       }
     } catch (e: any) {
       const msg = String(e?.message || "");
@@ -715,7 +734,7 @@ export default function SinapiImportPage() {
     return () => {
       alive = false;
     };
-  }, [idObra, codigoFiltro, dataBaseFiltro, ufFiltro, insumosModoFiltro]);
+  }, [idObra, codigoFiltro, dataBaseFiltro, ufFiltro, insumosModoFiltro, importadosReloadTick]);
 
   useEffect(() => {
     if (!Number.isFinite(idObra) || idObra <= 0) return;
@@ -831,15 +850,6 @@ export default function SinapiImportPage() {
             title="Abrir opções de importação"
           >
             Importar
-          </button>
-          <button
-            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-            type="button"
-            onClick={() => setEvolucaoOpen(true)}
-            disabled={busy}
-            title="Ver checklist visual da evolução"
-          >
-            Evolução
           </button>
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
@@ -1072,6 +1082,7 @@ export default function SinapiImportPage() {
                             const f = e.target.files?.[0] || null;
                             setFile(f);
                             setPreview(null);
+                            setPreviewItensLocal([]);
                             setImported(null);
                             setOkMsg("");
                             setErr("");
@@ -1234,16 +1245,39 @@ export default function SinapiImportPage() {
                       <div className="mt-1 font-semibold">{Number(preview.toImportItens || 0).toLocaleString("pt-BR")}</div>
                     </div>
                   </div>
+                  {previewItensParaConferencia.length ? (
+                    <div className="rounded-lg border overflow-hidden">
+                      <div className="bg-slate-50 px-3 py-2 text-sm font-semibold">Itens da prévia (confira antes de importar)</div>
+                      <div className="max-h-72 overflow-auto">
+                        <div className="grid grid-cols-[110px_1fr_60px_110px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
+                          <div>Código</div>
+                          <div>Descrição</div>
+                          <div>Un</div>
+                          <div className="text-right">Coeficiente</div>
+                        </div>
+                        <div className="divide-y bg-white">
+                          {previewItensParaConferencia.map((it, idx) => (
+                            <div key={`${idx}:${it.codigoItem}`} className="grid grid-cols-[110px_1fr_60px_110px] gap-x-2 px-3 py-2 text-sm">
+                              <div className="font-mono text-xs text-slate-700">{it.codigoItem}</div>
+                              <div className="text-slate-800">{it.descricao || "—"}</div>
+                              <div className="text-slate-700">{it.und || "—"}</div>
+                              <div className="text-right tabular-nums text-slate-800">{Number(it.coeficiente || 0).toLocaleString("pt-BR")}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="flex items-center justify-end gap-2 flex-wrap">
                     <button
                       className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
                       type="button"
                       onClick={() => {
                         setPreview(null);
+                        setPreviewItensLocal([]);
                         setImported(null);
                         setOkMsg("");
                         setErr("");
-                        setImportOpen(false);
                       }}
                       disabled={busy}
                     >
@@ -1269,47 +1303,6 @@ export default function SinapiImportPage() {
                   </div>
                 </section>
               ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {evolucaoOpen ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-auto">
-          <div className="w-full max-w-5xl rounded-xl border bg-white shadow-sm">
-            <div className="flex items-center justify-between gap-3 border-b p-4">
-              <div className="text-lg font-semibold">Evolução da importação SINAPI (checklist visual)</div>
-              <button
-                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-                type="button"
-                onClick={() => setEvolucaoOpen(false)}
-                disabled={busy}
-              >
-                Fechar
-              </button>
-            </div>
-            <div className="p-4 space-y-3">
-              <div className="text-sm text-slate-700">
-                Este checklist serve para rastrear o que já foi entregue e qual commit está associado a cada etapa.
-              </div>
-              <div className="rounded-lg border overflow-hidden">
-                <div className="grid grid-cols-[80px_1fr_120px_110px] bg-slate-50 text-xs font-semibold text-slate-700">
-                  <div className="px-2 py-2 border-r text-center">Etapa</div>
-                  <div className="px-2 py-2 border-r">O que foi entregue</div>
-                  <div className="px-2 py-2 border-r text-center">Status</div>
-                  <div className="px-2 py-2 text-center">Commit</div>
-                </div>
-                <div className="divide-y">
-                  {evolucaoChecklist.map((r) => (
-                    <div key={r.etapa} className="grid grid-cols-[80px_1fr_120px_110px] text-sm">
-                      <div className="px-2 py-2 border-r text-center">{r.etapa}</div>
-                      <div className="px-2 py-2 border-r">{r.entrega}</div>
-                      <div className="px-2 py-2 border-r text-center">{r.status}</div>
-                      <div className="px-2 py-2 text-center font-mono text-xs">{r.commit}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
         </div>
