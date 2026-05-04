@@ -235,6 +235,7 @@ export default function SinapiImportPage() {
   const [importOpen, setImportOpen] = useState<boolean>(false);
   const [importadosReloadTick, setImportadosReloadTick] = useState<number>(0);
   const [obraContrato, setObraContrato] = useState<ObraContratoInfo | null>(null);
+  const [applySubstituirExistente, setApplySubstituirExistente] = useState<boolean>(true);
   const [previewItensLocal, setPreviewItensLocal] = useState<
     Array<{
       tipoItemSinapi: string;
@@ -1180,7 +1181,7 @@ export default function SinapiImportPage() {
           uf: String(row.uf || "").trim().toUpperCase(),
           insumosModo: String(row.insumosModo || "").trim().toUpperCase(),
           targetObraId: Number.isFinite(targetObraId) && targetObraId > 0 ? targetObraId : undefined,
-          mode: "MISSING_ONLY",
+          mode: applySubstituirExistente ? "UPSERT" : "MISSING_ONLY",
           forceDataBaseMismatch,
         }),
       });
@@ -1587,6 +1588,20 @@ export default function SinapiImportPage() {
             <button
               className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
               type="button"
+              onClick={() => {
+                setCodigoFiltro("");
+                setDataBaseFiltro("");
+                setUfFiltro("");
+                setInsumosModoFiltro("");
+              }}
+              disabled={busy}
+              title="Limpar filtros"
+            >
+              Limpar filtros
+            </button>
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+              type="button"
               onClick={() => setShowTelaConfig((v) => !v)}
               disabled={busy}
             >
@@ -1602,6 +1617,10 @@ export default function SinapiImportPage() {
             </button>
           </div>
         </div>
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={applySubstituirExistente} onChange={(e) => setApplySubstituirExistente(Boolean(e.target.checked))} disabled={busy} />
+          <span>Ao aplicar na obra: substituir existente (padrão)</span>
+        </label>
         {(() => {
           const filtrosAtivos: string[] = [];
           const cod = String(codigoFiltro || "").trim();
@@ -1820,9 +1839,9 @@ export default function SinapiImportPage() {
           <div className="rounded-lg border overflow-hidden">
             <div className="overflow-x-auto">
                 <div className="min-w-[1140px]">
-                  <div className="grid grid-cols-[120px_160px_120px_1fr_60px_120px_140px_140px] bg-slate-50 text-xs font-semibold text-slate-700">
-                  <div className="px-2 py-2 border-r">Tipo</div>
-                    <div className="px-2 py-2 border-r">Classificação</div>
+                  <div className="grid grid-cols-[140px_140px_120px_1fr_60px_120px_140px_140px] bg-slate-50 text-xs font-semibold text-slate-700">
+                    <div className="px-2 py-2 border-r">Tipo Item (SINAPI)</div>
+                    <div className="px-2 py-2 border-r">Tipo (sistema)</div>
                   <div className="px-2 py-2 border-r">Código</div>
                   <div className="px-2 py-2 border-r">Descrição</div>
                   <div className="px-2 py-2 border-r text-center">un</div>
@@ -1832,9 +1851,17 @@ export default function SinapiImportPage() {
                 </div>
                 <div className="divide-y bg-white">
                   {(composicaoCard.itens || []).map((it, idx) => (
-                      <div key={`${it.codigoItem}-${idx}`} className="grid grid-cols-[120px_160px_120px_1fr_60px_120px_140px_140px] text-sm">
-                      <div className="px-2 py-2 border-r">{it.tipoItem || "—"}</div>
-                        <div className="px-2 py-2 border-r">{it.classificacao || "—"}</div>
+                      <div key={`${it.codigoItem}-${idx}`} className="grid grid-cols-[140px_140px_120px_1fr_60px_120px_140px_140px] text-sm">
+                        <div className="px-2 py-2 border-r">{it.tipoItem || "—"}</div>
+                        <div className="px-2 py-2 border-r">
+                          {(() => {
+                            const tipoItemSinapi = String(it.tipoItem || "").trim().toUpperCase();
+                            const classificacao = it.classificacao == null ? "" : String(it.classificacao || "").trim();
+                            if (tipoItemSinapi === "COMPOSICAO" || tipoItemSinapi === "COMPOSICAO_AUXILIAR") return "COMPOSICAO";
+                            if (tipoItemSinapi === "INSUMO") return classificacao || "INSUMO";
+                            return classificacao || tipoItemSinapi || "—";
+                          })()}
+                        </div>
                       <div className="px-2 py-2 border-r font-mono text-xs">{it.codigoItem || "—"}</div>
                       <div className="px-2 py-2 border-r">{it.descricao || "—"}</div>
                       <div className="px-2 py-2 border-r text-center">{it.und || "—"}</div>
@@ -2285,10 +2312,9 @@ export default function SinapiImportPage() {
                     <div className="max-h-72 overflow-auto">
                       <div className="overflow-x-auto">
                         <div className="min-w-[1040px]">
-                          <div className="grid grid-cols-[110px_110px_140px_110px_1fr_60px_110px_120px_120px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
+                          <div className="grid grid-cols-[110px_110px_110px_1fr_60px_110px_120px_120px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
                             <div>Tipo Item (SINAPI)</div>
                             <div>Tipo (sistema)</div>
-                            <div>Classificação</div>
                             <div>Código</div>
                             <div>Descrição</div>
                             <div>Un</div>
@@ -2301,15 +2327,13 @@ export default function SinapiImportPage() {
                               const q = Number(it.coeficiente || 0);
                               const vu = it.valorUnitario == null ? null : Number(it.valorUnitario);
                               const valor = vu == null || !Number.isFinite(vu) || !Number.isFinite(q) ? null : vu * q;
-                              const classificacao = it.classificacao == null ? null : String(it.classificacao || "").trim();
                               return (
                                 <div
                                   key={`${idx}:${it.codigoItem}`}
-                                  className="grid grid-cols-[110px_110px_140px_110px_1fr_60px_110px_120px_120px] gap-x-2 px-3 py-2 text-sm"
+                                  className="grid grid-cols-[110px_110px_110px_1fr_60px_110px_120px_120px] gap-x-2 px-3 py-2 text-sm"
                                 >
                                   <div className="text-xs text-slate-700">{it.tipoItemSinapi || "—"}</div>
                                   <div className="text-xs text-slate-700">{it.tipoSistema || "—"}</div>
-                                  <div className="text-xs text-slate-700">{classificacao || "—"}</div>
                                   <div className="font-mono text-xs text-slate-700">{it.codigoItem}</div>
                                   <div className="text-slate-800">{it.descricao || "—"}</div>
                                   <div className="text-slate-700">{it.und || "—"}</div>
