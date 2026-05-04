@@ -122,7 +122,7 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
 - Engenharia → Obras → (abra a obra) → **Planilha orçamentária** → **Sinapi**
 
 ### ETAPA 2 — O que clicar
-- Se o serviço já estiver na lista “Serviços SINAPI importados”, clique em **Aplicar na obra**
+- Se o serviço já estiver na lista “Serviços SINAPI importados”, clique no **ícone de seta** (Aplicar na planilha)
 - Se não estiver, clique em **Importar**
 
 ### ETAPA 3 — O que preencher
@@ -139,7 +139,8 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
 - O topo da tela também mostra:
   - **Planilha: #id - vN - nome da versão**
   - **SINAPI (planilha): data-base e UF** (usados como padrão para filtros/importação)
-- Existe um card **Configuração de tela** para ajustar colunas (exibir/ocultar) e larguras, e isso fica gravado.
+- Clique em **Configurar tela** para abrir o card **Configuração de tela** (fica oculto por padrão) e ajustar colunas (exibir/ocultar) e larguras (isso fica gravado).
+- Dê **duplo clique** em um serviço na lista “Serviços SINAPI importados” para abrir o card **Composição do serviço** com o detalhamento dos itens.
 - Ao clicar em **Prévia**, o sistema abre um modal “Prévia” com:
   - tabela “Serviços na prévia” (com status “Já importado” quando for o caso)
   - itens do serviço selecionado para conferência

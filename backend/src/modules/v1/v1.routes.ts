@@ -358,9 +358,24 @@ function decodeCsvBuffer(buf: Buffer) {
 }
 
 function toDec(v: unknown) {
-  const s = String(v ?? '').trim();
-  if (!s) return null;
-  const norm = s.replace(/\./g, '').replace(',', '.').replace(/[^\d.\-]/g, '');
+  if (v == null) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const raw = String(v ?? '').trim();
+  if (!raw) return null;
+  const cleaned = raw.replace(/\s/g, '').replace(/[^\d,.\-]/g, '');
+  if (!cleaned) return null;
+  const hasDot = cleaned.includes('.');
+  const hasComma = cleaned.includes(',');
+  let norm = cleaned;
+  if (hasDot && hasComma) {
+    norm = norm.replace(/\./g, '').replace(/,/g, '.');
+  } else if (hasComma) {
+    norm = norm.replace(/,/g, '.');
+  } else {
+    const parts = norm.split('.');
+    if (parts.length > 2) norm = norm.replace(/\./g, '');
+  }
+  norm = norm.replace(/[^\d.\-]/g, '');
   if (!norm) return null;
   const n = Number(norm);
   return Number.isFinite(n) ? n : null;
@@ -7209,6 +7224,115 @@ export default async function v1Routes(server: FastifyInstance) {
         })),
       },
       { message: 'Serviços SINAPI importados' }
+    );
+  });
+
+  server.get('/engenharia/obras/:id/planilha/sinapi/composicao', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensureSinapiBaseTables(prisma);
+
+    const q = z
+      .object({
+        codigo: z.string().min(1),
+        dataBase: z.string().min(1),
+        uf: z.string().min(2),
+        insumosModo: z.enum(['ISD', 'ICD', 'ISE']),
+      })
+      .parse(request.query || {});
+
+    const codigo = String(q.codigo || '').trim().toUpperCase();
+    const dataBase = String(q.dataBase || '').trim();
+    const uf = String(q.uf || '').trim().toUpperCase();
+    const insumosModo = String(q.insumosModo || '').trim().toUpperCase();
+
+    const serv = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        id_serv_sinapi AS "idServ",
+        COALESCE(descricao,'') AS "descricao",
+        COALESCE(und,'') AS "und"
+      FROM sinapi_servicos_base
+      WHERE tenant_id = $1
+        AND data_base = $2
+        AND UPPER(codigo_servico) = $3
+      ORDER BY id_serv_sinapi DESC
+      LIMIT 1
+      `,
+      ctx.tenantId,
+      dataBase,
+      codigo
+    )) as any[];
+    const servRow = serv?.[0] || null;
+    const idServ = servRow?.idServ != null ? Number(servRow.idServ) : 0;
+    if (!idServ) return fail(reply, 404, `Serviço não encontrado na base SINAPI (código: ${codigo}, data-base: ${dataBase}).`);
+
+    const itens = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        c.tipo_item AS "tipoItem",
+        c.codigo_item AS "codigoItem",
+        COALESCE(c.descricao,'') AS "descricao",
+        COALESCE(c.und,'') AS "und",
+        c.coeficiente AS "coeficiente",
+        pu.pu AS "valorUnitario"
+      FROM sinapi_composicoes_base c
+      LEFT JOIN sinapi_insumos_pu pu
+        ON pu.tenant_id = c.tenant_id
+       AND pu.id_pu = c.id_pu
+      WHERE c.tenant_id = $1
+        AND c.uf = $2
+        AND c.data_base = $3
+        AND c.tipo_preco = $4
+        AND c.id_serv_sinapi = $5
+      ORDER BY c.tipo_item, c.codigo_item
+      `,
+      ctx.tenantId,
+      uf,
+      dataBase,
+      insumosModo,
+      idServ
+    )) as any[];
+
+    const normalized = (itens || []).map((r: any) => {
+      const coef = r.coeficiente == null ? null : Number(r.coeficiente);
+      const vu = r.valorUnitario == null ? null : Number(r.valorUnitario);
+      const valor = coef != null && vu != null && Number.isFinite(coef) && Number.isFinite(vu) ? coef * vu : null;
+      return {
+        tipoItem: String(r.tipoItem || ''),
+        codigoItem: String(r.codigoItem || ''),
+        descricao: String(r.descricao || ''),
+        und: String(r.und || ''),
+        coeficiente: coef,
+        valorUnitario: vu,
+        valor,
+      };
+    });
+
+    const total = normalized.reduce((acc: number, r: any) => {
+      const v = r?.valor == null ? null : Number(r.valor);
+      return v != null && Number.isFinite(v) ? acc + v : acc;
+    }, 0);
+
+    return ok(
+      reply,
+      {
+        codigo,
+        descricao: String(servRow?.descricao || ''),
+        und: String(servRow?.und || ''),
+        uf,
+        dataBase,
+        insumosModo,
+        valorSemBdi: Number.isFinite(total) ? total : null,
+        itens: normalized,
+      },
+      { message: 'Composição SINAPI' }
     );
   });
 

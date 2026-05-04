@@ -200,6 +200,26 @@ export default function SinapiImportPage() {
   const [planilhaDataBaseSinapi, setPlanilhaDataBaseSinapi] = useState<string>("");
   const [planilhaUfSinapi, setPlanilhaUfSinapi] = useState<string>("");
   const [planilhaCallerInfo, setPlanilhaCallerInfo] = useState<{ idPlanilha: number; numeroVersao: number; nome: string } | null>(null);
+  const [composicaoCard, setComposicaoCard] = useState<{
+    codigo: string;
+    descricao: string;
+    und: string;
+    uf: string;
+    dataBase: string;
+    insumosModo: string;
+    valorSemBdi: number | null;
+    itens: Array<{
+      tipoItem: string;
+      codigoItem: string;
+      descricao: string;
+      und: string;
+      coeficiente: number | null;
+      valorUnitario: number | null;
+      valor: number | null;
+    }>;
+  } | null>(null);
+  const [composicaoBusy, setComposicaoBusy] = useState<boolean>(false);
+  const [composicaoErr, setComposicaoErr] = useState<string>("");
   const [telaPrefs, setTelaPrefs] = useState<{ [K in keyof typeof SINAPI_TELA_PREFS_DEFAULT]: (typeof SINAPI_TELA_PREFS_DEFAULT)[K] }>(
     SINAPI_TELA_PREFS_DEFAULT
   );
@@ -540,6 +560,53 @@ export default function SinapiImportPage() {
       if (!resU.ok || !jsonU?.success) return;
       setPlanilhaUfSinapi(ufValue);
     } catch {}
+  }
+
+  async function abrirComposicaoDoImportado(row: { codigo: string; dataBase: string; uf: string; insumosModo: string }) {
+    const codigo = String(row.codigo || '').trim().toUpperCase();
+    const dataBase = String(row.dataBase || '').trim();
+    const uf = String(row.uf || '').trim().toUpperCase();
+    const insumosModo = String(row.insumosModo || '').trim().toUpperCase();
+    if (!codigo || !dataBase || !uf || !insumosModo) return;
+    if (!Number.isFinite(idObra) || idObra <= 0) return;
+    setComposicaoErr('');
+    setComposicaoBusy(true);
+    try {
+      const qs = new URLSearchParams();
+      qs.set('codigo', codigo);
+      qs.set('dataBase', dataBase);
+      qs.set('uf', uf);
+      qs.set('insumosModo', insumosModo);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/composicao?${qs.toString()}`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || 'Falha ao carregar composição');
+      const d = json.data || {};
+      setComposicaoCard({
+        codigo: String(d.codigo || ''),
+        descricao: String(d.descricao || ''),
+        und: String(d.und || ''),
+        uf: String(d.uf || ''),
+        dataBase: String(d.dataBase || ''),
+        insumosModo: String(d.insumosModo || ''),
+        valorSemBdi: d.valorSemBdi == null ? null : Number(d.valorSemBdi),
+        itens: Array.isArray(d.itens)
+          ? d.itens.map((x: any) => ({
+              tipoItem: String(x.tipoItem || ''),
+              codigoItem: String(x.codigoItem || ''),
+              descricao: String(x.descricao || ''),
+              und: String(x.und || ''),
+              coeficiente: x.coeficiente == null ? null : Number(x.coeficiente),
+              valorUnitario: x.valorUnitario == null ? null : Number(x.valorUnitario),
+              valor: x.valor == null ? null : Number(x.valor),
+            }))
+          : [],
+      });
+    } catch (e: any) {
+      setComposicaoCard(null);
+      setComposicaoErr(String(e?.message || 'Erro ao carregar composição'));
+    } finally {
+      setComposicaoBusy(false);
+    }
   }
 
   async function doRequest(dryRun: boolean, override?: { codigoServico?: string }) {
@@ -1404,7 +1471,14 @@ export default function SinapiImportPage() {
                 </div>
                 <div className="divide-y bg-white">
                   {importados.map((r) => (
-                    <div key={`${r.dataBase}:${r.uf}:${r.insumosModo}:${r.codigo}`} className="grid text-sm" style={{ gridTemplateColumns: importadosLayout.gridTemplateColumns }}>
+                    <div
+                      key={`${r.dataBase}:${r.uf}:${r.insumosModo}:${r.codigo}`}
+                      className="grid text-sm"
+                      style={{ gridTemplateColumns: importadosLayout.gridTemplateColumns }}
+                      onDoubleClick={() => abrirComposicaoDoImportado({ codigo: r.codigo, dataBase: r.dataBase, uf: r.uf, insumosModo: r.insumosModo })}
+                      role="button"
+                      tabIndex={0}
+                    >
                       {telaPrefs.colCodigo ? <div className="px-2 py-2 border-r last:border-r-0 text-center">{r.codigo}</div> : null}
                       {telaPrefs.colDescricao ? <div className="px-2 py-2 border-r last:border-r-0">{r.descricao}</div> : null}
                       {telaPrefs.colUnd ? <div className="px-2 py-2 border-r last:border-r-0 text-center">{r.und}</div> : null}
@@ -1438,7 +1512,11 @@ export default function SinapiImportPage() {
 
             <div className="md:hidden divide-y bg-white">
               {importados.map((r) => (
-                <div key={`${r.dataBase}:${r.uf}:${r.insumosModo}:${r.codigo}`} className="p-3 space-y-2 text-sm">
+                <div
+                  key={`${r.dataBase}:${r.uf}:${r.insumosModo}:${r.codigo}`}
+                  className="p-3 space-y-2 text-sm"
+                  onDoubleClick={() => abrirComposicaoDoImportado({ codigo: r.codigo, dataBase: r.dataBase, uf: r.uf, insumosModo: r.insumosModo })}
+                >
                   {telaPrefs.colCodigo ? (
                     <div>
                       <div className="text-xs text-slate-500">Código</div>
@@ -1507,6 +1585,73 @@ export default function SinapiImportPage() {
           <div className="text-sm text-slate-600">Nenhum serviço SINAPI importado ainda.</div>
         )}
       </section>
+
+      {composicaoErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{composicaoErr}</div> : null}
+      {composicaoBusy && !composicaoCard ? <div className="text-sm text-slate-600">Carregando composição…</div> : null}
+      {composicaoCard ? (
+        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-[260px]">
+              <div className="text-lg font-semibold">Composição do serviço</div>
+              <div className="mt-1 text-sm text-slate-700">
+                <div className="font-mono text-xs text-slate-600">{composicaoCard.codigo}</div>
+                <div className="text-slate-900">{composicaoCard.descricao || "—"}</div>
+                <div className="text-xs text-slate-600">
+                  un: {composicaoCard.und || "—"} • {composicaoCard.dataBase || "—"} • {composicaoCard.uf || "—"} • {composicaoCard.insumosModo || "—"}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="text-sm text-slate-700">
+                Total (sem BDI):{" "}
+                <span className="tabular-nums font-semibold">
+                  {composicaoCard.valorSemBdi == null
+                    ? "—"
+                    : Number(composicaoCard.valorSemBdi).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </span>
+              </div>
+              <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => setComposicaoCard(null)} disabled={busy}>
+                Fechar
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-lg border overflow-hidden">
+            <div className="overflow-x-auto">
+              <div className="min-w-[980px]">
+                <div className="grid grid-cols-[120px_120px_1fr_60px_120px_140px_140px] bg-slate-50 text-xs font-semibold text-slate-700">
+                  <div className="px-2 py-2 border-r">Tipo</div>
+                  <div className="px-2 py-2 border-r">Código</div>
+                  <div className="px-2 py-2 border-r">Descrição</div>
+                  <div className="px-2 py-2 border-r text-center">un</div>
+                  <div className="px-2 py-2 border-r text-right">Coef.</div>
+                  <div className="px-2 py-2 border-r text-right">V. unit</div>
+                  <div className="px-2 py-2 text-right">Valor</div>
+                </div>
+                <div className="divide-y bg-white">
+                  {(composicaoCard.itens || []).map((it, idx) => (
+                    <div key={`${it.codigoItem}-${idx}`} className="grid grid-cols-[120px_120px_1fr_60px_120px_140px_140px] text-sm">
+                      <div className="px-2 py-2 border-r">{it.tipoItem || "—"}</div>
+                      <div className="px-2 py-2 border-r font-mono text-xs">{it.codigoItem || "—"}</div>
+                      <div className="px-2 py-2 border-r">{it.descricao || "—"}</div>
+                      <div className="px-2 py-2 border-r text-center">{it.und || "—"}</div>
+                      <div className="px-2 py-2 border-r text-right tabular-nums">{it.coeficiente == null ? "—" : Number(it.coeficiente).toLocaleString("pt-BR")}</div>
+                      <div className="px-2 py-2 border-r text-right tabular-nums">
+                        {it.valorUnitario == null ? "—" : Number(it.valorUnitario).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      </div>
+                      <div className="px-2 py-2 text-right tabular-nums">
+                        {it.valor == null ? "—" : Number(it.valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {composicaoBusy ? <div className="text-sm text-slate-600">Atualizando composição…</div> : null}
+        </section>
+      ) : null}
 
       {appliedBase ? (
         <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">

@@ -3040,7 +3040,7 @@ ETAPA 4 — O que esperar
 - A tela Sinapi abre já filtrada pelo serviço atual e mostra se a data-base está compatível com a planilha.
 
 ETAPA 5 — Como validar
-- Se o serviço já estiver importado, clique em “Aplicar na obra”.
+- Se o serviço já estiver importado, clique no **ícone de seta** (Aplicar na planilha).
 - Se ainda não estiver importado, importe via XLSX:
   - clique em “Importar”;
   - preencha os campos;
@@ -3060,8 +3060,9 @@ ETAPA 2 — O que clicar
 - No topo da tela, confira também:
   - Planilha: `#id da planilha - vN - nome da versão`;
   - SINAPI (planilha): `data-base` e `UF` (usados como padrão para filtros/importação).
-- Use o card “Configuração de tela” para ajustar colunas e larguras conforme sua preferência.
-- Na lista “Serviços SINAPI importados”, use “Aplicar na obra” quando o serviço já estiver importado.
+- Clique em “Configurar tela” para abrir “Configuração de tela” (fica oculto por padrão) e ajustar colunas e larguras.
+- Na lista “Serviços SINAPI importados”, use o **ícone de seta** para aplicar na planilha quando o serviço já estiver importado.
+- Dê **duplo clique** em um serviço na lista “Serviços SINAPI importados” para abrir o card “Composição do serviço” (detalhamento dos itens).
 - Para importar via XLSX, clique no botão “Importar” (abre o modal “Opções de importação”).
 - Se precisar filtrar a lista, clique em “Exibir filtros”.
 
@@ -3090,7 +3091,8 @@ ETAPA 4 — O que esperar
 ETAPA 5 — Como validar
 - Verifique se:
   - o serviço aparece/atualiza na lista “Serviços SINAPI importados”;
-  - ao clicar em “Aplicar na obra”, o sistema confirma “Composição aplicada na obra”.
+  - ao clicar no ícone de seta (aplicar), o sistema confirma “Composição aplicada na obra”.
+  - ao dar duplo clique no serviço, abre o card “Composição do serviço” com os itens e o total.
 
 **Validações e regras técnicas (para consistência do dado)**
 
