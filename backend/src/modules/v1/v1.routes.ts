@@ -7067,21 +7067,40 @@ export default async function v1Routes(server: FastifyInstance) {
 
     if (!planilhaId) return fail(reply, 422, 'Não há planilha atual para a obra. Importe a planilha orçamentária primeiro.');
 
-    const existsInPlanilha = (await prisma.$queryRawUnsafe(
+    const existsInPlanilhaOrReferenced = (await prisma.$queryRawUnsafe(
       `
+      WITH RECURSIVE refs(codigo) AS (
+        SELECT DISTINCT UPPER(COALESCE(codigo,'')) AS codigo
+        FROM obras_planilhas_linhas
+        WHERE tenant_id = $1
+          AND id_planilha = $2
+          AND tipo_linha = 'SERVICO'
+          AND COALESCE(codigo,'') <> ''
+
+        UNION
+
+        SELECT DISTINCT UPPER(COALESCE(i.codigo_item,'')) AS codigo
+        FROM obras_planilhas_composicoes_itens i
+        INNER JOIN refs r
+          ON UPPER(COALESCE(i.codigo_servico,'')) = r.codigo
+        WHERE i.tenant_id = $1
+          AND i.id_obra = $3
+          AND UPPER(COALESCE(i.tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+          AND COALESCE(i.codigo_item,'') <> ''
+      )
       SELECT 1 AS ok
-      FROM obras_planilhas_linhas
-      WHERE tenant_id = $1
-        AND id_planilha = $2
-        AND tipo_linha = 'SERVICO'
-        AND UPPER(COALESCE(codigo,'')) = $3
+      FROM refs
+      WHERE codigo = $4
       LIMIT 1
       `,
       ctx.tenantId,
       planilhaId,
+      obraId,
       codigoServico
     )) as any[];
-    if (!existsInPlanilha?.[0]?.ok) return fail(reply, 422, `Serviço inválido para a obra (não está na planilha): ${codigoServico}`);
+    if (!existsInPlanilhaOrReferenced?.[0]?.ok) {
+      return fail(reply, 422, `Serviço inválido para a obra (não está na planilha e não é referenciado por nenhuma composição da planilha): ${codigoServico}`);
+    }
 
     const serv = (await prisma.$queryRawUnsafe(
       `

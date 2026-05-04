@@ -3080,6 +3080,25 @@ ETAPA 5 — Como validar
 - Menor retrabalho operacional para montar composições auxiliares.
 - Maior estabilidade para produção (valor unitário persistido e rastreável no backend).
 
+**Como uma composição fica “cadastrada” na planilha (no sistema)**
+
+Problema identificado
+- Uma obra pode precisar importar/aplicar uma composição que não está como “Serviço” da planilha, porque ela aparece como item de outra composição (1º, 2º, … grau).
+
+Oportunidade de melhoria
+- Permitir completar a árvore de composições (composições auxiliares) sem precisar cadastrar cada código como linha “Serviço” da planilha orçamentária.
+
+Solução sugerida (implementada)
+- A planilha orçamentária (linhas) continua sendo a origem da lista de serviços da obra.
+- As composições da obra são cadastradas quando existe ao menos um item gravado em `obras_planilhas_composicoes_itens` para um `codigo_servico`.
+- Ao aplicar uma composição do SINAPI, o backend permite:
+  - se o código estiver na planilha (linha tipo SERVICO), ou
+  - se o código estiver referenciado por alguma composição que pertença à árvore de composições da planilha (1º, 2º, … grau).
+
+Benefício da mudança
+- Evita bloqueio de importação de subcomposições necessárias para fechar custos.
+- Mantém consistência entre Frontend ↔ Backend ↔ Banco: a regra é validada no backend e persistida no banco.
+
 **Como usar — Tela Sinapi (Planilha orçamentária)**
 
 ETAPA 1 — Onde acessar

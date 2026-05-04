@@ -174,6 +174,25 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
 - Reabra a mesma análise e confirme que os valores unitários das linhas de composição auxiliar/composição continuam preenchidos
 - Abra a composição pai e confirme que o total foi recalculado com o valor fixado da composição referenciada
 
+## 3.3.1 Como as composições da planilha são cadastradas
+
+### ETAPA 1 — O que significa “cadastrar composição”
+- A planilha (o orçamento) tem uma lista de **Serviços**.
+- Além disso, o sistema mantém uma lista de **Composições cadastradas** para a obra (inclusive composições auxiliares), que podem existir mesmo quando não são um “Serviço” da planilha.
+
+### ETAPA 2 — Como cadastrar (3 formas)
+- Pelo SINAPI: na tela **Sinapi**, aplique uma composição (ícone de seta).
+- Pela Análise: abra a **Análise de composição** e salve os itens.
+- Por CSV: na Análise, use **Importar CSV** e depois **Salvar**.
+
+### ETAPA 3 — O que esperar
+- Uma composição passa a existir no sistema quando ela tem itens salvos (ela fica registrada para a obra).
+- Se uma composição não estiver na lista de Serviços da planilha, ainda assim ela pode ser aplicada se ela for parte de outra composição da planilha (1º, 2º, 3º… grau).
+
+### ETAPA 4 — Como validar
+- Abra a composição “pai” (a que tem o item de composição auxiliar) e confira se o código aparece na tabela como item do tipo composição.
+- Aplique a composição “filha” no SINAPI e volte para a composição “pai” para conferir se o valor foi preenchido e ficou fixo.
+
 ## 3.4 SINAPI — mesma composição em UF diferente (AC, SP) e ISD/ICD/ISE
 
 ### ETAPA 1 — Onde acessar
