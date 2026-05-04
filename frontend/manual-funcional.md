@@ -3057,6 +3057,9 @@ ETAPA 2 — O que clicar
 - No topo da tela, confira:
   - Obra: `#id da obra - nome da obra`;
   - Contrato: `#id do contrato - número do contrato - objeto`.
+- A trilha (subtítulo) mostra o caminho completo até a tela, incluindo:
+  - `Análise de composição - CODIGO_RAIZ / CODIGO_ATUAL` (quando navegar entre composições)
+  - `→ Sinapi` (quando abrir a tela Sinapi a partir da análise)
 - No topo da tela, confira também:
   - Planilha: `#id da planilha - vN - nome da versão`;
   - SINAPI (planilha): `data-base` e `UF` (usados como padrão para filtros/importação).

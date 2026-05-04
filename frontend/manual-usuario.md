@@ -136,6 +136,7 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
 - O topo da tela mostra:
   - **Obra: #id - nome da obra**
   - **Contrato: #id - número do contrato - objeto**
+- A trilha (subtítulo) mostra o caminho completo até a tela (inclui o código da composição, e ao abrir Sinapi aparece “→ Sinapi”).
 - O topo da tela também mostra:
   - **Planilha: #id - vN - nome da versão**
   - **SINAPI (planilha): data-base e UF** (usados como padrão para filtros/importação)

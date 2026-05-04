@@ -161,6 +161,7 @@ export default function SinapiImportPage() {
   const returnTo = sp.get("returnTo") || "";
   const codigoParam = String(sp.get("codigo") || "").trim().toUpperCase();
   const dataBaseParam = String(sp.get("dataBase") || "").trim();
+  const rootCodigoParam = String(sp.get("rootCodigo") || "").trim().toUpperCase();
   const planilhaIdParam = sp.get("planilhaId");
   const fromParam = String(sp.get("from") || "").trim().toLowerCase();
   const fromImportar = fromParam === "importar";
@@ -255,8 +256,15 @@ export default function SinapiImportPage() {
   }, [telaPrefs]);
 
   const breadcrumb = useMemo(() => {
-    return "Engenharia → Obras → Obra selecionada → Planilha orçamentária → Sinapi";
-  }, []);
+    const base = "Engenharia → Obras → Obra selecionada → Planilha orçamentária";
+    const root = String(rootCodigoParam || "").trim();
+    const cur = String(codigoParam || "").trim();
+    if (root || cur) {
+      const titulo = root && cur && root !== cur ? `${root} / ${cur}` : root || cur;
+      return `${base} → Análise de composição - ${titulo} → Sinapi`;
+    }
+    return `${base} → Sinapi`;
+  }, [codigoParam, rootCodigoParam]);
 
   const ufs = useMemo(
     () => [

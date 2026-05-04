@@ -169,6 +169,18 @@ async function readTextSmart(file: File) {
    const idObra = useMemo(() => Number((params as any)?.id || 0), [params]);
    const codigoServico = useMemo(() => decodeURIComponent(String((params as any)?.codigo || "")).trim().toUpperCase(), [params]);
    const returnTo = search.get("returnTo");
+  const rootCodigoParam = String(search.get("rootCodigo") || "")
+    .trim()
+    .toUpperCase();
+  const rootCodigo = rootCodigoParam || codigoServico;
+  const analysisTitle = useMemo(() => {
+    if (!rootCodigo || rootCodigo === codigoServico) return codigoServico || "—";
+    return `${rootCodigo} / ${codigoServico || "—"}`;
+  }, [codigoServico, rootCodigo]);
+  const breadcrumb = useMemo(() => {
+    const base = "Engenharia → Obras → Obra selecionada → Planilha orçamentária → Análise de composição";
+    return analysisTitle && analysisTitle !== "—" ? `${base} - ${analysisTitle}` : base;
+  }, [analysisTitle]);
   const [returnToMem, setReturnToMem] = useState<string | null>(null);
  
    const [loading, setLoading] = useState(false);
@@ -914,6 +926,13 @@ async function readTextSmart(file: File) {
     return `/dashboard/engenharia/obras/${idObra}/planilha`;
   }
 
+  function getSelfUrl() {
+    const qs = new URLSearchParams();
+    qs.set("rootCodigo", rootCodigo);
+    qs.set("returnTo", getBackTargetUrl());
+    return `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}?${qs.toString()}`;
+  }
+
   const bancosBase = useMemo(() => ["SINAPI", "Próprio", "SBC", "SICRO3"], []);
   const bancosOptions = useMemo(() => Array.from(new Set([...bancosBase, ...bancosCustom])), [bancosBase, bancosCustom]);
 
@@ -1345,9 +1364,9 @@ async function readTextSmart(file: File) {
                             }
                             onClick={() =>
                               router.push(
-                                `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoComposicao)}?returnTo=${encodeURIComponent(
-                                  `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}`
-                                )}`
+                                `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoComposicao)}?rootCodigo=${encodeURIComponent(
+                                  rootCodigo
+                                )}&returnTo=${encodeURIComponent(getSelfUrl())}`
                               )
                             }
                           >
@@ -1836,8 +1855,8 @@ async function readTextSmart(file: File) {
     <div className="p-4 md:p-6 space-y-4 max-w-7xl text-slate-900">
        <div className="flex items-start justify-between gap-3 flex-wrap">
          <div>
-          <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Análise de composição</div>
-          <h1 className="text-2xl font-semibold">Análise de composição — {codigoServico || "—"}</h1>
+          <div className="text-xs text-slate-500">{breadcrumb}</div>
+          <h1 className="text-2xl font-semibold">Análise de composição — {analysisTitle}</h1>
          </div>
          <div className="flex items-center gap-2 flex-wrap">
            <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={voltar} title="Voltar para a tela anterior">
@@ -2533,7 +2552,8 @@ async function readTextSmart(file: File) {
                   onClick={() => {
                     const qs = new URLSearchParams();
                     qs.set("codigo", String(codigoServico || "").trim());
-                    qs.set("returnTo", `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}`);
+                    qs.set("returnTo", getSelfUrl());
+                    qs.set("rootCodigo", rootCodigo);
                     qs.set("from", "importar");
                     if (planilhaInfo?.idPlanilha) qs.set("planilhaId", String(planilhaInfo.idPlanilha));
                     router.push(`/dashboard/engenharia/obras/${idObra}/planilha/sinapi?${qs.toString()}`);
