@@ -116,6 +116,29 @@ function parseNumberLoose(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function parseCodigoServicoList(input: string): string[] {
+  const raw = String(input || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[;\n\r\t]+/g, ",")
+    .replace(/\s+/g, " ");
+  if (!raw) return [];
+  const parts = raw
+    .split(",")
+    .map((p) => String(p || "").trim())
+    .filter(Boolean);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const p of parts) {
+    const code = p.replace(/\s/g, "").trim();
+    if (!code) continue;
+    if (seen.has(code)) continue;
+    seen.add(code);
+    out.push(code);
+  }
+  return out;
+}
+
 function pickInsumosSheetNameByMode(args: { sheetNames: string[]; insumosModo: "ISD" | "ICD" | "ISE" }) {
   const all = (args.sheetNames || []).map((n) => ({ name: n, key: normalizeHeader(n) }));
   const isPreco = (k: string) => (k.includes("preco") || k.includes("precos")) && (k.includes("insumo") || k.includes("insumos"));
@@ -250,6 +273,7 @@ export default function SinapiImportPage() {
   >([]);
   const [previewCompLocal, setPreviewCompLocal] = useState<{ codigo: string; descricao: string | null; und: string | null; valorSemBdi: number | null } | null>(null);
   const [previewSelectedCodigo, setPreviewSelectedCodigo] = useState<string>("");
+  const [previewSelectedCodigos, setPreviewSelectedCodigos] = useState<string[]>([]);
   const [previewOpen, setPreviewOpen] = useState<boolean>(false);
 
   async function idbOpen() {
@@ -567,15 +591,28 @@ export default function SinapiImportPage() {
     const list = previewComposicoesParaLista;
     if (!list.length) {
       setPreviewSelectedCodigo("");
+      setPreviewSelectedCodigos([]);
       return;
     }
     const cur = String(previewSelectedCodigo || "").trim().toUpperCase();
     if (!cur) {
       setPreviewSelectedCodigo(list[0].codigo);
+      setPreviewSelectedCodigos([list[0].codigo]);
       return;
     }
     const exists = list.some((c) => String(c.codigo || "").trim().toUpperCase() === cur);
-    if (!exists) setPreviewSelectedCodigo(list[0].codigo);
+    if (!exists) {
+      setPreviewSelectedCodigo(list[0].codigo);
+      setPreviewSelectedCodigos([list[0].codigo]);
+      return;
+    }
+    setPreviewSelectedCodigos((prev) => {
+      const prevNorm = Array.isArray(prev) ? prev.map((x) => String(x || "").trim().toUpperCase()).filter(Boolean) : [];
+      const allowed = new Set(list.map((x) => String(x.codigo || "").trim().toUpperCase()).filter(Boolean));
+      const filtered = prevNorm.filter((x) => allowed.has(x));
+      if (!filtered.length) return [cur];
+      return filtered;
+    });
   }, [previewComposicoesParaLista, previewSelectedCodigo]);
 
   useEffect(() => {
@@ -786,28 +823,45 @@ export default function SinapiImportPage() {
     }
   }
 
-  async function doRequest(dryRun: boolean, override?: { codigoServico?: string }) {
+  async function doRequest(
+    dryRun: boolean,
+    override?: { codigoServico?: string },
+    opts?: { commitToState?: boolean; manageBusy?: boolean }
+  ): Promise<PreviewResult | ImportResult | null> {
+    const commitToState = opts?.commitToState !== false;
+    const manageBusy = opts?.manageBusy !== false;
     if (!Number.isFinite(idObra) || idObra <= 0) {
-      setErr("Obra inválida.");
-      return;
+      if (commitToState) {
+        setErr("Obra inválida.");
+        return null;
+      }
+      throw new Error("Obra inválida.");
     }
-    setErr("");
-    setOkMsg("");
-    setImported(null);
-    setAppliedBase(null);
+    if (commitToState) {
+      setErr("");
+      setOkMsg("");
+      setImported(null);
+      setAppliedBase(null);
+    }
     if (!file) {
-      setErr("Selecione o arquivo XLSX do SINAPI para importar.");
-      return;
+      if (commitToState) {
+        setErr("Selecione o arquivo XLSX do SINAPI para importar.");
+        return null;
+      }
+      throw new Error("Selecione o arquivo XLSX do SINAPI para importar.");
     }
-    setBusy(true);
+    if (manageBusy) setBusy(true);
     try {
       const computedMode: "MISSING_ONLY" | "UPSERT" = opcao === "SUBSTITUIR" || opcao === "SERVICO" ? "UPSERT" : "MISSING_ONLY";
       const computedImportAllParsed = opcao === "ARQUIVO";
       const overrideCodigoServico = String(override?.codigoServico || "").trim().toUpperCase();
       const computedCodigoServico = overrideCodigoServico || (opcao === "SERVICO" ? codigoServico.trim().toUpperCase() : "");
       if (opcao === "SERVICO" && !computedCodigoServico) {
-        setErr("Informe o código do serviço.");
-        return;
+        if (commitToState) {
+          setErr("Informe o código do serviço.");
+          return null;
+        }
+        throw new Error("Informe o código do serviço.");
       }
 
       const shouldUseParsed =
@@ -986,28 +1040,30 @@ export default function SinapiImportPage() {
         const parsedLocal = parseAnaliticoServico();
         if (!parsedLocal.itens.length) throw new Error(`Serviço ${computedCodigoServico} não encontrado na aba "${sheetName}".`);
 
-        setPreviewItensLocal(
-          parsedLocal.itens.map((it: any) => ({
-            tipoItemSinapi: String(it.tipoItemSinapi || "").trim() || "—",
-            tipoSistema: String(it.expTipo || "").trim() || "—",
-            classificacao: it.insumoClassificacao ?? null,
-            codigoItem: String(it.expCodigo || it.codigoItem || "").trim(),
-            descricao: it.expDescricao ?? it.insumoDescricao ?? it.descricaoSinapi ?? null,
-            und: it.expUnd ?? it.insumoUnd ?? it.undSinapi ?? null,
-            coeficiente: Number(it.coeficiente),
-            valorUnitario: it.expValorUnitario ?? it.insumoPu ?? null,
-          }))
-        );
-        setPreviewCompLocal({
-          codigo: parsedLocal.composicao?.codigo ? String(parsedLocal.composicao.codigo).trim().toUpperCase() : computedCodigoServico,
-          descricao: parsedLocal.composicao?.descricao ?? null,
-          und: parsedLocal.composicao?.und ?? null,
-          valorSemBdi: (() => {
-            const total = parsedLocal.itens.reduce((acc: number, it: any) => acc + Number(it.coeficiente || 0) * Number(it.expValorUnitario ?? it.insumoPu ?? 0), 0);
-            return Number.isFinite(total) ? total : null;
-          })(),
-        });
-        setPreviewSelectedCodigo(computedCodigoServico);
+        if (commitToState) {
+          setPreviewItensLocal(
+            parsedLocal.itens.map((it: any) => ({
+              tipoItemSinapi: String(it.tipoItemSinapi || "").trim() || "—",
+              tipoSistema: String(it.expTipo || "").trim() || "—",
+              classificacao: it.insumoClassificacao ?? null,
+              codigoItem: String(it.expCodigo || it.codigoItem || "").trim(),
+              descricao: it.expDescricao ?? it.insumoDescricao ?? it.descricaoSinapi ?? null,
+              und: it.expUnd ?? it.insumoUnd ?? it.undSinapi ?? null,
+              coeficiente: Number(it.coeficiente),
+              valorUnitario: it.expValorUnitario ?? it.insumoPu ?? null,
+            }))
+          );
+          setPreviewCompLocal({
+            codigo: parsedLocal.composicao?.codigo ? String(parsedLocal.composicao.codigo).trim().toUpperCase() : computedCodigoServico,
+            descricao: parsedLocal.composicao?.descricao ?? null,
+            und: parsedLocal.composicao?.und ?? null,
+            valorSemBdi: (() => {
+              const total = parsedLocal.itens.reduce((acc: number, it: any) => acc + Number(it.coeficiente || 0) * Number(it.expValorUnitario ?? it.insumoPu ?? 0), 0);
+              return Number.isFinite(total) ? total : null;
+            })(),
+          });
+          setPreviewSelectedCodigo(computedCodigoServico);
+        }
 
         const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico-parsed`, {
           method: "POST",
@@ -1030,26 +1086,31 @@ export default function SinapiImportPage() {
         if (!res.ok || !json?.success) throw new Error(json?.message || "Falha ao processar importação SINAPI");
 
         if (dryRun) {
-          setPreview(json.data as PreviewResult);
-          setOkMsg("");
-          setErr("");
-          setPageOkMsg("Prévia gerada.");
-          setImportOpen(false);
-          setPreviewOpen(true);
+          if (commitToState) {
+            setPreview(json.data as PreviewResult);
+            setOkMsg("");
+            setErr("");
+            setPageOkMsg("Prévia gerada.");
+            setImportOpen(false);
+            setPreviewOpen(true);
+          }
+          return json.data as PreviewResult;
         } else {
-          setImported(json.data as ImportResult);
-          setOkMsg("Importação concluída.");
-          setPageOkMsg("Importação realizada com sucesso. Lista de serviços importados atualizada.");
-          await persistPlanilhaUfSinapiIfMissing(String(uf || "").trim().toUpperCase());
-          setImportadosReloadTick((n) => n + 1);
-          setImportOpen(false);
-          setPreviewOpen(false);
-          setPreview(null);
-          setPreviewItensLocal([]);
-          setPreviewCompLocal(null);
-          setPreviewSelectedCodigo("");
+          if (commitToState) {
+            setImported(json.data as ImportResult);
+            setOkMsg("Importação concluída.");
+            setPageOkMsg("Importação realizada com sucesso. Lista de serviços importados atualizada.");
+            await persistPlanilhaUfSinapiIfMissing(String(uf || "").trim().toUpperCase());
+            setImportadosReloadTick((n) => n + 1);
+            setImportOpen(false);
+            setPreviewOpen(false);
+            setPreview(null);
+            setPreviewItensLocal([]);
+            setPreviewCompLocal(null);
+            setPreviewSelectedCodigo("");
+          }
+          return json.data as ImportResult;
         }
-        return;
       }
 
       const fd = new FormData();
@@ -1088,35 +1149,42 @@ export default function SinapiImportPage() {
       }
 
       if (dryRun) {
-        setPreview(json.data as PreviewResult);
-        setPreviewItensLocal([]);
-        setPreviewCompLocal(null);
-        const data = json.data as PreviewResult;
-        const sampleCodes = Array.isArray(data?.sample)
-          ? data.sample.map((x: any) => String(x?.codigo || "").trim().toUpperCase()).filter(Boolean)
-          : [];
-        if (computedCodigoServico) setPreviewSelectedCodigo(computedCodigoServico);
-        else if (sampleCodes.length) setPreviewSelectedCodigo(sampleCodes[0]);
-        setOkMsg("");
-        setErr("");
-        setPageOkMsg("Prévia gerada.");
-        setImportOpen(false);
-        setPreviewOpen(true);
+        if (commitToState) {
+          setPreview(json.data as PreviewResult);
+          setPreviewItensLocal([]);
+          setPreviewCompLocal(null);
+          const data = json.data as PreviewResult;
+          const sampleCodes = Array.isArray(data?.sample)
+            ? data.sample.map((x: any) => String(x?.codigo || "").trim().toUpperCase()).filter(Boolean)
+            : [];
+          if (computedCodigoServico) setPreviewSelectedCodigo(computedCodigoServico);
+          else if (sampleCodes.length) setPreviewSelectedCodigo(sampleCodes[0]);
+          setOkMsg("");
+          setErr("");
+          setPageOkMsg("Prévia gerada.");
+          setImportOpen(false);
+          setPreviewOpen(true);
+        }
+        return json.data as PreviewResult;
       } else {
-        setImported(json.data as ImportResult);
-        setOkMsg("Importação concluída.");
-        setPageOkMsg("Importação realizada com sucesso. Lista de serviços importados atualizada.");
-        await persistPlanilhaUfSinapiIfMissing(String(uf || "").trim().toUpperCase());
-        setImportadosReloadTick((n) => n + 1);
-        setImportOpen(false);
-        setPreviewOpen(false);
-        setPreview(null);
-        setPreviewItensLocal([]);
-        setPreviewCompLocal(null);
-        setPreviewSelectedCodigo("");
+        if (commitToState) {
+          setImported(json.data as ImportResult);
+          setOkMsg("Importação concluída.");
+          setPageOkMsg("Importação realizada com sucesso. Lista de serviços importados atualizada.");
+          await persistPlanilhaUfSinapiIfMissing(String(uf || "").trim().toUpperCase());
+          setImportadosReloadTick((n) => n + 1);
+          setImportOpen(false);
+          setPreviewOpen(false);
+          setPreview(null);
+          setPreviewItensLocal([]);
+          setPreviewCompLocal(null);
+          setPreviewSelectedCodigo("");
+        }
+        return json.data as ImportResult;
       }
     } catch (e: any) {
       const msg = String(e?.message || "");
+      if (!commitToState) throw e;
       if (msg.toLowerCase().includes("failed to fetch")) {
         setErr(
           "Falha de rede ao conectar no backend. Se você está em produção, aguarde 10 segundos e tente novamente. Se persistir, confirme se o backend (Render) está acessível e se a variável NEXT_PUBLIC_API_URL está configurada."
@@ -1124,6 +1192,108 @@ export default function SinapiImportPage() {
       } else {
         setErr(msg || "Erro ao importar SINAPI");
       }
+    } finally {
+      if (manageBusy) setBusy(false);
+    }
+    return null;
+  }
+
+  async function gerarPrevia() {
+    if (opcao !== "SERVICO") {
+      await doRequest(true);
+      return;
+    }
+    const codes = parseCodigoServicoList(codigoServico);
+    if (codes.length <= 1) {
+      await doRequest(true);
+      return;
+    }
+
+    if (!Number.isFinite(idObra) || idObra <= 0) {
+      setErr("Obra inválida.");
+      return;
+    }
+    if (!file) {
+      setErr("Selecione o arquivo XLSX do SINAPI para importar.");
+      return;
+    }
+
+    setErr("");
+    setOkMsg("");
+    setImported(null);
+    setAppliedBase(null);
+    setPreview(null);
+    setPreviewItensLocal([]);
+    setPreviewCompLocal(null);
+    setPreviewSelectedCodigo("");
+    setPreviewSelectedCodigos([]);
+    setBusy(true);
+    try {
+      const mergedSample: PreviewResult["sample"] = [];
+      let planilhaParams: PreviewResult["planilhaParams"] = null;
+      let planilhaId: number | null = null;
+      let ufOut: string | null = null;
+      let sheetNameOut = String(sheetName || "").trim() || "Analítico";
+      let sinapiDetected: PreviewResult["sinapiDetected"] = { dataBase: null };
+      let paramsMatch: boolean | null = null;
+      let paramsStatus: PreviewResult["paramsStatus"] = "UNKNOWN";
+      let insumosModoOut: string | null = insumosModo;
+      let parsedComposicoes = 0;
+      let targetComposicoes = 0;
+      let toImportComposicoes = 0;
+      let toImportItens = 0;
+      let skippedExisting = 0;
+      let skippedNotInPlanilha = 0;
+
+      for (const code of codes) {
+        const data = (await doRequest(true, { codigoServico: code }, { commitToState: false, manageBusy: false })) as PreviewResult | null;
+        if (!data) continue;
+        sheetNameOut = String(data.sheetName || sheetNameOut);
+        ufOut = data.uf || ufOut;
+        planilhaId = data.planilhaId ?? planilhaId;
+        planilhaParams = data.planilhaParams ?? planilhaParams;
+        sinapiDetected = data.sinapiDetected ?? sinapiDetected;
+        paramsMatch = data.paramsMatch ?? paramsMatch;
+        paramsStatus = data.paramsStatus ?? paramsStatus;
+        insumosModoOut = data.insumosModo ?? insumosModoOut;
+        parsedComposicoes += Number(data.parsedComposicoes || 0);
+        targetComposicoes += Number(data.targetComposicoes || 0);
+        toImportComposicoes += Number(data.toImportComposicoes || 0);
+        toImportItens += Number(data.toImportItens || 0);
+        skippedExisting += Number(data.skippedExisting || 0);
+        skippedNotInPlanilha += Number(data.skippedNotInPlanilha || 0);
+        const sample = Array.isArray(data.sample) ? data.sample : [];
+        for (const s of sample) mergedSample.push(s);
+      }
+
+      const merged: PreviewResult = {
+        sheetName: sheetNameOut,
+        uf: ufOut,
+        planilhaId,
+        planilhaParams,
+        sinapiDetected,
+        paramsMatch,
+        paramsStatus,
+        insumosModo: insumosModoOut,
+        parsedComposicoes,
+        targetComposicoes,
+        toImportComposicoes,
+        toImportItens,
+        skippedExisting,
+        skippedNotInPlanilha,
+        sample: mergedSample,
+      };
+
+      setPreview(merged);
+      setPreviewItensLocal([]);
+      setPreviewCompLocal(null);
+      setPreviewSelectedCodigo(codes[0]);
+      setPreviewSelectedCodigos(codes);
+      setPageOkMsg("Prévia gerada.");
+      setImportOpen(false);
+      setPreviewOpen(true);
+    } catch (e: any) {
+      setErr(String(e?.message || "Erro ao gerar prévia"));
     } finally {
       setBusy(false);
     }
@@ -1145,6 +1315,66 @@ export default function SinapiImportPage() {
       return;
     }
     await doRequest(false, overrideCodigo ? { codigoServico: overrideCodigo } : undefined);
+  }
+
+  async function importarSelecionados() {
+    const selected = previewSelectedCodigos.map((c) => String(c || "").trim().toUpperCase()).filter(Boolean);
+    const unique = Array.from(new Set(selected));
+    if (!unique.length) {
+      setErr("Selecione pelo menos um serviço para importar.");
+      return;
+    }
+    if (unique.length === 1) {
+      await importar(unique[0]);
+      return;
+    }
+
+    const computedMode: "MISSING_ONLY" | "UPSERT" = opcao === "SUBSTITUIR" || opcao === "SERVICO" ? "UPSERT" : "MISSING_ONLY";
+    if (computedMode === "UPSERT") {
+      const ok = window.confirm(`Importar ${unique.length} serviços substituindo os existentes (quando houver)?`);
+      if (!ok) return;
+    }
+    if (preview && preview.paramsMatch !== true && !forceDataBaseMismatch) {
+      setErr("Mês-base diferente (ou não detectado). Marque “Forçar importação (mês-base diferente)” para prosseguir.");
+      return;
+    }
+
+    setBusy(true);
+    setErr("");
+    setOkMsg("");
+    setImported(null);
+    setAppliedBase(null);
+    try {
+      let importedComposicoes = 0;
+      let importedItens = 0;
+      let skippedExisting = 0;
+      let skippedNotInPlanilha = 0;
+
+      for (const code of unique) {
+        const data = (await doRequest(false, { codigoServico: code }, { commitToState: false, manageBusy: false })) as ImportResult | null;
+        if (!data) continue;
+        importedComposicoes += Number(data.importedComposicoes || 0);
+        importedItens += Number(data.importedItens || 0);
+        skippedExisting += Number(data.skippedExisting || 0);
+        skippedNotInPlanilha += Number(data.skippedNotInPlanilha || 0);
+      }
+
+      setPageOkMsg(`Importação concluída: ${unique.length} serviços • ${importedComposicoes} composições • ${importedItens} itens.`);
+      setOkMsg("Importação concluída.");
+      await persistPlanilhaUfSinapiIfMissing(String(uf || "").trim().toUpperCase());
+      setImportadosReloadTick((n) => n + 1);
+
+      setPreviewOpen(false);
+      setPreview(null);
+      setPreviewItensLocal([]);
+      setPreviewCompLocal(null);
+      setPreviewSelectedCodigo("");
+      setPreviewSelectedCodigos([]);
+    } catch (e: any) {
+      setErr(String(e?.message || "Erro ao importar serviços selecionados"));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function aplicarDaBase(row: { codigo: string; dataBase: string; uf: string; insumosModo: string }) {
@@ -2039,7 +2269,7 @@ export default function SinapiImportPage() {
                             value={codigoServico}
                             onChange={(e) => setCodigoServico(e.target.value)}
                             disabled={busy}
-                            placeholder="Ex: 100309"
+                            placeholder="Ex: 95393 ou 95393,10052,25645"
                           />
                         </div>
                       ) : null}
@@ -2117,7 +2347,7 @@ export default function SinapiImportPage() {
                     <button
                       className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
                       type="button"
-                      onClick={() => doRequest(true)}
+                      onClick={() => gerarPrevia()}
                       disabled={busy || !previewRequirements.ok}
                       title={
                         busy ? "Processando..." : previewRequirements.ok ? "Gerar prévia" : `Preencha: ${previewRequirements.missing.join(", ")}`
@@ -2156,6 +2386,7 @@ export default function SinapiImportPage() {
                   setPreviewItensLocal([]);
                   setPreviewCompLocal(null);
                   setPreviewSelectedCodigo("");
+                  setPreviewSelectedCodigos([]);
                   setImported(null);
                   setOkMsg("");
                   setErr("");
@@ -2170,7 +2401,9 @@ export default function SinapiImportPage() {
               {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
 
               <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div className="min-w-[240px] text-sm text-slate-700">Selecione um serviço na tabela “Serviços na prévia” para conferir os itens.</div>
+                <div className="min-w-[240px] text-sm text-slate-700">
+                  Clique em um serviço para conferir os itens. Marque “Sel” para escolher quais serviços serão importados (pode selecionar vários).
+                </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
                     className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
@@ -2181,6 +2414,7 @@ export default function SinapiImportPage() {
                       setPreviewItensLocal([]);
                       setPreviewCompLocal(null);
                       setPreviewSelectedCodigo("");
+                      setPreviewSelectedCodigos([]);
                       setImported(null);
                       setOkMsg("");
                       setErr("");
@@ -2192,11 +2426,11 @@ export default function SinapiImportPage() {
                   <button
                     className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
                     type="button"
-                    onClick={() => importar(previewSelectedCodigo)}
-                    disabled={busy || !String(previewSelectedCodigo || "").trim()}
-                    title={!String(previewSelectedCodigo || "").trim() ? "Selecione um serviço para importar" : "Importar serviço selecionado"}
+                    onClick={() => importarSelecionados()}
+                    disabled={busy || !previewSelectedCodigos.length}
+                    title={!previewSelectedCodigos.length ? "Selecione um ou mais serviços para importar" : "Importar serviços selecionados"}
                   >
-                    Importar selecionado
+                    Importar selecionados ({previewSelectedCodigos.length})
                   </button>
                 </div>
               </div>
@@ -2258,7 +2492,8 @@ export default function SinapiImportPage() {
                         <div className="divide-y bg-white">
                           {previewComposicoesParaLista.map((c, idx) => {
                             const codigo = String(c.codigo || "").trim().toUpperCase();
-                            const checked = Boolean(codigo) && codigo === String(previewSelectedCodigo || "").trim().toUpperCase();
+                            const focused = Boolean(codigo) && codigo === String(previewSelectedCodigo || "").trim().toUpperCase();
+                            const selected = Boolean(codigo) && previewSelectedCodigos.includes(codigo);
                             const jaImportado = codigo ? importadosCodes.has(codigo) : false;
                             const valor = c.valorSemBdi == null ? null : Number(c.valorSemBdi);
                             const valorOk = valor != null && Number.isFinite(valor);
@@ -2267,15 +2502,24 @@ export default function SinapiImportPage() {
                               <button
                                 key={codigo || `row-${idx}`}
                                 type="button"
-                                className={`w-full text-left grid grid-cols-[46px_46px_110px_1fr_60px_160px] gap-x-2 px-3 py-2 text-sm hover:bg-slate-50 ${checked ? "bg-blue-50" : ""}`}
+                                className={`w-full text-left grid grid-cols-[46px_46px_110px_1fr_60px_160px] gap-x-2 px-3 py-2 text-sm hover:bg-slate-50 ${focused ? "bg-blue-50" : ""}`}
                                 onClick={() => (codigo ? setPreviewSelectedCodigo(codigo) : null)}
                                 disabled={busy || !codigo}
                               >
                                 <div className="flex items-center justify-center">
                                   <input
                                     type="checkbox"
-                                    checked={checked}
-                                    onChange={() => (codigo ? setPreviewSelectedCodigo(codigo) : null)}
+                                    checked={selected}
+                                    onChange={() => {
+                                      if (!codigo) return;
+                                      setPreviewSelectedCodigo(codigo);
+                                      setPreviewSelectedCodigos((prev) => {
+                                        const cur = Array.isArray(prev) ? prev : [];
+                                        const has = cur.includes(codigo);
+                                        if (has) return cur.filter((x) => x !== codigo);
+                                        return [...cur, codigo];
+                                      });
+                                    }}
                                     disabled={busy || !codigo}
                                   />
                                 </div>
