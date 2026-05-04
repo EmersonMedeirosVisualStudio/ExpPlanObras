@@ -3024,6 +3024,13 @@ Manter o padrão do sistema **Frontend ↔ Backend ↔ Banco de dados** e reduzi
 - Importação mais previsível e rápida (sem upload do arquivo grande).
 - Backend permanece responsável pela regra de negócio, validações e persistência no banco.
 
+**Regra funcional SINAPI (UF e tipo de preço ISD/ICD/ISE)**
+
+- A composição é indexada por código e representa a estrutura técnica (itens e coeficientes).
+- Os preços variam por **UF** e por **tipo de preço** (**ISD**, **ICD**, **ISE**).
+- A base interna persiste por combinação de `data_base + uf + tipo_preco`.
+- Ao trocar AC → SP (ou ISD → ICD/ISE), deve ser feita importação para a nova combinação; a aplicação na planilha usa os valores dessa combinação.
+
 **Como usar — A partir da Análise de composição**
 
 ETAPA 1 — Onde acessar
@@ -3047,6 +3054,31 @@ ETAPA 5 — Como validar
   - clique em “Prévia” (abre a **Prévia em um modal separado**);
   - na tabela “Serviços na prévia”, marque o serviço que deseja importar (caixa de seleção);
   - clique em “Importar selecionado”.
+
+#### 18.2.2 Análise de composição — criação de composição e fixação de composição auxiliar
+
+**Problema identificado**
+
+- A análise não tinha ação dedicada para iniciar uma nova composição diretamente do contexto atual.
+- Linhas de tipo composição/composição auxiliar podiam perder consistência de valor unitário quando a referência estava em outra composição da planilha.
+
+**Oportunidade de melhoria**
+
+- Acelerar criação de composições auxiliares durante o orçamento.
+- Garantir consistência de custo entre composições encadeadas, sem recalcular manualmente linha a linha.
+
+**Solução sugerida (implementada)**
+
+- Inserido botão **Nova composição** na barra da Análise de composição, antes de **Composição primitiva**.
+- A tabela da análise aceita código de composição digitado pelo usuário.
+- No backend, ao salvar/carregar composição, o sistema percorre itens de tipo `COMPOSICAO`/`COMPOSICAO_AUXILIAR`, busca o valor da composição referenciada na própria planilha e grava o `valor_unitario` encontrado.
+- A fixação é propagada em cascata para composições pai que referenciam a composição alterada.
+
+**Benefício da mudança**
+
+- Menor risco de divergência de custos entre composições relacionadas.
+- Menor retrabalho operacional para montar composições auxiliares.
+- Maior estabilidade para produção (valor unitário persistido e rastreável no backend).
 
 **Como usar — Tela Sinapi (Planilha orçamentária)**
 

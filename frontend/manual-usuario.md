@@ -151,6 +151,53 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
 - Clique em **Importar selecionado**
 - Volte para a lista “Serviços SINAPI importados” e confirme que o serviço aparece (ou atualiza)
 
+## 3.3 Análise de composição — Nova composição e composição auxiliar
+
+### ETAPA 1 — Onde acessar
+- Engenharia → Obras → (abra a obra) → Planilha orçamentária → Serviços → Análise de composição
+
+### ETAPA 2 — O que clicar
+- No topo da análise, use o botão **Nova composição** (fica antes de **Composição primitiva**)
+- Informe o código da nova composição e confirme
+
+### ETAPA 3 — O que preencher
+- Na nova composição, preencha os itens normalmente (tipo, código, descrição, unidade, quantidade e valor unitário)
+- Para item do tipo **Composição** ou **Composição Auxiliar**, informe o código da composição de referência
+
+### ETAPA 4 — O que esperar
+- A tabela aceita qualquer código de composição informado por você
+- Se o código de composição de referência existir em outra composição da mesma planilha, o sistema procura o valor e grava esse valor unitário no item de referência
+- Depois de encontrado, o valor fica fixado no item salvo da composição
+
+### ETAPA 5 — Como validar
+- Salve a composição
+- Reabra a mesma análise e confirme que os valores unitários das linhas de composição auxiliar/composição continuam preenchidos
+- Abra a composição pai e confirme que o total foi recalculado com o valor fixado da composição referenciada
+
+## 3.4 SINAPI — mesma composição em UF diferente (AC, SP) e ISD/ICD/ISE
+
+### ETAPA 1 — Onde acessar
+- Engenharia → Obras → Planilha orçamentária → Sinapi
+
+### ETAPA 2 — O que selecionar
+- Selecione a **UF** (ex.: AC ou SP)
+- Selecione o modo de preço de insumo (**ISD**, **ICD** ou **ISE**)
+
+### ETAPA 3 — O que acontece no sistema
+- A estrutura da composição (coeficientes e itens) é a mesma quando o código da composição é o mesmo
+- O que muda entre AC/SP e ISD/ICD/ISE é principalmente o preço dos insumos
+- O sistema mantém base por combinação de **data-base + UF + tipo de preço**
+
+### ETAPA 4 — O que fazer quando mudar AC para SP
+- Faça nova importação na tela Sinapi com a UF SP e o modo desejado (ISD/ICD/ISE)
+- O sistema atualiza/regrava os dados da base interna para essa combinação
+- Depois aplique a composição na planilha
+
+### ETAPA 5 — Como validar
+- No card “Serviços SINAPI importados”, confirme UF e tipo de preço da linha importada
+- Abra a composição (duplo clique) e confira se os valores unitários dos insumos refletem a UF/tipo escolhidos
+- Aplique na planilha e confirme o valor atualizado na análise
+
 ## 4. Contrato da obra (ver detalhes)
 
 O contrato é uma informação associada à obra. Para ver:

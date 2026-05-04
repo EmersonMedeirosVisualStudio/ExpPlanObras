@@ -5091,6 +5091,144 @@ export default async function v1Routes(server: FastifyInstance) {
     return ok(reply, { upserted }, { message: 'Composições importadas' });
   });
 
+  async function carregarItensComposicaoObra(tx: any, tenantId: number, idObra: number, codigoServico: string) {
+    return (await tx.$queryRawUnsafe(
+      `
+      SELECT
+        id_item AS "idItemBase",
+        COALESCE(etapa,'') AS "etapa",
+        UPPER(COALESCE(tipo_item,'')) AS "tipoItem",
+        UPPER(COALESCE(codigo_item,'')) AS "codigoItem",
+        quantidade AS "quantidade",
+        valor_unitario AS "valorUnitario"
+      FROM obras_planilhas_composicoes_itens
+      WHERE tenant_id = $1 AND id_obra = $2 AND UPPER(codigo_servico) = $3
+      ORDER BY COALESCE(etapa,''), tipo_item, codigo_item, id_item
+      `,
+      tenantId,
+      idObra,
+      codigoServico
+    )) as any[];
+  }
+
+  async function calcularTotalComposicaoFixa(
+    tx: any,
+    tenantId: number,
+    idObra: number,
+    codigoServico: string,
+    cache: Map<string, number | null>,
+    stack: Set<string>
+  ): Promise<number | null> {
+    const codigo = String(codigoServico || '').trim().toUpperCase();
+    if (!codigo) return null;
+    if (cache.has(codigo)) return cache.get(codigo) ?? null;
+    if (stack.has(codigo)) return null;
+
+    stack.add(codigo);
+    const itens = await carregarItensComposicaoObra(tx, tenantId, idObra, codigo);
+    if (!itens.length) {
+      stack.delete(codigo);
+      cache.set(codigo, null);
+      return null;
+    }
+
+    let total = 0;
+    for (const it of itens) {
+      const quantidade = it?.quantidade == null ? null : Number(it.quantidade);
+      if (!Number.isFinite(quantidade as number)) continue;
+      const tipo = String(it?.tipoItem || '').trim().toUpperCase();
+      if (tipo === 'COMPOSICAO' || tipo === 'COMPOSICAO_AUXILIAR') {
+        const codigoRef = String(it?.codigoItem || '').trim().toUpperCase();
+        if (!codigoRef) continue;
+        const valorRef = await calcularTotalComposicaoFixa(tx, tenantId, idObra, codigoRef, cache, stack);
+        if (valorRef == null) continue;
+        total += Number(quantidade) * Number(valorRef);
+      } else {
+        const valorUnitario = it?.valorUnitario == null ? null : Number(it.valorUnitario);
+        if (!Number.isFinite(valorUnitario as number)) continue;
+        total += Number(quantidade) * Number(valorUnitario);
+      }
+    }
+
+    stack.delete(codigo);
+    const fixo = Number(total.toFixed(6));
+    cache.set(codigo, fixo);
+    return fixo;
+  }
+
+  async function fixarValoresReferenciasComposicao(tx: any, tenantId: number, idObra: number, codigoServico: string, cache?: Map<string, number | null>) {
+    const codigo = String(codigoServico || '').trim().toUpperCase();
+    if (!codigo) return { atualizados: 0 };
+    const mapa = cache || new Map<string, number | null>();
+    const itens = await carregarItensComposicaoObra(tx, tenantId, idObra, codigo);
+    const itensComposicoes = (itens || []).filter((r: any) => {
+      const tipo = String(r?.tipoItem || '').trim().toUpperCase();
+      return tipo === 'COMPOSICAO' || tipo === 'COMPOSICAO_AUXILIAR';
+    });
+    let atualizados = 0;
+    for (const it of itensComposicoes) {
+      const codigoRef = String(it?.codigoItem || '').trim().toUpperCase();
+      if (!codigoRef) continue;
+      const valorRef = await calcularTotalComposicaoFixa(tx, tenantId, idObra, codigoRef, mapa, new Set<string>([codigo]));
+      if (valorRef == null) continue;
+      const atual = it?.valorUnitario == null ? null : Number(it.valorUnitario);
+      if (Number.isFinite(atual as number) && Math.abs(Number(atual) - Number(valorRef)) <= 0.000001) continue;
+      await tx.$executeRawUnsafe(
+        `
+        UPDATE obras_planilhas_composicoes_itens
+        SET valor_unitario = $4, atualizado_em = NOW()
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_item = $3
+        `,
+        tenantId,
+        idObra,
+        Number(it.idItemBase),
+        toDec(valorRef)
+      );
+      atualizados++;
+    }
+    if (mapa.has(codigo)) mapa.delete(codigo);
+    return { atualizados };
+  }
+
+  async function listarComposicoesPai(tx: any, tenantId: number, idObra: number, codigoReferencia: string) {
+    const codigo = String(codigoReferencia || '').trim().toUpperCase();
+    if (!codigo) return [] as string[];
+    const rows = (await tx.$queryRawUnsafe(
+      `
+      SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS "codigoServico"
+      FROM obras_planilhas_composicoes_itens
+      WHERE tenant_id = $1
+        AND id_obra = $2
+        AND UPPER(COALESCE(codigo_item,'')) = $3
+        AND UPPER(COALESCE(tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+      `,
+      tenantId,
+      idObra,
+      codigo
+    )) as any[];
+    return (rows || []).map((r: any) => String(r.codigoServico || '').trim().toUpperCase()).filter(Boolean);
+  }
+
+  async function recalcularFixacaoCascata(tx: any, tenantId: number, idObra: number, codigosIniciais: string[]) {
+    const queue = Array.from(new Set((codigosIniciais || []).map((c) => String(c || '').trim().toUpperCase()).filter(Boolean)));
+    const vistos = new Set<string>();
+    const cache = new Map<string, number | null>();
+    let atualizados = 0;
+    while (queue.length) {
+      const atual = String(queue.shift() || '').trim().toUpperCase();
+      if (!atual || vistos.has(atual)) continue;
+      vistos.add(atual);
+      const res = await fixarValoresReferenciasComposicao(tx, tenantId, idObra, atual, cache);
+      atualizados += Number(res.atualizados || 0);
+      const pais = await listarComposicoesPai(tx, tenantId, idObra, atual);
+      for (const p of pais) {
+        if (!vistos.has(p)) queue.push(p);
+      }
+      if (vistos.size > 300) break;
+    }
+    return { atualizados };
+  }
+
   server.get('/engenharia/obras/:id/planilha/servicos/:codigo/composicao-itens', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
@@ -5102,6 +5240,9 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
     await ensurePlanilhaComposicaoTables(prisma);
+    await prisma.$transaction(async (tx: any) => {
+      await recalcularFixacaoCascata(tx, ctx.tenantId, idObra, [codigoServico]);
+    });
     const rows = (await prisma.$queryRawUnsafe(
       `
       SELECT
@@ -5126,7 +5267,7 @@ export default async function v1Routes(server: FastifyInstance) {
     )) as any[];
 
     return ok(reply, {
-      codigoComposicao: null,
+      codigoComposicao: codigoServico,
       itens: (rows || []).map((r: any) => ({
         ...r,
         idItemBase: typeof r.idItemBase === 'bigint' ? Number(r.idItemBase) : Number(r.idItemBase || 0),
@@ -5211,6 +5352,7 @@ export default async function v1Routes(server: FastifyInstance) {
             ...params
           );
         }
+        await recalcularFixacaoCascata(tx, ctx.tenantId, idObra, [codigoServico]);
       }, { timeout: 120000, maxWait: 20000 });
 
       return ok(reply, { ok: true }, { message: 'Composição atualizada' });

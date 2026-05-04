@@ -369,7 +369,6 @@ async function readTextSmart(file: File) {
         codigoCentroCustoBase: String(i.codigoCentroCustoBase || ""),
       }));
       setItens(mapped);
-      sincronizarValoresComposicoes(mapped);
       if (!silent) setOkMsg("Composição carregada.");
      } catch (e: any) {
        setErr(e?.message || "Erro ao carregar composição");
@@ -1078,11 +1077,6 @@ async function readTextSmart(file: File) {
     return Number(total.toFixed(2));
   }, [previstoRows, previstoCalcUnit]);
 
-  useEffect(() => {
-    if (!itens.length) return;
-    sincronizarValoresComposicoes(itens);
-  }, [lsPercent]);
-
   async function calcularTotalComLSDeComposicao(codigo: string) {
     const code = String(codigo || "").trim().toUpperCase();
     if (!code) return null;
@@ -1139,41 +1133,20 @@ async function readTextSmart(file: File) {
     }
   }
 
-  async function sincronizarValoresComposicoes(itensBase: ItemRow[]) {
-    const codes = Array.from(
-      new Set(
-        itensBase
-          .filter((r) => ["COMPOSICAO", "COMPOSICAO_AUXILIAR"].includes(String(r.tipoItem || "").toUpperCase()))
-          .map((r) => String(r.codigoItem || "").trim().toUpperCase())
-          .filter(Boolean)
-      )
-    );
-    if (!codes.length) return;
-    const nextByCode = new Map<string, string>();
-    for (const code of codes) {
-      try {
-        if (!definedComposicoesCodes.has(code)) {
-          nextByCode.set(code, "");
-          continue;
-        }
-        const totalComLSLocal = await calcularTotalComLSDeComposicao(code);
-        if (totalComLSLocal == null) continue;
-        nextByCode.set(code, totalComLSLocal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-      } catch {
-        nextByCode.set(code, "");
-      }
+  function criarNovaComposicao() {
+    if (!idObra) return;
+    const sugestao = `${codigoServico || "COMP"}-NOVA`;
+    const entrada = window.prompt("Informe o código da nova composição:", sugestao);
+    const codigoNovo = String(entrada || "").trim().toUpperCase();
+    if (!codigoNovo) return;
+    if (!/^[A-Z0-9._/-]+$/.test(codigoNovo)) {
+      setErr("Código inválido. Use apenas letras, números, ponto, traço, barra ou underline.");
+      return;
     }
-    setItens((p) =>
-      p.map((r) => {
-        const t = String(r.tipoItem || "").toUpperCase();
-        if (t !== "COMPOSICAO" && t !== "COMPOSICAO_AUXILIAR") return r;
-        const code = String(r.codigoItem || "").trim().toUpperCase();
-        if (!code) return { ...r, valorUnitario: "" };
-        if (!nextByCode.has(code)) return r;
-        const vu = nextByCode.get(code) ?? "";
-        return vu === r.valorUnitario ? r : { ...r, valorUnitario: vu };
-      })
-    );
+    const target = `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoNovo)}?rootCodigo=${encodeURIComponent(
+      rootCodigo
+    )}&returnTo=${encodeURIComponent(getSelfUrl())}`;
+    router.push(target);
   }
 
   function navegarParaIndice(next: number) {
@@ -1314,9 +1287,9 @@ async function readTextSmart(file: File) {
               const codigoComposicao = String(r.codigoItem || "").trim().toUpperCase();
               const isDefinida = Boolean(codigoComposicao) && definedComposicoesCodes.has(codigoComposicao);
               const vRaw = parseNumberLoose(r.valorUnitario);
-              const v = isComposicao && !isDefinida ? null : vRaw;
+              const v = vRaw;
               const total = q != null && v != null ? q * v : null;
-              const displayValorUnit = isComposicao ? (isDefinida ? r.valorUnitario : "") : r.valorUnitario;
+              const displayValorUnit = r.valorUnitario;
               return (
                 <tr key={idx} className="border-t" style={{ backgroundColor: rowBg }}>
                   {displayPrefs.colTipo ? (
@@ -1462,22 +1435,22 @@ async function readTextSmart(file: File) {
                     {isComposicao ? (
                       <div className="flex items-center gap-2">
                         <input
-                          className="input bg-white text-right flex-1 min-w-0 disabled:opacity-70"
+                          className="input bg-white text-right flex-1 min-w-0"
                           value={displayValorUnit}
-                          disabled
+                          onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, valorUnitario: e.target.value } : x)))}
                           title={
                             !codigoComposicao
-                              ? "Informe o código da composição para calcular o valor unitário (Total com LS, sem BDI)"
+                              ? "Informe o código da composição"
                               : isDefinida
-                                ? "Valor unitário calculado da composição (Total com LS, sem BDI)"
-                                : "Composição não definida. Defina a composição para calcular o valor unitário (sem BDI)"
+                                ? "Valor unitário da composição"
+                                : "Composição ainda não definida na planilha"
                           }
                           style={{ fontSize: px(fs.valorUnit) }}
                         />
                         <button
                           className="rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60"
                           type="button"
-                          disabled={loading || !codigoComposicao || !isDefinida}
+                          disabled={loading || !codigoComposicao}
                           title="Atualizar valor unitário pela composição (Total com LS, sem BDI)"
                           onClick={() => atualizarValorComposicaoNoItem(idx, codigoComposicao)}
                         >
@@ -1956,6 +1929,15 @@ async function readTextSmart(file: File) {
           </button>
         </div>
         <div className="flex items-center justify-end gap-2 flex-wrap">
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={criarNovaComposicao}
+            disabled={loading || primitiveLoading}
+            title="Criar uma nova composição da planilha"
+          >
+            Nova composição
+          </button>
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
