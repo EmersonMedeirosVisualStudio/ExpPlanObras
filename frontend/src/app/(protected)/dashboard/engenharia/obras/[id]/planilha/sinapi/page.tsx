@@ -172,6 +172,8 @@ export default function SinapiImportPage() {
 
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [lastXlsxName, setLastXlsxName] = useState<string>("");
+  const [lastXlsxReady, setLastXlsxReady] = useState<boolean>(false);
   const [sheetName, setSheetName] = useState<string>("Analítico");
   const [uf, setUf] = useState<string>("AC");
   const [insumosModo, setInsumosModo] = useState<"ISD" | "ICD" | "ISE">("ISD");
@@ -235,6 +237,144 @@ export default function SinapiImportPage() {
   const [previewCompLocal, setPreviewCompLocal] = useState<{ codigo: string; descricao: string | null; und: string | null; valorSemBdi: number | null } | null>(null);
   const [previewSelectedCodigo, setPreviewSelectedCodigo] = useState<string>("");
   const [previewOpen, setPreviewOpen] = useState<boolean>(false);
+
+  async function idbOpen() {
+    return await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open("expplanobras", 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains("sinapi_files")) db.createObjectStore("sinapi_files");
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function idbGet<T>(key: string): Promise<T | null> {
+    const db = await idbOpen();
+    return await new Promise<T | null>((resolve) => {
+      const tx = db.transaction("sinapi_files", "readonly");
+      const store = tx.objectStore("sinapi_files");
+      const req = store.get(key);
+      req.onsuccess = () => resolve((req.result as T) ?? null);
+      req.onerror = () => resolve(null);
+      tx.oncomplete = () => db.close();
+      tx.onerror = () => db.close();
+    });
+  }
+
+  async function idbSet<T>(key: string, value: T) {
+    const db = await idbOpen();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction("sinapi_files", "readwrite");
+      const store = tx.objectStore("sinapi_files");
+      store.put(value as any, key);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve();
+      };
+    });
+  }
+
+  async function idbDel(key: string) {
+    const db = await idbOpen();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction("sinapi_files", "readwrite");
+      const store = tx.objectStore("sinapi_files");
+      store.delete(key);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve();
+      };
+    });
+  }
+
+  function resetSelectedFile() {
+    setPreview(null);
+    setPreviewItensLocal([]);
+    setPreviewCompLocal(null);
+    setPreviewSelectedCodigo("");
+    setPreviewOpen(false);
+    setImported(null);
+    setOkMsg("");
+    setErr("");
+  }
+
+  async function selecionarXlsx() {
+    try {
+      if (busy) return;
+      setErr("");
+      const w: any = typeof window !== "undefined" ? (window as any) : null;
+      if (w?.showOpenFilePicker) {
+        const [handle] = await w.showOpenFilePicker({
+          multiple: false,
+          types: [
+            {
+              description: "Excel (.xlsx)",
+              accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
+            },
+          ],
+        });
+        if (!handle) return;
+        const f = (await handle.getFile()) as File;
+        setFile(f);
+        resetSelectedFile();
+        setLastXlsxName(String(f?.name || ""));
+        localStorage.setItem("exp:sinapi:lastXlsxName", String(f?.name || ""));
+        await idbSet("lastXlsxHandle", handle);
+        setLastXlsxReady(true);
+        return;
+      }
+      fileInputRef.current?.click();
+    } catch (e: any) {
+      setErr(e?.message || "Não foi possível selecionar o arquivo XLSX.");
+    }
+  }
+
+  async function usarUltimoXlsx() {
+    try {
+      if (busy) return;
+      setErr("");
+      const handle: any = await idbGet<any>("lastXlsxHandle");
+      if (!handle?.getFile) {
+        setLastXlsxReady(false);
+        return;
+      }
+      const f = (await handle.getFile()) as File;
+      setFile(f);
+      resetSelectedFile();
+      setLastXlsxName(String(f?.name || ""));
+      localStorage.setItem("exp:sinapi:lastXlsxName", String(f?.name || ""));
+      setLastXlsxReady(true);
+    } catch {
+      await idbDel("lastXlsxHandle");
+      setLastXlsxReady(false);
+      setErr("Não foi possível reutilizar o último arquivo. Selecione novamente.");
+    }
+  }
+
+  useEffect(() => {
+    try {
+      const name = localStorage.getItem("exp:sinapi:lastXlsxName") || "";
+      setLastXlsxName(String(name || ""));
+    } catch {}
+    (async () => {
+      try {
+        const h: any = await idbGet<any>("lastXlsxHandle");
+        setLastXlsxReady(Boolean(h?.getFile));
+      } catch {
+        setLastXlsxReady(false);
+      }
+    })();
+  }, []);
 
   const importadosCodes = useMemo(() => {
     return new Set(importados.map((r) => String(r.codigo || "").trim().toUpperCase()).filter(Boolean));
@@ -1755,14 +1895,27 @@ export default function SinapiImportPage() {
                           {file ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
                           <div className="text-sm text-slate-700 truncate max-w-[320px]">{file ? String(file.name || "") : "Nenhum arquivo selecionado"}</div>
                         </div>
-                        <button
-                          className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={busy}
-                        >
-                          Selecionar arquivo XLSX
-                        </button>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {lastXlsxReady ? (
+                            <button
+                              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                              type="button"
+                              onClick={usarUltimoXlsx}
+                              disabled={busy}
+                              title={lastXlsxName ? `Usar último: ${lastXlsxName}` : "Usar último XLSX"}
+                            >
+                              Usar último XLSX
+                            </button>
+                          ) : null}
+                          <button
+                            className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                            type="button"
+                            onClick={selecionarXlsx}
+                            disabled={busy}
+                          >
+                            Selecionar arquivo XLSX
+                          </button>
+                        </div>
                         <input
                           ref={fileInputRef}
                           className="hidden"
@@ -1771,14 +1924,11 @@ export default function SinapiImportPage() {
                           onChange={(e) => {
                             const f = e.target.files?.[0] || null;
                             setFile(f);
-                            setPreview(null);
-                            setPreviewItensLocal([]);
-                            setPreviewCompLocal(null);
-                            setPreviewSelectedCodigo("");
-                            setPreviewOpen(false);
-                            setImported(null);
-                            setOkMsg("");
-                            setErr("");
+                            resetSelectedFile();
+                            try {
+                              setLastXlsxName(String(f?.name || ""));
+                              localStorage.setItem("exp:sinapi:lastXlsxName", String(f?.name || ""));
+                            } catch {}
                           }}
                           disabled={busy}
                         />

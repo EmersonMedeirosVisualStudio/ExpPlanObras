@@ -7219,6 +7219,144 @@ export default async function v1Routes(server: FastifyInstance) {
       );
     }
 
+    async function calcularTotalComposicaoSinapiBase(
+      tx: any,
+      args: { tenantId: number; uf: string; dataBase: string; tipoPreco: string; codigoComposicao: string },
+      cache: Map<string, number | null>,
+      stack: Set<string>
+    ): Promise<number | null> {
+      const codigo = String(args.codigoComposicao || '').trim().toUpperCase();
+      if (!codigo) return null;
+      if (cache.has(codigo)) return cache.get(codigo) ?? null;
+      if (stack.has(codigo)) return null;
+      stack.add(codigo);
+
+      const serv = (await tx.$queryRawUnsafe(
+        `
+        SELECT id_serv_sinapi AS "idServ"
+        FROM sinapi_servicos_base
+        WHERE tenant_id = $1 AND data_base = $2 AND UPPER(codigo_servico) = $3
+        ORDER BY id_serv_sinapi DESC
+        LIMIT 1
+        `,
+        args.tenantId,
+        args.dataBase,
+        codigo
+      )) as any[];
+      const idServ = serv?.[0]?.idServ != null ? Number(serv[0].idServ) : 0;
+      if (!idServ) {
+        stack.delete(codigo);
+        cache.set(codigo, null);
+        return null;
+      }
+
+      const itens = (await tx.$queryRawUnsafe(
+        `
+        SELECT
+          c.tipo_item AS "tipoItemSinapi",
+          c.codigo_item AS "codigoItem",
+          c.coeficiente AS "coeficiente",
+          p.pu AS "pu"
+        FROM sinapi_composicoes_base c
+        LEFT JOIN sinapi_insumos_pu p
+          ON p.tenant_id = c.tenant_id AND p.id_pu = c.id_pu
+        WHERE c.tenant_id = $1
+          AND c.uf = $2
+          AND c.data_base = $3
+          AND c.tipo_preco = $4
+          AND c.id_serv_sinapi = $5
+        ORDER BY c.id_compo_sinapi ASC
+        `,
+        args.tenantId,
+        args.uf,
+        args.dataBase,
+        args.tipoPreco,
+        idServ
+      )) as any[];
+
+      if (!itens?.length) {
+        stack.delete(codigo);
+        cache.set(codigo, null);
+        return null;
+      }
+
+      let total = 0;
+      for (const r of itens) {
+        const tipo = String(r?.tipoItemSinapi || '').trim().toUpperCase();
+        const codigoItem = String(r?.codigoItem || '').trim().toUpperCase();
+        const coef = r?.coeficiente == null ? null : Number(r.coeficiente);
+        if (!codigoItem || coef == null || !Number.isFinite(coef)) continue;
+        if (tipo === 'COMPOSICAO' || tipo === 'COMPOSICAO_AUXILIAR') {
+          const valorRef = await calcularTotalComposicaoSinapiBase(
+            tx,
+            { tenantId: args.tenantId, uf: args.uf, dataBase: args.dataBase, tipoPreco: args.tipoPreco, codigoComposicao: codigoItem },
+            cache,
+            stack
+          );
+          if (valorRef == null) continue;
+          total += Number(coef) * Number(valorRef);
+        } else {
+          const pu = r?.pu == null ? null : Number(r.pu);
+          if (!Number.isFinite(pu as number)) continue;
+          total += Number(coef) * Number(pu);
+        }
+      }
+
+      stack.delete(codigo);
+      const fixo = Number(total.toFixed(6));
+      cache.set(codigo, fixo);
+      return fixo;
+    }
+
+    async function fixarValoresReferenciasPorSinapiBase(
+      tx: any,
+      args: { tenantId: number; idObra: number; codigoServico: string; uf: string; dataBase: string; tipoPreco: string }
+    ) {
+      const itensRef = (await tx.$queryRawUnsafe(
+        `
+        SELECT id_item AS "idItem", UPPER(COALESCE(codigo_item,'')) AS "codigoItem", valor_unitario AS "valorUnitario"
+        FROM obras_planilhas_composicoes_itens
+        WHERE tenant_id = $1
+          AND id_obra = $2
+          AND UPPER(codigo_servico) = $3
+          AND UPPER(COALESCE(tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+        ORDER BY id_item ASC
+        `,
+        args.tenantId,
+        args.idObra,
+        String(args.codigoServico || '').trim().toUpperCase()
+      )) as any[];
+      if (!itensRef?.length) return { atualizados: 0 };
+      const cache = new Map<string, number | null>();
+      let atualizados = 0;
+      for (const it of itensRef) {
+        const codigoItem = String(it?.codigoItem || '').trim().toUpperCase();
+        if (!codigoItem) continue;
+        const vuAtual = it?.valorUnitario == null ? null : Number(it.valorUnitario);
+        if (vuAtual != null && Number.isFinite(vuAtual)) continue;
+        const totalRef = await calcularTotalComposicaoSinapiBase(
+          tx,
+          { tenantId: args.tenantId, uf: args.uf, dataBase: args.dataBase, tipoPreco: args.tipoPreco, codigoComposicao: codigoItem },
+          cache,
+          new Set<string>([String(args.codigoServico || '').trim().toUpperCase()])
+        );
+        if (totalRef == null) continue;
+        await tx.$executeRawUnsafe(
+          `
+          UPDATE obras_planilhas_composicoes_itens
+          SET valor_unitario = $4, atualizado_em = NOW()
+          WHERE tenant_id = $1 AND id_obra = $2 AND id_item = $3
+          `,
+          args.tenantId,
+          args.idObra,
+          Number(it.idItem),
+          toDec(totalRef)
+        );
+        atualizados++;
+      }
+      return { atualizados };
+    }
+
     let importedItens = 0;
     await prisma.$transaction(async (tx) => {
       if (mode === 'UPSERT') {
@@ -7279,6 +7417,15 @@ export default async function v1Routes(server: FastifyInstance) {
         );
         importedItens += chunk.length;
       }
+
+      await fixarValoresReferenciasPorSinapiBase(tx, {
+        tenantId: ctx.tenantId,
+        idObra: obraId,
+        codigoServico,
+        uf,
+        dataBase,
+        tipoPreco: insumosModo,
+      });
     }, { timeout: 120000, maxWait: 20000 });
 
     return ok(
