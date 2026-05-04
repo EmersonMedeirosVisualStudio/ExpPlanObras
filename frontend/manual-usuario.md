@@ -134,17 +134,19 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
 
 ### ETAPA 4 — O que esperar
 - O topo da tela mostra:
-  - **Obra: #id - nome da obra**
-  - **Contrato: #id - número do contrato - objeto**
+  - **OBRA: id da obra - nome da obra**
+  - **CONTRATO: id do contrato - objeto do contrato**
 - A trilha (subtítulo) mostra o caminho completo até a tela (inclui o código da composição, e ao abrir Sinapi aparece “→ Sinapi”).
 - O topo da tela também mostra:
-  - **Planilha: #id - vN - nome da versão**
+  - **PLANILHA: id da planilha - versão da planilha**
   - **SINAPI (planilha): data-base e UF** (usados como padrão para filtros/importação)
 - Clique em **Configurar tela** para abrir o card **Configuração de tela** (fica oculto por padrão) e ajustar colunas (exibir/ocultar) e larguras (isso fica gravado).
+- Se os dados da lista “Serviços SINAPI importados” estiverem filtrados, aparece um aviso **Dados filtrados** com os filtros ativos.
 - Dê **duplo clique** em um serviço na lista “Serviços SINAPI importados” para abrir o card **Composição do serviço** com o detalhamento dos itens.
 - Ao clicar em **Prévia**, o sistema abre um modal “Prévia” com:
   - tabela “Serviços na prévia” (com status “Já importado” quando for o caso)
   - itens do serviço selecionado para conferência
+  - coluna **Classificação** (para itens de insumo)
 
 ### ETAPA 5 — Como validar
 - Marque (selecione) o serviço na tabela “Serviços na prévia”

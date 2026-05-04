@@ -3073,6 +3073,7 @@ ETAPA 5 — Como validar
   - **Importar do SINAPI**
   - **Nova composição**
   - **Importar CSV**
+- No card **Itens (composição)**, a primeira linha mostra o **nome do serviço** e sua **unidade**.
 - A tabela da análise aceita código de composição digitado pelo usuário.
 - No backend, ao salvar/carregar composição, o sistema percorre itens de tipo `COMPOSICAO`/`COMPOSICAO_AUXILIAR`, busca o valor da composição referenciada na própria planilha e grava o `valor_unitario` encontrado.
 - A fixação é propagada em cascata para composições pai que referenciam a composição alterada.
@@ -3080,6 +3081,29 @@ ETAPA 5 — Como validar
   - Qtd: separador de milhar e 3 casas decimais
   - Total: separador de milhar e 2 casas decimais
 - Importação CSV (planilha e composição): o sistema aceita separador decimal `,` e normaliza para persistência no banco.
+
+#### 18.2.3 SINAPI — lista importados, filtros e prévia com classificação
+
+**Problema identificado**
+
+- A lista “Serviços SINAPI importados” não deixava evidente quando havia filtros ativos.
+- O cabeçalho mostrava textos confusos para Obra/Contrato/Planilha.
+- A prévia não exibia a classificação do insumo.
+
+**Solução sugerida (implementada)**
+
+- Cabeçalho padronizado:
+  - `OBRA: id - nome`
+  - `CONTRATO: id - objeto`
+  - `PLANILHA: id - versão`
+- Quando existir filtro ativo (código/data-base/UF/ISD-ICD-ISE), o sistema exibe “Dados filtrados” com os filtros aplicados.
+- Prévia e card “Composição do serviço” exibem coluna **Classificação** para itens de insumo.
+- Regra de persistência de tipo (ao importar): `COMPOSICAO` mantém `COMPOSICAO`; para insumo, o tipo gravado é a **classificação**.
+
+**Benefício da mudança**
+
+- Menos ambiguidade para usuário na tela.
+- Melhor conferência de dados antes de importar/aplicar em produção.
 
 **Benefício da mudança**
 

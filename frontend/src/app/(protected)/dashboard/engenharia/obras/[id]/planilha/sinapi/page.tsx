@@ -213,6 +213,7 @@ export default function SinapiImportPage() {
     valorSemBdi: number | null;
     itens: Array<{
       tipoItem: string;
+      classificacao: string | null;
       codigoItem: string;
       descricao: string;
       und: string;
@@ -232,7 +233,15 @@ export default function SinapiImportPage() {
   const [importadosReloadTick, setImportadosReloadTick] = useState<number>(0);
   const [obraContrato, setObraContrato] = useState<ObraContratoInfo | null>(null);
   const [previewItensLocal, setPreviewItensLocal] = useState<
-    Array<{ tipoItem: string; codigoItem: string; descricao: string | null; und: string | null; coeficiente: number; valorUnitario: number | null }>
+    Array<{
+      tipoItem: string;
+      classificacao: string | null;
+      codigoItem: string;
+      descricao: string | null;
+      und: string | null;
+      coeficiente: number;
+      valorUnitario: number | null;
+    }>
   >([]);
   const [previewCompLocal, setPreviewCompLocal] = useState<{ codigo: string; descricao: string | null; und: string | null; valorSemBdi: number | null } | null>(null);
   const [previewSelectedCodigo, setPreviewSelectedCodigo] = useState<string>("");
@@ -740,6 +749,7 @@ export default function SinapiImportPage() {
         itens: Array.isArray(d.itens)
           ? d.itens.map((x: any) => ({
               tipoItem: String(x.tipoItem || ''),
+              classificacao: x.classificacao == null ? null : String(x.classificacao || ''),
               codigoItem: String(x.codigoItem || ''),
               descricao: String(x.descricao || ''),
               und: String(x.und || ''),
@@ -933,6 +943,7 @@ export default function SinapiImportPage() {
             const und = iUndItem >= 0 ? String(r[iUndItem] || "").trim() : "";
             const ins = insumosMap.get(codigoItem) || null;
             const insumoPu = ins?.preco ?? null;
+            const expTipo = tipoItem === "INSUMO" ? String(ins?.classificacao || "INSUMO").trim() || "INSUMO" : "COMPOSICAO";
             out.push({
               codigoItem,
               coeficiente: coef,
@@ -943,7 +954,7 @@ export default function SinapiImportPage() {
               insumoDescricao: ins?.descricao || null,
               insumoUnd: ins?.und || null,
               insumoPu: insumoPu,
-              expTipo: tipoItem,
+              expTipo,
               expCodigo: codigoItem,
               expDescricao: desc || ins?.descricao || null,
               expUnd: und || ins?.und || null,
@@ -959,6 +970,7 @@ export default function SinapiImportPage() {
         setPreviewItensLocal(
           parsedLocal.itens.map((it: any) => ({
             tipoItem: String(it.expTipo || it.tipoItemSinapi || "").trim() || "—",
+            classificacao: it.insumoClassificacao ?? null,
             codigoItem: String(it.expCodigo || it.codigoItem || "").trim(),
             descricao: it.expDescricao ?? it.insumoDescricao ?? it.descricaoSinapi ?? null,
             und: it.expUnd ?? it.insumoUnd ?? it.undSinapi ?? null,
@@ -1345,15 +1357,15 @@ export default function SinapiImportPage() {
           <h1 className="text-2xl font-semibold">Sinapi</h1>
           <div className="mt-1 text-sm text-slate-700">
             <div>
-              Obra: #{idObra} - {obraContrato?.nomeObra ? obraContrato.nomeObra : `Obra #${idObra}`}
+              OBRA: {idObra} - {obraContrato?.nomeObra ? obraContrato.nomeObra : `Obra #${idObra}`}
             </div>
             <div>
-              Contrato: #{obraContrato?.idContrato != null ? obraContrato.idContrato : "—"} - {obraContrato?.numeroContrato || "—"}
-              {obraContrato?.objeto ? ` - ${obraContrato.objeto}` : ""}
+              CONTRATO: {obraContrato?.idContrato != null ? obraContrato.idContrato : "—"} - {obraContrato?.objeto ? obraContrato.objeto : "—"}
             </div>
             <div>
-              Planilha: #{planilhaCallerInfo?.idPlanilha != null ? planilhaCallerInfo.idPlanilha : "—"} -{" "}
-              {planilhaCallerInfo?.numeroVersao ? `v${planilhaCallerInfo.numeroVersao}` : "—"} {planilhaCallerInfo?.nome ? `- ${planilhaCallerInfo.nome}` : ""}
+              PLANILHA: {planilhaCallerInfo?.idPlanilha != null ? planilhaCallerInfo.idPlanilha : "—"} -{" "}
+              {planilhaCallerInfo?.numeroVersao ? `v${planilhaCallerInfo.numeroVersao}` : "—"}
+              {planilhaCallerInfo?.nome ? ` (${planilhaCallerInfo.nome})` : ""}
             </div>
             <div>
               SINAPI (planilha): {planilhaDataBaseSinapi || "—"} • UF: {planilhaUfSinapi || ufFiltro || uf || "—"}
@@ -1562,6 +1574,19 @@ export default function SinapiImportPage() {
             </button>
           </div>
         </div>
+        {(() => {
+          const filtrosAtivos: string[] = [];
+          const cod = String(codigoFiltro || "").trim();
+          const db = String(dataBaseFiltro || "").trim();
+          const ufF = String(ufFiltro || "").trim();
+          const modo = String(insumosModoFiltro || "").trim();
+          if (cod) filtrosAtivos.push(`Código=${cod.toUpperCase()}`);
+          if (db) filtrosAtivos.push(`Data-base=${db}`);
+          if (ufF) filtrosAtivos.push(`UF=${ufF.toUpperCase()}`);
+          if (modo) filtrosAtivos.push(`Preços=${modo}`);
+          if (!filtrosAtivos.length) return null;
+          return <div className="rounded border bg-amber-50 p-2 text-sm text-amber-900">Dados filtrados: {filtrosAtivos.join(" • ")}</div>;
+        })()}
 
         {importadosErr ? <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{importadosErr}</div> : null}
 
@@ -1766,9 +1791,10 @@ export default function SinapiImportPage() {
 
           <div className="rounded-lg border overflow-hidden">
             <div className="overflow-x-auto">
-              <div className="min-w-[980px]">
-                <div className="grid grid-cols-[120px_120px_1fr_60px_120px_140px_140px] bg-slate-50 text-xs font-semibold text-slate-700">
+                <div className="min-w-[1140px]">
+                  <div className="grid grid-cols-[120px_160px_120px_1fr_60px_120px_140px_140px] bg-slate-50 text-xs font-semibold text-slate-700">
                   <div className="px-2 py-2 border-r">Tipo</div>
+                    <div className="px-2 py-2 border-r">Classificação</div>
                   <div className="px-2 py-2 border-r">Código</div>
                   <div className="px-2 py-2 border-r">Descrição</div>
                   <div className="px-2 py-2 border-r text-center">un</div>
@@ -1778,8 +1804,9 @@ export default function SinapiImportPage() {
                 </div>
                 <div className="divide-y bg-white">
                   {(composicaoCard.itens || []).map((it, idx) => (
-                    <div key={`${it.codigoItem}-${idx}`} className="grid grid-cols-[120px_120px_1fr_60px_120px_140px_140px] text-sm">
+                      <div key={`${it.codigoItem}-${idx}`} className="grid grid-cols-[120px_160px_120px_1fr_60px_120px_140px_140px] text-sm">
                       <div className="px-2 py-2 border-r">{it.tipoItem || "—"}</div>
+                        <div className="px-2 py-2 border-r">{it.classificacao || "—"}</div>
                       <div className="px-2 py-2 border-r font-mono text-xs">{it.codigoItem || "—"}</div>
                       <div className="px-2 py-2 border-r">{it.descricao || "—"}</div>
                       <div className="px-2 py-2 border-r text-center">{it.und || "—"}</div>
@@ -2229,9 +2256,10 @@ export default function SinapiImportPage() {
                     <div className="bg-slate-50 px-3 py-2 text-sm font-semibold">Itens da prévia (confira antes de importar)</div>
                     <div className="max-h-72 overflow-auto">
                       <div className="overflow-x-auto">
-                        <div className="min-w-[920px]">
-                          <div className="grid grid-cols-[86px_110px_1fr_60px_110px_120px_120px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
+                        <div className="min-w-[1040px]">
+                          <div className="grid grid-cols-[86px_140px_110px_1fr_60px_110px_120px_120px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
                             <div>Tipo</div>
+                            <div>Classificação</div>
                             <div>Código</div>
                             <div>Descrição</div>
                             <div>Un</div>
@@ -2244,12 +2272,17 @@ export default function SinapiImportPage() {
                               const q = Number(it.coeficiente || 0);
                               const vu = it.valorUnitario == null ? null : Number(it.valorUnitario);
                               const valor = vu == null || !Number.isFinite(vu) || !Number.isFinite(q) ? null : vu * q;
+                              const classificacao =
+                                (it as any).classificacao ??
+                                (it as any).insumoClassificacao ??
+                                (it.tipoItem && String(it.tipoItem).toUpperCase().startsWith("COMP") ? null : it.tipoItem || null);
                               return (
                                 <div
                                   key={`${idx}:${it.codigoItem}`}
-                                  className="grid grid-cols-[86px_110px_1fr_60px_110px_120px_120px] gap-x-2 px-3 py-2 text-sm"
+                                  className="grid grid-cols-[86px_140px_110px_1fr_60px_110px_120px_120px] gap-x-2 px-3 py-2 text-sm"
                                 >
                                   <div className="text-xs text-slate-700">{it.tipoItem || "—"}</div>
+                                  <div className="text-xs text-slate-700">{classificacao || "—"}</div>
                                   <div className="font-mono text-xs text-slate-700">{it.codigoItem}</div>
                                   <div className="text-slate-800">{it.descricao || "—"}</div>
                                   <div className="text-slate-700">{it.und || "—"}</div>

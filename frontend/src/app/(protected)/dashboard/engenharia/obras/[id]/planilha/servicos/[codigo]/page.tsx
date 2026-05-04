@@ -2531,7 +2531,14 @@ async function readTextSmart(file: File) {
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex-1 min-w-[280px]">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="text-lg font-semibold">Itens (composição)</div>
+              <div>
+                <div className="text-lg font-semibold">Itens (composição)</div>
+                {previstoRows?.[0]?.servicos ? (
+                  <div className="text-sm text-slate-600">
+                    {String(previstoRows?.[0]?.servicos || "").trim()} • un: {String(previstoRows?.[0]?.und || "—").trim() || "—"}
+                  </div>
+                ) : null}
+              </div>
               <div className="flex items-center gap-2">
                 <button
                   className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"

@@ -7589,8 +7589,11 @@ export default async function v1Routes(server: FastifyInstance) {
         COALESCE(c.descricao,'') AS "descricao",
         COALESCE(c.und,'') AS "und",
         c.coeficiente AS "coeficiente",
-        pu.pu AS "valorUnitario"
+        pu.pu AS "valorUnitario",
+        COALESCE(i.classificacao,'') AS "classificacao"
       FROM sinapi_composicoes_base c
+      LEFT JOIN sinapi_insumos_base i
+        ON i.tenant_id = c.tenant_id AND i.id_insumo_sinapi = c.id_insumo_sinapi
       LEFT JOIN sinapi_insumos_pu pu
         ON pu.tenant_id = c.tenant_id
        AND pu.id_pu = c.id_pu
@@ -7617,6 +7620,7 @@ export default async function v1Routes(server: FastifyInstance) {
         codigoItem: String(r.codigoItem || ''),
         descricao: String(r.descricao || ''),
         und: String(r.und || ''),
+        classificacao: String(r.classificacao || '') || null,
         coeficiente: coef,
         valorUnitario: vu,
         valor,
