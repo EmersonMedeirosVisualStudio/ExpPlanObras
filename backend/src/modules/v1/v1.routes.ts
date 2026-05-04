@@ -5815,6 +5815,8 @@ export default async function v1Routes(server: FastifyInstance) {
         itens: Array<{
           tipoItem: string;
           tipoItemSinapi?: string;
+          tipoSistema?: string;
+          classificacao?: string | null;
           codigoItem: string;
           banco: string | null;
           descricao: string | null;
@@ -5866,6 +5868,8 @@ export default async function v1Routes(server: FastifyInstance) {
       parent.itens.push({
         tipoItem: tipoExp,
         tipoItemSinapi,
+        tipoSistema: tipoExp,
+        classificacao: ins?.classificacao ? String(ins.classificacao).trim().slice(0, 80) : null,
         codigoItem: codigo,
         banco: banco || null,
         descricao: (ins?.descricao || descricao || '').trim() ? String(ins?.descricao || descricao).trim().slice(0, 255) : null,
@@ -6577,6 +6581,9 @@ export default async function v1Routes(server: FastifyInstance) {
         valorSemBdi: Number.isFinite(valorSemBdi) ? valorSemBdi : null,
         itens: itens.slice(0, 3).map((x) => ({
           tipoItem: x.expTipo,
+          tipoItemSinapi: x.tipoItemSinapi,
+          tipoSistema: x.expTipo,
+          classificacao: x.insumoClassificacao ?? null,
           codigoItem: x.expCodigo,
           banco: banco || null,
           descricao: x.expDescricao ?? x.insumoDescricao ?? x.descricaoSinapi ?? null,
@@ -7645,6 +7652,33 @@ export default async function v1Routes(server: FastifyInstance) {
         itens: normalized,
       },
       { message: 'Composição SINAPI' }
+    );
+  });
+
+  server.get('/engenharia/obras/:id/contrato', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    const obra = await prisma.obra.findFirst({
+      where: { id: idObra, tenantId: ctx.tenantId },
+      select: { id: true, name: true, contratoId: true, contrato: { select: { id: true, objeto: true } } },
+    });
+    if (!obra) return fail(reply, 404, 'Obra não encontrada');
+
+    return ok(
+      reply,
+      {
+        idObra: Number(obra.id),
+        nomeObra: obra.name ? String(obra.name) : '',
+        idContrato: obra.contratoId != null ? Number(obra.contratoId) : obra.contrato?.id != null ? Number(obra.contrato.id) : null,
+        objeto: obra.contrato?.objeto != null ? String(obra.contrato.objeto) : null,
+      },
+      { message: 'Obra/Contrato' }
     );
   });
 

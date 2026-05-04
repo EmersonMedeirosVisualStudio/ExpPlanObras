@@ -24,6 +24,7 @@ const nextConfig: NextConfig = {
       { source: "/api/v1/engenharia/projetos/:path*", destination: "/api/v1/engenharia/projetos/:path*" },
       { source: "/api/v1/engenharia/obras/:id/planilha/:path*", destination: "/api/v1/engenharia/obras/:id/planilha/:path*" },
       { source: "/api/v1/engenharia/obras/:id/planilha", destination: "/api/v1/engenharia/obras/:id/planilha" },
+      { source: "/api/v1/engenharia/obras/:id/contrato", destination: "/api/v1/engenharia/obras/:id/contrato" },
     ];
 
     const rules = [
