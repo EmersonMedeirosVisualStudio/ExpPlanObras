@@ -139,6 +139,14 @@ function parseCodigoServicoList(input: string): string[] {
   return out;
 }
 
+function makeImportadoKey(row: { codigo: string; dataBase: string; uf: string; insumosModo: string }) {
+  return `${String(row.dataBase || "").trim()}:${String(row.uf || "").trim().toUpperCase()}:${String(row.insumosModo || "").trim().toUpperCase()}:${String(
+    row.codigo || ""
+  )
+    .trim()
+    .toUpperCase()}`;
+}
+
 function pickInsumosSheetNameByMode(args: { sheetNames: string[]; insumosModo: "ISD" | "ICD" | "ISE" }) {
   const all = (args.sheetNames || []).map((n) => ({ name: n, key: normalizeHeader(n) }));
   const isPreco = (k: string) => (k.includes("preco") || k.includes("precos")) && (k.includes("insumo") || k.includes("insumos"));
@@ -225,6 +233,7 @@ export default function SinapiImportPage() {
   const [importados, setImportados] = useState<
     Array<{ codigo: string; descricao: string; und: string; valorComposicao: number | null; dataBase: string; uf: string; insumosModo: string }>
   >([]);
+  const [importadosSelectedKeys, setImportadosSelectedKeys] = useState<string[]>([]);
   const [importadosErr, setImportadosErr] = useState<string>("");
   const [planilhaDataBaseSinapi, setPlanilhaDataBaseSinapi] = useState<string>("");
   const [planilhaUfSinapi, setPlanilhaUfSinapi] = useState<string>("");
@@ -418,8 +427,16 @@ export default function SinapiImportPage() {
     return new Set(importados.map((r) => String(r.codigo || "").trim().toUpperCase()).filter(Boolean));
   }, [importados]);
 
+  const importadosSelectedSet = useMemo(() => new Set(importadosSelectedKeys), [importadosSelectedKeys]);
+  const importadosSelectedRows = useMemo(() => {
+    if (!importadosSelectedKeys.length) return [];
+    const set = new Set(importadosSelectedKeys);
+    return importados.filter((r) => set.has(makeImportadoKey(r)));
+  }, [importados, importadosSelectedKeys]);
+
   const importadosLayout = useMemo(() => {
     const cols: Array<{ key: string; label: string; widthPx: number; align?: "left" | "center" | "right" }> = [];
+    cols.push({ key: "__sel", label: "Sel", widthPx: 52, align: "center" });
     if (telaPrefs.colCodigo) cols.push({ key: "codigo", label: "Código", widthPx: telaPrefs.wCodigoPx, align: "center" });
     if (telaPrefs.colDescricao) cols.push({ key: "descricao", label: "Descrição", widthPx: telaPrefs.wDescricaoPx, align: "left" });
     if (telaPrefs.colUnd) cols.push({ key: "und", label: "un", widthPx: telaPrefs.wUndPx, align: "center" });
@@ -432,6 +449,11 @@ export default function SinapiImportPage() {
     const minWidthPx = cols.reduce((acc, c) => acc + Math.max(40, Number(c.widthPx || 0)), 0);
     return { cols, gridTemplateColumns, minWidthPx };
   }, [telaPrefs]);
+
+  useEffect(() => {
+    const allowed = new Set(importados.map((r) => makeImportadoKey(r)));
+    setImportadosSelectedKeys((prev) => (Array.isArray(prev) ? prev.filter((k) => allowed.has(k)) : []));
+  }, [importados]);
 
   const breadcrumb = useMemo(() => {
     const base = "Engenharia → Obras → Obra selecionada → Planilha orçamentária";
@@ -1377,30 +1399,37 @@ export default function SinapiImportPage() {
     }
   }
 
-  async function aplicarDaBase(row: { codigo: string; dataBase: string; uf: string; insumosModo: string }) {
+  async function doAplicarDaBase(
+    row: { codigo: string; dataBase: string; uf: string; insumosModo: string },
+    opts?: { commitToState?: boolean; manageBusy?: boolean }
+  ): Promise<ApplyBaseResult> {
+    const commitToState = opts?.commitToState !== false;
+    const manageBusy = opts?.manageBusy !== false;
     if (!Number.isFinite(idObra) || idObra <= 0) {
-      setPageErr("Obra inválida.");
-      return;
+      if (commitToState) {
+        setPageErr("Obra inválida.");
+        throw new Error("Obra inválida.");
+      }
+      throw new Error("Obra inválida.");
     }
-    setPageErr("");
-    setPageOkMsg("");
-    setPreview(null);
-    setImported(null);
-    setAppliedBase(null);
 
-    if (!row?.codigo?.trim()) {
-      setPageErr("Código inválido.");
-      return;
-    }
+    if (!row?.codigo?.trim()) throw new Error("Código inválido.");
 
     const planDb = String(planilhaDataBaseSinapi || "").trim();
     const baseDb = String(row.dataBase || "").trim();
     if (planDb && baseDb && planDb !== baseDb && !forceDataBaseMismatch) {
-      setPageErr("Mês-base diferente. Marque “Forçar importação (mês-base diferente)” para prosseguir.");
-      return;
+      throw new Error("Mês-base diferente. Marque “Forçar importação (mês-base diferente)” para prosseguir.");
     }
 
-    setBusy(true);
+    if (commitToState) {
+      setPageErr("");
+      setPageOkMsg("");
+      setPreview(null);
+      setImported(null);
+      setAppliedBase(null);
+    }
+
+    if (manageBusy) setBusy(true);
     try {
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/aplicar-base`, {
         method: "POST",
@@ -1417,10 +1446,56 @@ export default function SinapiImportPage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Falha ao aplicar composição já importada");
-      setAppliedBase(json.data as ApplyBaseResult);
-      setPageOkMsg("Composição aplicada na obra.");
+      const data = json.data as ApplyBaseResult;
+      if (commitToState) {
+        setAppliedBase(data);
+        setPageOkMsg("Composição aplicada na obra.");
+      }
+      return data;
+    } finally {
+      if (manageBusy) setBusy(false);
+    }
+  }
+
+  async function aplicarDaBase(row: { codigo: string; dataBase: string; uf: string; insumosModo: string }) {
+    try {
+      await doAplicarDaBase(row, { commitToState: true, manageBusy: true });
     } catch (e: any) {
-      setPageErr(e?.message || "Erro ao aplicar composição");
+      setPageErr(String(e?.message || "Erro ao aplicar composição"));
+    }
+  }
+
+  async function aplicarSelecionados() {
+    const rows = importadosSelectedRows;
+    if (!rows.length) {
+      setPageErr("Selecione um ou mais serviços para aplicar.");
+      return;
+    }
+    setPageErr("");
+    setPageOkMsg("");
+    setPreview(null);
+    setImported(null);
+    setAppliedBase(null);
+    setBusy(true);
+    try {
+      let importedItens = 0;
+      let skipped = 0;
+      let done = 0;
+      for (const r of rows) {
+        setPageOkMsg(`Aplicando ${done + 1}/${rows.length}…`);
+        const data = await doAplicarDaBase(
+          { codigo: r.codigo, dataBase: r.dataBase, uf: r.uf, insumosModo: r.insumosModo },
+          { commitToState: false, manageBusy: false }
+        );
+        importedItens += Number(data.importedItens || 0);
+        if (data.skippedExisting) skipped += 1;
+        done += 1;
+      }
+      setPageOkMsg(`Aplicado: ${rows.length} serviços • ${importedItens} itens importados • Ignorados (já existia): ${skipped}`);
+      setImportadosSelectedKeys([]);
+      setAppliedBase(null);
+    } catch (e: any) {
+      setPageErr(String(e?.message || "Erro ao aplicar serviços selecionados"));
     } finally {
       setBusy(false);
     }
@@ -1851,6 +1926,35 @@ export default function SinapiImportPage() {
           <input type="checkbox" checked={applySubstituirExistente} onChange={(e) => setApplySubstituirExistente(Boolean(e.target.checked))} disabled={busy} />
           <span>Ao aplicar na obra: substituir existente (padrão)</span>
         </label>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+            type="button"
+            onClick={() => aplicarSelecionados()}
+            disabled={busy || !importadosSelectedRows.length}
+            title={!importadosSelectedRows.length ? "Selecione um ou mais serviços para aplicar" : "Aplicar serviços selecionados na planilha"}
+          >
+            Aplicar selecionados ({importadosSelectedRows.length})
+          </button>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => setImportadosSelectedKeys(importados.map((r) => makeImportadoKey(r)))}
+            disabled={busy || !importados.length}
+            title="Selecionar todos os serviços exibidos"
+          >
+            Selecionar todos
+          </button>
+          <button
+            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => setImportadosSelectedKeys([])}
+            disabled={busy || !importadosSelectedKeys.length}
+            title="Limpar seleção"
+          >
+            Limpar seleção
+          </button>
+        </div>
         {(() => {
           const filtrosAtivos: string[] = [];
           const cod = String(codigoFiltro || "").trim();
@@ -1915,7 +2019,21 @@ export default function SinapiImportPage() {
                       key={c.key}
                       className={`px-2 py-2 border-r last:border-r-0 ${c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : ""}`}
                     >
-                      {c.label}
+                      {c.key === "__sel" ? (
+                        <input
+                          type="checkbox"
+                          checked={Boolean(importados.length) && importados.every((r) => importadosSelectedSet.has(makeImportadoKey(r)))}
+                          onChange={(e) => {
+                            const checked = Boolean(e.target.checked);
+                            if (checked) setImportadosSelectedKeys(importados.map((r) => makeImportadoKey(r)));
+                            else setImportadosSelectedKeys([]);
+                          }}
+                          disabled={busy || !importados.length}
+                          title="Selecionar todos"
+                        />
+                      ) : (
+                        c.label
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1929,6 +2047,25 @@ export default function SinapiImportPage() {
                       role="button"
                       tabIndex={0}
                     >
+                      <div className="px-2 py-2 border-r last:border-r-0 flex items-center justify-center">
+                        <input
+                          type="checkbox"
+                          checked={importadosSelectedSet.has(makeImportadoKey(r))}
+                          onChange={(e) => {
+                            const checked = Boolean(e.target.checked);
+                            const key = makeImportadoKey(r);
+                            setImportadosSelectedKeys((prev) => {
+                              const cur = Array.isArray(prev) ? prev : [];
+                              const has = cur.includes(key);
+                              if (checked && !has) return [...cur, key];
+                              if (!checked && has) return cur.filter((k) => k !== key);
+                              return cur;
+                            });
+                          }}
+                          disabled={busy}
+                          title="Selecionar"
+                        />
+                      </div>
                       {telaPrefs.colCodigo ? <div className="px-2 py-2 border-r last:border-r-0 text-center">{r.codigo}</div> : null}
                       {telaPrefs.colDescricao ? <div className="px-2 py-2 border-r last:border-r-0">{r.descricao}</div> : null}
                       {telaPrefs.colUnd ? <div className="px-2 py-2 border-r last:border-r-0 text-center">{r.und}</div> : null}
@@ -1967,6 +2104,25 @@ export default function SinapiImportPage() {
                   className="p-3 space-y-2 text-sm"
                   onDoubleClick={() => abrirComposicaoDoImportado({ codigo: r.codigo, dataBase: r.dataBase, uf: r.uf, insumosModo: r.insumosModo })}
                 >
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={importadosSelectedSet.has(makeImportadoKey(r))}
+                      onChange={(e) => {
+                        const checked = Boolean(e.target.checked);
+                        const key = makeImportadoKey(r);
+                        setImportadosSelectedKeys((prev) => {
+                          const cur = Array.isArray(prev) ? prev : [];
+                          const has = cur.includes(key);
+                          if (checked && !has) return [...cur, key];
+                          if (!checked && has) return cur.filter((k) => k !== key);
+                          return cur;
+                        });
+                      }}
+                      disabled={busy}
+                    />
+                    <span>Selecionar</span>
+                  </label>
                   {telaPrefs.colCodigo ? (
                     <div>
                       <div className="text-xs text-slate-500">Código</div>

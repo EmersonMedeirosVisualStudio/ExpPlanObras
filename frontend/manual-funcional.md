@@ -3130,6 +3130,10 @@ Benefício da mudança
 - Evita bloqueio de importação de subcomposições necessárias para fechar custos.
 - Mantém consistência entre Frontend ↔ Backend ↔ Banco: a regra é validada no backend e persistida no banco.
 
+**Arquitetura (padrão do sistema)**
+- Frontend (Vercel) ↔ Backend (Render) ↔ Banco de dados (Neon).
+- Isso evita divergência de regra: validações críticas (ex.: permitir subcomposição por referência, mês-base) ficam no backend.
+
 **Como usar — Tela Sinapi (Planilha orçamentária)**
 
 ETAPA 1 — Onde acessar
@@ -3138,18 +3142,21 @@ ETAPA 1 — Onde acessar
 ETAPA 2 — O que clicar
 - No topo da tela, confira:
   - Obra: `#id da obra - nome da obra`;
-  - Contrato: `#id do contrato - número do contrato - objeto`.
+  - Contrato: `#id do contrato - objeto do contrato`.
 - A trilha (subtítulo) mostra o caminho completo até a tela, incluindo:
   - `Análise de composição - CODIGO_RAIZ / CODIGO_ATUAL` (quando navegar entre composições)
   - `→ Sinapi` (quando abrir a tela Sinapi a partir da análise)
 - No topo da tela, confira também:
-  - Planilha: `#id da planilha - vN - nome da versão`;
+  - Planilha: `#id da planilha - Versão N`;
   - SINAPI (planilha): `data-base` e `UF` (usados como padrão para filtros/importação).
 - Clique em “Configurar tela” para abrir “Configuração de tela” (fica oculto por padrão) e ajustar colunas e larguras.
-- Na lista “Serviços SINAPI importados”, use o **ícone de seta** para aplicar na planilha quando o serviço já estiver importado.
+- A opção “Ao aplicar na obra: substituir existente (padrão)” vem marcada (substitui quando já existir).
+- Na lista “Serviços SINAPI importados”:
+  - marque a caixa de seleção na frente dos serviços e clique em **Aplicar selecionados** para aplicar em lote, ou
+  - use o **ícone de seta** para aplicar um serviço por vez.
 - Dê **duplo clique** em um serviço na lista “Serviços SINAPI importados” para abrir o card “Composição do serviço” (detalhamento dos itens).
 - Para importar via XLSX, clique no botão “Importar” (abre o modal “Opções de importação”).
-- Se precisar filtrar a lista, clique em “Exibir filtros”.
+- Se precisar filtrar a lista, clique em “Exibir filtros” (e use “Limpar filtros” para voltar rápido).
 
 ETAPA 3 — O que preencher
 - Em “Opções de importação”:
@@ -3165,18 +3172,21 @@ ETAPA 3 — O que preencher
   - Opções (escolha apenas UMA):
     - Importar somente as composições que faltam na obra (seleciona a Obra/Licitação/Orçamento).
     - Atualizar/substituir composições existentes na obra (seleciona a Obra/Licitação/Orçamento).
-    - Selecionar um serviço (informa o código do serviço).
+    - Selecionar um serviço (informa o código do serviço — pode ser 1 código ou vários separados por vírgula, ex.: `95393,10052,25645`).
     - Importar TODAS as composições encontradas no arquivo.
   - Arquivo XLSX: selecione o arquivo.
 
 ETAPA 4 — O que esperar
 - A lista exibe os serviços importados como uma lista com colunas: Código, Descrição, un, Valor da composição, UF, Data-base e Preços de insumos.
-- Após importar (na **Prévia (modal)** → “Importar selecionado”), o serviço passa a aparecer na lista conforme os filtros.
+- Na **Prévia (modal)**:
+  - clicar em um serviço mostra os “Itens da prévia” do serviço selecionado;
+  - a coluna **Sel** permite selecionar vários serviços;
+  - use **Importar selecionados** para importar em lote.
 
 ETAPA 5 — Como validar
 - Verifique se:
   - o serviço aparece/atualiza na lista “Serviços SINAPI importados”;
-  - ao clicar no ícone de seta (aplicar), o sistema confirma “Composição aplicada na obra”.
+  - ao clicar em “Aplicar selecionados” (ou no ícone de seta), o sistema confirma “Composição aplicada na obra”.
   - ao dar duplo clique no serviço, abre o card “Composição do serviço” com os itens e o total.
 
 **Validações e regras técnicas (para consistência do dado)**

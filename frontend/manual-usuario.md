@@ -122,7 +122,9 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
 - Engenharia → Obras → (abra a obra) → **Planilha orçamentária** → **Sinapi**
 
 ### ETAPA 2 — O que clicar
-- Se o serviço já estiver na lista “Serviços SINAPI importados”, clique no **ícone de seta** (Aplicar na planilha)
+- Se o serviço já estiver na lista “Serviços SINAPI importados”, você pode:
+  - marcar a caixa de seleção na frente do serviço e clicar em **Aplicar selecionados**, ou
+  - clicar no **ícone de seta** (Aplicar na planilha) para aplicar apenas aquele serviço
 - Se não estiver, clique em **Importar**
 
 ### ETAPA 3 — O que preencher
@@ -142,16 +144,21 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
   - **SINAPI (planilha): data-base e UF** (usados como padrão para filtros/importação)
 - Clique em **Configurar tela** para abrir o card **Configuração de tela** (fica oculto por padrão) e ajustar colunas (exibir/ocultar) e larguras (isso fica gravado).
 - Se os dados da lista “Serviços SINAPI importados” estiverem filtrados, aparece um aviso **Dados filtrados** com os filtros ativos.
+- Use **Limpar filtros** para voltar rapidamente a lista completa.
+- A opção **Ao aplicar na obra: substituir existente (padrão)** vem marcada (substitui quando já existir).
 - Dê **duplo clique** em um serviço na lista “Serviços SINAPI importados” para abrir o card **Composição do serviço** com o detalhamento dos itens.
 - Ao clicar em **Prévia**, o sistema abre um modal “Prévia” com:
   - tabela “Serviços na prévia” (com status “Já importado” quando for o caso)
-  - itens do serviço selecionado para conferência
-  - coluna **Classificação** (para itens de insumo)
+  - ao clicar em um serviço, a tabela “Itens da prévia” mostra a composição do serviço selecionado
+  - as colunas incluem **Tipo Item (SINAPI)** e **Tipo (sistema)** (ex.: INSUMO → MÃO DE OBRA / MATERIAL / EQUIPAMENTO; COMPOSIÇÃO → COMPOSIÇÃO)
+  - a coluna **Sel** permite selecionar vários serviços para importar em lote
 
 ### ETAPA 5 — Como validar
-- Marque (selecione) o serviço na tabela “Serviços na prévia”
-- Clique em **Importar selecionado**
-- Volte para a lista “Serviços SINAPI importados” e confirme que o serviço aparece (ou atualiza)
+- (Prévia) Marque um ou mais serviços na tabela “Serviços na prévia” (coluna **Sel**) e clique em **Importar selecionados**
+- (Aplicar) Na lista “Serviços SINAPI importados”, marque um ou mais serviços e clique em **Aplicar selecionados**
+- Confirme:
+  - que os serviços aparecem/atualizam na lista “Serviços SINAPI importados”
+  - que a mensagem de “Aplicado na obra” aparece após aplicar
 
 ## 3.3 Análise de composição — Nova composição e composição auxiliar
 
