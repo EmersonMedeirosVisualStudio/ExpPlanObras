@@ -186,12 +186,7 @@ async function readTextSmart(file: File) {
 }
 
 function toDec(v: unknown) {
-  const s = String(v ?? "").trim();
-  if (!s) return null;
-  const norm = s.replace(/\./g, "").replace(",", ".").replace(/[^\d.\-]/g, "");
-  if (!norm) return null;
-  const n = Number(norm);
-  return Number.isFinite(n) ? n : null;
+  return parseNumberLoose(v);
 }
 
 function detectTipoLinha(item: string, und: string, quant: string, valorUnit: string) {

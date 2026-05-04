@@ -3069,10 +3069,17 @@ ETAPA 5 — Como validar
 
 **Solução sugerida (implementada)**
 
-- Inserido botão **Nova composição** na barra da Análise de composição, antes de **Composição primitiva**.
+- Inseridos botões no card **Itens (composição)**:
+  - **Importar do SINAPI**
+  - **Nova composição**
+  - **Importar CSV**
 - A tabela da análise aceita código de composição digitado pelo usuário.
 - No backend, ao salvar/carregar composição, o sistema percorre itens de tipo `COMPOSICAO`/`COMPOSICAO_AUXILIAR`, busca o valor da composição referenciada na própria planilha e grava o `valor_unitario` encontrado.
 - A fixação é propagada em cascata para composições pai que referenciam a composição alterada.
+- Formatação no grid:
+  - Qtd: separador de milhar e 3 casas decimais
+  - Total: separador de milhar e 2 casas decimais
+- Importação CSV (planilha e composição): o sistema aceita separador decimal `,` e normaliza para persistência no banco.
 
 **Benefício da mudança**
 

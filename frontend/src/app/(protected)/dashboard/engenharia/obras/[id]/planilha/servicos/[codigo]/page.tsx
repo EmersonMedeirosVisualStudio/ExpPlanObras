@@ -54,11 +54,7 @@ type EmpresaDocumentosLayout = {
 };
 
  function toNum(v: string) {
-   const s = String(v || "").trim();
-   if (!s) return null;
-   const norm = s.replace(/\./g, "").replace(",", ".").replace(/[^\d.\-]/g, "");
-   const n = Number(norm);
-   return Number.isFinite(n) ? n : null;
+   return parseNumberLoose(v);
  }
  
 function parseNumberLoose(v: unknown) {
@@ -908,8 +904,8 @@ async function readTextSmart(file: File) {
 
   function voltar() {
     const target = String(returnTo || "").trim() || String(returnToMem || "").trim();
-    if (target) {
-      if (!isExternalHref(target)) router.push(target);
+    if (target && !isExternalHref(target)) {
+      router.push(target);
       return;
     }
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -1185,6 +1181,18 @@ async function readTextSmart(file: File) {
     return `${Math.max(0, Math.round(Number(n) || 0))}px`;
   }
 
+  function fmtQtd(v: unknown) {
+    const n = parseNumberLoose(v);
+    if (n == null) return "";
+    return n.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  }
+
+  function fmtTotal(v: unknown) {
+    const n = typeof v === "number" ? v : parseNumberLoose(v);
+    if (n == null) return "";
+    return Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
   function renderItensTabela(list: Array<{ r: ItemRow; idx: number }>, rowBg: string) {
     const colCount =
       (displayPrefs.colTipo ? 1 : 0) +
@@ -1426,6 +1434,15 @@ async function readTextSmart(file: File) {
                       className="input bg-white text-right"
                       value={r.quantidade}
                       onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, quantidade: e.target.value } : x)))}
+                      onBlur={() => {
+                        setItens((p) => {
+                          const row = p[idx];
+                          if (!row) return p;
+                          const next = fmtQtd(row.quantidade);
+                          if (next === row.quantidade) return p;
+                          return p.map((x, i) => (i === idx ? { ...x, quantidade: next } : x));
+                        });
+                      }}
                       style={{ ...cellW(w.qtd), fontSize: px(fs.qtd) }}
                     />
                   </td>
@@ -1469,7 +1486,7 @@ async function readTextSmart(file: File) {
                   ) : null}
                   {displayPrefs.colTotal ? (
                     <td className="px-3 py-2 text-right" style={{ ...cellW(w.total), fontSize: px(fs.total) }}>
-                      {total == null ? "" : moeda(Number(total))}
+                      {total == null ? "" : fmtTotal(total)}
                     </td>
                   ) : null}
                   {displayPrefs.colCentroCusto ? (
@@ -1856,9 +1873,6 @@ async function readTextSmart(file: File) {
                if (f) prepararImportacaoCsv(f);
              }}
            />
-           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => fileInputRef.current?.click()} disabled={loading} title="Importar itens por CSV (com prévia)">
-             Importar CSV
-           </button>
            <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60" type="button" onClick={salvar} disabled={loading} title="Salvar alterações da composição">
              Salvar
            </button>
@@ -1929,15 +1943,6 @@ async function readTextSmart(file: File) {
           </button>
         </div>
         <div className="flex items-center justify-end gap-2 flex-wrap">
-          <button
-            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-            type="button"
-            onClick={criarNovaComposicao}
-            disabled={loading || primitiveLoading}
-            title="Criar uma nova composição da planilha"
-          >
-            Nova composição
-          </button>
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
@@ -2541,9 +2546,27 @@ async function readTextSmart(file: File) {
                     router.push(`/dashboard/engenharia/obras/${idObra}/planilha/sinapi?${qs.toString()}`);
                   }}
                   disabled={loading}
-                  title="Abrir Sinapi"
+                  title="Importar do SINAPI"
                 >
-                  SINAPI
+                  Importar do SINAPI
+                </button>
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={criarNovaComposicao}
+                  disabled={loading || primitiveLoading}
+                  title="Criar uma nova composição da planilha"
+                >
+                  Nova composição
+                </button>
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={loading}
+                  title="Importar itens por CSV (com prévia)"
+                >
+                  Importar CSV
                 </button>
                 <button
                   className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"

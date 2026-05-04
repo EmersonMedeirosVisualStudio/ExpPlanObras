@@ -157,17 +157,24 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
 - Engenharia → Obras → (abra a obra) → Planilha orçamentária → Serviços → Análise de composição
 
 ### ETAPA 2 — O que clicar
-- No topo da análise, use o botão **Nova composição** (fica antes de **Composição primitiva**)
+- No card **Itens (composição)**, use os botões:
+  - **Importar do SINAPI**
+  - **Nova composição**
+  - **Importar CSV**
 - Informe o código da nova composição e confirme
 
 ### ETAPA 3 — O que preencher
 - Na nova composição, preencha os itens normalmente (tipo, código, descrição, unidade, quantidade e valor unitário)
 - Para item do tipo **Composição** ou **Composição Auxiliar**, informe o código da composição de referência
+  - Para CSV, use separador decimal **vírgula** (ex.: `1.234,567` na quantidade; `12,34` no valor)
 
 ### ETAPA 4 — O que esperar
 - A tabela aceita qualquer código de composição informado por você
 - Se o código de composição de referência existir em outra composição da mesma planilha, o sistema procura o valor e grava esse valor unitário no item de referência
 - Depois de encontrado, o valor fica fixado no item salvo da composição
+- No grid da composição:
+  - **Qtd** aparece com separador de milhar e **3** casas decimais
+  - **Total** aparece com separador de milhar e **2** casas decimais
 
 ### ETAPA 5 — Como validar
 - Salve a composição
