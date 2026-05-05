@@ -6,6 +6,8 @@ const nextConfig: NextConfig = {
     const apiMode = String(process.env.NEXT_PUBLIC_API_MODE || process.env.API_MODE || "").trim().toLowerCase();
     const useNextApi = apiMode === "next";
     const localOverridesAlways = [
+      { source: "/api/health", destination: `${apiOrigin}/health` },
+      { source: "/api/health/db", destination: `${apiOrigin}/health/db` },
       { source: "/api/v1/documentos/:path*", destination: "/api/v1/documentos/:path*" },
       { source: "/api/v1/documentos", destination: "/api/v1/documentos" },
     ];
