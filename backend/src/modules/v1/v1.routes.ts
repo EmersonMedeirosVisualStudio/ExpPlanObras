@@ -7542,6 +7542,101 @@ export default async function v1Routes(server: FastifyInstance) {
     );
   });
 
+  server.delete('/engenharia/obras/:id/planilha/sinapi/importados', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensureSinapiBaseTables(prisma);
+
+    const q = z
+      .object({
+        codigo: z.string().min(1),
+        dataBase: z.string().min(1),
+        uf: z.string().min(2),
+        insumosModo: z.enum(['ISD', 'ICD', 'ISE']),
+      })
+      .parse(request.query || {});
+
+    const codigo = String(q.codigo || '').trim().toUpperCase();
+    const dataBase = String(q.dataBase || '').trim();
+    const uf = String(q.uf || '').trim().toUpperCase();
+    const insumosModo = String(q.insumosModo || '').trim().toUpperCase();
+
+    const serv = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        id_serv_sinapi AS "idServ"
+      FROM sinapi_servicos_base
+      WHERE tenant_id = $1
+        AND data_base = $2
+        AND UPPER(codigo_servico) = $3
+      ORDER BY id_serv_sinapi DESC
+      LIMIT 1
+      `,
+      ctx.tenantId,
+      dataBase,
+      codigo
+    )) as any[];
+    const idServ = serv?.[0]?.idServ != null ? Number(serv[0].idServ) : 0;
+    if (!idServ) return fail(reply, 404, `Serviço não encontrado na base SINAPI (código: ${codigo}, data-base: ${dataBase}).`);
+
+    const { deletedItens, removedServico } = await prisma.$transaction(async (tx) => {
+      const deleted = await tx.$executeRawUnsafe(
+        `
+        DELETE FROM sinapi_composicoes_base
+        WHERE tenant_id = $1
+          AND data_base = $2
+          AND uf = $3
+          AND tipo_preco = $4
+          AND id_serv_sinapi = $5
+        `,
+        ctx.tenantId,
+        dataBase,
+        uf,
+        insumosModo,
+        idServ
+      );
+
+      const remaining = (await tx.$queryRawUnsafe(
+        `
+        SELECT COUNT(*)::int AS "cnt"
+        FROM sinapi_composicoes_base
+        WHERE tenant_id = $1
+          AND data_base = $2
+          AND id_serv_sinapi = $3
+        `,
+        ctx.tenantId,
+        dataBase,
+        idServ
+      )) as any[];
+      const cnt = remaining?.[0]?.cnt == null ? 0 : Number(remaining[0].cnt);
+      const removeServ = !Number.isFinite(cnt) || cnt <= 0;
+      if (removeServ) {
+        await tx.$executeRawUnsafe(
+          `
+          DELETE FROM sinapi_servicos_base
+          WHERE tenant_id = $1
+            AND id_serv_sinapi = $2
+          `,
+          ctx.tenantId,
+          idServ
+        );
+      }
+      return { deletedItens: Number(deleted || 0), removedServico: Boolean(removeServ) };
+    });
+
+    return ok(
+      reply,
+      { codigo, dataBase, uf, insumosModo, deletedItens, removedServico },
+      { message: 'Preço/composição SINAPI excluído da base' }
+    );
+  });
+
   server.get('/engenharia/obras/:id/planilha/sinapi/composicao', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;

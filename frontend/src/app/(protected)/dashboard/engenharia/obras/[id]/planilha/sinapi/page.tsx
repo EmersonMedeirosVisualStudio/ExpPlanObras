@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Trash2, XCircle } from "lucide-react";
 import * as XLSX from "xlsx";
 
 type PreviewResult = {
@@ -1703,6 +1703,40 @@ export default function SinapiImportPage() {
     }
   }
 
+  async function excluirDaBase(row: { codigo: string; dataBase: string; uf: string; insumosModo: string }) {
+    const codigo = String(row.codigo || "").trim().toUpperCase();
+    const dataBase = String(row.dataBase || "").trim();
+    const ufRow = String(row.uf || "").trim().toUpperCase();
+    const modo = String(row.insumosModo || "").trim().toUpperCase();
+    if (!codigo || !dataBase || !ufRow || !modo) {
+      setPageErr("Dados inválidos para excluir.");
+      return;
+    }
+    const ok = window.confirm(
+      `Excluir da base SINAPI apenas este preço da composição?\n\n${codigo} • ${dataBase} • ${ufRow} • ${modo}\n\nObs.: isso remove somente este preço (UF/modo). Outras UFs/modos permanecem.`
+    );
+    if (!ok) return;
+    setPageErr("");
+    setPageOkMsg("");
+    setBusy(true);
+    try {
+      const qs = new URLSearchParams({ codigo, dataBase, uf: ufRow, insumosModo: modo });
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/importados?${qs.toString()}`, { method: "DELETE" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Falha ao excluir da base SINAPI");
+      setPageOkMsg("Preço/composição excluído da base SINAPI.");
+      setImportadosReloadTick((n) => n + 1);
+      setImportadosSelectedKeys((prev) => prev.filter((k) => k !== makeImportadoKey(row)));
+      if (composicaoCard && String(composicaoCard.codigo || "").trim().toUpperCase() === codigo) {
+        setComposicaoCard(null);
+      }
+    } catch (e: any) {
+      setPageErr(String(e?.message || "Erro ao excluir da base SINAPI"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (!Number.isFinite(idObra) || idObra <= 0) return;
     let alive = true;
@@ -2285,6 +2319,16 @@ export default function SinapiImportPage() {
                             className="rounded border bg-white p-2 text-xs hover:bg-slate-50 disabled:opacity-60 inline-flex items-center"
                             type="button"
                             disabled={busy}
+                            onClick={() => excluirDaBase({ codigo: r.codigo, dataBase: r.dataBase, uf: r.uf, insumosModo: r.insumosModo })}
+                            title="Excluir da base SINAPI"
+                            aria-label="Excluir da base SINAPI"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                          <button
+                            className="rounded border bg-white p-2 text-xs hover:bg-slate-50 disabled:opacity-60 inline-flex items-center"
+                            type="button"
+                            disabled={busy}
                             onClick={() => aplicarDaBase({ codigo: r.codigo, dataBase: r.dataBase, uf: r.uf, insumosModo: r.insumosModo })}
                             title="Aplicar na planilha"
                             aria-label="Aplicar na planilha"
@@ -2373,6 +2417,16 @@ export default function SinapiImportPage() {
                   </div>
                   {telaPrefs.colAcoes ? (
                     <div className="flex justify-end">
+                      <button
+                        className="rounded border bg-white p-2 text-xs hover:bg-slate-50 disabled:opacity-60 inline-flex items-center"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => excluirDaBase({ codigo: r.codigo, dataBase: r.dataBase, uf: r.uf, insumosModo: r.insumosModo })}
+                        title="Excluir da base SINAPI"
+                        aria-label="Excluir da base SINAPI"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                       <button
                         className="rounded border bg-white p-2 text-xs hover:bg-slate-50 disabled:opacity-60 inline-flex items-center"
                         type="button"
