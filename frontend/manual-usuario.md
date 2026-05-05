@@ -183,6 +183,7 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
 - Se o código de composição de referência existir em outra composição da mesma planilha, o sistema procura o valor e grava esse valor unitário no item de referência
 - Depois de encontrado, o valor fica fixado no item salvo da composição
 - Os itens ficam separados em 2 blocos: **Composições** e **Insumos**. No bloco **Insumos**, o campo **Tipo** mostra a classificação e existe um filtro rápido por tipo.
+- O botão **Composição primitiva** abre um consolidado de insumos (inclui insumos das composições auxiliares). Esse consolidado é salvo e reaproveitado para abrir mais rápido; use **Atualizar** para recalcular quando você alterar itens/quantidades.
 - No grid da composição:
   - **Qtd** aparece com separador de milhar e **3** casas decimais
   - **Total** aparece com separador de milhar e **2** casas decimais

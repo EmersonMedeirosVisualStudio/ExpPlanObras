@@ -501,6 +501,22 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
   await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ALTER COLUMN tipo_item TYPE VARCHAR(32)`).catch(() => null);
   await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ADD COLUMN IF NOT EXISTS banco VARCHAR(60) NULL`).catch(() => null);
   await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ADD COLUMN IF NOT EXISTS valor_unitario NUMERIC(14,6) NULL`).catch(() => null);
+
+  await tx.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS obras_planilhas_composicoes_primitivas (
+      id_primitiva BIGSERIAL PRIMARY KEY,
+      tenant_id BIGINT NOT NULL,
+      id_obra BIGINT NOT NULL,
+      codigo_servico VARCHAR(80) NOT NULL,
+      descricao_servico VARCHAR(800) NULL,
+      und_servico VARCHAR(40) NULL,
+      itens_json JSONB NOT NULL,
+      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await tx.$executeRawUnsafe(
+    `CREATE UNIQUE INDEX IF NOT EXISTS obras_planilhas_composicoes_primitivas_uk ON obras_planilhas_composicoes_primitivas (tenant_id, id_obra, codigo_servico)`
+  );
 }
 
 async function ensureInsumosPrecosTables(tx: any) {
@@ -5405,6 +5421,194 @@ export default async function v1Routes(server: FastifyInstance) {
     }
 
     return fail(reply, 422, 'Payload inválido');
+  });
+
+  server.get('/engenharia/obras/:id/planilha/servicos/:codigo/composicao-primitiva', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id, codigo } = z.object({ id: z.coerce.number().int().positive(), codigo: z.string().min(1) }).parse(request.params || {});
+    const idObra = Number(id);
+    const codigoServico = String(codigo).trim().toUpperCase();
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensurePlanilhaOrcamentariaTables(prisma);
+    await ensurePlanilhaComposicaoTables(prisma);
+
+    const q = z.object({ refresh: z.string().optional().nullable() }).parse(request.query || {});
+    const refresh = ['1', 'true', 'yes', 'sim'].includes(String(q.refresh || '').trim().toLowerCase());
+
+    const loadMetaFromPlanilha = async (tx: any) => {
+      const vers = (await tx.$queryRawUnsafe(
+        `
+        SELECT id_planilha AS "idPlanilha"
+        FROM obras_planilhas_versoes
+        WHERE tenant_id = $1 AND id_obra = $2 AND atual = TRUE
+        ORDER BY numero_versao DESC, id_planilha DESC
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        idObra
+      )) as any[];
+      const planilhaId = vers?.[0]?.idPlanilha != null ? Number(vers[0].idPlanilha) : 0;
+      if (!planilhaId) return { descricaoServico: null as string | null, undServico: null as string | null };
+      const row = (await tx.$queryRawUnsafe(
+        `
+        SELECT COALESCE(servico,'') AS "servico", COALESCE(und,'') AS "und"
+        FROM obras_planilhas_linhas
+        WHERE tenant_id = $1
+          AND id_planilha = $2
+          AND tipo_linha = 'SERVICO'
+          AND UPPER(COALESCE(codigo,'')) = $3
+        ORDER BY id_linha DESC
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        planilhaId,
+        codigoServico
+      )) as any[];
+      const serv = row?.[0]?.servico != null ? String(row[0].servico || '').trim() : '';
+      const und = row?.[0]?.und != null ? String(row[0].und || '').trim() : '';
+      return { descricaoServico: serv || null, undServico: und || null };
+    };
+
+    const readCached = async (tx: any) => {
+      const rows = (await tx.$queryRawUnsafe(
+        `
+        SELECT descricao_servico AS "descricaoServico", und_servico AS "undServico", itens_json AS "itensJson", atualizado_em AS "updatedAt"
+        FROM obras_planilhas_composicoes_primitivas
+        WHERE tenant_id = $1 AND id_obra = $2 AND UPPER(codigo_servico) = $3
+        ORDER BY id_primitiva DESC
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        idObra,
+        codigoServico
+      )) as any[];
+      const r = rows?.[0] || null;
+      if (!r) return null;
+      const itens = Array.isArray(r.itensJson) ? r.itensJson : Array.isArray(r.itens_json) ? r.itens_json : r.itensJson || r.itens_json;
+      return {
+        meta: {
+          descricaoServico: r.descricaoServico == null ? null : String(r.descricaoServico || '').trim() || null,
+          undServico: r.undServico == null ? null : String(r.undServico || '').trim() || null,
+          updatedAt: r.updatedAt == null ? null : new Date(r.updatedAt).toISOString(),
+        },
+        rows: Array.isArray(itens) ? itens : [],
+      };
+    };
+
+    const computeAndSave = async (tx: any) => {
+      const meta = await loadMetaFromPlanilha(tx);
+      const stack = new Set<string>();
+      const out = new Map<string, { tipoItem: string; codigoItem: string; banco: string; descricao: string; und: string; quantidade: number; valorUnitario: number }>();
+
+      const loadItens = async (code: string) => {
+        const rows = (await tx.$queryRawUnsafe(
+          `
+          SELECT
+            tipo_item AS "tipoItem",
+            codigo_item AS "codigoItem",
+            COALESCE(banco,'') AS "banco",
+            COALESCE(descricao,'') AS "descricao",
+            COALESCE(und,'') AS "und",
+            quantidade AS "quantidade",
+            valor_unitario AS "valorUnitario"
+          FROM obras_planilhas_composicoes_itens
+          WHERE tenant_id = $1 AND id_obra = $2 AND UPPER(codigo_servico) = $3
+          ORDER BY COALESCE(etapa,''), tipo_item, codigo_item, id_item
+          `,
+          ctx.tenantId,
+          idObra,
+          String(code || '').trim().toUpperCase()
+        )) as any[];
+        return (rows || []).map((r: any) => ({
+          tipoItem: String(r.tipoItem || '').trim(),
+          codigoItem: String(r.codigoItem || '').trim().toUpperCase(),
+          banco: String(r.banco || '').trim(),
+          descricao: String(r.descricao || '').trim(),
+          und: String(r.und || '').trim(),
+          quantidade: r.quantidade == null ? 0 : Number(r.quantidade),
+          valorUnitario: r.valorUnitario == null ? 0 : Number(r.valorUnitario),
+        }));
+      };
+
+      const expand = async (code: string, mult: number) => {
+        const k = String(code || '').trim().toUpperCase();
+        if (!k) return;
+        if (stack.has(k)) return;
+        stack.add(k);
+        const itens = await loadItens(k);
+        for (const it of itens) {
+          const tipoRaw = String(it.tipoItem || '').trim();
+          const tipoKey = normalizeHeader(tipoRaw);
+          const childCode = String(it.codigoItem || '').trim().toUpperCase();
+          const q = Number(it.quantidade || 0);
+          const qty = (Number.isFinite(q) ? q : 0) * mult;
+          const vu = Number.isFinite(Number(it.valorUnitario || 0)) ? Number(it.valorUnitario || 0) : 0;
+          if (tipoKey.includes('composicao')) {
+            if (childCode && qty > 0) await expand(childCode, qty);
+            continue;
+          }
+          const key = [tipoRaw, childCode, String(it.und || '').trim().toUpperCase(), String(it.banco || '').trim().toUpperCase(), String(vu)].join('|');
+          const cur = out.get(key);
+          if (!cur) {
+            out.set(key, {
+              tipoItem: tipoRaw,
+              codigoItem: childCode,
+              banco: it.banco,
+              descricao: it.descricao,
+              und: it.und,
+              quantidade: qty,
+              valorUnitario: vu,
+            });
+          } else {
+            out.set(key, { ...cur, quantidade: Number(cur.quantidade || 0) + qty });
+          }
+        }
+        stack.delete(k);
+      };
+
+      await expand(codigoServico, 1);
+      const rows = Array.from(out.values())
+        .map((r) => ({
+          ...r,
+          quantidade: Number((Number(r.quantidade || 0)).toFixed(6)),
+          valorUnitario: Number((Number(r.valorUnitario || 0)).toFixed(6)),
+          total: Number(((Number(r.quantidade || 0)) * (Number(r.valorUnitario || 0))).toFixed(2)),
+        }))
+        .sort((a, b) => String(a.tipoItem).localeCompare(String(b.tipoItem)) || String(a.codigoItem).localeCompare(String(b.codigoItem)));
+
+      await tx.$executeRawUnsafe(
+        `
+        INSERT INTO obras_planilhas_composicoes_primitivas (tenant_id, id_obra, codigo_servico, descricao_servico, und_servico, itens_json, atualizado_em)
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, NOW())
+        ON CONFLICT (tenant_id, id_obra, codigo_servico)
+        DO UPDATE SET descricao_servico = EXCLUDED.descricao_servico, und_servico = EXCLUDED.und_servico, itens_json = EXCLUDED.itens_json, atualizado_em = NOW()
+        `,
+        ctx.tenantId,
+        idObra,
+        codigoServico,
+        meta.descricaoServico,
+        meta.undServico,
+        JSON.stringify(rows)
+      );
+
+      const cached = await readCached(tx);
+      if (cached) return cached;
+      return { meta: { ...meta, updatedAt: new Date().toISOString() }, rows };
+    };
+
+    const data = await prisma.$transaction(async (tx: any) => {
+      if (!refresh) {
+        const cached = await readCached(tx);
+        if (cached) return cached;
+      }
+      return computeAndSave(tx);
+    }, { timeout: 120000, maxWait: 20000 });
+
+    return ok(reply, data, { message: refresh ? 'Composição primitiva atualizada' : 'Composição primitiva carregada' });
   });
 
   server.post('/engenharia/obras/:id/planilha/servicos/:codigo/composicao-importar-csv', async (request, reply) => {

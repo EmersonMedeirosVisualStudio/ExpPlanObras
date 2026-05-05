@@ -3083,6 +3083,7 @@ ETAPA 5 — Como validar
 - Na tela **Análise de composição**, a separação dos itens é em 2 grupos:
   - **Composições** (itens com tipo `COMPOSICAO`)
   - **Insumos** (todos os demais itens), com o **Tipo** exibindo a classificação (Material, Mão de obra, Equipamento, Serviços, Especiais) e filtro rápido por tipo.
+- A ação **Composição primitiva** consolida os insumos (inclui insumos das composições auxiliares), e o resultado é **gravado no backend** para não precisar recalcular toda vez. No modal existe o botão **Atualizar** para recalcular e salvar novamente. O cabeçalho mostra **nome do serviço** e **unidade** quando disponíveis.
 - Importação CSV (planilha e composição): o sistema aceita separador decimal `,` e normaliza para persistência no banco.
 
 #### 18.2.3 SINAPI — lista importados, filtros e prévia com classificação

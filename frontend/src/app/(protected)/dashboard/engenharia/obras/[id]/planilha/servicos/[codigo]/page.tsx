@@ -106,6 +106,12 @@ function isComposicaoTipo(tipo: unknown) {
   return t === "composicao" || t === "composicao_auxiliar";
 }
 
+function formatDateTimePtBR(input: unknown) {
+  const d = input instanceof Date ? input : new Date(String(input || ""));
+  if (!Number.isFinite(d.getTime())) return "";
+  return d.toLocaleString("pt-BR");
+}
+
 function parseCsvTextAuto(text: string) {
   const cleaned = String(text || "")
     .replace(/^\uFEFF/, "")
@@ -283,6 +289,7 @@ async function readTextSmart(file: File) {
   const [primitiveOpen, setPrimitiveOpen] = useState(false);
   const [primitiveLoading, setPrimitiveLoading] = useState(false);
   const [primitiveErr, setPrimitiveErr] = useState<string | null>(null);
+  const [primitiveMeta, setPrimitiveMeta] = useState<{ descricaoServico: string | null; undServico: string | null; updatedAt: string | null } | null>(null);
   const [primitiveRows, setPrimitiveRows] = useState<
     Array<{ tipoItem: string; codigoItem: string; banco: string; descricao: string; und: string; quantidade: number; valorUnitario: number; total: number }>
   >([]);
@@ -1291,7 +1298,7 @@ async function readTextSmart(file: File) {
               const bancoInOptions = !r.banco || bancosOptions.includes(r.banco);
               const selectBancoValue = bancoInOptions ? r.banco : "__OUTRO__";
               const meta = tipoMeta(r.tipoItem);
-              const isComposicao = meta.key === "COMPOSICAO" || meta.key === "COMPOSICAO_AUXILIAR";
+              const isComposicao = isComposicaoTipo(r.tipoItem);
               const codigoComposicao = String(r.codigoItem || "").trim().toUpperCase();
               const isDefinida = Boolean(codigoComposicao) && definedComposicoesCodes.has(codigoComposicao);
               const vRaw = parseNumberLoose(r.valorUnitario);
@@ -1762,77 +1769,77 @@ async function readTextSmart(file: File) {
       setPrimitiveOpen(true);
       setPrimitiveLoading(true);
       setPrimitiveErr(null);
+      setPrimitiveMeta(null);
       setPrimitiveRows([]);
-
-      const stack = new Set<string>();
-      const load = async (code: string) => {
-        const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}/composicao-itens`);
-        const json = await res.json().catch(() => null);
-        if (!res.ok || !json?.success) throw new Error(json?.message || `Erro ao carregar composição ${code}`);
-        const list = Array.isArray(json.data?.itens) ? json.data.itens : [];
-        return list.map((i: any) => ({
-          tipoItem: String(i.tipoItem || ""),
-          codigoItem: String(i.codigoItem || ""),
-          banco: String(i.banco || ""),
-          descricao: String(i.descricao || ""),
-          und: String(i.und || ""),
-          quantidade: i.quantidade == null ? "" : String(i.quantidade),
-          valorUnitario: i.valorUnitario == null ? "" : String(i.valorUnitario),
-        })) as Array<{ tipoItem: string; codigoItem: string; banco: string; descricao: string; und: string; quantidade: string; valorUnitario: string }>;
-      };
-
-      const out = new Map<string, { tipoItem: string; codigoItem: string; banco: string; descricao: string; und: string; quantidade: number; valorUnitario: number }>();
-
-      const expand = async (code: string, mult: number) => {
-        const k = String(code || "").trim().toUpperCase();
-        if (!k) return;
-        if (stack.has(k)) return;
-        stack.add(k);
-        const items = await load(k);
-        for (const it of items) {
-          const tipo = String(it.tipoItem || "").trim().toUpperCase();
-          const childCode = String(it.codigoItem || "").trim().toUpperCase();
-          const q = parseNumberLoose(it.quantidade);
-          const v = parseNumberLoose(it.valorUnitario);
-          const qty = (q == null ? 0 : q) * mult;
-          const vu = v == null ? 0 : v;
-
-          if (tipo === "COMPOSICAO" || tipo === "COMPOSICAO_AUXILIAR") {
-            if (childCode && qty > 0) await expand(childCode, qty);
-            continue;
-          }
-
-          const key = [tipo, childCode, String(it.und || "").trim().toUpperCase(), String(it.banco || "").trim().toUpperCase(), String(vu)].join("|");
-          const cur = out.get(key);
-          if (!cur) {
-            out.set(key, {
-              tipoItem: tipo,
-              codigoItem: childCode,
-              banco: String(it.banco || ""),
-              descricao: String(it.descricao || ""),
-              und: String(it.und || ""),
-              quantidade: qty,
-              valorUnitario: vu,
-            });
-          } else {
-            out.set(key, { ...cur, quantidade: cur.quantidade + qty });
-          }
-        }
-        stack.delete(k);
-      };
-
-      await expand(codigoServico, 1);
-      const rows = Array.from(out.values())
-        .map((r) => ({
-          ...r,
-          quantidade: Number((r.quantidade || 0).toFixed(6)),
-          total: Number(((r.quantidade || 0) * (r.valorUnitario || 0)).toFixed(2)),
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-primitiva`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar composição primitiva");
+      const meta = json.data?.meta || null;
+      setPrimitiveMeta(
+        meta
+          ? {
+              descricaoServico: meta.descricaoServico == null ? null : String(meta.descricaoServico || ""),
+              undServico: meta.undServico == null ? null : String(meta.undServico || ""),
+              updatedAt: meta.updatedAt == null ? null : String(meta.updatedAt || ""),
+            }
+          : null
+      );
+      const rows = Array.isArray(json.data?.rows) ? json.data.rows : [];
+      setPrimitiveRows(
+        rows.map((r: any) => ({
+          tipoItem: String(r.tipoItem || ""),
+          codigoItem: String(r.codigoItem || ""),
+          banco: String(r.banco || ""),
+          descricao: String(r.descricao || ""),
+          und: String(r.und || ""),
+          quantidade: r.quantidade == null ? 0 : Number(r.quantidade),
+          valorUnitario: r.valorUnitario == null ? 0 : Number(r.valorUnitario),
+          total: r.total == null ? 0 : Number(r.total),
         }))
-        .sort((a, b) => String(a.tipoItem).localeCompare(String(b.tipoItem)) || String(a.codigoItem).localeCompare(String(b.codigoItem)));
-      setPrimitiveRows(rows);
-      setOkMsg("Composição primitiva gerada.");
+      );
     } catch (e: any) {
       setPrimitiveErr(e?.message || "Erro ao gerar composição primitiva");
+    } finally {
+      setPrimitiveLoading(false);
+    }
+  }
+
+  async function atualizarComposicaoPrimitiva() {
+    if (!idObra || !codigoServico) return;
+    try {
+      setPrimitiveLoading(true);
+      setPrimitiveErr(null);
+      const res = await authFetch(
+        `/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-primitiva?refresh=1`
+      );
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao atualizar composição primitiva");
+      const meta = json.data?.meta || null;
+      setPrimitiveMeta(
+        meta
+          ? {
+              descricaoServico: meta.descricaoServico == null ? null : String(meta.descricaoServico || ""),
+              undServico: meta.undServico == null ? null : String(meta.undServico || ""),
+              updatedAt: meta.updatedAt == null ? null : String(meta.updatedAt || ""),
+            }
+          : null
+      );
+      const rows = Array.isArray(json.data?.rows) ? json.data.rows : [];
+      setPrimitiveRows(
+        rows.map((r: any) => ({
+          tipoItem: String(r.tipoItem || ""),
+          codigoItem: String(r.codigoItem || ""),
+          banco: String(r.banco || ""),
+          descricao: String(r.descricao || ""),
+          und: String(r.und || ""),
+          quantidade: r.quantidade == null ? 0 : Number(r.quantidade),
+          valorUnitario: r.valorUnitario == null ? 0 : Number(r.valorUnitario),
+          total: r.total == null ? 0 : Number(r.total),
+        }))
+      );
+      setOkMsg("Composição primitiva atualizada.");
+    } catch (e: any) {
+      setPrimitiveErr(e?.message || "Erro ao atualizar composição primitiva");
     } finally {
       setPrimitiveLoading(false);
     }
@@ -2185,13 +2192,35 @@ async function readTextSmart(file: File) {
 
       {primitiveOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-5xl rounded-xl border bg-white p-4 shadow-sm space-y-3">
+          <div className="w-full max-w-5xl max-h-[85vh] overflow-hidden rounded-xl border bg-white p-4 shadow-sm space-y-3">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div>
                 <div className="text-lg font-semibold">Composição primitiva — {codigoServico}</div>
+                <div className="text-sm text-slate-700">
+                  {(() => {
+                    const nome = String(primitiveMeta?.descricaoServico || previstoRows?.[0]?.servicos || "").trim();
+                    const und = String(primitiveMeta?.undServico || previstoRows?.[0]?.und || "").trim();
+                    const parts = [];
+                    if (nome) parts.push(nome);
+                    if (und) parts.push(`un: ${und}`);
+                    return parts.length ? parts.join(" • ") : "";
+                  })()}
+                </div>
                 <div className="text-sm text-slate-600">Consolida insumos (inclui insumos das composições auxiliares), somando quantitativos.</div>
+                {primitiveMeta?.updatedAt ? (
+                  <div className="text-xs text-slate-500">Atualizado em: {formatDateTimePtBR(primitiveMeta.updatedAt)}</div>
+                ) : null}
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={() => atualizarComposicaoPrimitiva()}
+                  disabled={primitiveLoading}
+                  title="Atualizar (recalcular e salvar)"
+                >
+                  Atualizar
+                </button>
                 <button
                   className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
                   type="button"
@@ -2258,7 +2287,7 @@ async function readTextSmart(file: File) {
             {primitiveErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{primitiveErr}</div> : null}
             {primitiveLoading ? <div className="text-sm text-slate-600">Gerando…</div> : null}
 
-            <div className="overflow-auto rounded-lg border">
+            <div className="max-h-[60vh] overflow-auto rounded-lg border">
               <table className="min-w-[1100px] w-full text-sm">
                 <thead className="bg-slate-50 text-center text-slate-700">
                   <tr>
