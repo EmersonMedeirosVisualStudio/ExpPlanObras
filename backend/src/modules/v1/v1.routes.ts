@@ -6715,7 +6715,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const wb = new ExcelJS.Workbook();
     try {
-      await wb.xlsx.load(fileBuffer);
+      await wb.xlsx.load(fileBuffer as any);
     } catch {
       return fail(reply, 422, 'Arquivo XLSX inválido ou corrompido.');
     }
