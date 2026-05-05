@@ -501,7 +501,9 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
   await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ALTER COLUMN tipo_item TYPE VARCHAR(32)`).catch(() => null);
   await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ADD COLUMN IF NOT EXISTS banco VARCHAR(60) NULL`).catch(() => null);
   await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ADD COLUMN IF NOT EXISTS valor_unitario NUMERIC(14,6) NULL`).catch(() => null);
+}
 
+async function ensurePlanilhaComposicaoPrimitivaTables(tx: any) {
   await tx
     .$executeRawUnsafe(`
     DO $$
@@ -4914,6 +4916,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
     await ensurePlanilhaOrcamentariaTables(prisma);
     await ensurePlanilhaComposicaoTables(prisma);
+    await ensurePlanilhaComposicaoPrimitivaTables(prisma);
 
     let idPlanilha = q.planilhaId != null ? Number(q.planilhaId) : 0;
     if (!idPlanilha) {
