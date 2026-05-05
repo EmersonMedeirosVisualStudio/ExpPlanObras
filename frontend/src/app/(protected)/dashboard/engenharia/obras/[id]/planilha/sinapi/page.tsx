@@ -2938,12 +2938,42 @@ export default function SinapiImportPage() {
 
               <div className="space-y-3">
                 <div className="rounded-lg border overflow-hidden">
-                  <div className="bg-slate-50 px-3 py-2 text-sm font-semibold">Serviços na prévia</div>
+                  <div className="bg-slate-50 px-3 py-2 text-sm font-semibold flex items-center justify-between gap-2">
+                    <div>Serviços na prévia</div>
+                    <div className="flex items-center gap-2 font-normal">
+                      <button
+                        className="rounded-lg border bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-60"
+                        type="button"
+                        onClick={() => {
+                          const codes = previewComposicoesParaLista
+                            .map((c) => String(c.codigo || "").trim().toUpperCase())
+                            .filter(Boolean)
+                            .filter((codigo) => !importadosCodes.has(codigo));
+                          setPreviewSelectedCodigos(codes);
+                          if (!previewSelectedCodigo && codes.length) setPreviewSelectedCodigo(codes[0]);
+                        }}
+                        disabled={busy || !previewComposicoesParaLista.length}
+                        title="Seleciona todos os serviços ainda não importados"
+                      >
+                        Selecionar todos
+                      </button>
+                      <button
+                        className="rounded-lg border bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-60"
+                        type="button"
+                        onClick={() => setPreviewSelectedCodigos([])}
+                        disabled={busy || !previewSelectedCodigos.length}
+                        title="Remove a seleção de importação"
+                      >
+                        Limpar seleção
+                      </button>
+                    </div>
+                  </div>
                   <div className="max-h-72 overflow-y-auto">
                     <div className="overflow-x-auto">
                       <div className="min-w-[720px]">
-                        <div className="grid grid-cols-[46px_46px_110px_1fr_60px_160px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
+                        <div className="grid grid-cols-[46px_46px_46px_110px_1fr_60px_160px] gap-x-2 border-b bg-white px-3 py-2 text-[11px] font-semibold text-slate-600">
                           <div className="text-center">Sel</div>
+                          <div className="text-center">Itens</div>
                           <div className="text-center">Imp.</div>
                           <div>Código</div>
                           <div>Serviço</div>
@@ -2963,7 +2993,7 @@ export default function SinapiImportPage() {
                               <button
                                 key={codigo || `row-${idx}`}
                                 type="button"
-                                className={`w-full text-left grid grid-cols-[46px_46px_110px_1fr_60px_160px] gap-x-2 px-3 py-2 text-sm hover:bg-slate-50 ${focused ? "bg-blue-50" : ""}`}
+                                className={`w-full text-left grid grid-cols-[46px_46px_46px_110px_1fr_60px_160px] gap-x-2 px-3 py-2 text-sm hover:bg-slate-50 ${focused ? "bg-blue-50" : ""}`}
                                 onClick={() => (codigo ? setPreviewSelectedCodigo(codigo) : null)}
                                 disabled={busy || !codigo}
                               >
@@ -2983,6 +3013,18 @@ export default function SinapiImportPage() {
                                     }}
                                     disabled={busy || !codigo}
                                   />
+                                </div>
+                                <div className="flex items-center justify-center">
+                                  <span
+                                    className={
+                                      focused
+                                        ? "inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-blue-700"
+                                        : "inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-slate-400"
+                                    }
+                                    title={focused ? "Mostrando itens na prévia" : "Clique para conferir os itens"}
+                                  >
+                                    {focused ? "✓" : "—"}
+                                  </span>
                                 </div>
                                 <div className="flex items-center justify-center">
                                   <span
