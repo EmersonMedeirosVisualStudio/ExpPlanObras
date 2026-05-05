@@ -3080,6 +3080,9 @@ ETAPA 5 — Como validar
 - Formatação no grid:
   - Qtd: separador de milhar e 3 casas decimais
   - Total: separador de milhar e 2 casas decimais
+- Na tela **Análise de composição**, a separação dos itens é em 2 grupos:
+  - **Composições** (itens com tipo `COMPOSICAO`)
+  - **Insumos** (todos os demais itens), com o **Tipo** exibindo a classificação (Material, Mão de obra, Equipamento, Serviços, Especiais) e filtro rápido por tipo.
 - Importação CSV (planilha e composição): o sistema aceita separador decimal `,` e normaliza para persistência no banco.
 
 #### 18.2.3 SINAPI — lista importados, filtros e prévia com classificação
@@ -3097,8 +3100,11 @@ ETAPA 5 — Como validar
   - `CONTRATO: id - objeto`
   - `PLANILHA: id - versão`
 - Quando existir filtro ativo (código/data-base/UF/ISD-ICD-ISE), o sistema exibe “Dados filtrados” com os filtros aplicados.
+- Quando a planilha tiver **Data-base SINAPI** definida, a lista “Serviços SINAPI importados” filtra automaticamente por essa data-base (mesmo que o campo “Data-base” esteja vazio), para evitar misturar meses-base diferentes.
 - Prévia e card “Composição do serviço” exibem coluna **Classificação** para itens de insumo.
-- Regra de persistência de tipo (ao importar): `COMPOSICAO` mantém `COMPOSICAO`; para insumo, o tipo gravado é a **classificação**.
+- Regra de tipo (ExpertPlanObra) ao importar/aplicar:
+  - Se `Tipo Item (SINAPI)` for `COMPOSICAO` (inclui auxiliar), então `Tipo (sistema)` = `COMPOSICAO`.
+  - Se `Tipo Item (SINAPI)` for `INSUMO`, então `Tipo (sistema)` = `Classificação (SINAPI)` (ex.: `MATERIAL`, `MAO DE OBRA`, `EQUIPAMENTO (AQUISIÇÃO)`, `EQUIPAMENTO (LOCAÇÃO)`, `SERVIÇOS`, `ESPECIAIS`).
 
 **Benefício da mudança**
 

@@ -144,13 +144,14 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
   - **SINAPI (planilha): data-base e UF** (usados como padrão para filtros/importação)
 - Clique em **Configurar tela** para abrir o card **Configuração de tela** (fica oculto por padrão) e ajustar colunas (exibir/ocultar) e larguras (isso fica gravado).
 - Se os dados da lista “Serviços SINAPI importados” estiverem filtrados, aparece um aviso **Dados filtrados** com os filtros ativos.
+- Quando a planilha tiver **data-base SINAPI** definida, a lista “Serviços SINAPI importados” considera automaticamente essa data-base como filtro (mesmo que você não preencha o campo “Data-base”).
 - Use **Limpar filtros** para voltar rapidamente a lista completa.
 - A opção **Ao aplicar na obra: substituir existente (padrão)** vem marcada (substitui quando já existir).
 - Dê **duplo clique** em um serviço na lista “Serviços SINAPI importados” para abrir o card **Composição do serviço** com o detalhamento dos itens.
 - Ao clicar em **Prévia**, o sistema abre um modal “Prévia” com:
   - tabela “Serviços na prévia” (com status “Já importado” quando for o caso)
   - ao clicar em um serviço, a tabela “Itens da prévia” mostra a composição do serviço selecionado
-  - as colunas incluem **Tipo Item (SINAPI)** e **Tipo (sistema)** (ex.: INSUMO → MÃO DE OBRA / MATERIAL / EQUIPAMENTO; COMPOSIÇÃO → COMPOSIÇÃO)
+  - as colunas incluem **Tipo Item (SINAPI)** e **Tipo (sistema)** (ex.: INSUMO → MATERIAL / MAO DE OBRA / EQUIPAMENTO (AQUISIÇÃO) / EQUIPAMENTO (LOCAÇÃO) / SERVIÇOS / ESPECIAIS; COMPOSIÇÃO → COMPOSIÇÃO)
   - a coluna **Sel** permite selecionar vários serviços para importar em lote
 
 ### ETAPA 5 — Como validar
@@ -181,6 +182,7 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
 - A tabela aceita qualquer código de composição informado por você
 - Se o código de composição de referência existir em outra composição da mesma planilha, o sistema procura o valor e grava esse valor unitário no item de referência
 - Depois de encontrado, o valor fica fixado no item salvo da composição
+- Os itens ficam separados em 2 blocos: **Composições** e **Insumos**. No bloco **Insumos**, o campo **Tipo** mostra a classificação e existe um filtro rápido por tipo.
 - No grid da composição:
   - **Qtd** aparece com separador de milhar e **3** casas decimais
   - **Total** aparece com separador de milhar e **2** casas decimais

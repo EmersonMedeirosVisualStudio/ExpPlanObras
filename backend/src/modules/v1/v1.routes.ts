@@ -298,6 +298,28 @@ function normalizeHeader(h: string) {
     .replace(/^_+|_+$/g, '');
 }
 
+function normalizeClassificacaoSinapiToTipoExpert(classificacao: unknown): string | null {
+  const raw = String(classificacao || '').trim();
+  const key = normalizeHeader(raw);
+  if (!key) return null;
+  if (key === 'material') return 'MATERIAL';
+  if (key === 'mao_de_obra') return 'MAO DE OBRA';
+  if (key.includes('equipamento') && key.includes('aquisicao')) return 'EQUIPAMENTO (AQUISIÇÃO)';
+  if (key.includes('equipamento') && key.includes('locacao')) return 'EQUIPAMENTO (LOCAÇÃO)';
+  if (key === 'equipamento') return 'EQUIPAMENTO (AQUISIÇÃO)';
+  if (key === 'servicos') return 'SERVIÇOS';
+  if (key === 'especiais') return 'ESPECIAIS';
+  return raw.toUpperCase();
+}
+
+function computeTipoExpert(args: { tipoItemSinapi: unknown; classificacaoSinapi: unknown }): string {
+  const tipoKey = normalizeHeader(String(args.tipoItemSinapi || ''));
+  if (tipoKey.includes('composicao')) return 'COMPOSICAO';
+  const cls = normalizeClassificacaoSinapiToTipoExpert(args.classificacaoSinapi);
+  if (tipoKey.includes('insumo')) return cls || 'INSUMO';
+  return cls || String(args.tipoItemSinapi || '').trim().toUpperCase() || 'INSUMO';
+}
+
 function parseCsvTextAuto(text: string) {
   const cleaned = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = cleaned.split('\n').filter((l) => l.trim().length > 0);
@@ -6580,9 +6602,9 @@ export default async function v1Routes(server: FastifyInstance) {
         und: parsed.composicao?.und == null ? null : String(parsed.composicao.und || '').trim().slice(0, 40),
         valorSemBdi: Number.isFinite(valorSemBdi) ? valorSemBdi : null,
         itens: itens.slice(0, 3).map((x) => ({
-          tipoItem: x.expTipo,
+          tipoItem: x.tipoItemSinapi,
           tipoItemSinapi: x.tipoItemSinapi,
-          tipoSistema: x.expTipo,
+          tipoSistema: computeTipoExpert({ tipoItemSinapi: x.tipoItemSinapi, classificacaoSinapi: x.insumoClassificacao }),
           classificacao: x.insumoClassificacao ?? null,
           codigoItem: x.expCodigo,
           banco: banco || null,
@@ -6725,13 +6747,13 @@ export default async function v1Routes(server: FastifyInstance) {
         const normalized = itens
           .map((r) => ({
             etapa: '',
-            tipoItem: r.expTipo,
+            tipoItem: computeTipoExpert({ tipoItemSinapi: r.tipoItemSinapi, classificacaoSinapi: r.insumoClassificacao }),
             codigoItem: r.expCodigo,
             banco: banco || null,
             descricao: (r.expDescricao ?? r.insumoDescricao ?? r.descricaoSinapi) ?? null,
             und: (r.expUnd ?? r.insumoUnd ?? r.undSinapi) ?? null,
             quantidade: toDec(r.coeficiente),
-            valorUnitario: r.expValorUnitario == null ? null : toDec(r.expValorUnitario),
+            valorUnitario: r.expValorUnitario == null ? (r.insumoPu == null ? null : toDec(r.insumoPu)) : toDec(r.expValorUnitario),
             perda: 0,
             codigoCentroCusto: null,
           }))
@@ -7159,14 +7181,8 @@ export default async function v1Routes(server: FastifyInstance) {
         const codigoItem = String(r.codigoItem || '').trim().toUpperCase().slice(0, 80);
         const coef = r.coeficiente == null ? null : Number(r.coeficiente);
         if (!codigoItem || coef == null || !Number.isFinite(coef)) return null;
-        const isCompItem = tipoSinapi === 'COMPOSICAO' || tipoSinapi === 'COMPOSICAO_AUXILIAR';
-        const classKey = normalizeHeader(String(r.classificacao || ''));
-        const tipoItem = (() => {
-          if (isCompItem) return tipoSinapi;
-          if (classKey === 'equipamento') return 'EQUIPAMENTO';
-          if (classKey === 'mao_de_obra') return 'MAO_DE_OBRA';
-          return 'INSUMO';
-        })();
+        const isCompItem = normalizeHeader(tipoSinapi).includes('composicao');
+        const tipoItem = computeTipoExpert({ tipoItemSinapi: tipoSinapi, classificacaoSinapi: r.classificacao });
         const desc = String(r.descricao || '').trim().slice(0, 255) || null;
         const undV = String(r.und || '').trim().slice(0, 40) || null;
         const pu = r.pu == null ? null : Number(r.pu);

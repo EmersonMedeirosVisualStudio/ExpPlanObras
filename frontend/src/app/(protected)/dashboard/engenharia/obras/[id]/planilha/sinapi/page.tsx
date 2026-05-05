@@ -106,6 +106,28 @@ function normalizeHeader(input: string) {
   return out;
 }
 
+function normalizeClassificacaoSinapiToTipoExpert(classificacao: unknown): string | null {
+  const raw = String(classificacao || "").trim();
+  const key = normalizeHeader(raw);
+  if (!key) return null;
+  if (key === "material") return "MATERIAL";
+  if (key === "mao_de_obra") return "MAO DE OBRA";
+  if (key.includes("equipamento") && key.includes("aquisicao")) return "EQUIPAMENTO (AQUISIÇÃO)";
+  if (key.includes("equipamento") && key.includes("locacao")) return "EQUIPAMENTO (LOCAÇÃO)";
+  if (key === "equipamento") return "EQUIPAMENTO (AQUISIÇÃO)";
+  if (key === "servicos") return "SERVIÇOS";
+  if (key === "especiais") return "ESPECIAIS";
+  return raw.toUpperCase();
+}
+
+function computeTipoExpert(args: { tipoItemSinapi: unknown; classificacaoSinapi: unknown }): string {
+  const tipoKey = normalizeHeader(String(args.tipoItemSinapi || ""));
+  if (tipoKey.includes("composicao")) return "COMPOSICAO";
+  const cls = normalizeClassificacaoSinapiToTipoExpert(args.classificacaoSinapi);
+  if (tipoKey.includes("insumo")) return cls || "INSUMO";
+  return cls || String(args.tipoItemSinapi || "").trim().toUpperCase() || "INSUMO";
+}
+
 function parseNumberLoose(v: any): number | null {
   if (v == null) return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
@@ -598,13 +620,7 @@ export default function SinapiImportPage() {
       const tipoItemSinapi = String(it?.tipoItemSinapi || it?.tipoItem || "").trim().toUpperCase();
       const classificacao = it?.classificacao == null ? null : String(it.classificacao || "").trim();
       const tipoSistemaRaw = String(it?.tipoSistema || "").trim();
-      const tipoSistema =
-        tipoSistemaRaw ||
-        (tipoItemSinapi === "COMPOSICAO"
-          ? "COMPOSICAO"
-          : tipoItemSinapi === "INSUMO"
-            ? String(classificacao || "INSUMO").trim() || "INSUMO"
-            : String(tipoItemSinapi || "—").trim() || "—");
+      const tipoSistema = tipoSistemaRaw || computeTipoExpert({ tipoItemSinapi, classificacaoSinapi: classificacao });
       return {
         tipoItemSinapi: tipoItemSinapi || "—",
         tipoSistema: tipoSistema || "—",
@@ -1121,7 +1137,7 @@ export default function SinapiImportPage() {
           setPreviewItensLocal(
             parsedLocal.itens.map((it: any) => ({
               tipoItemSinapi: String(it.tipoItemSinapi || "").trim() || "—",
-              tipoSistema: String(it.expTipo || "").trim() || "—",
+              tipoSistema: computeTipoExpert({ tipoItemSinapi: it.tipoItemSinapi, classificacaoSinapi: it.insumoClassificacao }) || "—",
               classificacao: it.insumoClassificacao ?? null,
               codigoItem: String(it.expCodigo || it.codigoItem || "").trim(),
               descricao: it.expDescricao ?? it.insumoDescricao ?? it.descricaoSinapi ?? null,
