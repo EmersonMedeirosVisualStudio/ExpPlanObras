@@ -502,6 +502,32 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
   await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ADD COLUMN IF NOT EXISTS banco VARCHAR(60) NULL`).catch(() => null);
   await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ADD COLUMN IF NOT EXISTS valor_unitario NUMERIC(14,6) NULL`).catch(() => null);
 
+  await tx
+    .$executeRawUnsafe(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM pg_type t
+        INNER JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE t.typname = 'obras_planilhas_composicoes_primitivas'
+          AND n.nspname = current_schema()
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pg_class c
+        INNER JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relname = 'obras_planilhas_composicoes_primitivas'
+          AND c.relkind = 'r'
+          AND n.nspname = current_schema()
+      )
+      THEN
+        EXECUTE 'DROP TYPE IF EXISTS ' || quote_ident(current_schema()) || '.obras_planilhas_composicoes_primitivas CASCADE';
+      END IF;
+    END $$;
+  `)
+    .catch(() => null);
+
   await tx.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS obras_planilhas_composicoes_primitivas (
       id_primitiva BIGSERIAL PRIMARY KEY,
