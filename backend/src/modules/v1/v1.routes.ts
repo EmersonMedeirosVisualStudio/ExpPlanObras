@@ -7160,11 +7160,13 @@ export default async function v1Routes(server: FastifyInstance) {
         const coef = r.coeficiente == null ? null : Number(r.coeficiente);
         if (!codigoItem || coef == null || !Number.isFinite(coef)) return null;
         const isCompItem = tipoSinapi === 'COMPOSICAO' || tipoSinapi === 'COMPOSICAO_AUXILIAR';
-        const classificacao = String(r.classificacao || 'INSUMO')
-          .trim()
-          .toUpperCase()
-          .slice(0, 32) || 'INSUMO';
-        const tipoItem = isCompItem ? tipoSinapi : classificacao;
+        const classKey = normalizeHeader(String(r.classificacao || ''));
+        const tipoItem = (() => {
+          if (isCompItem) return tipoSinapi;
+          if (classKey === 'equipamento') return 'EQUIPAMENTO';
+          if (classKey === 'mao_de_obra') return 'MAO_DE_OBRA';
+          return 'INSUMO';
+        })();
         const desc = String(r.descricao || '').trim().slice(0, 255) || null;
         const undV = String(r.und || '').trim().slice(0, 40) || null;
         const pu = r.pu == null ? null : Number(r.pu);

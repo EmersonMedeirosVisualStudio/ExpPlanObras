@@ -1742,9 +1742,10 @@ export default function SinapiImportPage() {
     let alive = true;
     (async () => {
       try {
+        const effectiveDataBase = String(dataBaseFiltro || "").trim() || String(planilhaDataBaseSinapi || "").trim();
         const qs = new URLSearchParams();
         if (codigoFiltro.trim()) qs.set("codigo", codigoFiltro.trim().toUpperCase());
-        if (dataBaseFiltro.trim()) qs.set("dataBase", dataBaseFiltro.trim());
+        if (effectiveDataBase) qs.set("dataBase", effectiveDataBase);
         if (ufFiltro.trim()) qs.set("uf", ufFiltro.trim().toUpperCase());
         if (insumosModoFiltro.trim()) qs.set("insumosModo", insumosModoFiltro.trim());
         const url = `/api/v1/engenharia/obras/${idObra}/planilha/sinapi/importados${qs.toString() ? `?${qs.toString()}` : ""}`;
@@ -1776,7 +1777,7 @@ export default function SinapiImportPage() {
     return () => {
       alive = false;
     };
-  }, [idObra, codigoFiltro, dataBaseFiltro, ufFiltro, insumosModoFiltro, importadosReloadTick]);
+  }, [idObra, codigoFiltro, dataBaseFiltro, planilhaDataBaseSinapi, ufFiltro, insumosModoFiltro, importadosReloadTick]);
 
   useEffect(() => {
     if (!Number.isFinite(idObra) || idObra <= 0) return;
@@ -2194,7 +2195,7 @@ export default function SinapiImportPage() {
         {(() => {
           const filtrosAtivos: string[] = [];
           const cod = String(codigoFiltro || "").trim();
-          const db = String(dataBaseFiltro || "").trim();
+          const db = String(dataBaseFiltro || "").trim() || String(planilhaDataBaseSinapi || "").trim();
           const ufF = String(ufFiltro || "").trim();
           const modo = String(insumosModoFiltro || "").trim();
           if (cod) filtrosAtivos.push(`Código=${cod.toUpperCase()}`);
