@@ -147,6 +147,14 @@ function makeImportadoKey(row: { codigo: string; dataBase: string; uf: string; i
     .toUpperCase()}`;
 }
 
+function normalizeLooseText(input: string) {
+  return String(input || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
 function pickInsumosSheetNameByMode(args: { sheetNames: string[]; insumosModo: "ISD" | "ICD" | "ISE" }) {
   const all = (args.sheetNames || []).map((n) => ({ name: n, key: normalizeHeader(n) }));
   const isPreco = (k: string) => (k.includes("preco") || k.includes("precos")) && (k.includes("insumo") || k.includes("insumos"));
@@ -213,6 +221,8 @@ export default function SinapiImportPage() {
   const [insumosModo, setInsumosModo] = useState<"ISD" | "ICD" | "ISE">("ISD");
   const [insumosSheetName, setInsumosSheetName] = useState<string>("");
   const [codigoServico, setCodigoServico] = useState<string>(codigoParam);
+  const [servicoBuscaModo, setServicoBuscaModo] = useState<"CODIGO" | "CONTEM">(codigoParam ? "CODIGO" : "CODIGO");
+  const [descricaoServicoContem, setDescricaoServicoContem] = useState<string>("");
   const [codigoFiltro, setCodigoFiltro] = useState<string>(codigoParam);
   const [dataBaseFiltro, setDataBaseFiltro] = useState<string>(dataBaseParam);
   const [dataBaseImport, setDataBaseImport] = useState<string>(dataBaseParam);
@@ -284,6 +294,8 @@ export default function SinapiImportPage() {
   const [previewSelectedCodigo, setPreviewSelectedCodigo] = useState<string>("");
   const [previewSelectedCodigos, setPreviewSelectedCodigos] = useState<string[]>([]);
   const [previewOpen, setPreviewOpen] = useState<boolean>(false);
+  const [previewGeradaPorContem, setPreviewGeradaPorContem] = useState<boolean>(false);
+  const [previewItensLoadingCodigo, setPreviewItensLoadingCodigo] = useState<string>("");
 
   async function idbOpen() {
     return await new Promise<IDBDatabase>((resolve, reject) => {
@@ -349,7 +361,10 @@ export default function SinapiImportPage() {
     setPreviewItensLocal([]);
     setPreviewCompLocal(null);
     setPreviewSelectedCodigo("");
+    setPreviewSelectedCodigos([]);
     setPreviewOpen(false);
+    setPreviewGeradaPorContem(false);
+    setPreviewItensLoadingCodigo("");
     setImported(null);
     setOkMsg("");
     setErr("");
@@ -507,10 +522,13 @@ export default function SinapiImportPage() {
     if (!String(uf || "").trim()) missing.push("UF");
     if (!String(insumosModo || "").trim()) missing.push("Preços de insumos (modo)");
     if (!file) missing.push("Arquivo XLSX");
-    if (opcao === "SERVICO" && !String(codigoServico || "").trim()) missing.push("Código do serviço");
+    if (opcao === "SERVICO") {
+      if (servicoBuscaModo === "CODIGO" && !String(codigoServico || "").trim()) missing.push("Código do serviço");
+      if (servicoBuscaModo === "CONTEM" && !String(descricaoServicoContem || "").trim()) missing.push("Descrição contém");
+    }
     if ((opcao === "FALTAM" || opcao === "SUBSTITUIR") && !(Number.isFinite(targetObraId) && targetObraId > 0)) missing.push("Obra/Licitação/Orçamento");
     return { ok: missing.length === 0, missing };
-  }, [dataBaseImport, sheetName, uf, insumosModo, file, opcao, codigoServico, targetObraId]);
+  }, [dataBaseImport, sheetName, uf, insumosModo, file, opcao, codigoServico, targetObraId, servicoBuscaModo, descricaoServicoContem]);
 
   const checklistInterno = useMemo(() => {
     const sheetInsumos = String(insumosSheetName || "").trim();
@@ -523,7 +541,10 @@ export default function SinapiImportPage() {
       { titulo: "Arquivo XLSX selecionado", status: file ? "OK" : "PENDENTE" },
     ];
 
-    if (opcao === "SERVICO") items.push({ titulo: "Código do serviço informado", status: String(codigoServico || "").trim() ? "OK" : "PENDENTE" });
+    if (opcao === "SERVICO") {
+      if (servicoBuscaModo === "CODIGO") items.push({ titulo: "Código do serviço informado", status: String(codigoServico || "").trim() ? "OK" : "PENDENTE" });
+      else items.push({ titulo: "Descrição contém informada", status: String(descricaoServicoContem || "").trim() ? "OK" : "PENDENTE" });
+    }
     if (opcao === "FALTAM" || opcao === "SUBSTITUIR")
       items.push({ titulo: "Obra/Licitação/Orçamento selecionada", status: Number.isFinite(targetObraId) && targetObraId > 0 ? "OK" : "PENDENTE" });
 
@@ -539,7 +560,7 @@ export default function SinapiImportPage() {
     );
 
     return items;
-  }, [dataBaseImport, uf, sheetName, insumosModo, insumosSheetName, file, opcao, codigoServico, targetObraId, preview]);
+  }, [dataBaseImport, uf, sheetName, insumosModo, insumosSheetName, file, opcao, codigoServico, targetObraId, preview, servicoBuscaModo, descricaoServicoContem]);
 
   const previewComposicoesParaLista = useMemo(() => {
     const fromServer = Array.isArray(preview?.sample)
@@ -636,6 +657,40 @@ export default function SinapiImportPage() {
       return filtered;
     });
   }, [previewComposicoesParaLista, previewSelectedCodigo]);
+
+  useEffect(() => {
+    if (!previewOpen) return;
+    if (!previewGeradaPorContem) return;
+    const codigo = String(previewSelectedCodigo || "").trim().toUpperCase();
+    if (!codigo) return;
+    if (!preview || !Array.isArray(preview.sample)) return;
+    const entry = preview.sample.find((c) => String(c?.codigo || "").trim().toUpperCase() === codigo) as any;
+    if (!entry) return;
+    const itens = Array.isArray(entry?.itens) ? entry.itens : [];
+    if (itens.length) return;
+    if (previewItensLoadingCodigo === codigo) return;
+    setPreviewItensLoadingCodigo(codigo);
+    (async () => {
+      try {
+        const data = (await doRequest(true, { codigoServico: codigo }, { commitToState: false, manageBusy: true })) as PreviewResult | null;
+        const sample0 = Array.isArray((data as any)?.sample) ? (data as any).sample[0] : null;
+        if (!sample0) return;
+        setPreview((cur) => {
+          if (!cur || !Array.isArray(cur.sample)) return cur;
+          const nextSample = cur.sample.map((s) => {
+            const sc = String((s as any)?.codigo || "").trim().toUpperCase();
+            if (sc !== codigo) return s;
+            return { ...s, ...sample0 };
+          });
+          return { ...cur, sample: nextSample };
+        });
+      } catch (e: any) {
+        setErr(String(e?.message || "Erro ao carregar itens da prévia"));
+      } finally {
+        setPreviewItensLoadingCodigo("");
+      }
+    })();
+  }, [previewOpen, previewGeradaPorContem, previewSelectedCodigo, preview, previewItensLoadingCodigo]);
 
   useEffect(() => {
     if (apiOrigin) return;
@@ -1222,17 +1277,113 @@ export default function SinapiImportPage() {
 
   async function gerarPrevia() {
     if (opcao !== "SERVICO") {
+      setPreviewGeradaPorContem(false);
       await doRequest(true);
       return;
     }
-    const codes = parseCodigoServicoList(codigoServico);
-    if (codes.length <= 1) {
-      await doRequest(true);
+    if (servicoBuscaModo === "CODIGO") {
+      setPreviewGeradaPorContem(false);
+      const codes = parseCodigoServicoList(codigoServico);
+      if (codes.length <= 1) {
+        await doRequest(true);
+        return;
+      }
+
+      if (!Number.isFinite(idObra) || idObra <= 0) {
+        setErr("Obra inválida.");
+        return;
+      }
+      if (!file) {
+        setErr("Selecione o arquivo XLSX do SINAPI para importar.");
+        return;
+      }
+
+      setErr("");
+      setOkMsg("");
+      setImported(null);
+      setAppliedBase(null);
+      setPreview(null);
+      setPreviewItensLocal([]);
+      setPreviewCompLocal(null);
+      setPreviewSelectedCodigo("");
+      setPreviewSelectedCodigos([]);
+      setPreviewItensLoadingCodigo("");
+      setBusy(true);
+      try {
+        const mergedSample: PreviewResult["sample"] = [];
+        let planilhaParams: PreviewResult["planilhaParams"] = null;
+        let planilhaId: number | null = null;
+        let ufOut: string | null = null;
+        let sheetNameOut = String(sheetName || "").trim() || "Analítico";
+        let sinapiDetected: PreviewResult["sinapiDetected"] = { dataBase: null };
+        let paramsMatch: boolean | null = null;
+        let paramsStatus: PreviewResult["paramsStatus"] = "UNKNOWN";
+        let insumosModoOut: string | null = insumosModo;
+        let parsedComposicoes = 0;
+        let targetComposicoes = 0;
+        let toImportComposicoes = 0;
+        let toImportItens = 0;
+        let skippedExisting = 0;
+        let skippedNotInPlanilha = 0;
+
+        for (const code of codes) {
+          const data = (await doRequest(true, { codigoServico: code }, { commitToState: false, manageBusy: false })) as PreviewResult | null;
+          if (!data) continue;
+          sheetNameOut = String(data.sheetName || sheetNameOut);
+          ufOut = data.uf || ufOut;
+          planilhaId = data.planilhaId ?? planilhaId;
+          planilhaParams = data.planilhaParams ?? planilhaParams;
+          sinapiDetected = data.sinapiDetected ?? sinapiDetected;
+          paramsMatch = data.paramsMatch ?? paramsMatch;
+          paramsStatus = data.paramsStatus ?? paramsStatus;
+          insumosModoOut = data.insumosModo ?? insumosModoOut;
+          parsedComposicoes += Number(data.parsedComposicoes || 0);
+          targetComposicoes += Number(data.targetComposicoes || 0);
+          toImportComposicoes += Number(data.toImportComposicoes || 0);
+          toImportItens += Number(data.toImportItens || 0);
+          skippedExisting += Number(data.skippedExisting || 0);
+          skippedNotInPlanilha += Number(data.skippedNotInPlanilha || 0);
+          const sample = Array.isArray(data.sample) ? data.sample : [];
+          for (const s of sample) mergedSample.push(s);
+        }
+
+        const merged: PreviewResult = {
+          sheetName: sheetNameOut,
+          uf: ufOut,
+          planilhaId,
+          planilhaParams,
+          sinapiDetected,
+          paramsMatch,
+          paramsStatus,
+          insumosModo: insumosModoOut,
+          parsedComposicoes,
+          targetComposicoes,
+          toImportComposicoes,
+          toImportItens,
+          skippedExisting,
+          skippedNotInPlanilha,
+          sample: mergedSample,
+        };
+
+        setPreview(merged);
+        setPreviewItensLocal([]);
+        setPreviewCompLocal(null);
+        setPreviewSelectedCodigo(codes[0]);
+        setPreviewSelectedCodigos(codes);
+        setPageOkMsg("Prévia gerada.");
+        setImportOpen(false);
+        setPreviewOpen(true);
+      } catch (e: any) {
+        setErr(String(e?.message || "Erro ao gerar prévia"));
+      } finally {
+        setBusy(false);
+      }
       return;
     }
 
-    if (!Number.isFinite(idObra) || idObra <= 0) {
-      setErr("Obra inválida.");
+    const termo = String(descricaoServicoContem || "").trim();
+    if (!termo) {
+      setErr("Informe a descrição (contém).");
       return;
     }
     if (!file) {
@@ -1249,73 +1400,124 @@ export default function SinapiImportPage() {
     setPreviewCompLocal(null);
     setPreviewSelectedCodigo("");
     setPreviewSelectedCodigos([]);
+    setPreviewItensLoadingCodigo("");
     setBusy(true);
     try {
-      const mergedSample: PreviewResult["sample"] = [];
-      let planilhaParams: PreviewResult["planilhaParams"] = null;
-      let planilhaId: number | null = null;
-      let ufOut: string | null = null;
-      let sheetNameOut = String(sheetName || "").trim() || "Analítico";
-      let sinapiDetected: PreviewResult["sinapiDetected"] = { dataBase: null };
-      let paramsMatch: boolean | null = null;
-      let paramsStatus: PreviewResult["paramsStatus"] = "UNKNOWN";
-      let insumosModoOut: string | null = insumosModo;
-      let parsedComposicoes = 0;
-      let targetComposicoes = 0;
-      let toImportComposicoes = 0;
-      let toImportItens = 0;
-      let skippedExisting = 0;
-      let skippedNotInPlanilha = 0;
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array", cellDates: false });
+      const analiticoSheet = wb.Sheets[sheetName] || wb.Sheets[String(sheetName || "").trim()] || null;
+      if (!analiticoSheet) {
+        const names = (wb.SheetNames || []).slice(0, 30).join(", ");
+        throw new Error(`Aba não encontrada: "${sheetName}". Abas disponíveis: ${names || "—"}`);
+      }
+      const m = XLSX.utils.sheet_to_json(analiticoSheet, { header: 1, defval: "" }) as any[][];
+      if (!Array.isArray(m) || m.length < 2) throw new Error("Aba do Analítico vazia.");
 
-      for (const code of codes) {
-        const data = (await doRequest(true, { codigoServico: code }, { commitToState: false, manageBusy: false })) as PreviewResult | null;
-        if (!data) continue;
-        sheetNameOut = String(data.sheetName || sheetNameOut);
-        ufOut = data.uf || ufOut;
-        planilhaId = data.planilhaId ?? planilhaId;
-        planilhaParams = data.planilhaParams ?? planilhaParams;
-        sinapiDetected = data.sinapiDetected ?? sinapiDetected;
-        paramsMatch = data.paramsMatch ?? paramsMatch;
-        paramsStatus = data.paramsStatus ?? paramsStatus;
-        insumosModoOut = data.insumosModo ?? insumosModoOut;
-        parsedComposicoes += Number(data.parsedComposicoes || 0);
-        targetComposicoes += Number(data.targetComposicoes || 0);
-        toImportComposicoes += Number(data.toImportComposicoes || 0);
-        toImportItens += Number(data.toImportItens || 0);
-        skippedExisting += Number(data.skippedExisting || 0);
-        skippedNotInPlanilha += Number(data.skippedNotInPlanilha || 0);
-        const sample = Array.isArray(data.sample) ? data.sample : [];
-        for (const s of sample) mergedSample.push(s);
+      let headerIdx = -1;
+      let rawHeader: any[] = [];
+      for (let i = 0; i < Math.min(160, m.length); i++) {
+        const r = Array.isArray(m[i]) ? m[i] : [];
+        const keys = r.map((c) => normalizeHeader(String(c || ""))).filter(Boolean);
+        if (keys.length < 6) continue;
+        const hasComp = keys.some((k) => k.includes("codigo") && k.includes("compos"));
+        const hasCodItem = keys.some((k) => k.includes("codigo") && k.includes("item"));
+        const hasCoef = keys.some((k) => k.includes("coef"));
+        if (hasComp && hasCodItem && hasCoef) {
+          headerIdx = i;
+          rawHeader = r;
+          break;
+        }
+      }
+      if (headerIdx < 0) throw new Error("Não foi possível localizar o cabeçalho da aba Analítico.");
+      const headersNorm = rawHeader.map((h) => normalizeHeader(String(h || "")));
+      const findCol = (cands: string[]) => {
+        for (const c of cands) {
+          const idx = headersNorm.findIndex((h) => h === c);
+          if (idx >= 0) return idx;
+        }
+        for (const c of cands) {
+          const idx = headersNorm.findIndex((h) => h.includes(c));
+          if (idx >= 0) return idx;
+        }
+        return -1;
+      };
+      const iCodigoComp = findCol(["codigo_composicao", "codigo_da_composicao", "codigo_composicao_sinapi"]);
+      const iTipo = findCol(["tipo_item", "tipo"]);
+      const iCodigoItem = findCol(["codigo_item", "codigo_do_item", "codigo"]);
+      const iDescItem = findCol(["descricao_item", "descricao_do_item", "descricao"]);
+      const iUndItem = findCol(["unidade", "und", "unid"]);
+      const iCoef = findCol(["coeficiente", "coef"]);
+      const iDescComp = findCol(["descricao_da_composicao", "descricao_composicao", "desc_composicao", "descricao_compos"]);
+      const iUndComp = findCol(["unidade_da_composicao", "unidade_composicao", "und_composicao", "unidade_compos", "und_compos"]);
+
+      const termoNorm = normalizeLooseText(termo);
+      const map = new Map<string, { codigo: string; descricao: string; und: string }>();
+      for (let i = headerIdx + 1; i < m.length; i++) {
+        const r = Array.isArray(m[i]) ? m[i] : [];
+        const comp = iCodigoComp >= 0 ? String(r[iCodigoComp] || "").trim().toUpperCase() : "";
+        if (!comp) continue;
+        const codigoItem = iCodigoItem >= 0 ? String(r[iCodigoItem] || "").trim().toUpperCase() : "";
+        const coef = iCoef >= 0 ? parseNumberLoose(r[iCoef]) : null;
+        const tipoRaw = iTipo >= 0 ? String(r[iTipo] || "").trim() : "";
+        const isHeaderRow = !codigoItem && coef == null && !tipoRaw;
+        const desc = (iDescComp >= 0 ? String(r[iDescComp] || "").trim() : "") || (iDescItem >= 0 ? String(r[iDescItem] || "").trim() : "");
+        const und = (iUndComp >= 0 ? String(r[iUndComp] || "").trim() : "") || (iUndItem >= 0 ? String(r[iUndItem] || "").trim() : "");
+        const prev = map.get(comp);
+        if (!prev) {
+          map.set(comp, { codigo: comp, descricao: desc || "", und: und || "" });
+          continue;
+        }
+        if (isHeaderRow) {
+          map.set(comp, { codigo: comp, descricao: desc || prev.descricao, und: und || prev.und });
+        }
       }
 
-      const merged: PreviewResult = {
-        sheetName: sheetNameOut,
-        uf: ufOut,
-        planilhaId,
-        planilhaParams,
-        sinapiDetected,
+      const matches = Array.from(map.values())
+        .filter((s) => s.codigo && normalizeLooseText(s.descricao).includes(termoNorm))
+        .sort((a, b) => a.codigo.localeCompare(b.codigo));
+
+      if (!matches.length) throw new Error(`Nenhum serviço encontrado contendo: "${termo}".`);
+
+      const limit = 80;
+      const limited = matches.slice(0, limit);
+
+      const planDb = String(planilhaDataBaseSinapi || "").trim();
+      const importDb = String(dataBaseImport || "").trim();
+      const paramsMatch = planDb && importDb ? planDb === importDb : null;
+      const paramsStatus: PreviewResult["paramsStatus"] = paramsMatch === true ? "MATCH" : paramsMatch === false ? "MISMATCH" : "UNKNOWN";
+
+      const fakePreview: PreviewResult = {
+        sheetName: String(sheetName || "").trim() || "Analítico",
+        uf: String(uf || "").trim().toUpperCase() || null,
+        planilhaId: planilhaCallerInfo?.idPlanilha != null ? Number(planilhaCallerInfo.idPlanilha) : null,
+        planilhaParams: null,
+        sinapiDetected: { dataBase: importDb || null },
         paramsMatch,
         paramsStatus,
-        insumosModo: insumosModoOut,
-        parsedComposicoes,
-        targetComposicoes,
-        toImportComposicoes,
-        toImportItens,
-        skippedExisting,
-        skippedNotInPlanilha,
-        sample: mergedSample,
+        insumosModo,
+        parsedComposicoes: limited.length,
+        targetComposicoes: 0,
+        toImportComposicoes: 0,
+        toImportItens: 0,
+        skippedExisting: 0,
+        skippedNotInPlanilha: 0,
+        sample: limited.map((s) => ({ codigo: s.codigo, descricao: s.descricao || null, und: s.und || null, valorSemBdi: null, itens: [] })),
       };
 
-      setPreview(merged);
-      setPreviewItensLocal([]);
-      setPreviewCompLocal(null);
-      setPreviewSelectedCodigo(codes[0]);
-      setPreviewSelectedCodigos(codes);
-      setPageOkMsg("Prévia gerada.");
+      setPreview(fakePreview);
+      setPreviewGeradaPorContem(true);
+      setPreviewSelectedCodigo(limited[0].codigo);
+      setPreviewSelectedCodigos(limited.map((s) => s.codigo));
       setImportOpen(false);
       setPreviewOpen(true);
+      setPageOkMsg(
+        matches.length > limit
+          ? `Prévia gerada: ${matches.length} serviços encontrados contendo "${termo}" (mostrando os primeiros ${limit}).`
+          : `Prévia gerada: ${matches.length} serviços encontrados contendo "${termo}".`
+      );
     } catch (e: any) {
       setErr(String(e?.message || "Erro ao gerar prévia"));
+      setPreviewGeradaPorContem(false);
     } finally {
       setBusy(false);
     }
@@ -2419,14 +2621,59 @@ export default function SinapiImportPage() {
                       </label>
                       {opcao === "SERVICO" ? (
                         <div className="mt-1">
-                          <div className="text-xs text-slate-500">Código do serviço</div>
-                          <input
-                            className="input bg-white mt-1"
-                            value={codigoServico}
-                            onChange={(e) => setCodigoServico(e.target.value)}
-                            disabled={busy}
-                            placeholder="Ex: 95393 ou 95393,10052,25645"
-                          />
+                          <div className="text-xs text-slate-500">Buscar por</div>
+                          <div className="mt-1 flex items-center gap-3 flex-wrap text-sm">
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                name="servicoBuscaModo"
+                                checked={servicoBuscaModo === "CODIGO"}
+                                onChange={() => {
+                                  setServicoBuscaModo("CODIGO");
+                                  setDescricaoServicoContem("");
+                                }}
+                                disabled={busy}
+                              />
+                              <span>Código do serviço</span>
+                            </label>
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                name="servicoBuscaModo"
+                                checked={servicoBuscaModo === "CONTEM"}
+                                onChange={() => {
+                                  setServicoBuscaModo("CONTEM");
+                                  setCodigoServico("");
+                                }}
+                                disabled={busy}
+                              />
+                              <span>Descrição contém</span>
+                            </label>
+                          </div>
+
+                          {servicoBuscaModo === "CODIGO" ? (
+                            <div className="mt-2">
+                              <div className="text-xs text-slate-500">Código do serviço</div>
+                              <input
+                                className="input bg-white mt-1"
+                                value={codigoServico}
+                                onChange={(e) => setCodigoServico(e.target.value)}
+                                disabled={busy}
+                                placeholder="Ex: 95393 ou 95393,10052,25645"
+                              />
+                            </div>
+                          ) : (
+                            <div className="mt-2">
+                              <div className="text-xs text-slate-500">Descrição contém</div>
+                              <input
+                                className="input bg-white mt-1"
+                                value={descricaoServicoContem}
+                                onChange={(e) => setDescricaoServicoContem(e.target.value)}
+                                disabled={busy}
+                                placeholder='Ex: Alvenaria'
+                              />
+                            </div>
+                          )}
                         </div>
                       ) : null}
                       <label className="flex items-center gap-2 text-sm">
@@ -2543,6 +2790,8 @@ export default function SinapiImportPage() {
                   setPreviewCompLocal(null);
                   setPreviewSelectedCodigo("");
                   setPreviewSelectedCodigos([]);
+                  setPreviewGeradaPorContem(false);
+                  setPreviewItensLoadingCodigo("");
                   setImported(null);
                   setOkMsg("");
                   setErr("");
@@ -2571,6 +2820,8 @@ export default function SinapiImportPage() {
                       setPreviewCompLocal(null);
                       setPreviewSelectedCodigo("");
                       setPreviewSelectedCodigos([]);
+                      setPreviewGeradaPorContem(false);
+                      setPreviewItensLoadingCodigo("");
                       setImported(null);
                       setOkMsg("");
                       setErr("");
