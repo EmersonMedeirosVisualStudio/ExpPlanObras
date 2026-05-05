@@ -4,7 +4,7 @@ import prisma from '../../plugins/prisma.js';
 import { authenticate } from '../../utils/authenticate.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import fs from 'fs/promises';
 import { normalizeEmail, onlyDigits } from '../../utils/validators.js';
 import { loadSubjectContext } from '../security-fields/service.js';
@@ -6713,28 +6713,76 @@ export default async function v1Routes(server: FastifyInstance) {
       }
     }
 
-    let wb: XLSX.WorkBook;
+    const wb = new ExcelJS.Workbook();
     try {
-      wb = XLSX.read(fileBuffer, { type: 'buffer', cellDates: false });
+      await wb.xlsx.load(fileBuffer);
     } catch {
       return fail(reply, 422, 'Arquivo XLSX inválido ou corrompido.');
     }
 
-    const sheet = wb.Sheets[sheetName] || wb.Sheets[String(sheetName || '').trim()] || null;
-    if (!sheet) {
-      const names = (wb.SheetNames || []).slice(0, 30).join(', ');
+    const sheetNames = (wb.worksheets || []).map((s) => String(s.name || '')).filter(Boolean);
+    const getSheetByName = (name: string) => {
+      const n = String(name || '').trim();
+      if (!n) return null;
+      const ws = wb.getWorksheet(n);
+      if (ws) return ws;
+      const hit = (wb.worksheets || []).find((w) => String(w.name || '').trim() === n);
+      return hit || null;
+    };
+
+    const toMonthYear = (d: Date) => {
+      const m = d.getMonth() + 1;
+      const mm = m < 10 ? `0${m}` : String(m);
+      return `${mm}/${d.getFullYear()}`;
+    };
+
+    const cellToPlain = (v: any) => {
+      if (v == null) return '';
+      if (v instanceof Date) return toMonthYear(v);
+      if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'string') return v;
+      if (typeof v === 'object') {
+        const anyV = v as any;
+        if (typeof anyV.text === 'string') return anyV.text;
+        if (Array.isArray(anyV.richText)) return anyV.richText.map((t: any) => String(t?.text || '')).join('');
+        if (anyV.formula != null) return anyV.result != null ? anyV.result : '';
+        if (anyV.sharedFormula != null) return anyV.result != null ? anyV.result : '';
+        if (anyV.hyperlink != null && anyV.text != null) return anyV.text;
+        if (anyV.result != null) return anyV.result;
+      }
+      return String(v);
+    };
+
+    const worksheetToMatrix = (ws: ExcelJS.Worksheet) => {
+      const rowCount = Math.max(0, Number(ws.actualRowCount || 0));
+      const colCount = Math.max(0, Number(ws.actualColumnCount || 0));
+      const out: any[][] = [];
+      for (let r = 1; r <= rowCount; r++) {
+        const row = ws.getRow(r);
+        const values = Array.isArray(row.values) ? (row.values as any[]) : [];
+        const rowOut: any[] = [];
+        for (let c = 1; c <= colCount; c++) {
+          rowOut.push(cellToPlain(values[c]));
+        }
+        out.push(rowOut);
+      }
+      return out;
+    };
+
+    const sheetWs = getSheetByName(sheetName);
+    if (!sheetWs) {
+      const names = sheetNames.slice(0, 30).join(', ');
       return fail(reply, 422, `Aba não encontrada: "${sheetName}". Abas disponíveis: ${names || '—'}`);
     }
 
     const detectDataBase = () => {
       const rx = /\b(0[1-9]|1[0-2])\/\d{4}\b/;
-      const names = (wb.SheetNames || []).slice(0, 8);
+      const names = sheetNames.slice(0, 8);
       for (const n of names) {
-        const s = wb.Sheets[n];
-        if (!s) continue;
-        const m = XLSX.utils.sheet_to_json(s, { header: 1, defval: '' }) as any[][];
+        const ws = getSheetByName(n);
+        if (!ws) continue;
+        const m = worksheetToMatrix(ws);
         for (let i = 0; i < Math.min(30, m.length); i++) {
-          const line = (m[i] || []).map((c) => String(c || '')).join(' ');
+          const line = (m[i] || []).map((c) => String(c ?? '')).join(' ');
           const hit = line.match(rx);
           if (hit?.[0]) return hit[0];
         }
@@ -6749,7 +6797,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const requestedPlanilhaId = requestedPlanilhaIdRaw == null ? null : Number(requestedPlanilhaIdRaw);
 
     const normalizeSheetName = (n: string) => normalizeHeader(String(n || ''));
-    const allSheets = (wb.SheetNames || []).map((n) => ({ name: n, key: normalizeSheetName(n) }));
+    const allSheets = (sheetNames || []).map((n) => ({ name: n, key: normalizeSheetName(n) }));
     const pickInsumosSheetName = () => {
       const isPreco = (k: string) => (k.includes('preco') || k.includes('precos')) && (k.includes('insumo') || k.includes('insumos'));
       const hasToken = (k: string, token: string) => k === token || k.startsWith(`${token}_`) || k.endsWith(`_${token}`) || k.includes(`_${token}_`);
@@ -6789,10 +6837,10 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const insumosSheetNameInput = String(fields.insumosSheetName || fields.abaInsumos || '').trim();
     const insumosSheetName = insumosSheetNameInput || pickInsumosSheetName();
-    const insumosSheet = insumosSheetName ? wb.Sheets[insumosSheetName] : null;
+    const insumosSheet = insumosSheetName ? getSheetByName(insumosSheetName) : null;
     if (!insumosSheet) {
       if (insumosSheetNameInput) {
-        const names = (wb.SheetNames || []).slice(0, 30).join(', ');
+        const names = sheetNames.slice(0, 30).join(', ');
         return fail(reply, 422, `Aba de insumos não encontrada: "${insumosSheetNameInput}". Abas disponíveis: ${names || '—'}`);
       }
       const sugestoes = allSheets
@@ -6801,12 +6849,12 @@ export default async function v1Routes(server: FastifyInstance) {
         .map((s) => String(s.name || ''))
         .filter(Boolean)
         .join(', ');
-      const names = (wb.SheetNames || []).slice(0, 30).join(', ');
+      const names = sheetNames.slice(0, 30).join(', ');
       return fail(reply, 422, `Não foi possível localizar a aba de preços de insumos para ${insumosModo}. Sugestões: ${sugestoes || '—'}. Abas disponíveis: ${names || '—'}.`);
     }
 
     const parseInsumos = () => {
-      const m = XLSX.utils.sheet_to_json(insumosSheet, { header: 1, defval: '' }) as any[][];
+      const m = worksheetToMatrix(insumosSheet);
       if (!Array.isArray(m) || m.length < 2) return new Map<string, { classificacao: string; descricao: string; und: string; preco: number | null }>();
       const ufLower = uf.toLowerCase();
       let headerIdx = -1;
@@ -6875,7 +6923,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const insumosMap = parseInsumos();
     if (!insumosMap.size) return fail(reply, 422, `Não foi possível ler os preços do UF ${uf} na aba de insumos (${insumosSheetName}).`);
 
-    const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }) as any[][];
+    const matrix = worksheetToMatrix(sheetWs);
     if (!Array.isArray(matrix) || matrix.length < 2) return fail(reply, 422, 'Aba vazia.');
 
     let headerRowIdx = -1;
