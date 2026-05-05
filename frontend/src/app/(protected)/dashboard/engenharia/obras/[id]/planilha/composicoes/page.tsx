@@ -27,11 +27,23 @@ export default function Page() {
 
   const idObra = useMemo(() => Number((params as any)?.id || 0), [params]);
   const returnTo = search.get("returnTo");
+  const planilhaIdParam = search.get("planilhaId");
+  const planilhaIdFromQuery = useMemo(() => {
+    const n = Number(planilhaIdParam || 0);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [planilhaIdParam]);
   const safeReturnTo = useMemo(() => {
     const raw = String(returnTo || "").trim();
     const isExternal = raw.startsWith("//") || /^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(raw) || /^[a-z][a-z0-9+.-]*:/i.test(raw);
     return raw && !isExternal ? raw : null;
   }, [returnTo]);
+  const backHref = useMemo(() => safeReturnTo || `/dashboard/engenharia/obras/${idObra}/planilha`, [idObra, safeReturnTo]);
+  const selfHref = useMemo(() => {
+    const qs = new URLSearchParams();
+    if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
+    qs.set("returnTo", backHref);
+    return `/dashboard/engenharia/obras/${idObra}/planilha/composicoes?${qs.toString()}`;
+  }, [backHref, idObra, planilhaIdFromQuery]);
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -67,8 +79,10 @@ export default function Page() {
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar versões");
       const versoes = Array.isArray(json.data?.versoes) ? json.data.versoes : [];
+      const byQuery = planilhaIdFromQuery != null ? versoes.find((v: any) => Number(v?.idPlanilha || 0) === Number(planilhaIdFromQuery)) : null;
       const atual = versoes.find((v: any) => Boolean(v.atual)) || versoes[0] || null;
-      const pid = atual?.idPlanilha != null ? Number(atual.idPlanilha) : null;
+      const pick = byQuery || atual || null;
+      const pid = pick?.idPlanilha != null ? Number(pick.idPlanilha) : null;
       setPlanilhaId(pid);
       return pid;
     } catch (e: any) {
@@ -104,7 +118,9 @@ export default function Page() {
 
   async function carregarReferencias() {
     try {
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/referencias`);
+      const qs = new URLSearchParams();
+      if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/referencias?${qs.toString()}`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar referências");
       const list = Array.isArray(json.data?.referencias) ? (json.data.referencias as any[]) : [];
@@ -165,7 +181,9 @@ export default function Page() {
       setErr(null);
       const form = new FormData();
       form.append("file", file);
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/importar-csv`, { method: "POST", body: form });
+      const qs = new URLSearchParams();
+      if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/importar-csv?${qs.toString()}`, { method: "POST", body: form });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao importar composições (CSV)");
       await carregarTudo();
@@ -189,7 +207,12 @@ export default function Page() {
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha?returnTo=${encodeURIComponent(safeReturnTo || "")}`)}
+            onClick={() => {
+              const qs = new URLSearchParams();
+              if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
+              qs.set("returnTo", selfHref);
+              router.push(`/dashboard/engenharia/obras/${idObra}/planilha?${qs.toString()}`);
+            }}
             disabled={loading}
           >
             Planilha
@@ -197,7 +220,7 @@ export default function Page() {
           <button
             className="rounded-lg border bg-blue-600 px-4 py-2 text-sm text-white border-blue-600 hover:bg-blue-500 disabled:opacity-60"
             type="button"
-            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(safeReturnTo || "")}`)}
+            onClick={() => router.push(selfHref)}
             disabled={loading}
           >
             Composições
@@ -205,7 +228,15 @@ export default function Page() {
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(safeReturnTo || "")}`)}
+            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/sinapi?returnTo=${encodeURIComponent(selfHref)}`)}
+            disabled={loading}
+          >
+            SINAPI
+          </button>
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(selfHref)}`)}
             disabled={loading}
           >
             Insumos
@@ -213,7 +244,7 @@ export default function Page() {
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() => router.push(safeReturnTo || `/dashboard/engenharia/obras/${idObra}/planilha`)}
+            onClick={() => router.push(backHref)}
             disabled={loading}
           >
             Voltar
@@ -310,13 +341,12 @@ export default function Page() {
                     <button
                       className="rounded border bg-white px-3 py-1.5 text-xs hover:bg-slate-50"
                       type="button"
-                      onClick={() =>
-                        router.push(
-                          `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(r.codigoServico)}?returnTo=${encodeURIComponent(
-                            `/dashboard/engenharia/obras/${idObra}/planilha/composicoes`
-                          )}`
-                        )
-                      }
+                      onClick={() => {
+                        const qs = new URLSearchParams();
+                        if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
+                        qs.set("returnTo", selfHref);
+                        router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(r.codigoServico)}?${qs.toString()}`);
+                      }}
                     >
                       Abrir
                     </button>
@@ -367,13 +397,12 @@ export default function Page() {
                     <button
                       className="rounded border bg-white px-3 py-1.5 text-xs hover:bg-slate-50"
                       type="button"
-                      onClick={() =>
-                        router.push(
-                          `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(r.codigo)}?returnTo=${encodeURIComponent(
-                            `/dashboard/engenharia/obras/${idObra}/planilha/composicoes`
-                          )}`
-                        )
-                      }
+                      onClick={() => {
+                        const qs = new URLSearchParams();
+                        if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
+                        qs.set("returnTo", selfHref);
+                        router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(r.codigo)}?${qs.toString()}`);
+                      }}
                     >
                       Abrir
                     </button>

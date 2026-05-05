@@ -74,6 +74,8 @@ type ApplyBaseResult = {
   skippedExisting: boolean;
 };
 
+type ApplyRow = { codigo: string; dataBase: string; uf: string; insumosModo: string };
+
 type ObraListaRow = { idObra: number; nomeObra: string; numeroContrato: string | null };
 type ObraContratoInfo = { idObra: number; nomeObra: string; idContrato: number | null; numeroContrato: string; objeto: string | null };
 
@@ -318,6 +320,9 @@ export default function SinapiImportPage() {
   const [previewOpen, setPreviewOpen] = useState<boolean>(false);
   const [previewGeradaPorContem, setPreviewGeradaPorContem] = useState<boolean>(false);
   const [previewItensLoadingCodigo, setPreviewItensLoadingCodigo] = useState<string>("");
+  const [applyConfirmOpen, setApplyConfirmOpen] = useState<boolean>(false);
+  const [applyConfirmRows, setApplyConfirmRows] = useState<ApplyRow[]>([]);
+  const [applyConfirmApplyInsumoPrices, setApplyConfirmApplyInsumoPrices] = useState<boolean>(false);
 
   async function idbOpen() {
     return await new Promise<IDBDatabase>((resolve, reject) => {
@@ -736,6 +741,15 @@ export default function SinapiImportPage() {
     } catch {}
     return `/dashboard/engenharia/obras/${idObra}/planilha`;
   }, [idObra, returnTo, returnToKey]);
+
+  const selfHref = useMemo(() => {
+    const qs = new URLSearchParams();
+    const href = String(backHref || "").trim();
+    if (planilhaIdCaller) qs.set("planilhaId", String(planilhaIdCaller));
+    if (href) qs.set("returnTo", href);
+    const tail = qs.toString();
+    return `/dashboard/engenharia/obras/${idObra}/planilha/sinapi${tail ? `?${tail}` : ""}`;
+  }, [backHref, idObra, planilhaIdCaller]);
 
   const importPrefsKey = useMemo(() => `expplanobras:sinapi:importPrefs`, []);
   useEffect(() => {
@@ -1165,6 +1179,7 @@ export default function SinapiImportPage() {
             uf: String(uf || "").trim().toUpperCase(),
             insumosModo,
             codigoServico: computedCodigoServico,
+            planilhaId: planilhaIdCaller ? planilhaIdCaller : undefined,
             sinapiDataBase: String(dataBaseImport || "").trim() || undefined,
             banco: "SINAPI",
             targetObraId: Number.isFinite(targetObraId) && targetObraId > 0 ? targetObraId : undefined,
@@ -1209,6 +1224,7 @@ export default function SinapiImportPage() {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("sheetName", sheetName.trim() || "Analítico");
+      if (planilhaIdCaller) fd.append("planilhaId", String(planilhaIdCaller));
       if (dataBaseImport.trim()) fd.append("sinapiDataBase", dataBaseImport.trim());
       if (uf.trim()) fd.append("uf", uf.trim().toUpperCase());
       fd.append("insumosModo", insumosModo);
@@ -1619,10 +1635,11 @@ export default function SinapiImportPage() {
 
   async function doAplicarDaBase(
     row: { codigo: string; dataBase: string; uf: string; insumosModo: string },
-    opts?: { commitToState?: boolean; manageBusy?: boolean }
+    opts?: { commitToState?: boolean; manageBusy?: boolean; applyInsumoPricesFromSinapi?: boolean }
   ): Promise<ApplyBaseResult> {
     const commitToState = opts?.commitToState !== false;
     const manageBusy = opts?.manageBusy !== false;
+    const applyInsumoPricesFromSinapi = Boolean(opts?.applyInsumoPricesFromSinapi);
     if (!Number.isFinite(idObra) || idObra <= 0) {
       if (commitToState) {
         setPageErr("Obra inválida.");
@@ -1657,9 +1674,11 @@ export default function SinapiImportPage() {
           dataBase: String(row.dataBase || "").trim(),
           uf: String(row.uf || "").trim().toUpperCase(),
           insumosModo: String(row.insumosModo || "").trim().toUpperCase(),
+          planilhaId: planilhaIdCaller ? planilhaIdCaller : undefined,
           targetObraId: Number.isFinite(targetObraId) && targetObraId > 0 ? targetObraId : undefined,
           mode: applySubstituirExistente ? "UPSERT" : "MISSING_ONLY",
           forceDataBaseMismatch,
+          applyInsumoPricesFromSinapi,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -1675,25 +1694,45 @@ export default function SinapiImportPage() {
     }
   }
 
-  async function aplicarDaBase(row: { codigo: string; dataBase: string; uf: string; insumosModo: string }) {
-    try {
-      await doAplicarDaBase(row, { commitToState: true, manageBusy: true });
-    } catch (e: any) {
-      setPageErr(String(e?.message || "Erro ao aplicar composição"));
-    }
-  }
-
-  async function aplicarSelecionados() {
-    const rows = importadosSelectedRows;
-    if (!rows.length) {
-      setPageErr("Selecione um ou mais serviços para aplicar.");
+  function pedirConfirmacaoAplicar(rows: ApplyRow[]) {
+    if (busy) return;
+    const normalized = (Array.isArray(rows) ? rows : [])
+      .map((r) => ({
+        codigo: String(r?.codigo || "").trim().toUpperCase(),
+        dataBase: String(r?.dataBase || "").trim(),
+        uf: String(r?.uf || "").trim().toUpperCase(),
+        insumosModo: String(r?.insumosModo || "").trim().toUpperCase(),
+      }))
+      .filter((r) => r.codigo && r.dataBase && r.uf && r.insumosModo) as ApplyRow[];
+    if (!normalized.length) {
+      setPageErr("Selecione um ou mais serviços válidos para aplicar.");
       return;
     }
+    setApplyConfirmRows(normalized);
+    setApplyConfirmApplyInsumoPrices(false);
+    setApplyConfirmOpen(true);
+  }
+
+  async function confirmarAplicacao() {
+    const rows = applyConfirmRows;
+    const applyPrices = Boolean(applyConfirmApplyInsumoPrices);
+    setApplyConfirmOpen(false);
     setPageErr("");
     setPageOkMsg("");
     setPreview(null);
     setImported(null);
     setAppliedBase(null);
+    if (!rows.length) return;
+
+    if (rows.length === 1) {
+      try {
+        await doAplicarDaBase(rows[0], { commitToState: true, manageBusy: true, applyInsumoPricesFromSinapi: applyPrices });
+      } catch (e: any) {
+        setPageErr(String(e?.message || "Erro ao aplicar composição"));
+      }
+      return;
+    }
+
     setBusy(true);
     try {
       let importedItens = 0;
@@ -1701,10 +1740,7 @@ export default function SinapiImportPage() {
       let done = 0;
       for (const r of rows) {
         setPageOkMsg(`Aplicando ${done + 1}/${rows.length}…`);
-        const data = await doAplicarDaBase(
-          { codigo: r.codigo, dataBase: r.dataBase, uf: r.uf, insumosModo: r.insumosModo },
-          { commitToState: false, manageBusy: false }
-        );
+        const data = await doAplicarDaBase(r, { commitToState: false, manageBusy: false, applyInsumoPricesFromSinapi: applyPrices });
         importedItens += Number(data.importedItens || 0);
         if (data.skippedExisting) skipped += 1;
         done += 1;
@@ -1717,6 +1753,19 @@ export default function SinapiImportPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function aplicarDaBase(row: ApplyRow) {
+    pedirConfirmacaoAplicar([row]);
+  }
+
+  function aplicarSelecionados() {
+    const rows = importadosSelectedRows.map((r) => ({ codigo: r.codigo, dataBase: r.dataBase, uf: r.uf, insumosModo: r.insumosModo }));
+    if (!rows.length) {
+      setPageErr("Selecione um ou mais serviços para aplicar.");
+      return;
+    }
+    pedirConfirmacaoAplicar(rows);
   }
 
   async function excluirDaBase(row: { codigo: string; dataBase: string; uf: string; insumosModo: string }) {
@@ -1960,6 +2009,55 @@ export default function SinapiImportPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => {
+              const href = String(backHref || "").trim();
+              const isExternal = href.startsWith("//") || /^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(href) || /^[a-z][a-z0-9+.-]*:/i.test(href);
+              if (isExternal) return router.push(`/dashboard/engenharia/obras/${idObra}/planilha`);
+              if (!href) return router.push(`/dashboard/engenharia/obras/${idObra}/planilha`);
+              router.push(href);
+            }}
+            disabled={busy}
+          >
+            Planilha
+          </button>
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => {
+              const qs = new URLSearchParams();
+              if (planilhaIdCaller) qs.set("planilhaId", String(planilhaIdCaller));
+              qs.set("returnTo", selfHref);
+              router.push(`/dashboard/engenharia/obras/${idObra}/planilha/composicoes?${qs.toString()}`);
+            }}
+            disabled={busy}
+          >
+            Composições
+          </button>
+          <button
+            className="rounded-lg border bg-blue-600 px-4 py-2 text-sm text-white border-blue-600 hover:bg-blue-500 disabled:opacity-60"
+            type="button"
+            onClick={() => router.push(selfHref)}
+            disabled={busy}
+            title="Importar composições do SINAPI (Excel)"
+          >
+            SINAPI
+          </button>
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => {
+              const qs = new URLSearchParams();
+              if (planilhaIdCaller) qs.set("planilhaId", String(planilhaIdCaller));
+              qs.set("returnTo", selfHref);
+              router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?${qs.toString()}`);
+            }}
+            disabled={busy}
+          >
+            Insumos
+          </button>
           <button
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
             type="button"
@@ -2563,6 +2661,69 @@ export default function SinapiImportPage() {
             </div>
           </div>
         </section>
+      ) : null}
+
+      {applyConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-auto">
+          <div className="w-full max-w-2xl rounded-xl border bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-3 border-b p-4">
+              <div className="text-lg font-semibold">Aplicar na obra</div>
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                type="button"
+                onClick={() => setApplyConfirmOpen(false)}
+                disabled={busy}
+              >
+                Fechar
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="text-sm text-slate-700">
+                Você está aplicando {applyConfirmRows.length === 1 ? "1 serviço" : `${applyConfirmRows.length} serviços`} na obra.
+              </div>
+              {applyConfirmRows.length === 1 ? (
+                <div className="text-sm text-slate-700">
+                  <span className="font-medium">{applyConfirmRows[0]?.codigo}</span> • {applyConfirmRows[0]?.dataBase} • {applyConfirmRows[0]?.uf} •{" "}
+                  {applyConfirmRows[0]?.insumosModo}
+                </div>
+              ) : null}
+              <label className="flex items-start gap-3 rounded-lg border bg-slate-50 p-3">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={applyConfirmApplyInsumoPrices}
+                  onChange={(e) => setApplyConfirmApplyInsumoPrices(Boolean(e.target.checked))}
+                  disabled={busy}
+                />
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-slate-900">Aplicar também os preços dos insumos (SINAPI)</div>
+                  <div className="text-xs text-slate-600">
+                    Se marcado, o sistema atualiza o preço único do insumo (por código) na obra usando esta data-base e este modo (ISD/ICD/ISE). Isso recalcula
+                    todas as composições da obra que usam esses insumos e altera o valor total da planilha.
+                  </div>
+                </div>
+              </label>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={() => setApplyConfirmOpen(false)}
+                  disabled={busy}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                  type="button"
+                  onClick={confirmarAplicacao}
+                  disabled={busy}
+                >
+                  Aplicar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {importOpen ? (

@@ -17,5 +17,9 @@ export default function PlanilhaObraPage() {
   const sp = useSearchParams();
   const idObra = Number(params?.id || 0);
   const returnTo = useMemo(() => safeInternalPath(sp?.get("returnTo") || null), [sp]);
-  return <PlanilhaObraClient idObra={idObra} returnTo={returnTo} />;
+  const planilhaId = useMemo(() => {
+    const n = Number(sp?.get("planilhaId") || 0);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [sp]);
+  return <PlanilhaObraClient idObra={idObra} returnTo={returnTo} initialPlanilhaId={planilhaId} />;
 }

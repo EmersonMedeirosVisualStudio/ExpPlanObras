@@ -226,7 +226,15 @@ function getUserPrefKey() {
   return "exp:planilha:prefs";
 }
 
-export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: number; returnTo: string | null }) {
+export default function PlanilhaObraClient({
+  idObra,
+  returnTo,
+  initialPlanilhaId,
+}: {
+  idObra: number;
+  returnTo: string | null;
+  initialPlanilhaId: number | null;
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -236,7 +244,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   const [empresaDocumentosLayout, setEmpresaDocumentosLayout] = useState<EmpresaDocumentosLayout | null>(null);
   const [versoes, setVersoes] = useState<VersaoRow[]>([]);
   const [planilha, setPlanilha] = useState<Planilha | null>(null);
-  const [planilhaId, setPlanilhaId] = useState<number | null>(null);
+  const [planilhaId, setPlanilhaId] = useState<number | null>(initialPlanilhaId);
   const [showPrintConfig, setShowPrintConfig] = useState(false);
 
   const safeReturnTo = useMemo(() => {
@@ -244,6 +252,21 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     const isExternal = raw.startsWith("//") || /^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(raw) || /^[a-z][a-z0-9+.-]*:/i.test(raw);
     return raw && !isExternal ? raw : null;
   }, [returnTo]);
+
+  const effectivePlanilhaId = useMemo(() => {
+    if (planilhaId != null && Number.isFinite(Number(planilhaId)) && Number(planilhaId) > 0) return Number(planilhaId);
+    const p = planilha?.idPlanilha != null ? Number(planilha.idPlanilha) : 0;
+    if (Number.isFinite(p) && p > 0) return p;
+    return null;
+  }, [planilha?.idPlanilha, planilhaId]);
+
+  const selfHref = useMemo(() => {
+    const qs = new URLSearchParams();
+    if (effectivePlanilhaId) qs.set("planilhaId", String(effectivePlanilhaId));
+    if (safeReturnTo) qs.set("returnTo", safeReturnTo);
+    const tail = qs.toString();
+    return `/dashboard/engenharia/obras/${idObra}/planilha${tail ? `?${tail}` : ""}`;
+  }, [effectivePlanilhaId, idObra, safeReturnTo]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importPreview, setImportPreview] = useState<{
@@ -308,6 +331,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   });
 
   const [editingLinhaId, setEditingLinhaId] = useState<number | null>(null);
+  const editSnapshotRef = useRef<{ editingLinhaId: number | null; novo: typeof novo } | null>(null);
 
   const [composicaoServicoCodes, setComposicaoServicoCodes] = useState<Set<string>>(new Set());
   const [composicaoValidacaoByCodigo, setComposicaoValidacaoByCodigo] = useState<Record<string, ComposicaoValidacaoRow>>({});
@@ -457,6 +481,45 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       },
       cache: "no-store",
     });
+  }
+
+  function resetLinhaForm() {
+    setEditingLinhaId(null);
+    setNovo({ tipoLinha: "SERVICO", ordem: "", item: "", codigo: "", fonte: "", servicos: "", und: "", quant: "", valorUnitario: "", valorParcial: "" });
+    setLinhaErrors({});
+    setOkMsg(null);
+    editSnapshotRef.current = null;
+  }
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      const hasTyped = Object.values(novo).some((v) => String(v || "").trim());
+      if (!editingLinhaId && !hasTyped) return;
+      e.preventDefault();
+      resetLinhaForm();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [editingLinhaId, novo]);
+
+  async function obterPrecoUnitarioServico(codigoServicoRaw: string, planilhaIdForQuery?: number | null) {
+    const codigoServico = String(codigoServicoRaw || "").trim().toUpperCase();
+    const pid =
+      planilhaIdForQuery != null && Number.isFinite(planilhaIdForQuery) && planilhaIdForQuery > 0
+        ? planilhaIdForQuery
+        : planilha?.idPlanilha != null
+          ? Number(planilha.idPlanilha)
+          : 0;
+    if (!pid || !codigoServico) return null;
+    const res = await authFetch(
+      `/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/preco-unitario?planilhaId=${encodeURIComponent(String(pid))}`
+    );
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.success) return null;
+    const v = json.data?.valorUnitario;
+    const has = Boolean(json.data?.hasComposicao);
+    return { valorUnitario: Number(v || 0), hasComposicao: has };
   }
 
   function baixarModeloCsv() {
@@ -859,9 +922,11 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
     }
   }
 
-  async function carregarComposicaoStatus() {
+  async function carregarComposicaoStatus(pid?: number | null) {
     try {
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/status`);
+      const planilhaIdQuery = pid != null ? Number(pid) : planilhaId != null ? Number(planilhaId) : 0;
+      const qs = planilhaIdQuery ? `?planilhaId=${planilhaIdQuery}` : "";
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/status${qs}`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) {
         setComposicaoServicoCodes(new Set());
@@ -911,12 +976,12 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
   useEffect(() => {
     if (!idObra) return;
     carregarVersoes();
-    carregarComposicaoStatus();
     carregarEmpresaDocumentosLayout();
   }, [idObra]);
 
   useEffect(() => {
     if (planilhaId) carregarPlanilha(planilhaId);
+    carregarComposicaoStatus(planilhaId);
     carregarComposicaoValidacao(planilhaId);
   }, [planilhaId]);
 
@@ -1028,9 +1093,9 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       if (!String(next.und || "").trim()) errors.und = "Obrigatório";
       const q = parseNumberLoose(next.quant);
       if (q == null || !(q > 0)) errors.quant = "Inválido";
-      const v = parseNumberLoose(next.valorUnitario);
-      if (v == null || !(v >= 0)) errors.valorUnitario = "Inválido";
-      const vp = calcValorParcialLinha(next.quant, next.valorUnitario);
+      const v = parseNumberLoose(next.valorUnitario) ?? 0;
+      if (!(v >= 0)) errors.valorUnitario = "Inválido";
+      const vp = calcValorParcialLinha(next.quant, String(v));
       if (!vp) errors.valorParcial = "Inválido";
     }
     return errors;
@@ -1043,7 +1108,12 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       setLoading(true);
       setErr(null);
       setLinhaErrors({});
-      const normalized = applyValorParcialAuto({ ...novo });
+      let normalized = applyValorParcialAuto({ ...novo });
+      if (normalized.tipoLinha === "SERVICO") {
+        const info = await obterPrecoUnitarioServico(normalized.codigo, planilha.idPlanilha);
+        const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
+        normalized = applyValorParcialAuto({ ...normalized, valorUnitario: String(vu) });
+      }
       const nextErrors = validateLinha(normalized);
       setLinhaErrors(nextErrors);
       if (Object.keys(nextErrors).length) {
@@ -1075,8 +1145,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao salvar linha");
-      setNovo({ tipoLinha: "SERVICO", ordem: "", item: "", codigo: "", fonte: "", servicos: "", und: "", quant: "", valorUnitario: "", valorParcial: "" });
-      setEditingLinhaId(null);
+      resetLinhaForm();
       await carregarPlanilha(planilha.idPlanilha);
       await carregarVersoes();
       setOkMsg(editingLinhaId ? "Serviço atualizado com sucesso." : "Linha salva com sucesso.");
@@ -1112,8 +1181,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
 
   function iniciarEdicaoLinha(l: any) {
     if (!l) return;
-    setEditingLinhaId(Number(l.idLinha));
-    setNovo({
+    const next = {
       tipoLinha: (l.tipoLinha as any) || "SERVICO",
       ordem: l.ordem == null ? "" : String(l.ordem),
       item: String(l.item || ""),
@@ -1124,12 +1192,42 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
       quant: String(l.quant || ""),
       valorUnitario: String(l.valorUnitario || ""),
       valorParcial: String(l.valorParcial || ""),
-    });
+    };
+    setEditingLinhaId(Number(l.idLinha));
+    setNovo(next);
+    editSnapshotRef.current = { editingLinhaId: Number(l.idLinha), novo: next };
     setLinhaErrors({});
     setOkMsg(null);
     setShowPlanilhaCard(true);
     setShowAdicionarCard(true);
     scrollToRef(adicionarLinhaRef);
+  }
+
+  async function duplicarPlanilhaSelecionada() {
+    const sourcePlanilhaId = effectivePlanilhaId != null ? Number(effectivePlanilhaId) : 0;
+    if (!sourcePlanilhaId) return;
+    if (!window.confirm("Duplicar a planilha selecionada? Isso copia linhas, composições, subcomposições e preços de insumos.")) return;
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const nome = `Versão ${Math.max(0, ...versoes.map((v) => v.numeroVersao)) + 1} (Duplicada)`;
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "DUPLICAR_VERSAO", sourcePlanilhaId, nome }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao duplicar planilha");
+      const idPlanilhaNew = Number(json.data?.idPlanilha || 0);
+      await carregarVersoes();
+      if (idPlanilhaNew) setPlanilhaId(idPlanilhaNew);
+      setOkMsg("Planilha duplicada com sucesso.");
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao duplicar planilha");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function importarCsv(file: File, nomeVersao?: string) {
@@ -1353,9 +1451,9 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            className="rounded-lg border bg-blue-600 px-4 py-2 text-sm text-white border-blue-600 hover:bg-blue-500 disabled:opacity-60"
             type="button"
-            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha?returnTo=${encodeURIComponent(safeReturnTo || "")}`)}
+            onClick={() => router.push(selfHref)}
             disabled={loading}
           >
             Planilha
@@ -1365,9 +1463,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             type="button"
             onClick={() =>
               router.push(
-                `/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(
-                  safeReturnTo || `/dashboard/engenharia/obras/${idObra}`
-                )}`
+                `/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(selfHref)}`
               )
             }
             disabled={loading}
@@ -1379,9 +1475,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             type="button"
             onClick={() =>
               router.push(
-                `/dashboard/engenharia/obras/${idObra}/planilha/sinapi?returnTo=${encodeURIComponent(
-                  safeReturnTo || `/dashboard/engenharia/obras/${idObra}/planilha`
-                )}`
+                `/dashboard/engenharia/obras/${idObra}/planilha/sinapi?returnTo=${encodeURIComponent(selfHref)}`
               )
             }
             disabled={loading}
@@ -1393,9 +1487,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
             onClick={() =>
-              router.push(
-                `/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(safeReturnTo || `/dashboard/engenharia/obras/${idObra}`)}`
-              )
+              router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(selfHref)}`)
             }
             disabled={loading}
           >
@@ -1513,7 +1605,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
               type="button"
               onClick={() => {
                 carregarVersoes();
-                carregarComposicaoStatus();
+                carregarComposicaoStatus(planilhaId);
                 carregarComposicaoValidacao(planilhaId);
               }}
               disabled={loading}
@@ -1556,6 +1648,15 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
               title={!podeEditar ? "Criar nova versão somente na versão atual" : "Nova planilha"}
             >
               Nova planilha
+            </button>
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+              type="button"
+              onClick={duplicarPlanilhaSelecionada}
+              disabled={loading || !podeEditar || !effectivePlanilhaId}
+              title={!effectivePlanilhaId ? "Selecione uma versão para duplicar" : "Duplicar planilha selecionada (inclui composições e insumos)"}
+            >
+              Duplicar planilha
             </button>
           </div>
         </div>
@@ -1617,7 +1718,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                 <div className="text-lg font-semibold">
                   Visualizando: v{planilha.numeroVersao} {planilha.atual ? "(atual)" : "(obsoleta)"}
                 </div>
-                <div className="text-sm text-slate-600">Somente a versão atual pode ser editada, e apenas quando a obra estiver "Não iniciada".</div>
+                <div className="text-sm text-slate-600">Edição por planilha selecionada. No serviço, o valor unitário vem da composição (se não houver composição definida, é 0). Pressione Esc para cancelar uma edição.</div>
               </div>
             </div>
           </section>
@@ -2081,6 +2182,12 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                         return rest;
                       });
                     }}
+                    onBlur={async () => {
+                      if (novo.tipoLinha !== "SERVICO") return;
+                      const info = await obterPrecoUnitarioServico(novo.codigo, planilha?.idPlanilha ?? null);
+                      const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
+                      setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: String(vu) }) : p));
+                    }}
                     disabled={!podeEditar}
                     placeholder="SER-0001"
                   />
@@ -2148,6 +2255,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                     className={`input bg-white ${linhaErrors.valorUnitario ? "border-red-300 bg-red-50" : ""}`}
                     value={novo.valorUnitario}
                     onChange={(e) => {
+                      if (novo.tipoLinha === "SERVICO") return;
                       const v = e.target.value;
                       setNovo((p) => applyValorParcialAuto({ ...p, valorUnitario: v }));
                       setLinhaErrors((p) => {
@@ -2157,6 +2265,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                       });
                     }}
                     onBlur={() => setNovo((p) => applyValorParcialAuto({ ...p }))}
+                    readOnly={novo.tipoLinha === "SERVICO"}
                     disabled={!podeEditar}
                   />
                 </div>
@@ -2178,10 +2287,7 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                         className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-800 disabled:opacity-60"
                         type="button"
                         onClick={() => {
-                          setEditingLinhaId(null);
-                          setNovo({ tipoLinha: "SERVICO", ordem: "", item: "", codigo: "", fonte: "", servicos: "", und: "", quant: "", valorUnitario: "", valorParcial: "" });
-                          setLinhaErrors({});
-                          setOkMsg(null);
+                          resetLinhaForm();
                         }}
                         disabled={loading}
                       >
@@ -2225,8 +2331,11 @@ export default function PlanilhaObraClient({ idObra, returnTo }: { idObra: numbe
                         if (l.tipoLinha !== "SERVICO") return;
                         const code = String(l.codigo || "").trim();
                         if (!code) return;
+                        const qs = new URLSearchParams();
+                        if (effectivePlanilhaId) qs.set("planilhaId", String(effectivePlanilhaId));
+                        qs.set("returnTo", selfHref);
                         router.push(
-                          `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}?returnTo=${encodeURIComponent(`/dashboard/engenharia/obras/${idObra}/planilha`)}`
+                          `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}?${qs.toString()}`
                         );
                       }}
                     >

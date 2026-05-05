@@ -12,11 +12,23 @@ export default function Page() {
 
   const idObra = useMemo(() => Number((params as any)?.id || 0), [params]);
   const returnTo = search.get("returnTo");
+  const planilhaIdParam = search.get("planilhaId");
+  const planilhaId = useMemo(() => {
+    const n = Number(planilhaIdParam || 0);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [planilhaIdParam]);
   const safeReturnTo = useMemo(() => {
     const raw = String(returnTo || "").trim();
     const isExternal = raw.startsWith("//") || /^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(raw) || /^[a-z][a-z0-9+.-]*:/i.test(raw);
     return raw && !isExternal ? raw : null;
   }, [returnTo]);
+  const backHref = useMemo(() => safeReturnTo || `/dashboard/engenharia/obras/${idObra}/planilha`, [idObra, safeReturnTo]);
+  const selfHref = useMemo(() => {
+    const qs = new URLSearchParams();
+    if (planilhaId) qs.set("planilhaId", String(planilhaId));
+    qs.set("returnTo", backHref);
+    return `/dashboard/engenharia/obras/${idObra}/planilha/insumos?${qs.toString()}`;
+  }, [backHref, idObra, planilhaId]);
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -42,7 +54,10 @@ export default function Page() {
     try {
       setLoading(true);
       setErr(null);
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/insumos/consolidado`);
+      const qs = new URLSearchParams();
+      if (planilhaId) qs.set("planilhaId", String(planilhaId));
+      const tail = qs.toString();
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/insumos/consolidado${tail ? `?${tail}` : ""}`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar insumos consolidados");
       const list = Array.isArray(json.data?.rows) ? json.data.rows : [];
@@ -69,7 +84,7 @@ export default function Page() {
 
   useEffect(() => {
     carregar();
-  }, [idObra]);
+  }, [idObra, planilhaId]);
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-7xl text-slate-900">
@@ -83,7 +98,12 @@ export default function Page() {
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha?returnTo=${encodeURIComponent(safeReturnTo || "")}`)}
+            onClick={() => {
+              const qs = new URLSearchParams();
+              if (planilhaId) qs.set("planilhaId", String(planilhaId));
+              qs.set("returnTo", selfHref);
+              router.push(`/dashboard/engenharia/obras/${idObra}/planilha?${qs.toString()}`);
+            }}
             disabled={loading}
           >
             Planilha
@@ -91,15 +111,23 @@ export default function Page() {
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(safeReturnTo || "")}`)}
+            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(selfHref)}`)}
             disabled={loading}
           >
             Composições
           </button>
           <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/sinapi?returnTo=${encodeURIComponent(selfHref)}`)}
+            disabled={loading}
+          >
+            SINAPI
+          </button>
+          <button
             className="rounded-lg border bg-blue-600 px-4 py-2 text-sm text-white border-blue-600 hover:bg-blue-500 disabled:opacity-60"
             type="button"
-            onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(safeReturnTo || "")}`)}
+            onClick={() => router.push(selfHref)}
             disabled={loading}
           >
             Insumos
@@ -107,7 +135,7 @@ export default function Page() {
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() => router.push(safeReturnTo || `/dashboard/engenharia/obras/${idObra}/planilha`)}
+            onClick={() => router.push(backHref)}
             disabled={loading}
           >
             Voltar

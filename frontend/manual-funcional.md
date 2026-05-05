@@ -1685,15 +1685,31 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 - Navegação (UI): as telas **Planilha orçamentária**, **Composições da obra** e **Insumos consolidados** possuem botões de navegação no **canto superior direito**, alinhados ao título da página (Planilha/Composições/Insumos/Voltar). Os botões específicos de cada tela ficam logo abaixo desses botões principais.
 - Versões: ao entrar na tela, o sistema **não abre automaticamente** nenhuma planilha. O usuário deve selecionar a versão desejada no card **Versões cadastradas**.
   - Ações no card **Versões cadastradas**: **Atualizar**, **Importar CSV**, **Modelo CSV** e **Nova planilha**.
+- Edição por versão selecionada: após selecionar uma versão, o usuário pode **editar a planilha** (linhas e parâmetros) diretamente na versão selecionada.
+- Duplicação (com dependências): no card **Versões cadastradas**, existe a ação **Duplicar planilha** que cria uma nova versão copiando:
+  - linhas da planilha;
+  - composições/subcomposições vinculadas aos serviços da planilha;
+  - preços de insumos da planilha.
 - Importação CSV (planilha) com **prévia**: antes de gravar, o sistema mostra uma grade de conferência e destaca campos inválidos.
   - Colunas importadas (CSV): `item`, `codigo`, `fonte`, `servicos`, `und`, `quant`, `valor_unitario` (o **valor parcial** é calculado automaticamente).
   - Observação de compatibilidade: leitura “smart” de encoding (UTF-8 / Windows-1252) para reduzir erros de acentuação no texto importado.
 - Após selecionar uma versão, o sistema exibe o card **Visualizando** e, em seguida, o card **Navegação** (visível apenas com planilha selecionada) para abrir/fechar e rolar até: **Parâmetros**, **Planilha** e **Adicionar linha**.
 - Planilha (visual): linhas do tipo **Item** e **Subitem** são exibidas em negrito; o usuário pode definir **tamanho da fonte** e **cor de fundo** (Item/Subitem) e essas preferências ficam salvas para o usuário.
+- Navegação ativa: quando o usuário está na tela **Planilha orçamentária**, o botão **Planilha** fica destacado no topo para indicar a tela atual.
+- Edição de serviço (regra de preço):
+  - o campo **Valor Unit.** do serviço **não é digitável**;
+  - ele é preenchido automaticamente a partir da composição vinculada ao código do serviço (ou **0** quando não existe composição definida);
+  - ao informar/alterar o **Código** do serviço, o sistema recalcula o valor unitário.
+- Cancelamento de edição (atalho): a tecla **Esc** cancela a edição em andamento e restaura o último estado salvo.
 - Planilha (exportação): no card **Planilha orçamentária**, os botões **Imprimir**, **PDF** e **CSV** ficam no canto superior direito do card.
 - Composições da obra:
   - Importação e modelo de CSV de composições ficam na própria tela **Composições da obra**.
   - A tela marca serviços **sem composição** e **divergentes** comparando total da planilha x total calculado por composição.
+- Análise de composição (editar itens):
+  - em **Composições**, é permitido alterar apenas **Código** e **Qtd** (demais campos são preenchidos/calculados automaticamente);
+  - em **Insumos**, é permitido alterar apenas **Código**, **Qtd** e **Valor Unit** (demais campos são preenchidos/calculados automaticamente);
+  - alterações têm efeito em cascata: recalculam composições dependentes e atualizam o valor do serviço na planilha;
+  - a tecla **Esc** cancela a edição e restaura o último estado salvo.
 - Insumos consolidados:
   - Insumos **não são importados nem cadastrados manualmente**: são capturados automaticamente das **composições** da obra.
   - A consolidação agrupa por **Código + Und + Preço Unit** (e mantém descrição) e soma a **Quantidade total** de todas as ocorrências.
@@ -3128,10 +3144,13 @@ Oportunidade de melhoria
 
 Solução sugerida (implementada)
 - A planilha orçamentária (linhas) continua sendo a origem da lista de serviços da obra.
-- As composições da obra são cadastradas quando existe ao menos um item gravado em `obras_planilhas_composicoes_itens` para um `codigo_servico`.
+- As composições e os preços de insumos são **da obra** (um único conjunto por obra): são cadastrados quando existe ao menos um item gravado em `obras_planilhas_composicoes_itens` para um `codigo_servico`.
 - Ao aplicar uma composição do SINAPI, o backend permite:
   - se o código estiver na planilha (linha tipo SERVICO), ou
   - se o código estiver referenciado por alguma composição que pertença à árvore de composições da planilha (1º, 2º, … grau).
+- Escopo:
+  - a aplicação valida o contexto da **planilha atual** (versão marcada como atual no sistema) para permitir aplicar apenas códigos que existam na planilha (ou por referência);
+  - os dados gravados (composições e preços de insumos) ficam no escopo da **obra** — portanto, se outra planilha/versão da mesma obra utilizar os mesmos códigos/insumos, ela também refletirá os novos valores ao consultar composições/insumos.
 
 Benefício da mudança
 - Evita bloqueio de importação de subcomposições necessárias para fechar custos.
@@ -3161,6 +3180,9 @@ ETAPA 2 — O que clicar
 - Na lista “Serviços SINAPI importados”:
   - marque a caixa de seleção na frente dos serviços e clique em **Aplicar selecionados** para aplicar em lote, ou
   - use o **ícone de seta** para aplicar um serviço por vez.
+- Ao aplicar, o sistema abre uma confirmação para escolher se deve **aplicar também os preços dos insumos (SINAPI)**:
+  - se marcado, atualiza o preço único do insumo (por código) e recalcula as composições/subcomposições da **obra** que dependem desses insumos;
+  - se desmarcado, aplica apenas a composição (estrutura/itens) sem propagar preços de insumos para a planilha.
 - Dê **duplo clique** em um serviço na lista “Serviços SINAPI importados” para abrir o card “Composição do serviço” (detalhamento dos itens).
 - Para importar via XLSX, clique no botão “Importar” (abre o modal “Opções de importação”).
 - Se precisar filtrar a lista, clique em “Exibir filtros” (e use “Limpar filtros” para voltar rápido).
@@ -3193,7 +3215,12 @@ ETAPA 4 — O que esperar
 ETAPA 5 — Como validar
 - Verifique se:
   - o serviço aparece/atualiza na lista “Serviços SINAPI importados”;
-  - ao clicar em “Aplicar selecionados” (ou no ícone de seta), o sistema confirma “Composição aplicada na obra”.
+  - ao clicar em “Aplicar selecionados” (ou no ícone de seta), o sistema abre a confirmação de aplicação e, ao concluir, confirma “Composição aplicada na obra”.
+  - se você marcou “Aplicar também os preços dos insumos (SINAPI)”, espere estas mudanças (no escopo da **obra**):
+    - a lista **Insumos consolidados** passa a mostrar o novo valor unitário para os insumos afetados;
+    - as **composições e subcomposições** que utilizam esses insumos são recalculadas (não só a composição aplicada: todas que usam o insumo, inclusive por dependência via subcomposição);
+    - o valor calculado das composições muda (e pode alterar validações/comparações com a planilha);
+    - as **composições primitivas** só mudam após **Atualizar**/recalcular (porque são gravadas em cache para não recalcular sempre).
   - ao dar duplo clique no serviço, abre o card “Composição do serviço” com os itens e o total.
 
 **Validações e regras técnicas (para consistência do dado)**

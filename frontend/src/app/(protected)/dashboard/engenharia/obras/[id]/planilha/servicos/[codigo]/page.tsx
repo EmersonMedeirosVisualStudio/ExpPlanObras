@@ -19,8 +19,6 @@ import { Trash2, Printer, FileSpreadsheet, Image, CheckCircle2, CircleDashed, XC
   codigoCentroCustoBase: string;
  };
  
-type CentroCustoOption = { codigo: string; descricao: string };
-
 type PrevistoPlanilhaRow = {
   item: string;
   fonte: string;
@@ -176,6 +174,11 @@ async function readTextSmart(file: File) {
    const idObra = useMemo(() => Number((params as any)?.id || 0), [params]);
    const codigoServico = useMemo(() => decodeURIComponent(String((params as any)?.codigo || "")).trim().toUpperCase(), [params]);
    const returnTo = search.get("returnTo");
+  const planilhaIdParam = search.get("planilhaId");
+  const planilhaId = useMemo(() => {
+    const n = Number(planilhaIdParam || 0);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [planilhaIdParam]);
   const rootCodigoParam = String(search.get("rootCodigo") || "")
     .trim()
     .toUpperCase();
@@ -194,7 +197,7 @@ async function readTextSmart(file: File) {
    const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
    const [itens, setItens] = useState<ItemRow[]>([]);
-  const [centrosCusto, setCentrosCusto] = useState<CentroCustoOption[]>([]);
+  const itensSavedRef = useRef<ItemRow[]>([]);
   const [previstoRows, setPrevistoRows] = useState<PrevistoPlanilhaRow[]>([]);
   const [navPlanilhaServicos, setNavPlanilhaServicos] = useState<Array<{ item: string; codigo: string; servicos: string }>>([]);
   const [navIdx, setNavIdx] = useState<number>(-1);
@@ -203,9 +206,6 @@ async function readTextSmart(file: File) {
   const [definedComposicoesCodes, setDefinedComposicoesCodes] = useState<Set<string>>(new Set());
   const [empresaDocumentosLayout, setEmpresaDocumentosLayout] = useState<EmpresaDocumentosLayout | null>(null);
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
-  const [editingBancoOutroIdx, setEditingBancoOutroIdx] = useState<number | null>(null);
-  const [bancoOutroValue, setBancoOutroValue] = useState("");
-  const [editingCentroCustoIdx, setEditingCentroCustoIdx] = useState<number | null>(null);
   const [showDisplayConfig, setShowDisplayConfig] = useState(false);
   const [showPrintConfig, setShowPrintConfig] = useState(false);
   const [insumosTipoFiltro, setInsumosTipoFiltro] = useState<string>("");
@@ -359,7 +359,8 @@ async function readTextSmart(file: File) {
        setLoading(true);
        setErr(null);
       if (!silent) setOkMsg(null);
-       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-itens`);
+      const qs = planilhaId ? `?planilhaId=${encodeURIComponent(String(planilhaId))}` : "";
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-itens${qs}`);
        const json = await res.json().catch(() => null);
        if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar composição");
        const list = Array.isArray(json.data?.itens) ? json.data.itens : [];
@@ -378,15 +379,49 @@ async function readTextSmart(file: File) {
         codigoCentroCustoBase: String(i.codigoCentroCustoBase || ""),
       }));
       setItens(mapped);
+      itensSavedRef.current = mapped.map((r: any) => ({ ...r }));
       if (!silent) setOkMsg("Composição carregada.");
      } catch (e: any) {
        setErr(e?.message || "Erro ao carregar composição");
        setItens([]);
+      itensSavedRef.current = [];
      } finally {
        setLoading(false);
      }
    }
  
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      const saved = itensSavedRef.current || [];
+      const cur = itens || [];
+      const changed =
+        cur.length !== saved.length ||
+        cur.some((r, i) => {
+          const s = saved[i];
+          if (!s) return true;
+          return (
+            String(r.tipoItem || "") !== String(s.tipoItem || "") ||
+            String(r.codigoItem || "") !== String(s.codigoItem || "") ||
+            String(r.quantidade || "") !== String(s.quantidade || "") ||
+            String(r.valorUnitario || "") !== String(s.valorUnitario || "") ||
+            String(r.banco || "") !== String(s.banco || "") ||
+            String(r.descricao || "") !== String(s.descricao || "") ||
+            String(r.und || "") !== String(s.und || "") ||
+            String(r.perdaPercentual || "") !== String(s.perdaPercentual || "") ||
+            String(r.codigoCentroCusto || "") !== String(s.codigoCentroCusto || "")
+          );
+        });
+      if (!changed) return;
+      e.preventDefault();
+      setErr(null);
+      setOkMsg("Edição cancelada.");
+      setItens(saved.map((r: any) => ({ ...r })));
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [itens]);
+
    async function salvar() {
      if (!idObra || !codigoServico) return;
      try {
@@ -408,7 +443,8 @@ async function readTextSmart(file: File) {
          }))
          .filter((i) => i.codigoItem.trim() && toNum(i.quantidade) != null);
  
-       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-itens`, {
+      const qs = planilhaId ? `?planilhaId=${encodeURIComponent(String(planilhaId))}` : "";
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-itens${qs}`, {
          method: "PUT",
          headers: { "Content-Type": "application/json" },
          body: JSON.stringify({ itens: payload }),
@@ -429,7 +465,8 @@ async function readTextSmart(file: File) {
        setLoading(true);
        setErr(null);
       setOkMsg(null);
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-itens`, {
+      const qs = planilhaId ? `?planilhaId=${encodeURIComponent(String(planilhaId))}` : "";
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-itens${qs}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ itens: payload }),
@@ -620,21 +657,6 @@ async function readTextSmart(file: File) {
     setImportChoiceInfo(null);
   }
 
-  async function carregarCentrosCusto() {
-    try {
-      const res = await authFetch(`/api/v1/engenharia/centros-custo?ativo=1`);
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) {
-        setCentrosCusto([]);
-        return;
-      }
-      const lista = Array.isArray(json.data) ? json.data : [];
-      setCentrosCusto(lista.map((c: any) => ({ codigo: String(c.codigo), descricao: String(c.descricao || "") })));
-    } catch {
-      setCentrosCusto([]);
-    }
-  }
-
   async function carregarPrevistoPlanilha() {
     if (!idObra || !codigoServico) return;
     try {
@@ -642,14 +664,16 @@ async function readTextSmart(file: File) {
       const jsonV = await resV.json().catch(() => null);
       if (!resV.ok || !jsonV?.success) throw new Error(jsonV?.message || "Erro ao carregar versões");
       const versoes = Array.isArray(jsonV.data?.versoes) ? jsonV.data.versoes : [];
+      const byQuery = planilhaId != null ? versoes.find((v: any) => Number(v?.idPlanilha || 0) === Number(planilhaId)) : null;
       const atual = versoes.find((v: any) => Boolean(v.atual)) || versoes[0] || null;
-      const planilhaId = atual?.idPlanilha != null ? Number(atual.idPlanilha) : 0;
-      if (!planilhaId) {
+      const pick = byQuery || atual || null;
+      const pid = pick?.idPlanilha != null ? Number(pick.idPlanilha) : 0;
+      if (!pid) {
         setPrevistoRows([]);
         return;
       }
 
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${planilhaId}`);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${pid}`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar planilha");
       const p = (json.data?.planilha?.parametros || {}) as any;
@@ -657,7 +681,7 @@ async function readTextSmart(file: File) {
       setPlanilhaInfo(
         plan
           ? {
-              idPlanilha: Number(plan.idPlanilha || planilhaId),
+              idPlanilha: Number(plan.idPlanilha || pid),
               numeroVersao: Number(plan.numeroVersao || 0),
               dataBaseSinapi: p.dataBaseSinapi == null ? null : String(p.dataBaseSinapi || ""),
               ufSinapi: p.ufSinapi == null ? null : String(p.ufSinapi || "").trim().toUpperCase(),
@@ -710,7 +734,8 @@ async function readTextSmart(file: File) {
   async function carregarComposicoesDefinidas() {
     if (!idObra) return;
     try {
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/status`);
+      const qs = planilhaId ? `?planilhaId=${encodeURIComponent(String(planilhaId))}` : "";
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/status${qs}`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) {
         setDefinedComposicoesCodes(new Set());
@@ -887,7 +912,6 @@ async function readTextSmart(file: File) {
 
   useEffect(() => {
     if (!idObra || !codigoServico) return;
-    carregarCentrosCusto();
     carregar(true);
     carregarPrevistoPlanilha();
     carregarComposicoesDefinidas();
@@ -937,6 +961,7 @@ async function readTextSmart(file: File) {
   function getSelfUrl() {
     const qs = new URLSearchParams();
     qs.set("rootCodigo", rootCodigo);
+    if (planilhaId) qs.set("planilhaId", String(planilhaId));
     qs.set("returnTo", getBackTargetUrl());
     return `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}?${qs.toString()}`;
   }
@@ -1079,7 +1104,8 @@ async function readTextSmart(file: File) {
     const cached = compTotalCacheRef.current.get(code);
     if (cached != null) return cached;
     if (!definedComposicoesCodes.has(code)) return null;
-    const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}/composicao-itens`);
+    const qs = planilhaId ? `?planilhaId=${encodeURIComponent(String(planilhaId))}` : "";
+    const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}/composicao-itens${qs}`);
     const json = await res.json().catch(() => null);
     if (!res.ok || !json?.success) throw new Error(json?.message || `Erro ao carregar composição ${code}`);
     const list = Array.isArray(json.data?.itens) ? json.data.itens : [];
@@ -1103,28 +1129,63 @@ async function readTextSmart(file: File) {
     return totalComLSLocal;
   }
 
+  async function obterMetaCodigo(tipoItem: string, codigo: string) {
+    const code = String(codigo || "").trim().toUpperCase();
+    if (!code) return null;
+    const qs = new URLSearchParams();
+    if (planilhaId) qs.set("planilhaId", String(planilhaId));
+
+    const isComp = isComposicaoTipo(tipoItem);
+    const url = isComp
+      ? `/api/v1/engenharia/obras/${idObra}/planilha/sinapi/servicos/${encodeURIComponent(code)}/meta?${qs.toString()}`
+      : `/api/v1/engenharia/obras/${idObra}/planilha/sinapi/insumos/${encodeURIComponent(code)}/meta?${qs.toString()}`;
+    const res = await authFetch(url);
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.success) return null;
+    return json.data || null;
+  }
+
+  async function aplicarMetaNoItem(idx: number) {
+    const row = itens[idx];
+    if (!row) return;
+    const code = String(row.codigoItem || "").trim().toUpperCase();
+    if (!code) return;
+    const meta = await obterMetaCodigo(row.tipoItem, code);
+    if (!meta) return;
+    setItens((p) =>
+      p.map((x, i) => {
+        if (i !== idx) return x;
+        const descricao = meta?.descricao != null ? String(meta.descricao || "") : x.descricao;
+        const und = meta?.und != null ? String(meta.und || "") : x.und;
+        const banco = meta?.fonte != null ? String(meta.fonte || "") : meta?.banco != null ? String(meta.banco || "") : x.banco;
+        return { ...x, descricao, und, banco };
+      })
+    );
+  }
+
   async function atualizarValorComposicaoNoItem(rowIdx: number, codigo: string) {
     try {
       if (!idObra) return;
       const code = String(codigo || "").trim().toUpperCase();
       if (!code) return;
-      if (!definedComposicoesCodes.has(code)) return;
+      if (!definedComposicoesCodes.has(code)) {
+        setItens((p) => p.map((x, i) => (i === rowIdx ? { ...x, valorUnitario: "0" } : x)));
+        return;
+      }
       const totalComLSLocal = await calcularTotalComLSDeComposicao(code);
-      if (totalComLSLocal == null) return;
+      if (totalComLSLocal == null) {
+        setItens((p) => p.map((x, i) => (i === rowIdx ? { ...x, valorUnitario: "0" } : x)));
+        return;
+      }
       setItens((p) => {
         const row = p[rowIdx];
         if (!row) return p;
-        const curVu = parseNumberLoose(row.valorUnitario);
-        const shouldAsk = curVu != null && Math.abs(curVu - totalComLSLocal) > 0.005;
-        if (shouldAsk) {
-          const ok = window.confirm(`Atualizar o valor unitário da composição "${code}" para ${moeda(totalComLSLocal)} (sem BDI)?`);
-          if (!ok) return p;
-        }
-        return p.map((x, i) => (i === rowIdx ? { ...x, valorUnitario: totalComLSLocal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) } : x));
+        return p.map((x, i) =>
+          i === rowIdx ? { ...x, valorUnitario: totalComLSLocal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) } : x
+        );
       });
-      setOkMsg(`Valor da composição ${code} atualizado (Total com LS, sem BDI).`);
     } catch (e: any) {
-      setItens((p) => p.map((x, i) => (i === rowIdx ? { ...x, valorUnitario: "" } : x)));
+      setItens((p) => p.map((x, i) => (i === rowIdx ? { ...x, valorUnitario: "0" } : x)));
       setErr(e?.message || "Erro ao atualizar valor da composição");
     }
   }
@@ -1175,13 +1236,6 @@ async function readTextSmart(file: File) {
     if (key === "especiais") return { label: "Especiais", Icon: Layers, key };
     const t = String(tipo || "").trim() || "Tipo";
     return { label: t, Icon: Layers, key: key || "tipo" };
-  }
-
-  function nextTipo(tipo: string) {
-    const order = ["COMPOSICAO", "MATERIAL", "MAO DE OBRA", "EQUIPAMENTO (AQUISIÇÃO)", "EQUIPAMENTO (LOCAÇÃO)", "SERVIÇOS", "ESPECIAIS"];
-    const t = String(tipo || "").trim();
-    const idx = Math.max(0, order.indexOf(t));
-    return order[(idx + 1) % order.length];
   }
 
   function px(n: number) {
@@ -1312,14 +1366,8 @@ async function readTextSmart(file: File) {
                       <button
                         className="rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60"
                         type="button"
-                        disabled={loading}
-                        title={`Alterar tipo (atual: ${meta.label})`}
-                        onClick={() => {
-                          const next = nextTipo(r.tipoItem);
-                          const nextLabel = tipoMeta(next).label;
-                          if (!window.confirm(`Alterar tipo de "${meta.label}" para "${nextLabel}"?`)) return;
-                          setItens((p) => p.map((x, i) => (i === idx ? { ...x, tipoItem: next } : x)));
-                        }}
+                        disabled
+                        title={meta.label}
                         style={{ fontSize: px(fs.tipo) }}
                       >
                         <meta.Icon className="h-4 w-4" />
@@ -1333,10 +1381,11 @@ async function readTextSmart(file: File) {
                           className="input bg-white flex-1 min-w-0"
                           value={r.codigoItem}
                           onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoItem: e.target.value } : x)))}
-                          onBlur={() => {
+                          onBlur={async () => {
+                            await aplicarMetaNoItem(idx);
                             const isComp = isComposicao;
                             const code = String(r.codigoItem || "").trim().toUpperCase();
-                            if (isComp && code) atualizarValorComposicaoNoItem(idx, code);
+                            if (isComp && code) await atualizarValorComposicaoNoItem(idx, code);
                           }}
                           style={{ fontSize: px(fs.codigo) }}
                         />
@@ -1371,17 +1420,7 @@ async function readTextSmart(file: File) {
                         className="input bg-white"
                         value={selectBancoValue}
                         style={{ ...cellW(w.banco), fontSize: px(fs.banco) }}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v === "__OUTRO__") {
-                            setEditingBancoOutroIdx(idx);
-                            setBancoOutroValue("");
-                            setItens((p) => p.map((x, i) => (i === idx ? { ...x, banco: "" } : x)));
-                            return;
-                          }
-                          setEditingBancoOutroIdx((cur) => (cur === idx ? null : cur));
-                          setItens((p) => p.map((x, i) => (i === idx ? { ...x, banco: v } : x)));
-                        }}
+                        disabled
                       >
                         <option value="">(sem banco)</option>
                         {bancosOptions.map((b) => (
@@ -1389,29 +1428,7 @@ async function readTextSmart(file: File) {
                             {b}
                           </option>
                         ))}
-                        <option value="__OUTRO__">Outro…</option>
                       </select>
-                      {editingBancoOutroIdx === idx ? (
-                        <input
-                          className="input bg-white"
-                          placeholder="Digite outro banco"
-                          value={bancoOutroValue}
-                          onChange={(e) => setBancoOutroValue(e.target.value)}
-                          onBlur={() => {
-                            const v = String(bancoOutroValue || "").trim();
-                            if (!v) {
-                              setEditingBancoOutroIdx(null);
-                              setBancoOutroValue("");
-                              return;
-                            }
-                            setBancosCustom((p) => (p.includes(v) ? p : [...p, v]));
-                            setItens((p) => p.map((x, i) => (i === idx ? { ...x, banco: v } : x)));
-                            setEditingBancoOutroIdx(null);
-                            setBancoOutroValue("");
-                          }}
-                          style={{ fontSize: px(fs.banco) }}
-                        />
-                      ) : null}
                     </div>
                   </td>
                   ) : null}
@@ -1420,7 +1437,7 @@ async function readTextSmart(file: File) {
                     <input
                       className="input bg-white"
                       value={r.descricao}
-                      onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, descricao: e.target.value } : x)))}
+                      readOnly
                       style={{ fontSize: px(fs.descricao) }}
                     />
                   </td>
@@ -1430,7 +1447,7 @@ async function readTextSmart(file: File) {
                     <input
                       className="input bg-white"
                       value={r.und}
-                      onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, und: e.target.value } : x)))}
+                      readOnly
                       style={{ ...cellW(w.und), fontSize: px(fs.und) }}
                     />
                   </td>
@@ -1461,7 +1478,7 @@ async function readTextSmart(file: File) {
                         <input
                           className="input bg-white text-right flex-1 min-w-0"
                           value={displayValorUnit}
-                          onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, valorUnitario: e.target.value } : x)))}
+                          readOnly
                           title={
                             !codigoComposicao
                               ? "Informe o código da composição"
@@ -1471,15 +1488,6 @@ async function readTextSmart(file: File) {
                           }
                           style={{ fontSize: px(fs.valorUnit) }}
                         />
-                        <button
-                          className="rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60"
-                          type="button"
-                          disabled={loading || !codigoComposicao}
-                          title="Atualizar valor unitário pela composição (Total com LS, sem BDI)"
-                          onClick={() => atualizarValorComposicaoNoItem(idx, codigoComposicao)}
-                        >
-                          ↻
-                        </button>
                       </div>
                     ) : (
                       <input
@@ -1498,43 +1506,7 @@ async function readTextSmart(file: File) {
                   ) : null}
                   {displayPrefs.colCentroCusto ? (
                     <td className="px-3 py-2" style={{ ...cellW(w.cc), fontSize: px(fs.cc) }}>
-                    {editingCentroCustoIdx === idx ? (
-                      <select
-                        className="input bg-white"
-                        autoFocus
-                        value={r.codigoCentroCusto}
-                        onChange={(e) => {
-                          setItens((p) => p.map((x, i) => (i === idx ? { ...x, codigoCentroCusto: e.target.value } : x)));
-                          setEditingCentroCustoIdx(null);
-                        }}
-                        onBlur={() => setEditingCentroCustoIdx(null)}
-                        style={{ ...cellW(w.cc), fontSize: px(fs.cc) }}
-                      >
-                        <option value="">(sem CC)</option>
-                        {centrosCusto.map((c) => (
-                          <option key={c.codigo} value={c.codigo}>
-                            {c.codigo} — {c.descricao}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <button
-                        className="rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60"
-                        type="button"
-                        disabled={loading || !centrosCusto.length}
-                        title={
-                          !centrosCusto.length
-                            ? "Sem centros de custo cadastrados"
-                            : r.codigoCentroCusto
-                              ? `Centro de custo: ${r.codigoCentroCusto} (clique para alterar)`
-                              : "Definir centro de custo"
-                        }
-                        onClick={() => setEditingCentroCustoIdx(idx)}
-                        style={{ fontSize: px(fs.cc) }}
-                      >
-                        {r.codigoCentroCusto ? <CheckCircle2 className="h-4 w-4 text-green-700" /> : <CircleDashed className="h-4 w-4 text-slate-500" />}
-                      </button>
-                    )}
+                      <span className="text-slate-700">{r.codigoCentroCusto ? r.codigoCentroCusto : ""}</span>
                   </td>
                   ) : null}
                   <td className="px-3 py-2" style={{ ...cellW(w.acoes), fontSize: px(fs.acoes) }}>
@@ -1771,7 +1743,11 @@ async function readTextSmart(file: File) {
       setPrimitiveErr(null);
       setPrimitiveMeta(null);
       setPrimitiveRows([]);
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-primitiva`);
+      const qs = new URLSearchParams();
+      if (planilhaId) qs.set("planilhaId", String(planilhaId));
+      const res = await authFetch(
+        `/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-primitiva?${qs.toString()}`
+      );
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar composição primitiva");
       const meta = json.data?.meta || null;
@@ -1809,9 +1785,10 @@ async function readTextSmart(file: File) {
     try {
       setPrimitiveLoading(true);
       setPrimitiveErr(null);
-      const res = await authFetch(
-        `/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-primitiva?refresh=1`
-      );
+      const qs = new URLSearchParams();
+      qs.set("refresh", "1");
+      if (planilhaId) qs.set("planilhaId", String(planilhaId));
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-primitiva?${qs.toString()}`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao atualizar composição primitiva");
       const meta = json.data?.meta || null;
