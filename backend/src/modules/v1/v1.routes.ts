@@ -6993,7 +6993,13 @@ export default async function v1Routes(server: FastifyInstance) {
     const parsedCodes = Array.from(comps.keys());
     if (!parsedCodes.length) return fail(reply, 422, 'Nenhuma composição foi identificada na aba. Verifique a aba, UF e estrutura.');
 
-    const planilhaId = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, obraId, Number.isFinite(requestedPlanilhaId) && requestedPlanilhaId > 0 ? requestedPlanilhaId : null);
+    const requestedPid = requestedPlanilhaId != null ? Number(requestedPlanilhaId) : NaN;
+    const planilhaId = await resolvePlanilhaIdForObra(
+      prisma,
+      ctx.tenantId,
+      obraId,
+      Number.isFinite(requestedPid) && requestedPid > 0 ? requestedPid : null
+    );
     const vers = (await prisma.$queryRawUnsafe(
       `
       SELECT
