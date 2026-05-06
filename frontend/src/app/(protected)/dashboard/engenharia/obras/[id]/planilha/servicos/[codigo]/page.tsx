@@ -2,7 +2,7 @@
  
 import { useEffect, useMemo, useRef, useState } from "react";
  import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Trash2, Printer, FileSpreadsheet, Image, CheckCircle2, CircleDashed, XCircle, Layers, Package, Wrench, HardHat } from "lucide-react";
+import { Trash2, Printer, FileSpreadsheet, Image, CheckCircle2, CircleDashed, XCircle, Layers, BrickWall, Wrench, HardHat } from "lucide-react";
  
  type ItemRow = {
   idItemBase: number;
@@ -199,6 +199,7 @@ async function readTextSmart(file: File) {
    const [itens, setItens] = useState<ItemRow[]>([]);
   const itensSavedRef = useRef<ItemRow[]>([]);
   const [previstoRows, setPrevistoRows] = useState<PrevistoPlanilhaRow[]>([]);
+  const [previstoServicoMeta, setPrevistoServicoMeta] = useState<{ descricao: string; und: string } | null>(null);
   const [navPlanilhaServicos, setNavPlanilhaServicos] = useState<Array<{ item: string; codigo: string; servicos: string }>>([]);
   const [navIdx, setNavIdx] = useState<number>(-1);
   const [planilhaParams, setPlanilhaParams] = useState<PlanilhaParams | null>(null);
@@ -666,6 +667,7 @@ async function readTextSmart(file: File) {
   async function carregarPrevistoPlanilha() {
     if (!idObra || !codigoServico) return;
     try {
+      setPrevistoServicoMeta(null);
       const resV = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes`);
       const jsonV = await resV.json().catch(() => null);
       if (!resV.ok || !jsonV?.success) throw new Error(jsonV?.message || "Erro ao carregar versões");
@@ -716,7 +718,7 @@ async function readTextSmart(file: File) {
         }));
       setNavPlanilhaServicos(navList);
       setNavIdx(navList.findIndex((x: { codigo: string }) => x.codigo === codigoServico));
-      const rows = linhas
+      let rows = linhas
         .filter((l: any) => String(l.tipoLinha || "").toUpperCase() === "SERVICO" && String(l.codigo || "").trim().toUpperCase() === codigoServico)
         .map((l: any) => ({
           item: String(l.item || ""),
@@ -727,9 +729,34 @@ async function readTextSmart(file: File) {
           valorUnitario: String(l.valorUnitario || ""),
           valorParcial: String(l.valorParcial || ""),
         }));
+      const precisaMeta =
+        !rows.length || !String(rows?.[0]?.servicos || "").trim() || !String(rows?.[0]?.und || "").trim();
+      if (precisaMeta) {
+        try {
+          const qs = new URLSearchParams();
+          qs.set("planilhaId", String(pid));
+          const resMeta = await authFetch(
+            `/api/v1/engenharia/obras/${idObra}/planilha/sinapi/servicos/${encodeURIComponent(codigoServico)}/meta?${qs.toString()}`
+          );
+          const jsonMeta = await resMeta.json().catch(() => null);
+          if (resMeta.ok && jsonMeta?.success) {
+            const desc = jsonMeta.data?.descricao != null ? String(jsonMeta.data.descricao || "").trim() : "";
+            const und = jsonMeta.data?.und != null ? String(jsonMeta.data.und || "").trim() : "";
+            if (desc || und) {
+              setPrevistoServicoMeta({ descricao: desc, und });
+              rows = rows.map((r) => ({
+                ...r,
+                servicos: String(r.servicos || "").trim() ? r.servicos : desc,
+                und: String(r.und || "").trim() ? r.und : und,
+              }));
+            }
+          }
+        } catch {}
+      }
       setPrevistoRows(rows);
     } catch {
       setPrevistoRows([]);
+      setPrevistoServicoMeta(null);
       setPlanilhaParams(null);
       setPlanilhaInfo(null);
       setNavPlanilhaServicos([]);
@@ -1349,7 +1376,7 @@ async function readTextSmart(file: File) {
   function tipoMeta(tipo: string) {
     const key = normalizeHeader(String(tipo || ""));
     if (key === "composicao" || key === "composicao_auxiliar") return { label: "Composição", Icon: Layers, key };
-    if (key === "material" || key === "insumo") return { label: "Material", Icon: Package, key };
+    if (key === "material" || key === "insumo") return { label: "Material", Icon: BrickWall, key };
     if (key === "mao_de_obra") return { label: "Mão de obra", Icon: HardHat, key };
     if (key.includes("equipamento") && key.includes("aquisicao")) return { label: "Equipamento (Aquisição)", Icon: Wrench, key };
     if (key.includes("equipamento") && key.includes("locacao")) return { label: "Equipamento (Locação)", Icon: Wrench, key };
@@ -2568,10 +2595,10 @@ async function readTextSmart(file: File) {
             <div className="text-sm text-slate-700">
               <span className="font-semibold">Serviço:</span>{" "}
               {(() => {
-                const nome = String(previstoRows?.[0]?.servicos || "").trim();
+                const nome = String(previstoRows?.[0]?.servicos || previstoServicoMeta?.descricao || "").trim();
                 return nome ? `${codigoServico} - ${nome}` : codigoServico;
               })()}{" "}
-              <span className="font-semibold">Un.:</span> {String(previstoRows?.[0]?.und || "—").trim() || "—"}
+              <span className="font-semibold">Unid.:</span> {String(previstoRows?.[0]?.und || previstoServicoMeta?.und || "—").trim() || "—"}
             </div>
           </div>
         </div>
