@@ -1991,17 +1991,8 @@ export default function SinapiImportPage() {
             </div>
             <div>
               PLANILHA: {planilhaCallerInfo?.idPlanilha != null ? planilhaCallerInfo.idPlanilha : "—"} -{" "}
-              {(() => {
-                if (planilhaCallerInfo?.numeroVersao) return `Versão ${planilhaCallerInfo.numeroVersao}`;
-                const nome = String(planilhaCallerInfo?.nome || "").trim();
-                const cleaned = nome
-                  .replace(/\(csv\)/gi, "")
-                  .replace(/\bv\s*\d+\s*-\s*/gi, "")
-                  .replace(/\s+/g, " ")
-                  .trim();
-                if (cleaned) return cleaned;
-                return "—";
-              })()}
+              {String(planilhaCallerInfo?.nome || "").trim() || "—"} -{" "}
+              {planilhaCallerInfo?.numeroVersao != null ? `v${planilhaCallerInfo.numeroVersao}` : "—"}
             </div>
             <div>
               SINAPI (planilha): {planilhaDataBaseSinapi || "—"} • UF: {planilhaUfSinapi || ufFiltro || uf || "—"}
@@ -2030,11 +2021,11 @@ export default function SinapiImportPage() {
               const qs = new URLSearchParams();
               if (planilhaIdCaller) qs.set("planilhaId", String(planilhaIdCaller));
               qs.set("returnTo", selfHref);
-              router.push(`/dashboard/engenharia/obras/${idObra}/planilha/composicoes?${qs.toString()}`);
+              router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos?${qs.toString()}`);
             }}
             disabled={busy}
           >
-            Composições
+            Serviços
           </button>
           <button
             className="rounded-lg border bg-blue-600 px-4 py-2 text-sm text-white border-blue-600 hover:bg-blue-500 disabled:opacity-60"

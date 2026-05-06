@@ -1557,23 +1557,25 @@ export default function PlanilhaObraClient({
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() =>
-              router.push(
-                `/dashboard/engenharia/obras/${idObra}/planilha/composicoes?returnTo=${encodeURIComponent(selfHref)}`
-              )
-            }
+            onClick={() => {
+              const qs = new URLSearchParams();
+              if (effectivePlanilhaId) qs.set("planilhaId", String(effectivePlanilhaId));
+              qs.set("returnTo", selfHref);
+              router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos?${qs.toString()}`);
+            }}
             disabled={loading}
           >
-            Composições
+            Serviços
           </button>
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() =>
-              router.push(
-                `/dashboard/engenharia/obras/${idObra}/planilha/sinapi?returnTo=${encodeURIComponent(selfHref)}`
-              )
-            }
+            onClick={() => {
+              const qs = new URLSearchParams();
+              if (effectivePlanilhaId) qs.set("planilhaId", String(effectivePlanilhaId));
+              qs.set("returnTo", selfHref);
+              router.push(`/dashboard/engenharia/obras/${idObra}/planilha/sinapi?${qs.toString()}`);
+            }}
             disabled={loading}
             title="Importar composições do SINAPI (Excel)"
           >
@@ -1582,9 +1584,12 @@ export default function PlanilhaObraClient({
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
-            onClick={() =>
-              router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?returnTo=${encodeURIComponent(selfHref)}`)
-            }
+            onClick={() => {
+              const qs = new URLSearchParams();
+              if (effectivePlanilhaId) qs.set("planilhaId", String(effectivePlanilhaId));
+              qs.set("returnTo", selfHref);
+              router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?${qs.toString()}`);
+            }}
             disabled={loading}
           >
             Insumos

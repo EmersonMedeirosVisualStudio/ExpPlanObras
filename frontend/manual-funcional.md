@@ -1682,7 +1682,7 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 #### Implementação (no sistema)
 
 - Engenharia → Obras → Planilha contratada / Planilha orçamentária
-- Navegação (UI): as telas **Planilha orçamentária**, **Composições da obra** e **Insumos consolidados** possuem botões de navegação no **canto superior direito**, alinhados ao título da página (Planilha/Composições/Insumos/Voltar). Os botões específicos de cada tela ficam logo abaixo desses botões principais.
+- Navegação (UI): as telas **Planilha orçamentária**, **Serviços**, **SINAPI** e **Insumos consolidados** possuem botões de navegação no **canto superior direito**, alinhados ao título da página (Planilha/Serviços/SINAPI/Insumos/Voltar). Os botões específicos de cada tela ficam logo abaixo desses botões principais.
 - Versões: ao entrar na tela, o sistema **não abre automaticamente** nenhuma planilha. O usuário deve selecionar a versão desejada no card **Versões cadastradas**.
   - Ações no card **Versões cadastradas**: **Atualizar**, **Importar CSV**, **Modelo CSV** e **Nova planilha**.
   - Coluna **Ações** (na lista de versões): **Clonar**, **Editar** e **Excluir planilha**.
@@ -1693,6 +1693,12 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
   - linhas da planilha;
   - composições/subcomposições vinculadas aos serviços da planilha;
   - preços de insumos da planilha.
+- Lógica de criação de uma planilha (obra):
+  - 1) Parâmetros: ao criar/clonar uma planilha, define-se primeiro os **parâmetros da planilha** (data-base, UF, BDI, encargos e descontos). Eles determinam como os custos são calculados.
+  - 2) Serviços: em seguida, monta-se a lista de **serviços da planilha** (linhas/itens). É possível importar serviços de outra planilha (clonagem) ou trazer serviços via SINAPI.
+  - 3) Composições: para cada serviço, cadastra-se/importa-se sua **composição** (itens, subcomposições e insumos).
+  - 4) Insumos consolidados: a lista de insumos é derivada das composições dos serviços e precisa ser recalculada sempre que uma composição muda.
+  - Regra: ao salvar/importar uma composição (ou importar um serviço que traga composição), o sistema refaz o consolidado de insumos e atualiza os valores do serviço na planilha (efeito cascata).
 - Importação CSV (planilha) com **prévia**: antes de gravar, o sistema mostra uma grade de conferência e destaca campos inválidos.
   - Colunas importadas (CSV): `item`, `codigo`, `fonte`, `servicos`, `und`, `quant`, `valor_unitario` (o **valor parcial** é calculado automaticamente).
   - Observação de compatibilidade: leitura “smart” de encoding (UTF-8 / Windows-1252) para reduzir erros de acentuação no texto importado.
@@ -1705,8 +1711,8 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
   - ao informar/alterar o **Código** do serviço, o sistema recalcula o valor unitário.
 - Cancelamento de edição (atalho): a tecla **Esc** cancela a edição em andamento e restaura o último estado salvo.
 - Planilha (exportação): no card **Planilha orçamentária**, os botões **Imprimir**, **PDF** e **CSV** ficam no canto superior direito do card.
-- Composições da obra:
-  - Importação e modelo de CSV de composições ficam na própria tela **Composições da obra**.
+- Serviços:
+  - Importação e modelo de CSV de composições ficam na própria tela **Serviços**.
   - A tela marca serviços **sem composição** e **divergentes** comparando total da planilha x total calculado por composição.
 - Análise de composição (editar itens):
   - em **Composições**, é permitido alterar apenas **Código** e **Qtd** (demais campos são preenchidos/calculados automaticamente);
