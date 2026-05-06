@@ -1203,28 +1203,29 @@ export default function PlanilhaObraClient({
     scrollToRef(adicionarLinhaRef);
   }
 
-  async function duplicarPlanilhaSelecionada() {
-    const sourcePlanilhaId = effectivePlanilhaId != null ? Number(effectivePlanilhaId) : 0;
+  async function clonarPlanilha(v: VersaoRow) {
+    const sourcePlanilhaId = v?.idPlanilha ? Number(v.idPlanilha) : 0;
     if (!sourcePlanilhaId) return;
-    if (!window.confirm("Duplicar a planilha selecionada? Isso copia linhas, composições, subcomposições e preços de insumos.")) return;
+    const msg = "Clonar a planilha?\n\nIsso copia:\n- Parâmetros da planilha\n- Linhas/serviços\n- Composições/subcomposições\n- Preços de insumos";
+    if (!window.confirm(msg)) return;
     try {
       setLoading(true);
       setErr(null);
       setOkMsg(null);
-      const nome = `Versão ${Math.max(0, ...versoes.map((v) => v.numeroVersao)) + 1} (Duplicada)`;
+      const nome = `Versão ${Math.max(0, ...versoes.map((vv) => vv.numeroVersao)) + 1} (Clonada)`;
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "DUPLICAR_VERSAO", sourcePlanilhaId, nome }),
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao duplicar planilha");
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao clonar planilha");
       const idPlanilhaNew = Number(json.data?.idPlanilha || 0);
       await carregarVersoes();
       if (idPlanilhaNew) setPlanilhaId(idPlanilhaNew);
-      setOkMsg("Planilha duplicada com sucesso.");
+      setOkMsg("Planilha clonada com sucesso.");
     } catch (e: any) {
-      setErr(e?.message || "Erro ao duplicar planilha");
+      setErr(e?.message || "Erro ao clonar planilha");
     } finally {
       setLoading(false);
     }
@@ -1744,15 +1745,6 @@ export default function PlanilhaObraClient({
             >
               Nova planilha
             </button>
-            <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-              type="button"
-              onClick={duplicarPlanilhaSelecionada}
-              disabled={loading || !podeEditar || !effectivePlanilhaId}
-              title={!effectivePlanilhaId ? "Selecione uma versão para duplicar" : "Duplicar planilha selecionada (inclui composições e insumos)"}
-            >
-              Duplicar planilha
-            </button>
           </div>
         </div>
         <div className="overflow-auto">
@@ -1805,6 +1797,20 @@ export default function PlanilhaObraClient({
                   <td className="px-3 py-2">{v.criadoEm ? new Date(v.criadoEm).toLocaleString("pt-BR") : "-"}</td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
+                      <button
+                        className="inline-flex items-center gap-1 rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          clonarPlanilha(v);
+                        }}
+                        disabled={loading}
+                        title="Clonar planilha (inclui parâmetros, linhas, composições e insumos)"
+                      >
+                        <FileSpreadsheet className="h-3.5 w-3.5" />
+                        Clonar
+                      </button>
                       <button
                         className="inline-flex items-center gap-1 rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
                         type="button"
