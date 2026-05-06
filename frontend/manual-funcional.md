@@ -1704,8 +1704,11 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
   - Observação de compatibilidade: leitura “smart” de encoding (UTF-8 / Windows-1252) para reduzir erros de acentuação no texto importado.
 - Após selecionar uma versão, o sistema exibe o card **Visualizando** e, em seguida, o card **Navegação** (visível apenas com planilha selecionada) para abrir/fechar e rolar até: **Parâmetros**, **Planilha** e **Adicionar linha**.
 - Planilha (visual): linhas do tipo **Item** e **Subitem** são exibidas em negrito; o usuário pode definir **tamanho da fonte** e **cor de fundo** (Item/Subitem) e essas preferências ficam salvas para o usuário.
+- Ordem/organização das linhas: o campo **Ordem** foi removido da edição. A visualização segue a ordem do **ITEM** (ordenação numérica/hierárquica, por exemplo: `1.2` vem antes de `1.10`).
 - Navegação ativa: quando o usuário está na tela **Planilha orçamentária**, o botão **Planilha** fica destacado no topo para indicar a tela atual.
 - Edição de serviço (regra de preço):
+  - ao selecionar **Tipo = Serviço**, os campos **Código**, **Serviços** e **Fonte** viram campos de **seleção com busca** (clicar mostra opções, digitar filtra em tempo real);
+  - ao selecionar um valor (ou concluir a digitação), o sistema **preenche/filtra os demais campos** com base nos serviços já cadastrados na planilha (Código/Serviços/Fonte/UND);
   - o campo **Valor Unit.** do serviço **não é digitável**;
   - ele é preenchido automaticamente a partir da composição vinculada ao código do serviço (ou **0** quando não existe composição definida);
   - ao informar/alterar o **Código** do serviço, o sistema recalcula o valor unitário.

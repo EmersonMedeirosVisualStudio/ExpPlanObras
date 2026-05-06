@@ -4487,7 +4487,12 @@ export default async function v1Routes(server: FastifyInstance) {
           tipo_linha AS "tipoLinha"
         FROM obras_planilhas_linhas
         WHERE tenant_id = $1 AND id_planilha = $2
-        ORDER BY ordem ASC, id_linha ASC
+        ORDER BY
+          CASE
+            WHEN COALESCE(item, '') ~ '^[0-9]+(\.[0-9]+)*$' THEN regexp_split_to_array(item, '\.')::int[]
+            ELSE ARRAY[2147483647]::int[]
+          END ASC,
+          id_linha ASC
         `,
         ctx.tenantId,
         idPlanilha

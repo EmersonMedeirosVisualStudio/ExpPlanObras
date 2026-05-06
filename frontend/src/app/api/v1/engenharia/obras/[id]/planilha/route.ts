@@ -475,7 +475,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         tipo_linha AS tipoLinha
       FROM obras_planilhas_linhas
       WHERE tenant_id = ? AND id_planilha = ?
-      ORDER BY ordem ASC, id_linha ASC
+      ORDER BY
+        CASE
+          WHEN COALESCE(item, '') REGEXP '^[0-9]+(\\.[0-9]+)*$' THEN item
+          ELSE '999999999'
+        END ASC,
+        id_linha ASC
       `,
       [current.tenantId, idPlanilha]
     );

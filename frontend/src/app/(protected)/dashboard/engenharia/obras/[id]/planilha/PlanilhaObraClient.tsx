@@ -226,6 +226,156 @@ function getUserPrefKey() {
   return "exp:planilha:prefs";
 }
 
+function parseItemKey(itemRaw: unknown) {
+  const item = String(itemRaw ?? "").trim();
+  if (!item) return null;
+  if (!/^[0-9]+(\.[0-9]+)*$/.test(item)) return null;
+  const parts = item
+    .split(".")
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => Number(p));
+  if (!parts.length || parts.some((n) => !Number.isFinite(n))) return null;
+  return parts;
+}
+
+function sortPlanilhaLinhasByItem<T extends { item: string; idLinha: number }>(rows: T[]) {
+  return [...rows].sort((a, b) => {
+    const ak = parseItemKey(a.item);
+    const bk = parseItemKey(b.item);
+    if (ak && bk) {
+      const n = Math.max(ak.length, bk.length);
+      for (let i = 0; i < n; i++) {
+        const av = ak[i] ?? -1;
+        const bv = bk[i] ?? -1;
+        if (av !== bv) return av - bv;
+      }
+      return a.idLinha - b.idLinha;
+    }
+    if (ak && !bk) return -1;
+    if (!ak && bk) return 1;
+    const ai = String(a.item || "");
+    const bi = String(b.item || "");
+    const cmp = ai.localeCompare(bi);
+    if (cmp) return cmp;
+    return a.idLinha - b.idLinha;
+  });
+}
+
+function SearchSelect({
+  value,
+  options,
+  onChange,
+  disabled,
+  placeholder,
+  inputClassName,
+  onBlur,
+}: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
+  inputClassName?: string;
+  onBlur?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState<number>(-1);
+
+  const filtered = useMemo(() => {
+    const q = String(value || "").trim().toLowerCase();
+    const list = Array.isArray(options) ? options : [];
+    if (!q) return list.slice(0, 80);
+    const starts = [] as string[];
+    const contains = [] as string[];
+    for (const opt of list) {
+      const s = String(opt || "");
+      const sl = s.toLowerCase();
+      if (sl.startsWith(q)) starts.push(s);
+      else if (sl.includes(q)) contains.push(s);
+      if (starts.length + contains.length >= 80) break;
+    }
+    return [...starts, ...contains];
+  }, [options, value]);
+
+  useEffect(() => {
+    if (!open) setActiveIndex(-1);
+  }, [open]);
+
+  return (
+    <div className="relative">
+      <input
+        className={inputClassName ? inputClassName : "input bg-white"}
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onClick={() => setOpen(true)}
+        onBlur={() => {
+          setOpen(false);
+          onBlur?.();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            if (open) {
+              e.preventDefault();
+              e.stopPropagation();
+              setOpen(false);
+              return;
+            }
+            return;
+          }
+          if (e.key === "ArrowDown") {
+            if (!open) setOpen(true);
+            e.preventDefault();
+            setActiveIndex((p) => Math.min(filtered.length - 1, Math.max(0, p + 1)));
+            return;
+          }
+          if (e.key === "ArrowUp") {
+            if (!open) setOpen(true);
+            e.preventDefault();
+            setActiveIndex((p) => Math.max(0, p - 1));
+            return;
+          }
+          if (e.key === "Enter") {
+            if (!open) return;
+            const picked = activeIndex >= 0 ? filtered[activeIndex] : null;
+            if (!picked) return;
+            e.preventDefault();
+            onChange(picked);
+            setOpen(false);
+          }
+        }}
+        disabled={disabled}
+        placeholder={placeholder}
+      />
+
+      {open && filtered.length ? (
+        <div className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-lg border bg-white shadow">
+          {filtered.map((opt, idx) => (
+            <button
+              key={`${opt}:${idx}`}
+              type="button"
+              className={`block w-full text-left px-3 py-2 text-sm hover:bg-slate-50 ${idx === activeIndex ? "bg-slate-50" : ""}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onChange(opt);
+                setOpen(false);
+              }}
+              onMouseEnter={() => setActiveIndex(idx)}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function PlanilhaObraClient({
   idObra,
   returnTo,
@@ -319,7 +469,6 @@ export default function PlanilhaObraClient({
 
   const [novo, setNovo] = useState({
     tipoLinha: "SERVICO" as "ITEM" | "SUBITEM" | "SERVICO",
-    ordem: "",
     item: "",
     codigo: "",
     fonte: "",
@@ -485,7 +634,7 @@ export default function PlanilhaObraClient({
 
   function resetLinhaForm() {
     setEditingLinhaId(null);
-    setNovo({ tipoLinha: "SERVICO", ordem: "", item: "", codigo: "", fonte: "", servicos: "", und: "", quant: "", valorUnitario: "", valorParcial: "" });
+    setNovo({ tipoLinha: "SERVICO", item: "", codigo: "", fonte: "", servicos: "", und: "", quant: "", valorUnitario: "", valorParcial: "" });
     setLinhaErrors({});
     setOkMsg(null);
     editSnapshotRef.current = null;
@@ -494,7 +643,7 @@ export default function PlanilhaObraClient({
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
-      const hasTyped = Object.values(novo).some((v) => String(v || "").trim());
+      const hasTyped = [novo.item, novo.codigo, novo.fonte, novo.servicos, novo.und, novo.quant, novo.valorUnitario, novo.valorParcial].some((v) => String(v || "").trim());
       if (!editingLinhaId && !hasTyped) return;
       e.preventDefault();
       resetLinhaForm();
@@ -547,7 +696,7 @@ export default function PlanilhaObraClient({
     const sep = ";";
     const headers = ["item", "codigo", "fonte", "servicos", "und", "quant", "valor_unitario", "valor_parcial", "tipo_linha"];
     const lines = [headers.join(sep)];
-    for (const l of planilha.linhas || []) {
+    for (const l of sortPlanilhaLinhasByItem(planilha.linhas || [])) {
       lines.push(
         [
           String(l.item || ""),
@@ -1121,7 +1270,8 @@ export default function PlanilhaObraClient({
         setLoading(false);
         return;
       }
-      const ordem = Number(normalized.ordem || 0) || ((planilha.linhas || []).reduce((m, l) => Math.max(m, Number(l.ordem || 0)), 0) + 1);
+      const existing = editingLinhaId ? (planilha.linhas || []).find((l) => Number(l.idLinha) === Number(editingLinhaId)) : null;
+      const ordem = existing?.ordem != null ? Number(existing.ordem || 0) : (planilha.linhas || []).reduce((m, l) => Math.max(m, Number(l.ordem || 0)), 0) + 1;
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1183,7 +1333,6 @@ export default function PlanilhaObraClient({
     if (!l) return;
     const next = {
       tipoLinha: (l.tipoLinha as any) || "SERVICO",
-      ordem: l.ordem == null ? "" : String(l.ordem),
       item: String(l.item || ""),
       codigo: String(l.codigo || ""),
       fonte: String(l.fonte || ""),
@@ -1437,6 +1586,71 @@ export default function PlanilhaObraClient({
     return Number.isFinite(diff) ? diff : null;
   }, [obraResumo, planilha, valorTotalPlanilha]);
 
+  const servicosCatalogo = useMemo(() => {
+    const rows = planilha?.linhas || [];
+    const list = rows
+      .filter((l) => String(l.tipoLinha || "").toUpperCase() === "SERVICO")
+      .map((l) => ({
+        codigo: String(l.codigo || "").trim().toUpperCase(),
+        servicos: String(l.servicos || "").trim(),
+        fonte: String(l.fonte || "").trim().toUpperCase(),
+        und: String(l.und || "").trim(),
+      }))
+      .filter((r) => r.codigo || r.servicos || r.fonte || r.und);
+    return list;
+  }, [planilha]);
+
+  const servicosCatalogoFiltrado = useMemo(() => {
+    if (novo.tipoLinha !== "SERVICO") return servicosCatalogo;
+    const codigo = String(novo.codigo || "").trim().toUpperCase();
+    const servicos = String(novo.servicos || "").trim().toLowerCase();
+    const fonte = String(novo.fonte || "").trim().toUpperCase();
+    return servicosCatalogo.filter((r) => {
+      if (codigo && !r.codigo.startsWith(codigo)) return false;
+      if (fonte && !r.fonte.startsWith(fonte)) return false;
+      if (servicos && !String(r.servicos || "").toLowerCase().includes(servicos)) return false;
+      return true;
+    });
+  }, [novo.codigo, novo.fonte, novo.servicos, novo.tipoLinha, servicosCatalogo]);
+
+  const servicosCodigoOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of servicosCatalogoFiltrado) {
+      if (r.codigo) set.add(r.codigo);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [servicosCatalogoFiltrado]);
+
+  const servicosDescricaoOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of servicosCatalogoFiltrado) {
+      if (r.servicos) set.add(r.servicos);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [servicosCatalogoFiltrado]);
+
+  const servicosFonteOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of servicosCatalogoFiltrado) {
+      if (r.fonte) set.add(r.fonte);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [servicosCatalogoFiltrado]);
+
+  function findServicoMatch(next: { codigo?: string; servicos?: string; fonte?: string }) {
+    const codigo = String(next.codigo || "").trim().toUpperCase();
+    const servicos = String(next.servicos || "").trim();
+    const fonte = String(next.fonte || "").trim().toUpperCase();
+
+    if (codigo) return servicosCatalogo.find((r) => r.codigo === codigo) || null;
+    if (servicos) return servicosCatalogo.find((r) => r.servicos === servicos) || null;
+    if (fonte) {
+      const matches = servicosCatalogo.filter((r) => r.fonte === fonte);
+      if (matches.length === 1) return matches[0];
+    }
+    return null;
+  }
+
   const subtotalByItemKey = useMemo(() => {
     const map = new Map<string, number>();
     const rows = planilha?.linhas || [];
@@ -1466,9 +1680,13 @@ export default function PlanilhaObraClient({
     return Number(total.toFixed(2));
   }, [importPreview]);
 
+  const linhasOrdenadasPorItem = useMemo(() => {
+    return sortPlanilhaLinhasByItem(planilha?.linhas || []);
+  }, [planilha?.linhas]);
+
   const expandablePrefixes = useMemo(() => {
     const set = new Set<string>();
-    const rows = planilha?.linhas || [];
+    const rows = linhasOrdenadasPorItem;
     for (const l of rows) {
       if (l.tipoLinha !== "SERVICO") continue;
       const itemStr = String(l.item || "").trim();
@@ -1481,10 +1699,10 @@ export default function PlanilhaObraClient({
       }
     }
     return set;
-  }, [planilha]);
+  }, [linhasOrdenadasPorItem]);
 
   const linhasVisiveis = useMemo(() => {
-    const rows = planilha?.linhas || [];
+    const rows = linhasOrdenadasPorItem;
     return rows.filter((l) => {
       const tipo = String(l.tipoLinha || "").toUpperCase();
       const itemStr = String(l.item || "").trim();
@@ -1511,7 +1729,7 @@ export default function PlanilhaObraClient({
 
       return true;
     });
-  }, [planilha, somenteItens, collapsedPrefixes]);
+  }, [linhasOrdenadasPorItem, somenteItens, collapsedPrefixes]);
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl text-slate-900">
@@ -2297,10 +2515,6 @@ export default function PlanilhaObraClient({
                   </select>
                 </div>
                 <div>
-                  <div className="text-sm text-slate-600">Ordem</div>
-                  <input className="input bg-white" value={novo.ordem} onChange={(e) => setNovo((p) => ({ ...p, ordem: e.target.value }))} disabled={!podeEditar} />
-                </div>
-                <div>
                   <div className="text-sm text-slate-600">ITEM</div>
                   <input
                     className={`input bg-white ${linhaErrors.item ? "border-red-300 bg-red-50" : ""}`}
@@ -2320,48 +2534,151 @@ export default function PlanilhaObraClient({
                 </div>
                 <div>
                   <div className="text-sm text-slate-600">CÓDIGO</div>
-                  <input
-                    className={`input bg-white ${linhaErrors.codigo ? "border-red-300 bg-red-50" : ""}`}
-                    value={novo.codigo}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setNovo((p) => ({ ...p, codigo: v }));
-                      setLinhaErrors((p) => {
-                        if (!("codigo" in p)) return p;
-                        const { codigo: _, ...rest } = p as any;
-                        return rest;
-                      });
-                    }}
-                    onBlur={async () => {
-                      if (novo.tipoLinha !== "SERVICO") return;
-                      const info = await obterPrecoUnitarioServico(novo.codigo, planilha?.idPlanilha ?? null);
-                      const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
-                      setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: String(vu) }) : p));
-                    }}
-                    disabled={!podeEditar}
-                    placeholder="SER-0001"
-                  />
+                  {novo.tipoLinha === "SERVICO" ? (
+                    <SearchSelect
+                      value={novo.codigo}
+                      options={servicosCodigoOptions}
+                      inputClassName={`input bg-white ${linhaErrors.codigo ? "border-red-300 bg-red-50" : ""}`}
+                      onChange={(v) => {
+                        setNovo((p) => {
+                          const next: any = { ...p, codigo: v };
+                          const match = findServicoMatch({ codigo: v, servicos: next.servicos, fonte: next.fonte });
+                          if (match) {
+                            next.servicos = match.servicos;
+                            next.fonte = match.fonte;
+                            next.und = match.und;
+                          }
+                          return next;
+                        });
+                        setLinhaErrors((p) => {
+                          if (!("codigo" in p)) return p;
+                          const { codigo: _, ...rest } = p as any;
+                          return rest;
+                        });
+                        void (async () => {
+                          const codigo = String(v || "").trim();
+                          if (!codigo) return;
+                          const info = await obterPrecoUnitarioServico(codigo, planilha?.idPlanilha ?? null);
+                          const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
+                          setNovo((p) => {
+                            if (p.tipoLinha !== "SERVICO") return p;
+                            if (String(p.codigo || "").trim().toUpperCase() !== codigo.toUpperCase()) return p;
+                            return applyValorParcialAuto({ ...p, valorUnitario: String(vu) });
+                          });
+                        })();
+                      }}
+                      onBlur={async () => {
+                        const info = await obterPrecoUnitarioServico(novo.codigo, planilha?.idPlanilha ?? null);
+                        const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
+                        setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: String(vu) }) : p));
+                      }}
+                      disabled={!podeEditar}
+                      placeholder="SER-0001"
+                    />
+                  ) : (
+                    <input
+                      className={`input bg-white ${linhaErrors.codigo ? "border-red-300 bg-red-50" : ""}`}
+                      value={novo.codigo}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setNovo((p) => ({ ...p, codigo: v }));
+                        setLinhaErrors((p) => {
+                          if (!("codigo" in p)) return p;
+                          const { codigo: _, ...rest } = p as any;
+                          return rest;
+                        });
+                      }}
+                      disabled={!podeEditar}
+                    />
+                  )}
                 </div>
                 <div>
                   <div className="text-sm text-slate-600">FONTE</div>
-                  <input className="input bg-white" value={novo.fonte} onChange={(e) => setNovo((p) => ({ ...p, fonte: e.target.value }))} disabled={!podeEditar} placeholder="SINAPI" />
+                  {novo.tipoLinha === "SERVICO" ? (
+                    <SearchSelect
+                      value={novo.fonte}
+                      options={servicosFonteOptions}
+                      inputClassName="input bg-white"
+                      onChange={(v) => {
+                        setNovo((p) => {
+                          const next: any = { ...p, fonte: v };
+                          const match = findServicoMatch({ codigo: next.codigo, servicos: next.servicos, fonte: v });
+                          if (match) {
+                            next.codigo = match.codigo;
+                            next.servicos = match.servicos;
+                            next.und = match.und;
+                          }
+                          return next;
+                        });
+                      }}
+                      disabled={!podeEditar}
+                      placeholder="—"
+                    />
+                  ) : (
+                    <input className="input bg-white" value={novo.fonte} onChange={(e) => setNovo((p) => ({ ...p, fonte: e.target.value }))} disabled={!podeEditar} placeholder="SINAPI" />
+                  )}
                 </div>
                 <div className="md:col-span-2">
                   <div className="text-sm text-slate-600">SERVIÇOS</div>
-                  <input
-                    className={`input bg-white ${linhaErrors.servicos ? "border-red-300 bg-red-50" : ""}`}
-                    value={novo.servicos}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setNovo((p) => ({ ...p, servicos: v }));
-                      setLinhaErrors((p) => {
-                        if (!("servicos" in p)) return p;
-                        const { servicos: _, ...rest } = p as any;
-                        return rest;
-                      });
-                    }}
-                    disabled={!podeEditar}
-                  />
+                  {novo.tipoLinha === "SERVICO" ? (
+                    <SearchSelect
+                      value={novo.servicos}
+                      options={servicosDescricaoOptions}
+                      inputClassName={`input bg-white ${linhaErrors.servicos ? "border-red-300 bg-red-50" : ""}`}
+                      onChange={(v) => {
+                        const match = findServicoMatch({ codigo: novo.codigo, servicos: v, fonte: novo.fonte });
+                        const codigoForFetch = match?.codigo ? String(match.codigo) : String(novo.codigo || "");
+                        setNovo((p) => {
+                          const next: any = { ...p, servicos: v };
+                          const match = findServicoMatch({ codigo: next.codigo, servicos: v, fonte: next.fonte });
+                          if (match) {
+                            next.codigo = match.codigo;
+                            next.fonte = match.fonte;
+                            next.und = match.und;
+                          }
+                          return next;
+                        });
+                        setLinhaErrors((p) => {
+                          if (!("servicos" in p)) return p;
+                          const { servicos: _, ...rest } = p as any;
+                          return rest;
+                        });
+                        void (async () => {
+                          const codigo = String(codigoForFetch || "").trim();
+                          if (!codigo) return;
+                          const info = await obterPrecoUnitarioServico(codigo, planilha?.idPlanilha ?? null);
+                          const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
+                          setNovo((p) => {
+                            if (p.tipoLinha !== "SERVICO") return p;
+                            if (String(p.codigo || "").trim().toUpperCase() !== codigo.toUpperCase()) return p;
+                            return applyValorParcialAuto({ ...p, valorUnitario: String(vu) });
+                          });
+                        })();
+                      }}
+                      onBlur={async () => {
+                        if (!String(novo.codigo || "").trim()) return;
+                        const info = await obterPrecoUnitarioServico(novo.codigo, planilha?.idPlanilha ?? null);
+                        const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
+                        setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: String(vu) }) : p));
+                      }}
+                      disabled={!podeEditar}
+                    />
+                  ) : (
+                    <input
+                      className={`input bg-white ${linhaErrors.servicos ? "border-red-300 bg-red-50" : ""}`}
+                      value={novo.servicos}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setNovo((p) => ({ ...p, servicos: v }));
+                        setLinhaErrors((p) => {
+                          if (!("servicos" in p)) return p;
+                          const { servicos: _, ...rest } = p as any;
+                          return rest;
+                        });
+                      }}
+                      disabled={!podeEditar}
+                    />
+                  )}
                 </div>
                 <div>
                   <div className="text-sm text-slate-600">UND</div>
