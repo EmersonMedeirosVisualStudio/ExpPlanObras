@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 type Row = { codigoItem: string; descricao: string; und: string; valorUnitario: number; quantidadeTotal: number };
@@ -32,7 +32,10 @@ export default function Page() {
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const valueBeforeFocusRef = useRef<Record<string, string>>({});
 
   async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     let token: string | null = null;
@@ -54,6 +57,7 @@ export default function Page() {
     try {
       setLoading(true);
       setErr(null);
+      setOkMsg(null);
       const qs = new URLSearchParams();
       if (planilhaId) qs.set("planilhaId", String(planilhaId));
       const tail = qs.toString();
@@ -61,18 +65,57 @@ export default function Page() {
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar insumos consolidados");
       const list = Array.isArray(json.data?.rows) ? json.data.rows : [];
-      setRows(
-        list.map((r: any) => ({
-          codigoItem: String(r.codigoItem || ""),
-          descricao: String(r.descricao || ""),
-          und: String(r.und || ""),
-          valorUnitario: r.valorUnitario == null ? 0 : Number(r.valorUnitario || 0),
-          quantidadeTotal: Number(r.quantidadeTotal || 0),
-        }))
-      );
+      const nextRows = list.map((r: any) => ({
+        codigoItem: String(r.codigoItem || ""),
+        descricao: String(r.descricao || ""),
+        und: String(r.und || ""),
+        valorUnitario: r.valorUnitario == null ? 0 : Number(r.valorUnitario || 0),
+        quantidadeTotal: Number(r.quantidadeTotal || 0),
+      }));
+      setRows(nextRows);
+      setEdits((prev) => {
+        const copy = { ...prev };
+        for (const r of nextRows) {
+          if (copy[r.codigoItem] == null) copy[r.codigoItem] = String(r.valorUnitario ?? 0);
+        }
+        return copy;
+      });
     } catch (e: any) {
       setErr(e?.message || "Erro ao carregar insumos consolidados");
       setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function salvarValorUnitario(codigoItem: string) {
+    if (!idObra) return;
+    const code = String(codigoItem || "").trim().toUpperCase();
+    if (!code) return;
+    const raw = String(edits[code] ?? edits[codigoItem] ?? "").trim().replace(/\./g, "").replace(",", ".");
+    const vu = Number(raw);
+    if (!Number.isFinite(vu) || vu < 0) {
+      setErr("Valor unitário inválido.");
+      return;
+    }
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const qs = new URLSearchParams();
+      if (planilhaId) qs.set("planilhaId", String(planilhaId));
+      const tail = qs.toString();
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/insumos/precos${tail ? `?${tail}` : ""}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codigoItem: code, valorUnitario: vu }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao salvar preço do insumo");
+      setOkMsg(`Preço atualizado e propagado: ${code}`);
+      await carregar();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao salvar preço do insumo");
     } finally {
       setLoading(false);
     }
@@ -159,6 +202,7 @@ export default function Page() {
         </button>
       </div>
 
+      {okMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{okMsg}</div> : null}
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
 
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
@@ -172,25 +216,60 @@ export default function Page() {
                 <th className="px-3 py-2 text-right">VALOR UNIT</th>
                 <th className="px-3 py-2 text-right">QUANTIDADE TOTAL</th>
                 <th className="px-3 py-2 text-right">TOTAL (QTD × VALOR)</th>
+                <th className="px-3 py-2 text-right">AÇÕES</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => {
+                const editKey = r.codigoItem;
+                const valorInput = edits[editKey] ?? String(r.valorUnitario ?? 0);
                 const total = Number(r.quantidadeTotal || 0) * Number(r.valorUnitario || 0);
                 return (
                   <tr key={`${r.codigoItem}__${r.und}__${r.valorUnitario}`} className="border-t">
                     <td className="px-3 py-2">{r.codigoItem}</td>
                     <td className="px-3 py-2">{r.descricao}</td>
                     <td className="px-3 py-2">{r.und}</td>
-                    <td className="px-3 py-2 text-right">{moeda(Number(r.valorUnitario || 0))}</td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        className="input bg-white text-right w-[140px] inline-block"
+                        value={valorInput}
+                        onChange={(e) => setEdits((p) => ({ ...p, [editKey]: e.target.value }))}
+                        onFocus={() => {
+                          valueBeforeFocusRef.current[editKey] = String(valorInput ?? "");
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            const before = valueBeforeFocusRef.current[editKey];
+                            setEdits((p) => ({ ...p, [editKey]: before != null ? before : String(r.valorUnitario ?? 0) }));
+                            (e.target as HTMLInputElement).blur();
+                          }
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            salvarValorUnitario(r.codigoItem);
+                          }
+                        }}
+                        disabled={loading}
+                      />
+                    </td>
                     <td className="px-3 py-2 text-right">{Number(r.quantidadeTotal || 0).toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</td>
                     <td className="px-3 py-2 text-right">{moeda(Number(total || 0))}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        className="rounded border bg-white px-3 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-60"
+                        type="button"
+                        onClick={() => salvarValorUnitario(r.codigoItem)}
+                        disabled={loading}
+                      >
+                        Salvar
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
               {!rows.length ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
                     Sem dados. Importe/cadastre composições e clique em Atualizar.
                   </td>
                 </tr>

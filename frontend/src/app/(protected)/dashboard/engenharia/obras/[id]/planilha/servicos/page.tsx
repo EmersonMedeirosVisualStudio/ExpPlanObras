@@ -15,6 +15,7 @@ type ValidacaoRow = {
 };
 
 type RefRow = { codigo: string; tipo: string; definida: boolean };
+type VersaoRow = { idPlanilha: number; numeroVersao: number; nome: string; atual: boolean };
 
 function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -47,7 +48,9 @@ export default function Page() {
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
   const [planilhaId, setPlanilhaId] = useState<number | null>(null);
+  const [versoes, setVersoes] = useState<VersaoRow[]>([]);
   const [rows, setRows] = useState<ValidacaoRow[]>([]);
   const [statusFilter, setStatusFilter] = useState<{ OK: boolean; SEM_COMPOSICAO: boolean; DIVERGENTE: boolean }>({
     OK: true,
@@ -56,6 +59,26 @@ export default function Page() {
   });
   const [refs, setRefs] = useState<RefRow[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [copyForm, setCopyForm] = useState<{
+    sourcePlanilhaId: number | null;
+    targetPlanilhaId: number | null;
+    codigoServico: string;
+    replaceServico: boolean;
+    replaceComposicao: boolean;
+    insumosPrecoMode: "MANTER" | "SUBSTITUIR";
+  }>({
+    sourcePlanilhaId: null,
+    targetPlanilhaId: null,
+    codigoServico: "",
+    replaceServico: false,
+    replaceComposicao: false,
+    insumosPrecoMode: "MANTER",
+  });
+  const [copyPreview, setCopyPreview] = useState<{
+    existsServicoTarget: boolean;
+    existsComposicaoTarget: boolean;
+    diffs: Array<{ codigo: string; valorOrig: number; valorDest: number }>;
+  } | null>(null);
 
   async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     let token: string | null = null;
@@ -79,15 +102,33 @@ export default function Page() {
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar versões");
       const versoes = Array.isArray(json.data?.versoes) ? json.data.versoes : [];
+      const mapped: VersaoRow[] = versoes
+        .map((v: any) => ({
+          idPlanilha: Number(v?.idPlanilha || 0),
+          numeroVersao: Number(v?.numeroVersao || 0),
+          nome: String(v?.nome || ""),
+          atual: Boolean(v?.atual),
+        }))
+        .filter((v) => Number.isFinite(v.idPlanilha) && v.idPlanilha > 0);
+      setVersoes(mapped);
       const byQuery = planilhaIdFromQuery != null ? versoes.find((v: any) => Number(v?.idPlanilha || 0) === Number(planilhaIdFromQuery)) : null;
       const atual = versoes.find((v: any) => Boolean(v.atual)) || versoes[0] || null;
       const pick = byQuery || atual || null;
       const pid = pick?.idPlanilha != null ? Number(pick.idPlanilha) : null;
       setPlanilhaId(pid);
+      setCopyForm((p) => {
+        const targetPlanilhaId = pid != null && pid > 0 ? pid : null;
+        const sourcePlanilhaId =
+          p.sourcePlanilhaId != null
+            ? p.sourcePlanilhaId
+            : mapped.find((x) => x.idPlanilha !== targetPlanilhaId)?.idPlanilha ?? mapped[0]?.idPlanilha ?? null;
+        return { ...p, targetPlanilhaId, sourcePlanilhaId };
+      });
       return pid;
     } catch (e: any) {
       setErr(e?.message || "Erro ao carregar versões");
       setPlanilhaId(null);
+      setVersoes([]);
       return null;
     }
   }
@@ -141,6 +182,7 @@ export default function Page() {
     try {
       setLoading(true);
       setErr(null);
+      setOkMsg(null);
       const pid = await carregarPlanilhaAtual();
       await carregarReferencias();
       if (pid) await carregarValidacao(pid);
@@ -179,6 +221,7 @@ export default function Page() {
     try {
       setLoading(true);
       setErr(null);
+      setOkMsg(null);
       const form = new FormData();
       form.append("file", file);
       const qs = new URLSearchParams();
@@ -192,6 +235,78 @@ export default function Page() {
     } finally {
       setLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function previewCopiar() {
+    if (!copyForm.sourcePlanilhaId || !copyForm.targetPlanilhaId || !copyForm.codigoServico.trim()) {
+      setErr("Preencha origem, destino e código do serviço.");
+      return;
+    }
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      setCopyPreview(null);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/copiar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourcePlanilhaId: copyForm.sourcePlanilhaId,
+          targetPlanilhaId: copyForm.targetPlanilhaId,
+          codigoServico: copyForm.codigoServico,
+          dryRun: true,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro na prévia da cópia");
+      const d = json.data || {};
+      setCopyPreview({
+        existsServicoTarget: Boolean(d.existsServicoTarget),
+        existsComposicaoTarget: Boolean(d.existsComposicaoTarget),
+        diffs: Array.isArray(d.diffs)
+          ? d.diffs.map((x: any) => ({ codigo: String(x.codigo || ""), valorOrig: Number(x.valorOrig || 0), valorDest: Number(x.valorDest || 0) }))
+          : [],
+      });
+    } catch (e: any) {
+      setErr(e?.message || "Erro na prévia da cópia");
+      setCopyPreview(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function executarCopiar() {
+    if (!copyForm.sourcePlanilhaId || !copyForm.targetPlanilhaId || !copyForm.codigoServico.trim()) {
+      setErr("Preencha origem, destino e código do serviço.");
+      return;
+    }
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/copiar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourcePlanilhaId: copyForm.sourcePlanilhaId,
+          targetPlanilhaId: copyForm.targetPlanilhaId,
+          codigoServico: copyForm.codigoServico,
+          replaceServico: copyForm.replaceServico,
+          replaceComposicao: copyForm.replaceComposicao,
+          insumosPrecoMode: copyForm.insumosPrecoMode,
+          dryRun: false,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao copiar serviço/composição");
+      setOkMsg("Serviço/composição copiados com sucesso.");
+      setCopyPreview(null);
+      await carregarTudo();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao copiar serviço/composição");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -284,7 +399,136 @@ export default function Page() {
         </button>
       </div>
 
+      {okMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{okMsg}</div> : null}
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
+
+      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+        <div>
+          <div className="text-lg font-semibold">Copiar serviço/composição entre planilhas (versões)</div>
+          <div className="text-sm text-slate-600">Copia a linha do serviço (quando necessário) e os itens da composição. Bloqueia se houver insumo com descrição/unidade diferente no destino.</div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+          <div className="md:col-span-4 space-y-1">
+            <div className="text-sm text-slate-600">Origem (versão)</div>
+            <select
+              className="input bg-white"
+              value={copyForm.sourcePlanilhaId ?? ""}
+              onChange={(e) => setCopyForm((p) => ({ ...p, sourcePlanilhaId: e.target.value ? Number(e.target.value) : null }))}
+              disabled={loading}
+            >
+              <option value="">(selecione)</option>
+              {versoes.map((v) => (
+                <option key={v.idPlanilha} value={v.idPlanilha}>
+                  #{v.idPlanilha} — Versão {v.numeroVersao} {v.atual ? "(atual)" : ""} {v.nome ? `— ${v.nome}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="md:col-span-4 space-y-1">
+            <div className="text-sm text-slate-600">Destino (versão)</div>
+            <select
+              className="input bg-white"
+              value={copyForm.targetPlanilhaId ?? ""}
+              onChange={(e) => setCopyForm((p) => ({ ...p, targetPlanilhaId: e.target.value ? Number(e.target.value) : null }))}
+              disabled={loading}
+            >
+              <option value="">(selecione)</option>
+              {versoes.map((v) => (
+                <option key={v.idPlanilha} value={v.idPlanilha}>
+                  #{v.idPlanilha} — Versão {v.numeroVersao} {v.atual ? "(atual)" : ""} {v.nome ? `— ${v.nome}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="md:col-span-4 space-y-1">
+            <div className="text-sm text-slate-600">Código do serviço</div>
+            <input
+              className="input bg-white"
+              value={copyForm.codigoServico}
+              onChange={(e) => setCopyForm((p) => ({ ...p, codigoServico: e.target.value.toUpperCase() }))}
+              placeholder="Ex: 100309"
+              disabled={loading}
+            />
+          </div>
+
+          <div className="md:col-span-12 flex flex-wrap items-center gap-4 text-sm">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={copyForm.replaceServico} onChange={(e) => setCopyForm((p) => ({ ...p, replaceServico: Boolean(e.target.checked) }))} disabled={loading} />
+              <span>Substituir serviço no destino</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={copyForm.replaceComposicao} onChange={(e) => setCopyForm((p) => ({ ...p, replaceComposicao: Boolean(e.target.checked) }))} disabled={loading} />
+              <span>Substituir composição no destino</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="insumosPrecoMode"
+                checked={copyForm.insumosPrecoMode === "MANTER"}
+                onChange={() => setCopyForm((p) => ({ ...p, insumosPrecoMode: "MANTER" }))}
+                disabled={loading}
+              />
+              <span>Manter preço de insumos do destino (padrão)</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="insumosPrecoMode"
+                checked={copyForm.insumosPrecoMode === "SUBSTITUIR"}
+                onChange={() => setCopyForm((p) => ({ ...p, insumosPrecoMode: "SUBSTITUIR" }))}
+                disabled={loading}
+              />
+              <span>Substituir preço de insumos pelo da origem</span>
+            </label>
+          </div>
+
+          <div className="md:col-span-12 flex items-center justify-end gap-2 flex-wrap">
+            <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={previewCopiar} disabled={loading}>
+              Prévia
+            </button>
+            <button
+              className="rounded-lg border bg-blue-600 px-4 py-2 text-sm text-white border-blue-600 hover:bg-blue-500 disabled:opacity-60"
+              type="button"
+              onClick={executarCopiar}
+              disabled={loading}
+            >
+              Copiar
+            </button>
+          </div>
+        </div>
+
+        {copyPreview ? (
+          <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-800 space-y-2">
+            <div>
+              Destino já tem serviço: {copyPreview.existsServicoTarget ? "Sim" : "Não"} • Destino já tem composição: {copyPreview.existsComposicaoTarget ? "Sim" : "Não"}
+            </div>
+            <div>Conflitos de preço (amostra): {copyPreview.diffs.length ? `${copyPreview.diffs.length} item(ns)` : "nenhum"}</div>
+            {copyPreview.diffs.length ? (
+              <div className="overflow-auto">
+                <table className="min-w-[600px] w-full text-xs">
+                  <thead className="text-left text-slate-600">
+                    <tr>
+                      <th className="py-1 pr-3">INSUMO</th>
+                      <th className="py-1 pr-3 text-right">ORIGEM</th>
+                      <th className="py-1 pr-3 text-right">DESTINO</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {copyPreview.diffs.map((d) => (
+                      <tr key={d.codigo} className="border-t">
+                        <td className="py-1 pr-3">{d.codigo}</td>
+                        <td className="py-1 pr-3 text-right">{moeda(d.valorOrig)}</td>
+                        <td className="py-1 pr-3 text-right">{moeda(d.valorDest)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
 
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">

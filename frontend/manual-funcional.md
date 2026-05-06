@@ -1693,6 +1693,7 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
   - linhas da planilha;
   - composições/subcomposições vinculadas aos serviços da planilha;
   - preços de insumos da planilha.
+  - Regra de bloqueio: não permite clonar se existir **serviço sem nome/unidade** na planilha origem.
 - Lógica de criação de uma planilha (obra):
   - 1) Parâmetros: ao criar/clonar uma planilha, define-se primeiro os **parâmetros da planilha** (data-base, UF, BDI, encargos e descontos). Eles determinam como os custos são calculados.
   - 2) Serviços: em seguida, monta-se a lista de **serviços da planilha** (linhas/itens). É possível importar serviços de outra planilha (clonagem) ou trazer serviços via SINAPI.
@@ -1720,15 +1721,18 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 - Serviços:
   - Importação e modelo de CSV de composições ficam na própria tela **Serviços**.
   - A tela marca serviços **sem composição** e **divergentes** comparando total da planilha x total calculado por composição.
+  - Existe ação para **copiar serviço/composição entre versões** (origem → destino), com prévia e regras de consistência.
 - Análise de composição (editar itens):
   - em **Composições**, é permitido alterar apenas **Código** e **Qtd** (demais campos são preenchidos/calculados automaticamente);
   - em **Insumos**, é permitido alterar apenas **Código**, **Qtd** e **Valor Unit** (demais campos são preenchidos/calculados automaticamente);
   - alterações têm efeito em cascata: recalculam composições dependentes e atualizam o valor do serviço na planilha;
   - a tecla **Esc** cancela a edição e restaura o último estado salvo.
 - Insumos consolidados:
-  - Insumos **não são importados nem cadastrados manualmente**: são capturados automaticamente das **composições** da planilha selecionada (versão).
-  - A consolidação agrupa por **Código + Und + Preço Unit** (e mantém descrição) e soma a **Quantidade total** de todas as ocorrências.
-  - Sempre que composições são inseridas/atualizadas, a captura de insumos passa a refletir os dados mais recentes (cálculo dinâmico).
+  - A lista é derivada das **composições** da planilha selecionada (versão) e soma a **Quantidade total** por **código de insumo**.
+  - O **preço do insumo é único por código** na planilha (versão) e pode ser ajustado:
+    - na tela **Insumos consolidados**; ou
+    - diretamente na composição (itens do tipo insumo).
+    Ao salvar em um lugar, o valor é propagado para o outro e recalcula serviços/composições afetados.
 
 #### Validação
 
@@ -3111,11 +3115,14 @@ ETAPA 5 — Como validar
 - Formatação no grid:
   - Qtd: separador de milhar e 3 casas decimais
   - Total: separador de milhar e 2 casas decimais
-- Na tela **Análise de composição**, a separação dos itens é em 2 grupos:
-  - **Composições** (itens com tipo `COMPOSICAO`)
-  - **Insumos** (todos os demais itens), com o **Tipo** exibindo a classificação (Material, Mão de obra, Equipamento, Serviços, Especiais) e filtro rápido por tipo.
+- Na tela **Análise de composição**, os itens ficam em **uma única tabela**, com **filtro por tipo (checkbox)** logo acima do cabeçalho:
+  - `Todos`, `Nenhum`, `Composições`, `Materiais`, `Equipamentos`, `Serviços`, `Especiais`
+  - O filtro apenas **oculta/mostra** linhas; não separa por blocos.
 - A ação **Composição primitiva** consolida os insumos (inclui insumos das composições auxiliares), e o resultado é **gravado no backend** para não precisar recalcular toda vez. No modal existe o botão **Atualizar** para recalcular e salvar novamente. O cabeçalho mostra **nome do serviço** e **unidade** quando disponíveis.
 - Importação CSV (planilha e composição): o sistema aceita separador decimal `,` e normaliza para persistência no banco.
+- Tecla `Esc`: cancela a edição do campo atual e volta para o **valor salvo**.
+- Alertas de consistência:
+  - Se um serviço estiver na planilha sem **nome** e/ou **unidade**, o sistema avisa na tela e bloqueia ações críticas (importar/clonar/copiar) até corrigir.
 
 #### 18.2.3 SINAPI — lista importados, filtros e prévia com classificação
 
@@ -3151,25 +3158,22 @@ ETAPA 5 — Como validar
 
 **Como uma composição fica “cadastrada” na planilha (no sistema)**
 
-Problema identificado
-- Uma obra pode precisar importar/aplicar uma composição que não está como “Serviço” da planilha, porque ela aparece como item de outra composição (1º, 2º, … grau).
+Regras (consistência)
+- Uma **composição sempre** está vinculada a um **serviço válido** da planilha selecionada:
+  - o serviço precisa existir em `SERVIÇOS (linhas)` na versão da planilha
+  - o serviço precisa ter **nome** e **unidade**
+- Não permite:
+  - composição sem serviço válido
+  - serviço sem nome/unidade
+  - clonar/copy/importar com dados inconsistentes (o backend bloqueia e a UI alerta)
 
-Oportunidade de melhoria
-- Permitir completar a árvore de composições (composições auxiliares) sem precisar cadastrar cada código como linha “Serviço” da planilha orçamentária.
-
-Solução sugerida (implementada)
-- A planilha orçamentária (linhas) continua sendo a origem da lista de serviços da obra.
-- As composições e os preços de insumos são **da obra** (um único conjunto por obra): são cadastrados quando existe ao menos um item gravado em `obras_planilhas_composicoes_itens` para um `codigo_servico`.
-- Ao aplicar uma composição do SINAPI, o backend permite:
-  - se o código estiver na planilha (linha tipo SERVICO), ou
-  - se o código estiver referenciado por alguma composição que pertença à árvore de composições da planilha (1º, 2º, … grau).
-- Escopo:
-  - a aplicação valida o contexto da **planilha atual** (versão marcada como atual no sistema) para permitir aplicar apenas códigos que existam na planilha (ou por referência);
-  - os dados gravados (composições e preços de insumos) ficam no escopo da **obra** — portanto, se outra planilha/versão da mesma obra utilizar os mesmos códigos/insumos, ela também refletirá os novos valores ao consultar composições/insumos.
+Escopo (persistência)
+- As composições e preços de insumos são salvos no escopo: `obra + planilha(versão)`.
+- SINAPI é uma fonte externa: ao aplicar/importar, os itens passam a fazer parte da planilha (versão) e seguem as regras acima.
 
 Benefício da mudança
-- Evita bloqueio de importação de subcomposições necessárias para fechar custos.
-- Mantém consistência entre Frontend ↔ Backend ↔ Banco: a regra é validada no backend e persistida no banco.
+- Evita planilhas com serviços incompletos e composições “soltas”.
+- Mantém Frontend ↔ Backend ↔ Banco sincronizados com validação obrigatória no backend.
 
 **Arquitetura (padrão do sistema)**
 - Frontend (Vercel) ↔ Backend (Render) ↔ Banco de dados (Neon).

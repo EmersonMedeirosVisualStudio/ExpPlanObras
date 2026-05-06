@@ -200,6 +200,7 @@ async function readTextSmart(file: File) {
   const itensSavedRef = useRef<ItemRow[]>([]);
   const [previstoRows, setPrevistoRows] = useState<PrevistoPlanilhaRow[]>([]);
   const [previstoServicoMeta, setPrevistoServicoMeta] = useState<{ descricao: string; und: string } | null>(null);
+  const [previstoAlert, setPrevistoAlert] = useState<string | null>(null);
   const [navPlanilhaServicos, setNavPlanilhaServicos] = useState<Array<{ item: string; codigo: string; servicos: string }>>([]);
   const [navIdx, setNavIdx] = useState<number>(-1);
   const [planilhaParams, setPlanilhaParams] = useState<PlanilhaParams | null>(null);
@@ -668,6 +669,7 @@ async function readTextSmart(file: File) {
     if (!idObra || !codigoServico) return;
     try {
       setPrevistoServicoMeta(null);
+      setPrevistoAlert(null);
       const resV = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes`);
       const jsonV = await resV.json().catch(() => null);
       if (!resV.ok || !jsonV?.success) throw new Error(jsonV?.message || "Erro ao carregar versões");
@@ -729,8 +731,8 @@ async function readTextSmart(file: File) {
           valorUnitario: String(l.valorUnitario || ""),
           valorParcial: String(l.valorParcial || ""),
         }));
-      const precisaMeta =
-        !rows.length || !String(rows?.[0]?.servicos || "").trim() || !String(rows?.[0]?.und || "").trim();
+      const precisaMeta = !rows.length || !String(rows?.[0]?.servicos || "").trim() || !String(rows?.[0]?.und || "").trim();
+      let usedMeta = false;
       if (precisaMeta) {
         try {
           const qs = new URLSearchParams();
@@ -744,6 +746,7 @@ async function readTextSmart(file: File) {
             const und = jsonMeta.data?.und != null ? String(jsonMeta.data.und || "").trim() : "";
             if (desc || und) {
               setPrevistoServicoMeta({ descricao: desc, und });
+              usedMeta = true;
               rows = rows.map((r) => ({
                 ...r,
                 servicos: String(r.servicos || "").trim() ? r.servicos : desc,
@@ -753,10 +756,24 @@ async function readTextSmart(file: File) {
           }
         } catch {}
       }
+      if (!rows.length) {
+        setPrevistoAlert("Serviço não encontrado na planilha selecionada (verifique se a versão correta está selecionada/definida como atual).");
+      } else {
+        const nomeFinal = String(rows?.[0]?.servicos || "").trim();
+        const undFinal = String(rows?.[0]?.und || "").trim();
+        if (!nomeFinal || !undFinal) {
+          setPrevistoAlert(
+            "Este serviço está cadastrado na planilha sem nome e/ou unidade. Isso pode quebrar importações, clonagens e validações. Corrija na planilha (preencha SERVIÇO e UND)."
+          );
+        } else if (usedMeta) {
+          setPrevistoAlert("Nome e/ou unidade foram preenchidos automaticamente a partir da base de meta do serviço (fallback), porque estavam vazios na planilha.");
+        }
+      }
       setPrevistoRows(rows);
     } catch {
       setPrevistoRows([]);
       setPrevistoServicoMeta(null);
+      setPrevistoAlert(null);
       setPlanilhaParams(null);
       setPlanilhaInfo(null);
       setNavPlanilhaServicos([]);
@@ -1402,7 +1419,11 @@ async function readTextSmart(file: File) {
     return Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  function renderItensTabela(list: Array<{ r: ItemRow; idx: number }>, rowBg: string | ((r: ItemRow) => string)) {
+  function renderItensTabela(
+    list: Array<{ r: ItemRow; idx: number }>,
+    rowBg: string | ((r: ItemRow) => string),
+    opts?: { showFiltro?: boolean }
+  ) {
     const colCount =
       (displayPrefs.colTipo ? 1 : 0) +
       (displayPrefs.colCodigo ? 1 : 0) +
@@ -1441,8 +1462,68 @@ async function readTextSmart(file: File) {
     const cellW = (widthPx: number) => ({ width: px(widthPx), minWidth: px(widthPx), maxWidth: px(widthPx) });
     return (
       <div className="overflow-auto">
+        {opts?.showFiltro ? (
+          <div className="mb-2 flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                className="rounded border bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
+                type="button"
+                onClick={() => setItensView({ composicoes: true, materiais: true, equipamentos: true, servicos: true, especiais: true })}
+              >
+                Todos
+              </button>
+              <button
+                className="rounded border bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
+                type="button"
+                onClick={() => setItensView({ composicoes: false, materiais: false, equipamentos: false, servicos: false, especiais: false })}
+              >
+                Nenhum
+              </button>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={itensView.composicoes}
+                onChange={(e) => setItensView((p) => ({ ...p, composicoes: Boolean(e.target.checked) }))}
+              />
+              <span>Composições</span>
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={itensView.materiais}
+                onChange={(e) => setItensView((p) => ({ ...p, materiais: Boolean(e.target.checked) }))}
+              />
+              <span>Materiais</span>
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={itensView.equipamentos}
+                onChange={(e) => setItensView((p) => ({ ...p, equipamentos: Boolean(e.target.checked) }))}
+              />
+              <span>Equipamentos</span>
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={itensView.servicos}
+                onChange={(e) => setItensView((p) => ({ ...p, servicos: Boolean(e.target.checked) }))}
+              />
+              <span>Serviços</span>
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={itensView.especiais}
+                onChange={(e) => setItensView((p) => ({ ...p, especiais: Boolean(e.target.checked) }))}
+              />
+              <span>Especiais</span>
+            </label>
+          </div>
+        ) : null}
         <table className="w-full text-sm" style={{ minWidth: "1100px" }}>
-          <thead className="bg-slate-50 text-center text-slate-700">
+          <thead className="bg-slate-100 text-center text-slate-800 font-semibold">
             <tr>
               {displayPrefs.colTipo ? (
                 <th className="px-3 py-2" style={cellW(w.tipo)}>
@@ -2602,6 +2683,9 @@ async function readTextSmart(file: File) {
             </div>
           </div>
         </div>
+        {previstoAlert ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{previstoAlert}</div>
+        ) : null}
 
         <div className="overflow-auto">
           <table className="min-w-[900px] w-full text-sm">
@@ -2750,64 +2834,6 @@ async function readTextSmart(file: File) {
                 </button>
               </div>
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2">
-                <button
-                  className="rounded border bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
-                  type="button"
-                  onClick={() => setItensView({ composicoes: true, materiais: true, equipamentos: true, servicos: true, especiais: true })}
-                >
-                  Todos
-                </button>
-                <button
-                  className="rounded border bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
-                  type="button"
-                  onClick={() => setItensView({ composicoes: false, materiais: false, equipamentos: false, servicos: false, especiais: false })}
-                >
-                  Nenhum
-                </button>
-              </div>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={itensView.composicoes}
-                  onChange={(e) => setItensView((p) => ({ ...p, composicoes: Boolean(e.target.checked) }))}
-                />
-                <span>Composições</span>
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={itensView.materiais}
-                  onChange={(e) => setItensView((p) => ({ ...p, materiais: Boolean(e.target.checked) }))}
-                />
-                <span>Materiais</span>
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={itensView.equipamentos}
-                  onChange={(e) => setItensView((p) => ({ ...p, equipamentos: Boolean(e.target.checked) }))}
-                />
-                <span>Equipamentos</span>
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={itensView.servicos}
-                  onChange={(e) => setItensView((p) => ({ ...p, servicos: Boolean(e.target.checked) }))}
-                />
-                <span>Serviços</span>
-              </label>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={itensView.especiais}
-                  onChange={(e) => setItensView((p) => ({ ...p, especiais: Boolean(e.target.checked) }))}
-                />
-                <span>Especiais</span>
-              </label>
-            </div>
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-lg border bg-white p-3">
                 <div className="text-[11px] text-slate-500">Composições</div>
@@ -2924,7 +2950,7 @@ async function readTextSmart(file: File) {
             if (cat === "equipamentos") return displayPrefs.bgEquipamentos;
             if (cat === "mao_de_obra") return displayPrefs.bgMao;
             return displayPrefs.bgMateriais;
-          })}
+          }, { showFiltro: true })}
         </div>
       </section>
      </div>
