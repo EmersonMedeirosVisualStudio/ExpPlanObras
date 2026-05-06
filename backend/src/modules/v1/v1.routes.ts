@@ -5938,19 +5938,109 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
     await ensurePlanilhaOrcamentariaTables(prisma);
+    await ensurePlanilhaServicosTables(prisma);
     await ensurePlanilhaComposicaoTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
+    await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, idPlanilha);
     const rows = (await prisma.$queryRawUnsafe(
       `
-      SELECT DISTINCT UPPER(codigo_servico) AS "codigoServico"
-      FROM obras_planilhas_composicoes_itens
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+      WITH comp AS (
+        SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS codigo
+        FROM obras_planilhas_composicoes_itens
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND COALESCE(codigo_servico,'') <> ''
+      ),
+      valid AS (
+        SELECT c.codigo AS codigo
+        FROM comp c
+        JOIN obras_planilhas_servicos s
+          ON s.tenant_id = $1
+          AND s.id_obra = $2
+          AND s.id_planilha = $3
+          AND UPPER(COALESCE(s.codigo,'')) = c.codigo
+      ),
+      missing AS (
+        SELECT c.codigo AS codigo
+        FROM comp c
+        LEFT JOIN obras_planilhas_servicos s
+          ON s.tenant_id = $1
+          AND s.id_obra = $2
+          AND s.id_planilha = $3
+          AND UPPER(COALESCE(s.codigo,'')) = c.codigo
+        WHERE s.id_servico IS NULL
+      )
+      SELECT
+        v.codigo AS "codigoServico",
+        NULL::text AS "missingCodigo"
+      FROM valid v
+      UNION ALL
+      SELECT
+        NULL::text AS "codigoServico",
+        m.codigo AS "missingCodigo"
+      FROM missing m
       `,
       ctx.tenantId,
       idObra,
       idPlanilha
     )) as any[];
-    return ok(reply, { codes: (rows || []).map((r: any) => String(r.codigoServico || '').trim()).filter(Boolean) });
+    const codes = (rows || []).map((r: any) => String(r.codigoServico || '').trim()).filter(Boolean);
+    const orfas = (rows || []).map((r: any) => String(r.missingCodigo || '').trim()).filter(Boolean);
+    return ok(reply, { codes, orfas, orfasCount: orfas.length });
+  });
+
+  server.get('/engenharia/obras/:id/planilha/composicoes/sem-servico', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
+    await ensurePlanilhaOrcamentariaTables(prisma);
+    await ensurePlanilhaServicosTables(prisma);
+    await ensurePlanilhaComposicaoTables(prisma);
+    const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
+    await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, idPlanilha);
+
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      WITH comp AS (
+        SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS codigo
+        FROM obras_planilhas_composicoes_itens
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND COALESCE(codigo_servico,'') <> ''
+      )
+      SELECT c.codigo AS "codigoServico"
+      FROM comp c
+      LEFT JOIN obras_planilhas_servicos s
+        ON s.tenant_id = $1
+        AND s.id_obra = $2
+        AND s.id_planilha = $3
+        AND UPPER(COALESCE(s.codigo,'')) = c.codigo
+      WHERE s.id_servico IS NULL
+      ORDER BY c.codigo
+      LIMIT 2000
+      `,
+      ctx.tenantId,
+      idObra,
+      idPlanilha
+    )) as any[];
+
+    const blank = (await prisma.$queryRawUnsafe(
+      `
+      SELECT COUNT(*)::int AS "count"
+      FROM obras_planilhas_composicoes_itens
+      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+        AND COALESCE(NULLIF(trim(codigo_servico),''), '') = ''
+      `,
+      ctx.tenantId,
+      idObra,
+      idPlanilha
+    )) as any[];
+
+    const codes = (rows || []).map((r: any) => String(r.codigoServico || '').trim()).filter(Boolean);
+    const blankCount = Number(blank?.[0]?.count || 0);
+    return ok(reply, { planilhaId: idPlanilha, total: codes.length, codes, blankCount });
   });
 
   server.get('/engenharia/obras/:id/planilha/composicoes/referencias', async (request, reply) => {

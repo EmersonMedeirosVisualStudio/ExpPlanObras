@@ -58,6 +58,7 @@ export default function Page() {
     DIVERGENTE: true,
   });
   const [refs, setRefs] = useState<RefRow[]>([]);
+  const [composicoesSemServico, setComposicoesSemServico] = useState<{ total: number; codes: string[]; blankCount: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [copyForm, setCopyForm] = useState<{
     sourcePlanilhaId: number | null;
@@ -177,6 +178,27 @@ export default function Page() {
     }
   }
 
+  async function carregarComposicoesSemServico(pid: number) {
+    try {
+      const qs = new URLSearchParams();
+      qs.set("planilhaId", String(pid));
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/sem-servico?${qs.toString()}`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        setComposicoesSemServico(null);
+        return;
+      }
+      const codes = Array.isArray(json.data?.codes) ? json.data.codes : [];
+      setComposicoesSemServico({
+        total: Number(json.data?.total || 0),
+        blankCount: Number(json.data?.blankCount || 0),
+        codes: codes.map((c: any) => String(c || "").trim().toUpperCase()).filter(Boolean),
+      });
+    } catch {
+      setComposicoesSemServico(null);
+    }
+  }
+
   async function carregarTudo() {
     if (!idObra) return;
     try {
@@ -185,7 +207,7 @@ export default function Page() {
       setOkMsg(null);
       const pid = await carregarPlanilhaAtual();
       await carregarReferencias();
-      if (pid) await carregarValidacao(pid);
+      if (pid) await Promise.all([carregarValidacao(pid), carregarComposicoesSemServico(pid)]);
     } finally {
       setLoading(false);
     }
@@ -401,6 +423,21 @@ export default function Page() {
 
       {okMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{okMsg}</div> : null}
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
+      {composicoesSemServico && (composicoesSemServico.total > 0 || composicoesSemServico.blankCount > 0) ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <div className="font-semibold">Composições sem serviço no catálogo</div>
+          <div className="mt-1">
+            {composicoesSemServico.total} código(s) de composição existem em Composições (itens), mas não existem em Serviços (PLANILHA catálogo).
+            {composicoesSemServico.blankCount > 0 ? ` Há ${composicoesSemServico.blankCount} item(ns) com serviço vazio.` : ""}
+          </div>
+          {composicoesSemServico.total > 0 ? (
+            <div className="mt-2 break-words">
+              Códigos: {composicoesSemServico.codes.slice(0, 60).join(", ")}
+              {composicoesSemServico.codes.length > 60 ? ` (+${composicoesSemServico.codes.length - 60})` : ""}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div>

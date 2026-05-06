@@ -390,7 +390,12 @@ async function readTextSmart(file: File) {
       itensSavedRef.current = mapped.map((r: any) => ({ ...r }));
       if (!silent) setOkMsg("Composição carregada.");
      } catch (e: any) {
-       setErr(e?.message || "Erro ao carregar composição");
+      const msg = e?.message || "Erro ao carregar composição";
+      if (String(msg).startsWith("Serviço não existe na planilha:") || String(msg).startsWith("Serviço na planilha está sem nome")) {
+        setErr(null);
+      } else {
+        setErr(msg);
+      }
        setItens([]);
       itensSavedRef.current = [];
      } finally {
@@ -764,7 +769,7 @@ async function readTextSmart(file: File) {
         if (metaDesc || metaUnd) {
           setPrevistoAlert("Serviço está no catálogo da planilha, mas não está em Serviços (linhas). Para aparecer no previsto, adicione uma linha de serviço na Planilha orçamentária.");
         } else {
-          setPrevistoAlert("Serviço não encontrado no catálogo da planilha selecionada (verifique se a versão correta está selecionada/definida como atual).");
+          setPrevistoAlert(`Serviço não existe na planilha: ${codigoServico}`);
         }
       } else {
         const nomeFinal = String(rows?.[0]?.servicos || "").trim();
@@ -2686,7 +2691,8 @@ async function readTextSmart(file: File) {
               {(() => {
                 const nome = String(previstoRows?.[0]?.servicos || previstoServicoMeta?.descricao || "").trim();
                 return nome ? `${codigoServico} - ${nome}` : codigoServico;
-              })()}{" "}
+              })()}
+              <span className="inline-block w-[15ch]" aria-hidden="true" />
               <span className="font-semibold">Unid.:</span> {String(previstoRows?.[0]?.und || previstoServicoMeta?.und || "—").trim() || "—"}
             </div>
           </div>
