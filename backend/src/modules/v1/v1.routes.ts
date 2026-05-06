@@ -4946,6 +4946,181 @@ export default async function v1Routes(server: FastifyInstance) {
         return ok(reply, { idObra, idPlanilha: created.idPlanilha, numeroVersao: created.numeroVersao }, { message: 'Nova versão criada' });
       }
 
+      if (action === 'EDITAR_VERSAO') {
+        const idPlanilha = body.idPlanilha != null ? Number(body.idPlanilha) : NaN;
+        if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
+        const numeroVersao = body.numeroVersao != null && String(body.numeroVersao).trim() !== '' ? Number(body.numeroVersao) : null;
+        const nome = body.nome != null ? String(body.nome).trim().slice(0, 120) : null;
+        const origem = body.origem != null ? String(body.origem).trim().toUpperCase() : null;
+        const allowedOrigem = new Set(['MANUAL', 'CSV', 'MIGRACAO', 'DUPLICADA']);
+        if (origem != null && !allowedOrigem.has(origem)) return fail(reply, 422, 'origem inválida');
+        if (numeroVersao != null && (!Number.isFinite(numeroVersao) || numeroVersao <= 0 || Math.floor(numeroVersao) !== numeroVersao)) {
+          return fail(reply, 422, 'numeroVersao inválido');
+        }
+        if (nome != null && !nome) return fail(reply, 422, 'nome inválido');
+        if (numeroVersao == null && nome == null && origem == null) return ok(reply, { ok: true }, { message: 'Nada para alterar' });
+
+        const updated = await prisma.$transaction(async (tx: any) => {
+          const exists = (await tx.$queryRawUnsafe(
+            `
+            SELECT id_planilha AS "idPlanilha"
+            FROM obras_planilhas_versoes
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+            LIMIT 1
+            `,
+            ctx.tenantId,
+            idObra,
+            idPlanilha
+          )) as any[];
+          if (!exists?.[0]) throw new Error('Planilha não encontrada');
+
+          if (numeroVersao != null) {
+            const dup = (await tx.$queryRawUnsafe(
+              `
+              SELECT 1
+              FROM obras_planilhas_versoes
+              WHERE tenant_id = $1 AND id_obra = $2 AND numero_versao = $3 AND id_planilha <> $4
+              LIMIT 1
+              `,
+              ctx.tenantId,
+              idObra,
+              numeroVersao,
+              idPlanilha
+            )) as any[];
+            if (dup?.[0]) throw new Error('Já existe uma versão com esse número');
+          }
+
+          await tx.$executeRawUnsafe(
+            `
+            UPDATE obras_planilhas_versoes
+            SET
+              numero_versao = COALESCE($4, numero_versao),
+              nome = COALESCE($5, nome),
+              origem = COALESCE($6, origem),
+              atualizado_em = NOW()
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+            `,
+            ctx.tenantId,
+            idObra,
+            idPlanilha,
+            numeroVersao,
+            nome,
+            origem
+          );
+          return { ok: true };
+        });
+
+        return ok(reply, updated, { message: 'Versão atualizada' });
+      }
+
+      if (action === 'DEFINIR_ATUAL') {
+        const idPlanilha = body.idPlanilha != null ? Number(body.idPlanilha) : NaN;
+        if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
+
+        const res = await prisma.$transaction(async (tx: any) => {
+          const exists = (await tx.$queryRawUnsafe(
+            `
+            SELECT id_planilha AS "idPlanilha"
+            FROM obras_planilhas_versoes
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+            LIMIT 1
+            `,
+            ctx.tenantId,
+            idObra,
+            idPlanilha
+          )) as any[];
+          if (!exists?.[0]) throw new Error('Planilha não encontrada');
+
+          await tx.$executeRawUnsafe(`UPDATE obras_planilhas_versoes SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2`, ctx.tenantId, idObra);
+          await tx.$executeRawUnsafe(
+            `UPDATE obras_planilhas_versoes SET atual = TRUE WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+            ctx.tenantId,
+            idObra,
+            idPlanilha
+          );
+          return { idPlanilhaAtual: idPlanilha };
+        });
+
+        return ok(reply, res, { message: 'Planilha definida como atual' });
+      }
+
+      if (action === 'EXCLUIR_PLANILHA') {
+        const idPlanilha = body.idPlanilha != null ? Number(body.idPlanilha) : NaN;
+        if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
+
+        const res = await prisma.$transaction(async (tx: any) => {
+          await ensurePlanilhaComposicaoTables(tx);
+          await ensureInsumosPrecosTables(tx);
+
+          const exists = (await tx.$queryRawUnsafe(
+            `
+            SELECT atual
+            FROM obras_planilhas_versoes
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+            LIMIT 1
+            `,
+            ctx.tenantId,
+            idObra,
+            idPlanilha
+          )) as any[];
+          const row = exists?.[0] || null;
+          if (!row) throw new Error('Planilha não encontrada');
+
+          await tx.$executeRawUnsafe(`DELETE FROM obras_planilhas_linhas WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, idPlanilha);
+          await tx.$executeRawUnsafe(
+            `DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+            ctx.tenantId,
+            idObra,
+            idPlanilha
+          );
+          await tx.$executeRawUnsafe(`DELETE FROM obras_insumos_precos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`, ctx.tenantId, idObra, idPlanilha);
+
+          const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
+          const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
+          if (hasPrimitivaTable) {
+            await tx.$executeRawUnsafe(
+              `DELETE FROM obras_planilhas_composicoes_primitivas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+              ctx.tenantId,
+              idObra,
+              idPlanilha
+            );
+          }
+
+          await tx.$executeRawUnsafe(
+            `DELETE FROM obras_planilhas_versoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+            ctx.tenantId,
+            idObra,
+            idPlanilha
+          );
+
+          const remaining = (await tx.$queryRawUnsafe(
+            `
+            SELECT id_planilha AS "idPlanilha"
+            FROM obras_planilhas_versoes
+            WHERE tenant_id = $1 AND id_obra = $2
+            ORDER BY atual DESC, numero_versao DESC, id_planilha DESC
+            LIMIT 1
+            `,
+            ctx.tenantId,
+            idObra
+          )) as any[];
+          const nextId = remaining?.[0]?.idPlanilha ? Number(remaining[0].idPlanilha) : null;
+          if (nextId) {
+            await tx.$executeRawUnsafe(`UPDATE obras_planilhas_versoes SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2`, ctx.tenantId, idObra);
+            await tx.$executeRawUnsafe(
+              `UPDATE obras_planilhas_versoes SET atual = TRUE WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+              ctx.tenantId,
+              idObra,
+              nextId
+            );
+          }
+
+          return { ok: true, idPlanilhaAtual: nextId };
+        });
+
+        return ok(reply, res, { message: 'Planilha excluída' });
+      }
+
       if (action === 'ATUALIZAR_PARAMETROS') {
         const idPlanilha = body.idPlanilha != null ? Number(body.idPlanilha) : NaN;
         if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');

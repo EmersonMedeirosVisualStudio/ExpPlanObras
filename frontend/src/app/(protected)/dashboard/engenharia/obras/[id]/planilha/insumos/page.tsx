@@ -92,7 +92,7 @@ export default function Page() {
         <div>
           <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Insumos</div>
           <h1 className="text-2xl font-semibold">Insumos consolidados — Obra #{idObra}</h1>
-          <div className="text-sm text-slate-600">Cálculo baseado na planilha atual e nas composições importadas/cadastradas.</div>
+          <div className="text-sm text-slate-600">Cálculo baseado na planilha selecionada (versão) e nas composições importadas/cadastradas.</div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button

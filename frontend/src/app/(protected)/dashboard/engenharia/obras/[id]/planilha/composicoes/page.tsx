@@ -201,7 +201,7 @@ export default function Page() {
         <div>
           <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Composições</div>
           <h1 className="text-2xl font-semibold">Composições da obra — Obra #{idObra}</h1>
-          <div className="text-sm text-slate-600">As composições são da obra (valem para qualquer versão da planilha). Esta tela ajuda a ver faltantes e divergências.</div>
+          <div className="text-sm text-slate-600">As composições são da planilha selecionada (versão). Esta tela ajuda a ver faltantes e divergências.</div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button

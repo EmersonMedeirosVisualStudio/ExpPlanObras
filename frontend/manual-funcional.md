@@ -1684,8 +1684,10 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 - Engenharia → Obras → Planilha contratada / Planilha orçamentária
 - Navegação (UI): as telas **Planilha orçamentária**, **Composições da obra** e **Insumos consolidados** possuem botões de navegação no **canto superior direito**, alinhados ao título da página (Planilha/Composições/Insumos/Voltar). Os botões específicos de cada tela ficam logo abaixo desses botões principais.
 - Versões: ao entrar na tela, o sistema **não abre automaticamente** nenhuma planilha. O usuário deve selecionar a versão desejada no card **Versões cadastradas**.
-  - Ações no card **Versões cadastradas**: **Atualizar**, **Importar CSV**, **Modelo CSV** e **Nova planilha**.
-- Edição por versão selecionada: após selecionar uma versão, o usuário pode **editar a planilha** (linhas e parâmetros) diretamente na versão selecionada.
+  - Ações no card **Versões cadastradas**: **Atualizar**, **Importar CSV**, **Modelo CSV**, **Nova planilha** e **Duplicar planilha**.
+  - Coluna **Ações** (na lista de versões): **Editar** e **Excluir planilha**.
+  - Coluna **Atual**: botão **Definir atual** para marcar uma planilha como a versão atual da obra.
+- Edição por versão selecionada: após selecionar uma versão, o usuário pode **editar a planilha** (linhas e parâmetros) diretamente na versão selecionada. Os parâmetros (Obra pública) são da **planilha**, não da obra.
 - Duplicação (com dependências): no card **Versões cadastradas**, existe a ação **Duplicar planilha** que cria uma nova versão copiando:
   - linhas da planilha;
   - composições/subcomposições vinculadas aos serviços da planilha;
@@ -1711,7 +1713,7 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
   - alterações têm efeito em cascata: recalculam composições dependentes e atualizam o valor do serviço na planilha;
   - a tecla **Esc** cancela a edição e restaura o último estado salvo.
 - Insumos consolidados:
-  - Insumos **não são importados nem cadastrados manualmente**: são capturados automaticamente das **composições** da obra.
+  - Insumos **não são importados nem cadastrados manualmente**: são capturados automaticamente das **composições** da planilha selecionada (versão).
   - A consolidação agrupa por **Código + Und + Preço Unit** (e mantém descrição) e soma a **Quantidade total** de todas as ocorrências.
   - Sempre que composições são inseridas/atualizadas, a captura de insumos passa a refletir os dados mais recentes (cálculo dinâmico).
 

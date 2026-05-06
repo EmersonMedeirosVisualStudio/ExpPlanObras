@@ -1230,6 +1230,101 @@ export default function PlanilhaObraClient({
     }
   }
 
+  async function definirPlanilhaComoAtual(idPlanilha: number) {
+    if (!idPlanilha) return;
+    if (!window.confirm("Definir esta planilha como a atual?")) return;
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "DEFINIR_ATUAL", idPlanilha }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao definir planilha como atual");
+      await carregarVersoes();
+      setPlanilhaId(idPlanilha);
+      setOkMsg("Planilha definida como atual.");
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao definir planilha como atual");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function editarVersao(v: VersaoRow) {
+    if (!v?.idPlanilha) return;
+    const nome = window.prompt("Nome da planilha:", v.nome);
+    if (nome == null) return;
+    const numeroVersaoStr = window.prompt("Número da versão:", String(v.numeroVersao));
+    if (numeroVersaoStr == null) return;
+    const numeroVersao = Number(String(numeroVersaoStr || "").trim());
+    if (!Number.isFinite(numeroVersao) || numeroVersao <= 0 || Math.floor(numeroVersao) !== numeroVersao) {
+      setErr("Número de versão inválido.");
+      return;
+    }
+    const origem = window.prompt("Origem (MANUAL/CSV/MIGRACAO/DUPLICADA):", String(v.origem || "MANUAL").trim().toUpperCase());
+    if (origem == null) return;
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "EDITAR_VERSAO",
+          idPlanilha: v.idPlanilha,
+          numeroVersao,
+          nome: String(nome || "").trim(),
+          origem: String(origem || "").trim().toUpperCase(),
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao editar versão");
+      await carregarVersoes();
+      if (planilhaId === v.idPlanilha) await carregarPlanilha(v.idPlanilha);
+      setOkMsg("Versão atualizada.");
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao editar versão");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function excluirPlanilha(v: VersaoRow) {
+    if (!v?.idPlanilha) return;
+    const msg =
+      "Excluir a planilha inteira?\n\nIsso remove:\n- Parâmetros\n- Linhas/serviços\n- Composições/subcomposições\n- Preços de insumos\n\nEsta ação não pode ser desfeita.";
+    if (!window.confirm(msg)) return;
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "EXCLUIR_PLANILHA", idPlanilha: v.idPlanilha }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao excluir planilha");
+      const nextAtual = json.data?.idPlanilhaAtual == null ? null : Number(json.data.idPlanilhaAtual);
+      await carregarVersoes();
+      if (nextAtual) setPlanilhaId(nextAtual);
+      else {
+        setPlanilhaId(null);
+        setPlanilha(null);
+      }
+      setOkMsg("Planilha excluída.");
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao excluir planilha");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function importarCsv(file: File, nomeVersao?: string) {
     try {
       setLoading(true);
@@ -1671,6 +1766,7 @@ export default function PlanilhaObraClient({
                 <th className="px-3 py-2 text-right">Valor total</th>
                 <th className="px-3 py-2">Atual</th>
                 <th className="px-3 py-2">Criada em</th>
+                <th className="px-3 py-2">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -1692,15 +1788,58 @@ export default function PlanilhaObraClient({
                         Atual
                       </span>
                     ) : (
-                      "—"
+                      <button
+                        className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          definirPlanilhaComoAtual(v.idPlanilha);
+                        }}
+                        disabled={loading}
+                      >
+                        Definir atual
+                      </button>
                     )}
                   </td>
                   <td className="px-3 py-2">{v.criadoEm ? new Date(v.criadoEm).toLocaleString("pt-BR") : "-"}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="inline-flex items-center gap-1 rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          editarVersao(v);
+                        }}
+                        disabled={loading}
+                        title="Editar versão"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Editar
+                      </button>
+                      <button
+                        className="inline-flex items-center gap-1 rounded border border-red-200 bg-white px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-60"
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          excluirPlanilha(v);
+                        }}
+                        disabled={loading}
+                        title="Excluir planilha"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Excluir
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
               {!versoes.length ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={8} className="px-3 py-6 text-center text-slate-500">
                     Nenhuma versão cadastrada.
                   </td>
                 </tr>
@@ -1767,7 +1906,7 @@ export default function PlanilhaObraClient({
                   <button className="rounded border bg-white px-2 py-1 text-sm hover:bg-slate-50" type="button" onClick={() => setShowParamsCard((v) => !v)}>
                     {showParamsCard ? "⯆" : "⯈"}
                   </button>
-                  <div className="text-lg font-semibold">Parâmetros (Obra pública)</div>
+                  <div className="text-lg font-semibold">Parâmetros da planilha (Obra pública)</div>
                 </div>
                 {showParamsCard ? (
                   <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60" type="button" onClick={salvarParametros} disabled={loading || !podeEditar}>
