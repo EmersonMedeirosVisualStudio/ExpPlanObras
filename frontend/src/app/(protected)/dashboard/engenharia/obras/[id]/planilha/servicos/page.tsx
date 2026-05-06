@@ -109,7 +109,7 @@ export default function Page() {
           nome: String(v?.nome || ""),
           atual: Boolean(v?.atual),
         }))
-        .filter((v) => Number.isFinite(v.idPlanilha) && v.idPlanilha > 0);
+        .filter((v: VersaoRow) => Number.isFinite(v.idPlanilha) && v.idPlanilha > 0);
       setVersoes(mapped);
       const byQuery = planilhaIdFromQuery != null ? versoes.find((v: any) => Number(v?.idPlanilha || 0) === Number(planilhaIdFromQuery)) : null;
       const atual = versoes.find((v: any) => Boolean(v.atual)) || versoes[0] || null;
