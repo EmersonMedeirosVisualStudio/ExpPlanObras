@@ -720,7 +720,7 @@ async function readTextSmart(file: File) {
         }));
       setNavPlanilhaServicos(navList);
       setNavIdx(navList.findIndex((x: { codigo: string }) => x.codigo === codigoServico));
-      let rows = linhas
+      let rows: PrevistoPlanilhaRow[] = linhas
         .filter((l: any) => String(l.tipoLinha || "").toUpperCase() === "SERVICO" && String(l.codigo || "").trim().toUpperCase() === codigoServico)
         .map((l: any) => ({
           item: String(l.item || ""),
@@ -751,7 +751,7 @@ async function readTextSmart(file: File) {
             if (desc || und) {
               setPrevistoServicoMeta({ descricao: desc, und });
               usedMeta = true;
-              rows = rows.map((r) => ({
+              rows = rows.map((r: PrevistoPlanilhaRow) => ({
                 ...r,
                 servicos: String(r.servicos || "").trim() ? r.servicos : desc,
                 und: String(r.und || "").trim() ? r.und : und,
