@@ -1308,6 +1308,44 @@ async function readTextSmart(file: File) {
     [itensIdx]
   );
 
+  function categoriaItem(r: ItemRow) {
+    if (isComposicaoTipo(r.tipoItem)) return "composicoes";
+    const key = normalizeHeader(String(r.tipoItem || ""));
+    if (key.includes("equipamento")) return "equipamentos";
+    if (key === "servicos") return "servicos";
+    if (key === "especiais") return "especiais";
+    if (key === "mao_de_obra") return "mao_de_obra";
+    return "materiais";
+  }
+
+  const itensFiltradosOrdenados = useMemo(() => {
+    const order = new Map<string, number>([
+      ["composicoes", 1],
+      ["materiais", 2],
+      ["equipamentos", 3],
+      ["servicos", 4],
+      ["especiais", 5],
+      ["mao_de_obra", 6],
+    ]);
+    return itensIdx
+      .filter(({ r }) => {
+        const cat = categoriaItem(r);
+        if (cat === "composicoes") return itensView.composicoes;
+        if (cat === "materiais") return itensView.materiais;
+        if (cat === "equipamentos") return itensView.equipamentos;
+        if (cat === "servicos") return itensView.servicos;
+        if (cat === "especiais") return itensView.especiais;
+        return true;
+      })
+      .slice()
+      .sort((a, b) => {
+        const ao = order.get(categoriaItem(a.r)) ?? 99;
+        const bo = order.get(categoriaItem(b.r)) ?? 99;
+        if (ao !== bo) return ao - bo;
+        return a.idx - b.idx;
+      });
+  }, [itensIdx, itensView]);
+
   function tipoMeta(tipo: string) {
     const key = normalizeHeader(String(tipo || ""));
     if (key === "composicao" || key === "composicao_auxiliar") return { label: "Composição", Icon: Layers, key };
@@ -1337,7 +1375,7 @@ async function readTextSmart(file: File) {
     return Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  function renderItensTabela(list: Array<{ r: ItemRow; idx: number }>, rowBg: string) {
+  function renderItensTabela(list: Array<{ r: ItemRow; idx: number }>, rowBg: string | ((r: ItemRow) => string)) {
     const colCount =
       (displayPrefs.colTipo ? 1 : 0) +
       (displayPrefs.colCodigo ? 1 : 0) +
@@ -1431,6 +1469,7 @@ async function readTextSmart(file: File) {
           </thead>
           <tbody>
             {list.map(({ r, idx }) => {
+              const bg = typeof rowBg === "function" ? rowBg(r) : rowBg;
               const q = parseNumberLoose(r.quantidade);
               const bancoInOptions = !r.banco || bancosOptions.includes(r.banco);
               const selectBancoValue = bancoInOptions ? r.banco : "__OUTRO__";
@@ -1443,7 +1482,7 @@ async function readTextSmart(file: File) {
               const total = q != null && v != null ? q * v : null;
               const displayValorUnit = r.valorUnitario;
               return (
-                <tr key={idx} className="border-t" style={{ backgroundColor: rowBg }}>
+                <tr key={idx} className="border-t" style={{ backgroundColor: bg }}>
                   {displayPrefs.colTipo ? (
                     <td className="px-3 py-2" style={{ ...cellW(w.tipo), fontSize: px(fs.tipo) }}>
                       <button
@@ -2852,40 +2891,13 @@ async function readTextSmart(file: File) {
         </div>
 
         <div className="space-y-4">
-          {itensView.composicoes ? (
-          <div className="space-y-2">
-            <div className="text-sm font-semibold text-slate-800">Composições</div>
-            {renderItensTabela(itensComposicoes, displayPrefs.bgComposicoes)}
-          </div>
-          ) : null}
-          {itensView.materiais ? (
-          <div className="space-y-2">
-            <div className="text-sm font-semibold text-slate-800">Materiais</div>
-            {renderItensTabela(itensMateriais, displayPrefs.bgMateriais)}
-          </div>
-          ) : null}
-          {itensView.equipamentos ? (
-          <div className="space-y-2">
-            <div className="text-sm font-semibold text-slate-800">Equipamentos</div>
-            {renderItensTabela(itensEquipamentos, displayPrefs.bgEquipamentos)}
-          </div>
-          ) : null}
-          {itensView.servicos ? (
-          <div className="space-y-2">
-            <div className="text-sm font-semibold text-slate-800">Serviços</div>
-            {renderItensTabela(itensServicos, displayPrefs.bgMateriais)}
-          </div>
-          ) : null}
-          {itensView.especiais ? (
-          <div className="space-y-2">
-            <div className="text-sm font-semibold text-slate-800">Especiais</div>
-            {renderItensTabela(itensEspeciais, displayPrefs.bgMateriais)}
-          </div>
-          ) : null}
-          <div className="space-y-2">
-            <div className="text-sm font-semibold text-slate-800">Mão de obra</div>
-            {renderItensTabela(itensMaoDeObra, displayPrefs.bgMao)}
-          </div>
+          {renderItensTabela(itensFiltradosOrdenados, (r) => {
+            const cat = categoriaItem(r);
+            if (cat === "composicoes") return displayPrefs.bgComposicoes;
+            if (cat === "equipamentos") return displayPrefs.bgEquipamentos;
+            if (cat === "mao_de_obra") return displayPrefs.bgMao;
+            return displayPrefs.bgMateriais;
+          })}
         </div>
       </section>
      </div>
