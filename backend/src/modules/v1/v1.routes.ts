@@ -4489,7 +4489,10 @@ export default async function v1Routes(server: FastifyInstance) {
         WHERE tenant_id = $1 AND id_planilha = $2
         ORDER BY
           CASE
-            WHEN COALESCE(item, '') ~ E'^[0-9]+(\\.[0-9]+)*$' THEN regexp_split_to_array(item, E'\\.')::int[]
+            WHEN COALESCE(item, '') ~ E'^[0-9]+(\\.[0-9]+)*$' THEN (
+              SELECT array_agg(NULLIF(trim(p), '')::int ORDER BY ord)
+              FROM unnest(regexp_split_to_array(item, E'\\.')) WITH ORDINALITY AS t(p, ord)
+            )
             ELSE ARRAY[2147483647]::int[]
           END ASC,
           id_linha ASC
