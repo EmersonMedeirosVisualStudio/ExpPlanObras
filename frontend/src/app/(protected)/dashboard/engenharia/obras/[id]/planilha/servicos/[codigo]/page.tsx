@@ -208,6 +208,13 @@ async function readTextSmart(file: File) {
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
   const [showDisplayConfig, setShowDisplayConfig] = useState(false);
   const [showPrintConfig, setShowPrintConfig] = useState(false);
+  const [itensView, setItensView] = useState<{
+    composicoes: boolean;
+    materiais: boolean;
+    equipamentos: boolean;
+    servicos: boolean;
+    especiais: boolean;
+  }>({ composicoes: true, materiais: true, equipamentos: true, servicos: true, especiais: true });
   const [displayPrefs, setDisplayPrefs] = useState<{
     colTipo: boolean;
     colCodigo: boolean;
@@ -1246,6 +1253,7 @@ async function readTextSmart(file: File) {
 
   const itensIdx = useMemo(() => itens.map((r, idx) => ({ r, idx })), [itens]);
   const itensComposicoes = useMemo(() => itensIdx.filter(({ r }) => isComposicaoTipo(r.tipoItem)), [itensIdx]);
+  const itensInsumos = useMemo(() => itensIdx.filter(({ r }) => !isComposicaoTipo(r.tipoItem)), [itensIdx]);
   const itensMateriais = useMemo(
     () =>
       itensIdx.filter(({ r }) => {
@@ -1253,6 +1261,8 @@ async function readTextSmart(file: File) {
         const key = normalizeHeader(String(r.tipoItem || ""));
         if (key === "mao_de_obra") return false;
         if (key.includes("equipamento")) return false;
+        if (key === "servicos") return false;
+        if (key === "especiais") return false;
         return true;
       }),
     [itensIdx]
@@ -1264,6 +1274,26 @@ async function readTextSmart(file: File) {
         if (isComposicaoTipo(r.tipoItem)) return false;
         const key = normalizeHeader(String(r.tipoItem || ""));
         return key.includes("equipamento");
+      }),
+    [itensIdx]
+  );
+
+  const itensServicos = useMemo(
+    () =>
+      itensIdx.filter(({ r }) => {
+        if (isComposicaoTipo(r.tipoItem)) return false;
+        const key = normalizeHeader(String(r.tipoItem || ""));
+        return key === "servicos";
+      }),
+    [itensIdx]
+  );
+
+  const itensEspeciais = useMemo(
+    () =>
+      itensIdx.filter(({ r }) => {
+        if (isComposicaoTipo(r.tipoItem)) return false;
+        const key = normalizeHeader(String(r.tipoItem || ""));
+        return key === "especiais";
       }),
     [itensIdx]
   );
@@ -2654,6 +2684,64 @@ async function readTextSmart(file: File) {
                 </button>
               </div>
             </div>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  className="rounded border bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
+                  type="button"
+                  onClick={() => setItensView({ composicoes: true, materiais: true, equipamentos: true, servicos: true, especiais: true })}
+                >
+                  Todos
+                </button>
+                <button
+                  className="rounded border bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
+                  type="button"
+                  onClick={() => setItensView({ composicoes: false, materiais: false, equipamentos: false, servicos: false, especiais: false })}
+                >
+                  Nenhum
+                </button>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={itensView.composicoes}
+                  onChange={(e) => setItensView((p) => ({ ...p, composicoes: Boolean(e.target.checked) }))}
+                />
+                <span>Composições</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={itensView.materiais}
+                  onChange={(e) => setItensView((p) => ({ ...p, materiais: Boolean(e.target.checked) }))}
+                />
+                <span>Materiais</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={itensView.equipamentos}
+                  onChange={(e) => setItensView((p) => ({ ...p, equipamentos: Boolean(e.target.checked) }))}
+                />
+                <span>Equipamentos</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={itensView.servicos}
+                  onChange={(e) => setItensView((p) => ({ ...p, servicos: Boolean(e.target.checked) }))}
+                />
+                <span>Serviços</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={itensView.especiais}
+                  onChange={(e) => setItensView((p) => ({ ...p, especiais: Boolean(e.target.checked) }))}
+                />
+                <span>Especiais</span>
+              </label>
+            </div>
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-lg border bg-white p-3">
                 <div className="text-[11px] text-slate-500">Composições</div>
@@ -2764,18 +2852,36 @@ async function readTextSmart(file: File) {
         </div>
 
         <div className="space-y-4">
+          {itensView.composicoes ? (
           <div className="space-y-2">
             <div className="text-sm font-semibold text-slate-800">Composições</div>
             {renderItensTabela(itensComposicoes, displayPrefs.bgComposicoes)}
           </div>
+          ) : null}
+          {itensView.materiais ? (
           <div className="space-y-2">
             <div className="text-sm font-semibold text-slate-800">Materiais</div>
             {renderItensTabela(itensMateriais, displayPrefs.bgMateriais)}
           </div>
+          ) : null}
+          {itensView.equipamentos ? (
           <div className="space-y-2">
             <div className="text-sm font-semibold text-slate-800">Equipamentos</div>
             {renderItensTabela(itensEquipamentos, displayPrefs.bgEquipamentos)}
           </div>
+          ) : null}
+          {itensView.servicos ? (
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-slate-800">Serviços</div>
+            {renderItensTabela(itensServicos, displayPrefs.bgMateriais)}
+          </div>
+          ) : null}
+          {itensView.especiais ? (
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-slate-800">Especiais</div>
+            {renderItensTabela(itensEspeciais, displayPrefs.bgMateriais)}
+          </div>
+          ) : null}
           <div className="space-y-2">
             <div className="text-sm font-semibold text-slate-800">Mão de obra</div>
             {renderItensTabela(itensMaoDeObra, displayPrefs.bgMao)}
