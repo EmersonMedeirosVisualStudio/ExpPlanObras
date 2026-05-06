@@ -1712,6 +1712,9 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
   - o campo **Valor Unit.** do serviço **não é digitável**;
   - ele é preenchido automaticamente a partir da composição vinculada ao código do serviço (ou **0** quando não existe composição definida);
   - ao informar/alterar o **Código** do serviço, o sistema recalcula o valor unitário.
+- Edição de Item/Subitem:
+  - ao selecionar **Tipo = Item** ou **Tipo = Subitem**, os campos **Código**, **Fonte**, **UND**, **Quant.** e **Valor Unit.** não são exibidos (pois são específicos de Serviço);
+  - o **Valor parcial** do Item/Subitem é a **soma dos serviços** cadastrados abaixo dele e é atualizado automaticamente conforme serviços são inseridos/alterados/excluídos.
 - Cancelamento de edição (atalho): a tecla **Esc** cancela a edição em andamento e restaura o último estado salvo.
 - Planilha (exportação): no card **Planilha orçamentária**, os botões **Imprimir**, **PDF** e **CSV** ficam no canto superior direito do card.
 - Serviços:

@@ -396,6 +396,7 @@ export default function PlanilhaObraClient({
   const [planilha, setPlanilha] = useState<Planilha | null>(null);
   const [planilhaId, setPlanilhaId] = useState<number | null>(initialPlanilhaId);
   const [showPrintConfig, setShowPrintConfig] = useState(false);
+  const [linhaFormErr, setLinhaFormErr] = useState<string | null>(null);
 
   const safeReturnTo = useMemo(() => {
     const raw = String(returnTo || "").trim();
@@ -636,6 +637,7 @@ export default function PlanilhaObraClient({
     setEditingLinhaId(null);
     setNovo({ tipoLinha: "SERVICO", item: "", codigo: "", fonte: "", servicos: "", und: "", quant: "", valorUnitario: "", valorParcial: "" });
     setLinhaErrors({});
+    setLinhaFormErr(null);
     setOkMsg(null);
     editSnapshotRef.current = null;
   }
@@ -697,6 +699,15 @@ export default function PlanilhaObraClient({
     const headers = ["item", "codigo", "fonte", "servicos", "und", "quant", "valor_unitario", "valor_parcial", "tipo_linha"];
     const lines = [headers.join(sep)];
     for (const l of sortPlanilhaLinhasByItem(planilha.linhas || [])) {
+      const valorParcialOut =
+        l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM"
+          ? (() => {
+              const k = String(l.item || "").trim();
+              const info = k ? subtotalByItemKey.get(k) : null;
+              if (!info?.count) return "";
+              return String(Number((info.sum || 0).toFixed(2)));
+            })()
+          : String(l.valorParcial || "");
       lines.push(
         [
           String(l.item || ""),
@@ -706,7 +717,7 @@ export default function PlanilhaObraClient({
           String(l.und || ""),
           String(l.quant || ""),
           String(l.valorUnitario || ""),
-          String(l.valorParcial || ""),
+          valorParcialOut,
           String(l.tipoLinha || ""),
         ]
           .map((v) => (String(v).includes(sep) || String(v).includes('"') || String(v).includes("\n") ? `"${String(v).replace(/"/g, '""')}"` : String(v)))
@@ -1237,6 +1248,14 @@ export default function PlanilhaObraClient({
     const errors: Partial<Record<keyof typeof novo, string>> = {};
     if (!String(next.item || "").trim()) errors.item = "Obrigatório";
     if (!String(next.servicos || "").trim()) errors.servicos = "Obrigatório";
+    const itemNorm = String(next.item || "").trim();
+    if (planilha && itemNorm) {
+      const dup = (planilha.linhas || []).some((l) => {
+        if (editingLinhaId && Number(l.idLinha) === Number(editingLinhaId)) return false;
+        return String(l.item || "").trim() === itemNorm;
+      });
+      if (dup) errors.item = "Já existe";
+    }
     if (next.tipoLinha === "SERVICO") {
       if (!String(next.codigo || "").trim()) errors.codigo = "Obrigatório";
       if (!String(next.und || "").trim()) errors.und = "Obrigatório";
@@ -1257,7 +1276,11 @@ export default function PlanilhaObraClient({
       setLoading(true);
       setErr(null);
       setLinhaErrors({});
+      setLinhaFormErr(null);
       let normalized = applyValorParcialAuto({ ...novo });
+      if (normalized.tipoLinha !== "SERVICO") {
+        normalized = { ...normalized, codigo: "", fonte: "", und: "", quant: "", valorUnitario: "" };
+      }
       if (normalized.tipoLinha === "SERVICO") {
         const info = await obterPrecoUnitarioServico(normalized.codigo, planilha.idPlanilha);
         const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
@@ -1266,7 +1289,7 @@ export default function PlanilhaObraClient({
       const nextErrors = validateLinha(normalized);
       setLinhaErrors(nextErrors);
       if (Object.keys(nextErrors).length) {
-        setErr("Corrija os campos destacados antes de salvar.");
+        setLinhaFormErr("Corrija os campos destacados antes de salvar.");
         setLoading(false);
         return;
       }
@@ -1346,6 +1369,7 @@ export default function PlanilhaObraClient({
     setNovo(next);
     editSnapshotRef.current = { editingLinhaId: Number(l.idLinha), novo: next };
     setLinhaErrors({});
+    setLinhaFormErr(null);
     setOkMsg(null);
     setShowPlanilhaCard(true);
     setShowAdicionarCard(true);
@@ -1652,19 +1676,20 @@ export default function PlanilhaObraClient({
   }
 
   const subtotalByItemKey = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, { sum: number; count: number }>();
     const rows = planilha?.linhas || [];
     for (const l of rows) {
       if (String(l.tipoLinha || "").toUpperCase() !== "SERVICO") continue;
       const itemStr = String(l.item || "").trim();
       if (!itemStr) continue;
       const v = parseNumberLoose(l.valorParcial);
-      if (v == null) continue;
       const parts = itemStr.split(".").map((p) => p.trim()).filter(Boolean);
       if (parts.length <= 1) continue;
       for (let i = 1; i <= parts.length - 1; i++) {
         const prefix = parts.slice(0, i).join(".");
-        map.set(prefix, Number(((map.get(prefix) || 0) + v).toFixed(6)));
+        const cur = map.get(prefix) || { sum: 0, count: 0 };
+        const nextSum = cur.sum + (typeof v === "number" && Number.isFinite(v) ? v : 0);
+        map.set(prefix, { sum: Number(nextSum.toFixed(6)), count: cur.count + 1 });
       }
     }
     return map;
@@ -2492,280 +2517,316 @@ export default function PlanilhaObraClient({
               </div>
               {showAdicionarCard ? (
                 <>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-10">
-                <div className="md:col-span-2">
-                  <div className="text-sm text-slate-600">Tipo</div>
-                  <select
-                    className={`input bg-white ${linhaErrors.tipoLinha ? "border-red-300 bg-red-50" : ""}`}
-                    value={novo.tipoLinha}
-                    onChange={(e) => {
-                      const tipoLinha = e.target.value as any;
-                      setNovo((p) => applyValorParcialAuto({ ...p, tipoLinha }));
-                      setLinhaErrors((p) => {
-                        if (!("tipoLinha" in p)) return p;
-                        const { tipoLinha: _, ...rest } = p as any;
-                        return rest;
-                      });
-                    }}
-                    disabled={!podeEditar}
-                  >
-                    <option value="ITEM">Item</option>
-                    <option value="SUBITEM">Subitem</option>
-                    <option value="SERVICO">Serviço</option>
-                  </select>
-                </div>
-                <div>
-                  <div className="text-sm text-slate-600">ITEM</div>
-                  <input
-                    className={`input bg-white ${linhaErrors.item ? "border-red-300 bg-red-50" : ""}`}
-                    value={novo.item}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setNovo((p) => ({ ...p, item: v }));
-                      setLinhaErrors((p) => {
-                        if (!("item" in p)) return p;
-                        const { item: _, ...rest } = p as any;
-                        return rest;
-                      });
-                    }}
-                    disabled={!podeEditar}
-                    placeholder="1.1"
-                  />
-                </div>
-                <div>
-                  <div className="text-sm text-slate-600">CÓDIGO</div>
+                  {linhaFormErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{linhaFormErr}</div> : null}
+
                   {novo.tipoLinha === "SERVICO" ? (
-                    <SearchSelect
-                      value={novo.codigo}
-                      options={servicosCodigoOptions}
-                      inputClassName={`input bg-white ${linhaErrors.codigo ? "border-red-300 bg-red-50" : ""}`}
-                      onChange={(v) => {
-                        setNovo((p) => {
-                          const next: any = { ...p, codigo: v };
-                          const match = findServicoMatch({ codigo: v, servicos: next.servicos, fonte: next.fonte });
-                          if (match) {
-                            next.servicos = match.servicos;
-                            next.fonte = match.fonte;
-                            next.und = match.und;
-                          }
-                          return next;
-                        });
-                        setLinhaErrors((p) => {
-                          if (!("codigo" in p)) return p;
-                          const { codigo: _, ...rest } = p as any;
-                          return rest;
-                        });
-                        void (async () => {
-                          const codigo = String(v || "").trim();
-                          if (!codigo) return;
-                          const info = await obterPrecoUnitarioServico(codigo, planilha?.idPlanilha ?? null);
-                          const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
-                          setNovo((p) => {
-                            if (p.tipoLinha !== "SERVICO") return p;
-                            if (String(p.codigo || "").trim().toUpperCase() !== codigo.toUpperCase()) return p;
-                            return applyValorParcialAuto({ ...p, valorUnitario: String(vu) });
-                          });
-                        })();
-                      }}
-                      onBlur={async () => {
-                        const info = await obterPrecoUnitarioServico(novo.codigo, planilha?.idPlanilha ?? null);
-                        const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
-                        setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: String(vu) }) : p));
-                      }}
-                      disabled={!podeEditar}
-                      placeholder="SER-0001"
-                    />
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-10">
+                      <div className="md:col-span-2">
+                        <div className="text-sm text-slate-600">Tipo</div>
+                        <select
+                          className={`input bg-white ${linhaErrors.tipoLinha ? "border-red-300 bg-red-50" : ""}`}
+                          value={novo.tipoLinha}
+                          onChange={(e) => {
+                            const tipoLinha = e.target.value as any;
+                            setLinhaFormErr(null);
+                            setNovo((p) => {
+                              if (tipoLinha === "SERVICO") return applyValorParcialAuto({ ...p, tipoLinha });
+                              return { ...p, tipoLinha, codigo: "", fonte: "", und: "", quant: "", valorUnitario: "", valorParcial: "" };
+                            });
+                            setLinhaErrors((p) => {
+                              if (!("tipoLinha" in p)) return p;
+                              const { tipoLinha: _, ...rest } = p as any;
+                              return rest;
+                            });
+                          }}
+                          disabled={!podeEditar}
+                        >
+                          <option value="ITEM">Item</option>
+                          <option value="SUBITEM">Subitem</option>
+                          <option value="SERVICO">Serviço</option>
+                        </select>
+                      </div>
+                      <div>
+                        <div className="text-sm text-slate-600">ITEM</div>
+                        <input
+                          className={`input bg-white ${linhaErrors.item ? "border-red-300 bg-red-50" : ""}`}
+                          value={novo.item}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setLinhaFormErr(null);
+                            setNovo((p) => ({ ...p, item: v }));
+                            setLinhaErrors((p) => {
+                              if (!("item" in p)) return p;
+                              const { item: _, ...rest } = p as any;
+                              return rest;
+                            });
+                          }}
+                          disabled={!podeEditar}
+                          placeholder="1.1"
+                        />
+                      </div>
+                      <div>
+                        <div className="text-sm text-slate-600">CÓDIGO</div>
+                        <SearchSelect
+                          value={novo.codigo}
+                          options={servicosCodigoOptions}
+                          inputClassName={`input bg-white ${linhaErrors.codigo ? "border-red-300 bg-red-50" : ""}`}
+                          onChange={(v) => {
+                            setLinhaFormErr(null);
+                            setNovo((p) => {
+                              const next: any = { ...p, codigo: v };
+                              const match = findServicoMatch({ codigo: v, servicos: next.servicos, fonte: next.fonte });
+                              if (match) {
+                                next.servicos = match.servicos;
+                                next.fonte = match.fonte;
+                                next.und = match.und;
+                              }
+                              return next;
+                            });
+                            setLinhaErrors((p) => {
+                              if (!("codigo" in p)) return p;
+                              const { codigo: _, ...rest } = p as any;
+                              return rest;
+                            });
+                            void (async () => {
+                              const codigo = String(v || "").trim();
+                              if (!codigo) return;
+                              const info = await obterPrecoUnitarioServico(codigo, planilha?.idPlanilha ?? null);
+                              const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
+                              setNovo((p) => {
+                                if (p.tipoLinha !== "SERVICO") return p;
+                                if (String(p.codigo || "").trim().toUpperCase() !== codigo.toUpperCase()) return p;
+                                return applyValorParcialAuto({ ...p, valorUnitario: String(vu) });
+                              });
+                            })();
+                          }}
+                          onBlur={async () => {
+                            const info = await obterPrecoUnitarioServico(novo.codigo, planilha?.idPlanilha ?? null);
+                            const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
+                            setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: String(vu) }) : p));
+                          }}
+                          disabled={!podeEditar}
+                          placeholder="SER-0001"
+                        />
+                      </div>
+                      <div>
+                        <div className="text-sm text-slate-600">FONTE</div>
+                        <SearchSelect
+                          value={novo.fonte}
+                          options={servicosFonteOptions}
+                          inputClassName="input bg-white"
+                          onChange={(v) => {
+                            setLinhaFormErr(null);
+                            setNovo((p) => {
+                              const next: any = { ...p, fonte: v };
+                              const match = findServicoMatch({ codigo: next.codigo, servicos: next.servicos, fonte: v });
+                              if (match) {
+                                next.codigo = match.codigo;
+                                next.servicos = match.servicos;
+                                next.und = match.und;
+                              }
+                              return next;
+                            });
+                          }}
+                          disabled={!podeEditar}
+                          placeholder="—"
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <div className="text-sm text-slate-600">SERVIÇOS</div>
+                        <SearchSelect
+                          value={novo.servicos}
+                          options={servicosDescricaoOptions}
+                          inputClassName={`input bg-white ${linhaErrors.servicos ? "border-red-300 bg-red-50" : ""}`}
+                          onChange={(v) => {
+                            setLinhaFormErr(null);
+                            const match = findServicoMatch({ codigo: novo.codigo, servicos: v, fonte: novo.fonte });
+                            const codigoForFetch = match?.codigo ? String(match.codigo) : String(novo.codigo || "");
+                            setNovo((p) => {
+                              const next: any = { ...p, servicos: v };
+                              const match = findServicoMatch({ codigo: next.codigo, servicos: v, fonte: next.fonte });
+                              if (match) {
+                                next.codigo = match.codigo;
+                                next.fonte = match.fonte;
+                                next.und = match.und;
+                              }
+                              return next;
+                            });
+                            setLinhaErrors((p) => {
+                              if (!("servicos" in p)) return p;
+                              const { servicos: _, ...rest } = p as any;
+                              return rest;
+                            });
+                            void (async () => {
+                              const codigo = String(codigoForFetch || "").trim();
+                              if (!codigo) return;
+                              const info = await obterPrecoUnitarioServico(codigo, planilha?.idPlanilha ?? null);
+                              const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
+                              setNovo((p) => {
+                                if (p.tipoLinha !== "SERVICO") return p;
+                                if (String(p.codigo || "").trim().toUpperCase() !== codigo.toUpperCase()) return p;
+                                return applyValorParcialAuto({ ...p, valorUnitario: String(vu) });
+                              });
+                            })();
+                          }}
+                          onBlur={async () => {
+                            if (!String(novo.codigo || "").trim()) return;
+                            const info = await obterPrecoUnitarioServico(novo.codigo, planilha?.idPlanilha ?? null);
+                            const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
+                            setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: String(vu) }) : p));
+                          }}
+                          disabled={!podeEditar}
+                        />
+                      </div>
+                      <div>
+                        <div className="text-sm text-slate-600">UND</div>
+                        <input
+                          className={`input bg-white ${linhaErrors.und ? "border-red-300 bg-red-50" : ""}`}
+                          value={novo.und}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setLinhaFormErr(null);
+                            setNovo((p) => ({ ...p, und: v }));
+                            setLinhaErrors((p) => {
+                              if (!("und" in p)) return p;
+                              const { und: _, ...rest } = p as any;
+                              return rest;
+                            });
+                          }}
+                          disabled={!podeEditar}
+                          placeholder="m²"
+                        />
+                      </div>
+                      <div>
+                        <div className="text-sm text-slate-600">QUANT.</div>
+                        <input
+                          className={`input bg-white ${linhaErrors.quant ? "border-red-300 bg-red-50" : ""}`}
+                          value={novo.quant}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setLinhaFormErr(null);
+                            setNovo((p) => applyValorParcialAuto({ ...p, quant: v }));
+                            setLinhaErrors((p) => {
+                              if (!("quant" in p) && !("valorParcial" in p)) return p;
+                              const { quant: _q, valorParcial: _vp, ...rest } = p as any;
+                              return rest;
+                            });
+                          }}
+                          onBlur={() => setNovo((p) => applyValorParcialAuto({ ...p }))}
+                          disabled={!podeEditar}
+                        />
+                      </div>
+                      <div>
+                        <div className="text-sm text-slate-600">VALOR UNIT.</div>
+                        <input className={`input bg-white ${linhaErrors.valorUnitario ? "border-red-300 bg-red-50" : ""}`} value={novo.valorUnitario} readOnly disabled={!podeEditar} />
+                      </div>
+                    </div>
                   ) : (
-                    <input
-                      className={`input bg-white ${linhaErrors.codigo ? "border-red-300 bg-red-50" : ""}`}
-                      value={novo.codigo}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setNovo((p) => ({ ...p, codigo: v }));
-                        setLinhaErrors((p) => {
-                          if (!("codigo" in p)) return p;
-                          const { codigo: _, ...rest } = p as any;
-                          return rest;
-                        });
-                      }}
-                      disabled={!podeEditar}
-                    />
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
+                      <div className="md:col-span-2">
+                        <div className="text-sm text-slate-600">Tipo</div>
+                        <select
+                          className={`input bg-white ${linhaErrors.tipoLinha ? "border-red-300 bg-red-50" : ""}`}
+                          value={novo.tipoLinha}
+                          onChange={(e) => {
+                            const tipoLinha = e.target.value as any;
+                            setLinhaFormErr(null);
+                            setNovo((p) => {
+                              if (tipoLinha === "SERVICO") return applyValorParcialAuto({ ...p, tipoLinha });
+                              return { ...p, tipoLinha, codigo: "", fonte: "", und: "", quant: "", valorUnitario: "", valorParcial: "" };
+                            });
+                            setLinhaErrors((p) => {
+                              if (!("tipoLinha" in p)) return p;
+                              const { tipoLinha: _, ...rest } = p as any;
+                              return rest;
+                            });
+                          }}
+                          disabled={!podeEditar}
+                        >
+                          <option value="ITEM">Item</option>
+                          <option value="SUBITEM">Subitem</option>
+                          <option value="SERVICO">Serviço</option>
+                        </select>
+                      </div>
+                      <div>
+                        <div className="text-sm text-slate-600">ITEM</div>
+                        <input
+                          className={`input bg-white ${linhaErrors.item ? "border-red-300 bg-red-50" : ""}`}
+                          value={novo.item}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setLinhaFormErr(null);
+                            setNovo((p) => ({ ...p, item: v }));
+                            setLinhaErrors((p) => {
+                              if (!("item" in p)) return p;
+                              const { item: _, ...rest } = p as any;
+                              return rest;
+                            });
+                          }}
+                          disabled={!podeEditar}
+                          placeholder="1"
+                        />
+                      </div>
+                      <div className="md:col-span-3">
+                        <div className="text-sm text-slate-600">SERVIÇOS</div>
+                        <input
+                          className={`input bg-white ${linhaErrors.servicos ? "border-red-300 bg-red-50" : ""}`}
+                          value={novo.servicos}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setLinhaFormErr(null);
+                            setNovo((p) => ({ ...p, servicos: v }));
+                            setLinhaErrors((p) => {
+                              if (!("servicos" in p)) return p;
+                              const { servicos: _, ...rest } = p as any;
+                              return rest;
+                            });
+                          }}
+                          disabled={!podeEditar}
+                          placeholder="Ex.: SERVIÇOS PRELIMINARES"
+                        />
+                      </div>
+                    </div>
                   )}
-                </div>
-                <div>
-                  <div className="text-sm text-slate-600">FONTE</div>
-                  {novo.tipoLinha === "SERVICO" ? (
-                    <SearchSelect
-                      value={novo.fonte}
-                      options={servicosFonteOptions}
-                      inputClassName="input bg-white"
-                      onChange={(v) => {
-                        setNovo((p) => {
-                          const next: any = { ...p, fonte: v };
-                          const match = findServicoMatch({ codigo: next.codigo, servicos: next.servicos, fonte: v });
-                          if (match) {
-                            next.codigo = match.codigo;
-                            next.servicos = match.servicos;
-                            next.und = match.und;
-                          }
-                          return next;
-                        });
-                      }}
-                      disabled={!podeEditar}
-                      placeholder="—"
-                    />
-                  ) : (
-                    <input className="input bg-white" value={novo.fonte} onChange={(e) => setNovo((p) => ({ ...p, fonte: e.target.value }))} disabled={!podeEditar} placeholder="SINAPI" />
-                  )}
-                </div>
-                <div className="md:col-span-2">
-                  <div className="text-sm text-slate-600">SERVIÇOS</div>
-                  {novo.tipoLinha === "SERVICO" ? (
-                    <SearchSelect
-                      value={novo.servicos}
-                      options={servicosDescricaoOptions}
-                      inputClassName={`input bg-white ${linhaErrors.servicos ? "border-red-300 bg-red-50" : ""}`}
-                      onChange={(v) => {
-                        const match = findServicoMatch({ codigo: novo.codigo, servicos: v, fonte: novo.fonte });
-                        const codigoForFetch = match?.codigo ? String(match.codigo) : String(novo.codigo || "");
-                        setNovo((p) => {
-                          const next: any = { ...p, servicos: v };
-                          const match = findServicoMatch({ codigo: next.codigo, servicos: v, fonte: next.fonte });
-                          if (match) {
-                            next.codigo = match.codigo;
-                            next.fonte = match.fonte;
-                            next.und = match.und;
-                          }
-                          return next;
-                        });
-                        setLinhaErrors((p) => {
-                          if (!("servicos" in p)) return p;
-                          const { servicos: _, ...rest } = p as any;
-                          return rest;
-                        });
-                        void (async () => {
-                          const codigo = String(codigoForFetch || "").trim();
-                          if (!codigo) return;
-                          const info = await obterPrecoUnitarioServico(codigo, planilha?.idPlanilha ?? null);
-                          const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
-                          setNovo((p) => {
-                            if (p.tipoLinha !== "SERVICO") return p;
-                            if (String(p.codigo || "").trim().toUpperCase() !== codigo.toUpperCase()) return p;
-                            return applyValorParcialAuto({ ...p, valorUnitario: String(vu) });
-                          });
-                        })();
-                      }}
-                      onBlur={async () => {
-                        if (!String(novo.codigo || "").trim()) return;
-                        const info = await obterPrecoUnitarioServico(novo.codigo, planilha?.idPlanilha ?? null);
-                        const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
-                        setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: String(vu) }) : p));
-                      }}
-                      disabled={!podeEditar}
-                    />
-                  ) : (
-                    <input
-                      className={`input bg-white ${linhaErrors.servicos ? "border-red-300 bg-red-50" : ""}`}
-                      value={novo.servicos}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setNovo((p) => ({ ...p, servicos: v }));
-                        setLinhaErrors((p) => {
-                          if (!("servicos" in p)) return p;
-                          const { servicos: _, ...rest } = p as any;
-                          return rest;
-                        });
-                      }}
-                      disabled={!podeEditar}
-                    />
-                  )}
-                </div>
-                <div>
-                  <div className="text-sm text-slate-600">UND</div>
-                  <input
-                    className={`input bg-white ${linhaErrors.und ? "border-red-300 bg-red-50" : ""}`}
-                    value={novo.und}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setNovo((p) => ({ ...p, und: v }));
-                      setLinhaErrors((p) => {
-                        if (!("und" in p)) return p;
-                        const { und: _, ...rest } = p as any;
-                        return rest;
-                      });
-                    }}
-                    disabled={!podeEditar}
-                    placeholder="m²"
-                  />
-                </div>
-                <div>
-                  <div className="text-sm text-slate-600">QUANT.</div>
-                  <input
-                    className={`input bg-white ${linhaErrors.quant ? "border-red-300 bg-red-50" : ""}`}
-                    value={novo.quant}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setNovo((p) => applyValorParcialAuto({ ...p, quant: v }));
-                      setLinhaErrors((p) => {
-                        if (!("quant" in p) && !("valorParcial" in p)) return p;
-                        const { quant: _q, valorParcial: _vp, ...rest } = p as any;
-                        return rest;
-                      });
-                    }}
-                    onBlur={() => setNovo((p) => applyValorParcialAuto({ ...p }))}
-                    disabled={!podeEditar}
-                  />
-                </div>
-                <div>
-                  <div className="text-sm text-slate-600">VALOR UNIT.</div>
-                  <input
-                    className={`input bg-white ${linhaErrors.valorUnitario ? "border-red-300 bg-red-50" : ""}`}
-                    value={novo.valorUnitario}
-                    onChange={(e) => {
-                      if (novo.tipoLinha === "SERVICO") return;
-                      const v = e.target.value;
-                      setNovo((p) => applyValorParcialAuto({ ...p, valorUnitario: v }));
-                      setLinhaErrors((p) => {
-                        if (!("valorUnitario" in p) && !("valorParcial" in p)) return p;
-                        const { valorUnitario: _vu, valorParcial: _vp, ...rest } = p as any;
-                        return rest;
-                      });
-                    }}
-                    onBlur={() => setNovo((p) => applyValorParcialAuto({ ...p }))}
-                    readOnly={novo.tipoLinha === "SERVICO"}
-                    disabled={!podeEditar}
-                  />
-                </div>
-              </div>
+
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
-                <div className="md:col-span-2">
-                  <div className="text-sm text-slate-600">VALOR PARCIAL</div>
-                  <input
-                    className={`input bg-white ${linhaErrors.valorParcial ? "border-red-300 bg-red-50" : ""}`}
-                    value={novo.valorParcial}
-                    readOnly={novo.tipoLinha === "SERVICO"}
-                    disabled={!podeEditar}
-                  />
-                </div>
-                <div className="md:col-span-4 flex items-end justify-end">
-                  <div className="flex items-center gap-2">
-                    {editingLinhaId ? (
-                      <button
-                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-800 disabled:opacity-60"
-                        type="button"
-                        onClick={() => {
-                          resetLinhaForm();
-                        }}
-                        disabled={loading}
-                      >
-                        Cancelar edição
-                      </button>
-                    ) : null}
-                    <button className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white disabled:opacity-60" type="button" onClick={salvarLinha} disabled={loading || !podeEditar}>
-                      {editingLinhaId ? "Atualizar linha" : "Salvar linha"}
-                    </button>
-                  </div>
-                </div>
+                    <div className="md:col-span-2">
+                      <div className="text-sm text-slate-600">VALOR PARCIAL</div>
+                      <input
+                        className={`input bg-white ${linhaErrors.valorParcial ? "border-red-300 bg-red-50" : ""}`}
+                        value={
+                          novo.tipoLinha === "SERVICO"
+                            ? novo.valorParcial
+                            : (() => {
+                                const k = String(novo.item || "").trim();
+                                const info = k ? subtotalByItemKey.get(k) : null;
+                                if (!info?.count) return "";
+                                return moeda(Number(info.sum || 0));
+                              })()
+                        }
+                        readOnly
+                        disabled={!podeEditar}
+                      />
+                    </div>
+                    <div className="md:col-span-4 flex items-end justify-end">
+                      <div className="flex items-center gap-2">
+                        {editingLinhaId ? (
+                          <button
+                            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-800 disabled:opacity-60"
+                            type="button"
+                            onClick={() => {
+                              resetLinhaForm();
+                            }}
+                            disabled={loading}
+                          >
+                            Cancelar edição
+                          </button>
+                        ) : null}
+                        <button className="rounded-lg bg-green-600 px-4 py-2 text-sm text-white disabled:opacity-60" type="button" onClick={salvarLinha} disabled={loading || !podeEditar}>
+                          {editingLinhaId ? "Atualizar linha" : "Salvar linha"}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </>
               ) : null}
@@ -2868,8 +2929,9 @@ export default function PlanilhaObraClient({
                         {l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM"
                           ? (() => {
                               const k = String(l.item || "").trim();
-                              const sum = k ? subtotalByItemKey.get(k) : null;
-                              return typeof sum === "number" && Number.isFinite(sum) && sum > 0 ? moeda(Number(sum)) : "";
+                              const info = k ? subtotalByItemKey.get(k) : null;
+                              if (!info?.count) return "";
+                              return moeda(Number(info.sum || 0));
                             })()
                           : (() => {
                               const n = parseNumberLoose(l.valorParcial);
