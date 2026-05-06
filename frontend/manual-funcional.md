@@ -1691,25 +1691,28 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 - Clonagem (com dependências): no card **Versões cadastradas**, a ação **Clonar** cria uma nova versão copiando:
   - parâmetros da planilha;
   - linhas da planilha;
+  - catálogo de serviços da planilha (Serviços (PLANILHA));
   - composições/subcomposições vinculadas aos serviços da planilha;
   - preços de insumos da planilha.
-  - Regra de bloqueio: não permite clonar se existir **serviço sem nome/unidade** na planilha origem.
+  - Regra de bloqueio: não permite clonar se existir **serviço sem nome/unidade** no catálogo de serviços da planilha origem.
 - Lógica de criação de uma planilha (obra):
   - 1) Parâmetros: ao criar/clonar uma planilha, define-se primeiro os **parâmetros da planilha** (data-base, UF, BDI, encargos e descontos). Eles determinam como os custos são calculados.
-  - 2) Serviços: em seguida, monta-se a lista de **serviços da planilha** (linhas/itens). É possível importar serviços de outra planilha (clonagem) ou trazer serviços via SINAPI.
-  - 3) Composições: para cada serviço, cadastra-se/importa-se sua **composição** (itens, subcomposições e insumos).
-  - 4) Insumos consolidados: a lista de insumos é derivada das composições dos serviços e precisa ser recalculada sempre que uma composição muda.
+  - 2) Serviços (PLANILHA) — catálogo: toda importação/cópia/aplicação de serviço alimenta o **catálogo de serviços** da planilha (código, fonte, descrição e UND).
+  - 3) Serviços (linhas): o usuário decide quais serviços do catálogo viram **linhas** (itens de orçamento) na planilha. Todo serviço em linhas existe no catálogo, mas o catálogo pode conter serviços que não estão em linhas.
+  - 4) Composições: para cada serviço do catálogo, cadastra-se/importa-se sua **composição** (itens, subcomposições e insumos), sempre vinculada ao código do serviço.
+  - 5) Insumos consolidados: a lista de insumos é derivada das composições dos serviços e precisa ser recalculada sempre que uma composição muda.
   - Regra: ao salvar/importar uma composição (ou importar um serviço que traga composição), o sistema refaz o consolidado de insumos e atualiza os valores do serviço na planilha (efeito cascata).
 - Importação CSV (planilha) com **prévia**: antes de gravar, o sistema mostra uma grade de conferência e destaca campos inválidos.
   - Colunas importadas (CSV): `item`, `codigo`, `fonte`, `servicos`, `und`, `quant`, `valor_unitario` (o **valor parcial** é calculado automaticamente).
   - Observação de compatibilidade: leitura “smart” de encoding (UTF-8 / Windows-1252) para reduzir erros de acentuação no texto importado.
+  - Observação: ao importar linhas do tipo Serviço, o sistema sincroniza esses serviços para o catálogo (Serviços (PLANILHA)).
 - Após selecionar uma versão, o sistema exibe o card **Visualizando** e, em seguida, o card **Navegação** (visível apenas com planilha selecionada) para abrir/fechar e rolar até: **Parâmetros**, **Planilha** e **Adicionar linha**.
 - Planilha (visual): linhas do tipo **Item** e **Subitem** são exibidas em negrito; o usuário pode definir **tamanho da fonte** e **cor de fundo** (Item/Subitem) e essas preferências ficam salvas para o usuário.
 - Ordem/organização das linhas: o campo **Ordem** foi removido da edição. A visualização segue a ordem do **ITEM** (ordenação numérica/hierárquica, por exemplo: `1.2` vem antes de `1.10`).
 - Navegação ativa: quando o usuário está na tela **Planilha orçamentária**, o botão **Planilha** fica destacado no topo para indicar a tela atual.
 - Edição de serviço (regra de preço):
   - ao selecionar **Tipo = Serviço**, os campos **Código**, **Serviços** e **Fonte** viram campos de **seleção com busca** (clicar mostra opções, digitar filtra em tempo real);
-  - ao selecionar um valor (ou concluir a digitação), o sistema **preenche/filtra os demais campos** com base nos serviços já cadastrados na planilha (Código/Serviços/Fonte/UND);
+  - ao selecionar um valor (ou concluir a digitação), o sistema **preenche/filtra os demais campos** com base no catálogo de serviços da planilha (Código/Serviços/Fonte/UND);
   - o campo **Valor Unit.** do serviço **não é digitável**;
   - ele é preenchido automaticamente a partir da composição vinculada ao código do serviço (ou **0** quando não existe composição definida);
   - ao informar/alterar o **Código** do serviço, o sistema recalcula o valor unitário.
@@ -1721,7 +1724,7 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 - Serviços:
   - Importação e modelo de CSV de composições ficam na própria tela **Serviços**.
   - A tela marca serviços **sem composição** e **divergentes** comparando total da planilha x total calculado por composição.
-  - Existe ação para **copiar serviço/composição entre versões** (origem → destino), com prévia e regras de consistência.
+  - Existe ação para **copiar serviço/composição entre versões** (origem → destino), com prévia e regras de consistência. A cópia alimenta o catálogo (Serviços (PLANILHA)) e a composição na versão destino; o serviço só vira linha quando o usuário inserir o serviço em Serviços (linhas).
 - Análise de composição (editar itens):
   - em **Composições**, é permitido alterar apenas **Código** e **Qtd** (demais campos são preenchidos/calculados automaticamente);
   - em **Insumos**, é permitido alterar apenas **Código**, **Qtd** e **Valor Unit** (demais campos são preenchidos/calculados automaticamente);
@@ -1736,8 +1739,8 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 
 #### Validação
 
-- a planilha define os serviços válidos (SER-0001) para programação e apropriação
-- mudanças de planilha na obra não devem alterar a base corporativa
+- programação e apropriação usam os serviços que estão em **Serviços (linhas)** da versão selecionada.
+- um serviço pode existir no **catálogo** (Serviços (PLANILHA)) com composição e insumos, mas só impacta o orçamento/total da planilha quando o usuário o inserir em Serviços (linhas).
 
 ### 11.6 BDI, impostos e lucro
 
@@ -1987,66 +1990,25 @@ Permite relacionar gastos, materiais, serviços ou recursos à obra, unidade, co
 
 ### 11.8 Serviços, composições, SINAPI e orçamento
 
-O sistema possui o módulo **Engenharia → Orçamentos**, que centraliza a base corporativa e a criação de orçamentos independentes.
+Esta seção descreve como **Serviços**, **Composições** e **Insumos** se relacionam dentro da **planilha versionada de uma obra** e como o **SINAPI** é usado como base de referência.
 
-#### Regras
+#### Regras (integridade)
 
-- base corporativa (serviços/insumos/composições) é compartilhada e mantida no nível corporativo;
-- orçamentos são independentes, versionados e não alteram automaticamente outros orçamentos;
-- importação por CSV deve respeitar ordem obrigatória para evitar inconsistências (insumos → composições → serviços);
-- parâmetros econômicos (BDI/impostos/encargos) são por orçamento e influenciam diretamente o preço final.
+- A cadeia de dados da planilha (versão) é: **Serviços (linhas)** → **Serviços (PLANILHA catálogo)** → **Composições (itens)** → **Insumos (preço único por código)**.
+- Todo serviço presente em **Serviços (linhas)** existe no **catálogo** (Serviços (PLANILHA)), mas o catálogo pode ter serviços que não estão em linhas.
+- Toda composição é **sempre vinculada** a um serviço do catálogo, pelo **código do serviço**.
+- Serviço no catálogo não pode ficar sem **descrição** e/ou **UND** (bloqueia clonagem/importações e composições).
+- O preço do insumo é **único por código** na planilha (versão). Se mudar em um lugar, muda no outro e recalcula a cascata.
 
-#### 11.8.1 Base corporativa (Engenharia)
+#### SINAPI (base x planilha)
 
-Regras:
+- SINAPI é usado como **fonte de referência** (descrição, UND e preços por data-base/UF).
+- Quando um serviço/composição SINAPI é aplicado em uma planilha, ele passa a fazer parte da **planilha** e não depende mais da cópia original do SINAPI para existir na versão.
 
-- Serviços, insumos e composições são mantidos na base corporativa;
-- centro de custo nasce na composição, no nível do insumo (etapa + insumo + CC);
-- a composição pode repetir o mesmo insumo em etapas diferentes, com centros de custo diferentes.
+#### Validações e bloqueios (produção)
 
-Fluxo:
-
-1) cadastrar serviços (código, descrição, unidade, referência SINAPI quando aplicável);
-2) cadastrar insumos (código, descrição, unidade, custo base);
-3) montar composições e definir centro de custo por insumo.
-
-#### 11.8.2 Orçamentos (licitação/contrato privado)
-
-Regras:
-
-- cada orçamento é independente (não compartilha valores automaticamente com outros orçamentos);
-- possui tipo (licitação/contrato privado), data base e parâmetros próprios;
-- deve suportar versionamento.
-
-Parâmetros econômicos (por orçamento):
-
-- BDI (administração, riscos, margem, lucro);
-- impostos e encargos por tipo (materiais/serviços/equipamentos);
-- faixa de preço de insumos (compra/venda) com alertas.
-
-#### Implementação (no sistema)
-
-- Engenharia → Orçamentos
-  - Aba Orçamentos: criar e listar orçamentos
-  - Orçamento → Detalhe:
-    - copiar base corporativa para uma versão do orçamento (serviços/insumos/composições)
-    - importar CSV por ordem obrigatória (insumos → composições → serviços)
-    - ajustar faixas de preço de insumos e preço atual
-    - alertas visuais quando preço atual ficar abaixo do mínimo de compra
-
-#### 11.8.3 Planilhas versionadas (obra/licitação/contrato privado)
-
-Regras:
-
-- planilha de obra é independente e versionada;
-- planilha de licitação e de contrato privado também devem ser versionadas;
-- nenhuma alteração na obra altera a base corporativa da engenharia.
-
-#### Validação
-
-- alterações em um orçamento não podem alterar a base corporativa
-- importação fora da ordem obrigatória deve ser bloqueada com mensagem clara
-- versionamento deve permitir comparar versões e voltar para uma versão anterior
+- Não permite: composição sem serviço válido no catálogo, serviço sem nome/unidade, clonar versão com erro.
+- Importações de composição por CSV exigem que o serviço já exista no catálogo e esteja completo.
 
 ### 11.9 Controle de licitações
 

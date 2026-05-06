@@ -62,6 +62,7 @@ type Planilha = {
     descontoSbc: number | null;
     descontoSinapi: number | null;
   };
+  servicosPlanilha: Array<{ codigo: string; servicos: string; fonte: string; und: string }>;
   linhas: PlanilhaLinha[];
 };
 
@@ -1638,8 +1639,19 @@ export default function PlanilhaObraClient({
   }, [obraResumo, planilha, valorTotalPlanilha]);
 
   const servicosCatalogo = useMemo(() => {
+    const fromCatalog = (planilha as any)?.servicosPlanilha;
+    if (Array.isArray(fromCatalog) && fromCatalog.length) {
+      return fromCatalog
+        .map((r: any) => ({
+          codigo: String(r.codigo || "").trim().toUpperCase(),
+          servicos: String(r.servicos || "").trim(),
+          fonte: String(r.fonte || "").trim().toUpperCase(),
+          und: String(r.und || "").trim(),
+        }))
+        .filter((r: any) => r.codigo || r.servicos || r.fonte || r.und);
+    }
     const rows = planilha?.linhas || [];
-    const list = rows
+    return rows
       .filter((l) => String(l.tipoLinha || "").toUpperCase() === "SERVICO")
       .map((l) => ({
         codigo: String(l.codigo || "").trim().toUpperCase(),
@@ -1648,7 +1660,6 @@ export default function PlanilhaObraClient({
         und: String(l.und || "").trim(),
       }))
       .filter((r) => r.codigo || r.servicos || r.fonte || r.und);
-    return list;
   }, [planilha]);
 
   const servicosCatalogoFiltrado = useMemo(() => {

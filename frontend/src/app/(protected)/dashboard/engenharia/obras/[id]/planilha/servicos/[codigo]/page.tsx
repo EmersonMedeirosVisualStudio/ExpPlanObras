@@ -733,17 +733,21 @@ async function readTextSmart(file: File) {
         }));
       const precisaMeta = !rows.length || !String(rows?.[0]?.servicos || "").trim() || !String(rows?.[0]?.und || "").trim();
       let usedMeta = false;
+      let metaDesc = "";
+      let metaUnd = "";
       if (precisaMeta) {
         try {
           const qs = new URLSearchParams();
           qs.set("planilhaId", String(pid));
           const resMeta = await authFetch(
-            `/api/v1/engenharia/obras/${idObra}/planilha/sinapi/servicos/${encodeURIComponent(codigoServico)}/meta?${qs.toString()}`
+            `/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/meta?${qs.toString()}`
           );
           const jsonMeta = await resMeta.json().catch(() => null);
           if (resMeta.ok && jsonMeta?.success) {
             const desc = jsonMeta.data?.descricao != null ? String(jsonMeta.data.descricao || "").trim() : "";
             const und = jsonMeta.data?.und != null ? String(jsonMeta.data.und || "").trim() : "";
+            metaDesc = desc;
+            metaUnd = und;
             if (desc || und) {
               setPrevistoServicoMeta({ descricao: desc, und });
               usedMeta = true;
@@ -757,7 +761,11 @@ async function readTextSmart(file: File) {
         } catch {}
       }
       if (!rows.length) {
-        setPrevistoAlert("Serviço não encontrado na planilha selecionada (verifique se a versão correta está selecionada/definida como atual).");
+        if (metaDesc || metaUnd) {
+          setPrevistoAlert("Serviço está no catálogo da planilha, mas não está em Serviços (linhas). Para aparecer no previsto, adicione uma linha de serviço na Planilha orçamentária.");
+        } else {
+          setPrevistoAlert("Serviço não encontrado no catálogo da planilha selecionada (verifique se a versão correta está selecionada/definida como atual).");
+        }
       } else {
         const nomeFinal = String(rows?.[0]?.servicos || "").trim();
         const undFinal = String(rows?.[0]?.und || "").trim();
@@ -766,7 +774,7 @@ async function readTextSmart(file: File) {
             "Este serviço está cadastrado na planilha sem nome e/ou unidade. Isso pode quebrar importações, clonagens e validações. Corrija na planilha (preencha SERVIÇO e UND)."
           );
         } else if (usedMeta) {
-          setPrevistoAlert("Nome e/ou unidade foram preenchidos automaticamente a partir da base de meta do serviço (fallback), porque estavam vazios na planilha.");
+          setPrevistoAlert("Nome e/ou unidade foram preenchidos automaticamente a partir do catálogo da planilha (fallback), porque estavam vazios nas linhas.");
         }
       }
       setPrevistoRows(rows);
@@ -1216,7 +1224,7 @@ async function readTextSmart(file: File) {
 
     const isComp = isComposicaoTipo(tipoItem);
     const url = isComp
-      ? `/api/v1/engenharia/obras/${idObra}/planilha/sinapi/servicos/${encodeURIComponent(code)}/meta?${qs.toString()}`
+      ? `/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}/meta?${qs.toString()}`
       : `/api/v1/engenharia/obras/${idObra}/planilha/sinapi/insumos/${encodeURIComponent(code)}/meta?${qs.toString()}`;
     const res = await authFetch(url);
     const json = await res.json().catch(() => null);
