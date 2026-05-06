@@ -376,6 +376,33 @@ function SearchSelect({
   );
 }
 
+function buildLinhaFormErrorMessage(errors: Partial<Record<keyof PlanilhaLinha, string>>) {
+  const labels: Partial<Record<keyof PlanilhaLinha, string>> = {
+    tipoLinha: "Tipo",
+    item: "ITEM",
+    codigo: "CÓDIGO",
+    fonte: "FONTE",
+    servicos: "SERVIÇOS",
+    und: "UND",
+    quant: "QUANT.",
+    valorUnitario: "VALOR UNIT.",
+    valorParcial: "VALOR PARCIAL",
+  };
+
+  const entries = Object.entries(errors || {})
+    .map(([k, v]) => {
+      const key = k as keyof PlanilhaLinha;
+      const label = labels[key] || String(k);
+      const msg = String(v || "").trim();
+      return msg ? `${label} (${msg})` : label;
+    })
+    .filter(Boolean);
+
+  if (!entries.length) return "Não foi possível salvar. Verifique os campos do formulário.";
+  const preview = entries.slice(0, 6).join(" • ");
+  return `Não foi possível salvar. Corrija: ${preview}`;
+}
+
 export default function PlanilhaObraClient({
   idObra,
   returnTo,
@@ -1289,7 +1316,7 @@ export default function PlanilhaObraClient({
       const nextErrors = validateLinha(normalized);
       setLinhaErrors(nextErrors);
       if (Object.keys(nextErrors).length) {
-        setLinhaFormErr("Corrija os campos destacados antes de salvar.");
+        setLinhaFormErr(buildLinhaFormErrorMessage(nextErrors as any));
         setLoading(false);
         return;
       }
