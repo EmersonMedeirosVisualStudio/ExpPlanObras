@@ -817,7 +817,7 @@ export default function PlanilhaObraClient({
     const dadosToTabelaPx = Math.max(0, Number(pp.dadosToTabelaPx || 0));
     const itemBg = uiPrefs.itemBg || "#F8FAFC";
     const subitemBg = uiPrefs.subitemBg || "#FFFFFF";
-    const rowsHtml = (planilha.linhas || [])
+    const rowsHtml = sortPlanilhaLinhasByItem(planilha.linhas || [])
       .map((l) => {
         const tipo = String(l.tipoLinha || "");
         const isItem = tipo === "ITEM";
