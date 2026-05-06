@@ -208,7 +208,6 @@ async function readTextSmart(file: File) {
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
   const [showDisplayConfig, setShowDisplayConfig] = useState(false);
   const [showPrintConfig, setShowPrintConfig] = useState(false);
-  const [insumosTipoFiltro, setInsumosTipoFiltro] = useState<string>("");
   const [displayPrefs, setDisplayPrefs] = useState<{
     colTipo: boolean;
     colCodigo: boolean;
@@ -1031,6 +1030,35 @@ async function readTextSmart(file: File) {
     return Number(total.toFixed(2));
   }, [itens]);
 
+  const totalEquipamentosBase = useMemo(() => {
+    let total = 0;
+    for (const i of itens) {
+      if (isComposicaoTipo(i.tipoItem)) continue;
+      const key = normalizeHeader(String(i.tipoItem || ""));
+      if (!key.includes("equipamento")) continue;
+      const q = parseNumberLoose(i.quantidade);
+      const v = parseNumberLoose(i.valorUnitario);
+      if (q == null || v == null) continue;
+      total += q * v;
+    }
+    return Number(total.toFixed(2));
+  }, [itens]);
+
+  const totalMateriaisBase = useMemo(() => {
+    let total = 0;
+    for (const i of itens) {
+      if (isComposicaoTipo(i.tipoItem)) continue;
+      const key = normalizeHeader(String(i.tipoItem || ""));
+      if (key === "mao_de_obra") continue;
+      if (key.includes("equipamento")) continue;
+      const q = parseNumberLoose(i.quantidade);
+      const v = parseNumberLoose(i.valorUnitario);
+      if (q == null || v == null) continue;
+      total += q * v;
+    }
+    return Number(total.toFixed(2));
+  }, [itens]);
+
   const totalComBDI = useMemo(() => {
     const t = totalBase * (1 + Number(bdiPercent || 0) / 100);
     return Number(t.toFixed(2));
@@ -1218,12 +1246,37 @@ async function readTextSmart(file: File) {
 
   const itensIdx = useMemo(() => itens.map((r, idx) => ({ r, idx })), [itens]);
   const itensComposicoes = useMemo(() => itensIdx.filter(({ r }) => isComposicaoTipo(r.tipoItem)), [itensIdx]);
-  const itensInsumos = useMemo(() => itensIdx.filter(({ r }) => !isComposicaoTipo(r.tipoItem)), [itensIdx]);
-  const itensInsumosFiltrados = useMemo(() => {
-    const key = normalizeHeader(String(insumosTipoFiltro || ""));
-    if (!key) return itensInsumos;
-    return itensInsumos.filter(({ r }) => normalizeHeader(String(r.tipoItem || "")) === key);
-  }, [itensInsumos, insumosTipoFiltro]);
+  const itensMateriais = useMemo(
+    () =>
+      itensIdx.filter(({ r }) => {
+        if (isComposicaoTipo(r.tipoItem)) return false;
+        const key = normalizeHeader(String(r.tipoItem || ""));
+        if (key === "mao_de_obra") return false;
+        if (key.includes("equipamento")) return false;
+        return true;
+      }),
+    [itensIdx]
+  );
+
+  const itensEquipamentos = useMemo(
+    () =>
+      itensIdx.filter(({ r }) => {
+        if (isComposicaoTipo(r.tipoItem)) return false;
+        const key = normalizeHeader(String(r.tipoItem || ""));
+        return key.includes("equipamento");
+      }),
+    [itensIdx]
+  );
+
+  const itensMaoDeObra = useMemo(
+    () =>
+      itensIdx.filter(({ r }) => {
+        if (isComposicaoTipo(r.tipoItem)) return false;
+        const key = normalizeHeader(String(r.tipoItem || ""));
+        return key === "mao_de_obra";
+      }),
+    [itensIdx]
+  );
 
   function tipoMeta(tipo: string) {
     const key = normalizeHeader(String(tipo || ""));
@@ -2443,11 +2496,13 @@ async function readTextSmart(file: File) {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="text-lg font-semibold">Previsto na planilha</div>
-            <div className="text-sm text-slate-600">
+            <div className="text-sm text-slate-700">
+              <span className="font-semibold">Serviço:</span>{" "}
               {(() => {
                 const nome = String(previstoRows?.[0]?.servicos || "").trim();
-                return nome ? `${codigoServico} — ${nome}` : codigoServico;
-              })()}
+                return nome ? `${codigoServico} - ${nome}` : codigoServico;
+              })()}{" "}
+              <span className="font-semibold">Un.:</span> {String(previstoRows?.[0]?.und || "—").trim() || "—"}
             </div>
           </div>
         </div>
@@ -2533,11 +2588,6 @@ async function readTextSmart(file: File) {
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>
                 <div className="text-lg font-semibold">Itens (composição)</div>
-                {previstoRows?.[0]?.servicos ? (
-                  <div className="text-sm text-slate-600">
-                    {String(previstoRows?.[0]?.servicos || "").trim()} • un: {String(previstoRows?.[0]?.und || "—").trim() || "—"}
-                  </div>
-                ) : null}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -2604,7 +2654,7 @@ async function readTextSmart(file: File) {
                 </button>
               </div>
             </div>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-lg border bg-white p-3">
                 <div className="text-[11px] text-slate-500">Composições</div>
                 <div className="mt-1 flex items-end justify-between gap-2">
@@ -2615,12 +2665,28 @@ async function readTextSmart(file: File) {
                 </div>
               </div>
               <div className="rounded-lg border bg-white p-3">
-                <div className="text-[11px] text-slate-500">Insumos</div>
+                <div className="text-[11px] text-slate-500">Materiais</div>
                 <div className="mt-1 flex items-end justify-between gap-2">
-                  <div className="text-base font-semibold text-slate-900">{moeda(Number(totalInsumosBase || 0))}</div>
+                  <div className="text-base font-semibold text-slate-900">{moeda(Number(totalMateriaisBase || 0))}</div>
                   <div className="text-[11px] text-slate-500">
-                    {totalBase > 0 ? `${((Number(totalInsumosBase || 0) / Number(totalBase || 1)) * 100).toFixed(2)}%` : "—"}
+                    {totalBase > 0 ? `${((Number(totalMateriaisBase || 0) / Number(totalBase || 1)) * 100).toFixed(2)}%` : "—"}
                   </div>
+                </div>
+              </div>
+              <div className="rounded-lg border bg-white p-3">
+                <div className="text-[11px] text-slate-500">Equipamentos</div>
+                <div className="mt-1 flex items-end justify-between gap-2">
+                  <div className="text-base font-semibold text-slate-900">{moeda(Number(totalEquipamentosBase || 0))}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {totalBase > 0 ? `${((Number(totalEquipamentosBase || 0) / Number(totalBase || 1)) * 100).toFixed(2)}%` : "—"}
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-lg border bg-white p-3">
+                <div className="text-[11px] text-slate-500">Mão de obra</div>
+                <div className="mt-1 flex items-end justify-between gap-2">
+                  <div className="text-base font-semibold text-slate-900">{moeda(Number(totalMaoBase || 0))}</div>
+                  <div className="text-[11px] text-slate-500">{totalBase > 0 ? `${((Number(totalMaoBase || 0) / Number(totalBase || 1)) * 100).toFixed(2)}%` : "—"}</div>
                 </div>
               </div>
             </div>
@@ -2703,20 +2769,16 @@ async function readTextSmart(file: File) {
             {renderItensTabela(itensComposicoes, displayPrefs.bgComposicoes)}
           </div>
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="text-sm font-semibold text-slate-800">Insumos</div>
-              <select className="rounded-lg border bg-white px-3 py-1.5 text-sm" value={insumosTipoFiltro} onChange={(e) => setInsumosTipoFiltro(e.target.value)}>
-                <option value="">Todos</option>
-                <option value="MATERIAL">Material</option>
-                <option value="MAO DE OBRA">Mão de obra</option>
-                <option value="EQUIPAMENTO (AQUISIÇÃO)">Equipamento (Aquisição)</option>
-                <option value="EQUIPAMENTO (LOCAÇÃO)">Equipamento (Locação)</option>
-                <option value="SERVIÇOS">Serviços</option>
-                <option value="ESPECIAIS">Especiais</option>
-                <option value="INSUMO">Insumo (antigo)</option>
-              </select>
-            </div>
-            {renderItensTabela(itensInsumosFiltrados, displayPrefs.bgMateriais)}
+            <div className="text-sm font-semibold text-slate-800">Materiais</div>
+            {renderItensTabela(itensMateriais, displayPrefs.bgMateriais)}
+          </div>
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-slate-800">Equipamentos</div>
+            {renderItensTabela(itensEquipamentos, displayPrefs.bgEquipamentos)}
+          </div>
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-slate-800">Mão de obra</div>
+            {renderItensTabela(itensMaoDeObra, displayPrefs.bgMao)}
           </div>
         </div>
       </section>
