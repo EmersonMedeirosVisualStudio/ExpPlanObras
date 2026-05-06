@@ -499,21 +499,46 @@ async function syncServicosCatalogoFromLinhas(tx: any, tenantId: number, idObra:
   await ensurePlanilhaServicosTables(tx);
   await tx.$executeRawUnsafe(
     `
+    WITH src AS (
+      SELECT
+        UPPER(COALESCE(l.codigo,'')) AS codigo,
+        COALESCE(NULLIF(trim(l.fonte),''), '') AS fonte,
+        COALESCE(NULLIF(trim(l.servico),''), '') AS servico,
+        COALESCE(NULLIF(trim(l.und),''), '') AS und,
+        l.atualizado_em AS atualizado_em,
+        l.id_linha AS id_linha
+      FROM obras_planilhas_linhas l
+      WHERE l.tenant_id = $1
+        AND l.id_planilha = $3
+        AND l.tipo_linha = 'SERVICO'
+        AND COALESCE(l.codigo,'') <> ''
+    ),
+    dedup AS (
+      SELECT DISTINCT ON (codigo)
+        codigo,
+        fonte,
+        servico,
+        und
+      FROM src
+      ORDER BY
+        codigo,
+        (servico <> '') DESC,
+        (und <> '') DESC,
+        (fonte <> '') DESC,
+        atualizado_em DESC NULLS LAST,
+        id_linha DESC
+    )
     INSERT INTO obras_planilhas_servicos
       (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
     SELECT
       $1 AS tenant_id,
       $2 AS id_obra,
       $3 AS id_planilha,
-      UPPER(COALESCE(l.codigo,'')) AS codigo,
-      COALESCE(l.fonte,'') AS fonte,
-      COALESCE(l.servico,'') AS servico,
-      COALESCE(l.und,'') AS und
-    FROM obras_planilhas_linhas l
-    WHERE l.tenant_id = $1
-      AND l.id_planilha = $3
-      AND l.tipo_linha = 'SERVICO'
-      AND COALESCE(l.codigo,'') <> ''
+      d.codigo,
+      d.fonte,
+      d.servico,
+      d.und
+    FROM dedup d
     ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
     DO UPDATE SET
       fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), obras_planilhas_servicos.fonte),
