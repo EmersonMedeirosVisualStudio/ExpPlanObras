@@ -904,6 +904,7 @@ export default function ContratosClient() {
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
+              <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />
               {breadcrumbContrato ? <div className="text-xs text-[#6B7280]">{breadcrumbContrato}</div> : null}
               <h1 className="text-2xl font-semibold">Contrato #{contratoId}</h1>
               <div className="text-sm text-[#6B7280]">Detalhes, financeiro e vínculos com obras.</div>

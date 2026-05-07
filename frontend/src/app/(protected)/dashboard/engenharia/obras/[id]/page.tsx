@@ -1286,7 +1286,7 @@ export default function EngenhariaObraHomePage() {
         <div>
           <PageLoadStatusBadge loading={bootLoading || carregandoObra || carregandoContrato} done={bootDone && !bootLoading && !carregandoObra && !carregandoContrato} />
           <div className="text-xs text-slate-500">{breadcrumb}</div>
-          <h1 className="text-2xl font-semibold">Obra - Menu Diversos</h1>
+          <h1 className="text-2xl font-semibold">Obra selecionada</h1>
           <div className="text-sm text-slate-600">
             {`Obra #${idObra}${obraNomeParam ? ` — ${obraNomeParam}` : ""}${contrato?.numeroContrato?.trim() ? ` — Contrato: ${contrato.numeroContrato}` : ""} — janelas operacionais da obra selecionada.`}
           </div>

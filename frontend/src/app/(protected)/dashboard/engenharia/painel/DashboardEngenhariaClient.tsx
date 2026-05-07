@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DashboardEngenhariaApi } from "@/lib/modules/dashboard-engenharia/api";
 import { DashboardExportButtons } from "@/components/dashboard/DashboardExportButtons";
 import { useRealtimeEvent } from "@/lib/realtime/hooks";
 import type { DashboardEngenhariaCronogramaAcompanhamentoDTO } from "@/lib/modules/dashboard-engenharia/types";
+import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type Option = { id: number; nome: string };
 
 export default function DashboardEngenhariaClient() {
+  const [bootLoading, setBootLoading] = useState(true);
+  const [bootDone, setBootDone] = useState(false);
+  const bootDoneRef = useRef(false);
+  const bootPendingRef = useRef(0);
+
   const [filtros, setFiltros] = useState<{ empresaTotal: boolean; obras: Option[]; unidades: Option[] } | null>(null);
   const [idObra, setIdObra] = useState<number | null>(null);
   const [idUnidade, setIdUnidade] = useState<number | null>(null);
@@ -24,20 +30,40 @@ export default function DashboardEngenhariaClient() {
 
   const filtroQuery = useMemo(() => ({ idObra, idUnidade }), [idObra, idUnidade]);
 
+  const bootStart = () => {
+    if (bootDoneRef.current) return;
+    if (bootPendingRef.current === 0) setBootLoading(true);
+    bootPendingRef.current += 1;
+  };
+
+  const bootFinish = () => {
+    if (bootDoneRef.current) return;
+    bootPendingRef.current = Math.max(0, bootPendingRef.current - 1);
+    if (bootPendingRef.current === 0) {
+      bootDoneRef.current = true;
+      setBootDone(true);
+      setBootLoading(false);
+    }
+  };
+
   async function carregarTudo() {
     try {
       setError(null);
+      bootStart();
       const [f, l] = await Promise.all([DashboardEngenhariaApi.filtros(), DashboardEngenhariaApi.obterLayout()]);
       setFiltros(f);
       setLayout(l);
     } catch (e: any) {
       setError(e?.message || "Erro ao carregar filtros/layout.");
+    } finally {
+      bootFinish();
     }
   }
 
   async function carregarDados() {
     try {
       setError(null);
+      bootStart();
       const [r, a, s, or, mp] = await Promise.all([
         DashboardEngenhariaApi.resumo(filtroQuery),
         DashboardEngenhariaApi.alertas(filtroQuery),
@@ -62,6 +88,8 @@ export default function DashboardEngenhariaClient() {
       }
     } catch (e: any) {
       setError(e?.message || "Erro ao carregar dados do painel.");
+    } finally {
+      bootFinish();
     }
   }
 
@@ -89,7 +117,14 @@ export default function DashboardEngenhariaClient() {
 
   const widgetsVisiveis = useMemo(() => (layout.widgets || []).filter((w: any) => w.visivel), [layout.widgets]);
 
-  if (!filtros || !resumo) return <div className="p-6">Carregando painel Engenharia...</div>;
+  if (!filtros || !resumo) {
+    return (
+      <div className="space-y-3 p-6">
+        <PageLoadStatusBadge loading={!bootDone || bootLoading} done={bootDone && !bootLoading} />
+        <div>Carregando painel Engenharia...</div>
+      </div>
+    );
+  }
 
   const obraOptions = filtros.obras || [];
   const unidadeOptions = filtros.unidades || [];
@@ -98,6 +133,7 @@ export default function DashboardEngenhariaClient() {
     <div className="space-y-6 p-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
+          <PageLoadStatusBadge loading={bootLoading} done={bootDone} />
           <h1 className="text-2xl font-semibold">Obras — Planejamento</h1>
           <p className="text-sm text-slate-600">Visão de status de obras, medições, riscos operacionais e alertas.</p>
         </div>

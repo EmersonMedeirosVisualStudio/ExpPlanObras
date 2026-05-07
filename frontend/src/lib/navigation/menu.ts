@@ -43,23 +43,6 @@ export const APP_MENU: MenuSectionConfig[] = [
         homePriority: 1,
       },
       {
-        key: 'config-empresa',
-        label: 'Configurações da Empresa',
-        icon: 'settings',
-        permission: PERMISSIONS.CONFIG_EMPRESA_VIEW,
-        scopeTypes: ['EMPRESA'],
-        children: [
-          {
-            key: 'config-apropriacao',
-            label: 'Apropriação (Configuração)',
-            href: '/dashboard/engenharia/configuracoes/apropriacao',
-            icon: 'sliders',
-            permission: PERMISSIONS.CONFIG_EMPRESA_VIEW,
-            scopeTypes: ['EMPRESA'],
-          },
-        ],
-      },
-      {
         key: 'encarregado-sistema',
         label: 'Administração do Sistema',
         icon: 'shield',
@@ -221,6 +204,14 @@ export const APP_MENU: MenuSectionConfig[] = [
         href: '/dashboard/engenharia/obras',
         icon: 'construction',
         permission: PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW,
+      },
+      {
+        key: 'engenharia-config-apropriacao',
+        label: 'Configuração — Apropriação',
+        href: '/dashboard/engenharia/configuracoes/apropriacao',
+        icon: 'sliders',
+        permission: PERMISSIONS.CONFIG_EMPRESA_VIEW,
+        scopeTypes: ['EMPRESA'],
       },
     ],
   },

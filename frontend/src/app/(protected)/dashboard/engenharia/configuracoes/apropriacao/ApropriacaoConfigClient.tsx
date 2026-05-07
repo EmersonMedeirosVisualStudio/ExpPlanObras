@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type Cfg = { permitirSemCentroCusto: boolean; exibirAlerta: boolean; bloquearSalvamento: boolean };
 
@@ -9,9 +10,13 @@ export default function ApropriacaoConfigClient() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [cfg, setCfg] = useState<Cfg>({ permitirSemCentroCusto: false, exibirAlerta: true, bloquearSalvamento: false });
+  const [bootLoading, setBootLoading] = useState(true);
+  const [bootDone, setBootDone] = useState(false);
+  const bootDoneRef = useRef(false);
 
   async function carregar() {
     try {
+      if (!bootDoneRef.current) setBootLoading(true);
       setLoading(true);
       setErr(null);
       const res = await fetch("/api/v1/engenharia/apropriacao/config", { cache: "no-store" });
@@ -22,6 +27,11 @@ export default function ApropriacaoConfigClient() {
       setErr(e?.message || "Erro ao carregar configuração");
     } finally {
       setLoading(false);
+      if (!bootDoneRef.current) {
+        bootDoneRef.current = true;
+        setBootDone(true);
+        setBootLoading(false);
+      }
     }
   }
 
@@ -44,12 +54,20 @@ export default function ApropriacaoConfigClient() {
     carregar();
   }, []);
 
-  if (loading) return <div className="p-6 rounded-xl border bg-white">Carregando...</div>;
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        <PageLoadStatusBadge loading={bootLoading} done={bootDone} />
+        <div className="p-6 rounded-xl border bg-white">Carregando...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
+          <PageLoadStatusBadge loading={bootLoading} done={bootDone} />
           <h1 className="text-2xl font-semibold">Configuração — Apropriação</h1>
           <div className="text-sm text-slate-600">Regras para centro de custo no lançamento da apropriação/produção.</div>
         </div>
@@ -103,4 +121,3 @@ export default function ApropriacaoConfigClient() {
     </div>
   );
 }
-

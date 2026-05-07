@@ -1,19 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DashboardCeoApi } from "@/lib/modules/dashboard-ceo/api";
+import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 export default function DashboardCeoClient() {
   const [resumo, setResumo] = useState<any | null>(null);
   const [financeiro, setFinanceiro] = useState<any | null>(null);
   const [alertas, setAlertas] = useState<any[]>([]);
+  const [bootLoading, setBootLoading] = useState(true);
+  const [bootDone, setBootDone] = useState(false);
+  const bootDoneRef = useRef(false);
 
   async function carregar() {
-    const [r, f, a] = await Promise.all([DashboardCeoApi.resumo(), DashboardCeoApi.financeiro(), DashboardCeoApi.alertas()]);
-    setResumo(r);
-    setFinanceiro(f);
-    setAlertas(a);
+    try {
+      if (!bootDoneRef.current) setBootLoading(true);
+      const [r, f, a] = await Promise.all([DashboardCeoApi.resumo(), DashboardCeoApi.financeiro(), DashboardCeoApi.alertas()]);
+      setResumo(r);
+      setFinanceiro(f);
+      setAlertas(a);
+    } finally {
+      if (!bootDoneRef.current) {
+        bootDoneRef.current = true;
+        setBootDone(true);
+        setBootLoading(false);
+      }
+    }
   }
 
   useEffect(() => {
@@ -21,12 +34,18 @@ export default function DashboardCeoClient() {
   }, []);
 
   if (!resumo || !financeiro) {
-    return <div className="p-6">Carregando dashboard executivo...</div>;
+    return (
+      <div className="space-y-3 p-6">
+        <PageLoadStatusBadge loading={bootLoading} done={bootDone} />
+        <div>Carregando dashboard executivo...</div>
+      </div>
+    );
   }
 
   return (
     <div className="p-6 space-y-6">
       <div>
+        <PageLoadStatusBadge loading={bootLoading} done={bootDone} />
         <h1 className="text-2xl font-semibold">Dashboard Executivo do CEO</h1>
         <p className="text-sm text-slate-600">Visão consolidada da empresa: contratos, obras, suprimentos, RH e SST.</p>
       </div>
