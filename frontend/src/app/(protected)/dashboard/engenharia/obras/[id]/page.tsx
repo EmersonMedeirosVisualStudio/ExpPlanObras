@@ -1449,7 +1449,7 @@ export default function EngenhariaObraHomePage() {
       {crudOpen ? (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/40" onClick={() => setCrudOpen(false)} />
-          <div className="absolute left-1/2 top-1/2 w-[min(900px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 rounded-xl border bg-white shadow-lg">
+          <div className="absolute left-1/2 top-1/2 h-[min(720px,calc(100vh-24px))] w-[min(900px,calc(100vw-24px))] min-h-[360px] min-w-[360px] max-h-[calc(100vh-24px)] max-w-[calc(100vw-24px)] -translate-x-1/2 -translate-y-1/2 resize overflow-auto rounded-xl border bg-white shadow-lg">
             <div className="flex items-start justify-between gap-3 border-b p-4">
               <div>
                 <div className="text-lg font-semibold">

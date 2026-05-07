@@ -14,6 +14,11 @@ import { addTenantHistoryEntry } from '../admin/tenantHistory.service.js';
 type ApiSuccess<T> = { success: true; message?: string; data: T; meta?: any };
 type ApiError = { success: false; message: string; errors?: Record<string, string[]> };
 
+const PRISMA_TX_OPTIONS = { maxWait: 60_000, timeout: 120_000 };
+async function prismaTx<T>(fn: (tx: any) => Promise<T>) {
+  return prisma.$transaction(fn as any, PRISMA_TX_OPTIONS as any);
+}
+
 function ok<T>(reply: FastifyReply, data: T, input?: { message?: string; meta?: any }) {
   const payload: ApiSuccess<T> = { success: true, data };
   if (input?.message) payload.message = input.message;
@@ -1336,7 +1341,7 @@ export default async function v1Routes(server: FastifyInstance) {
       if ((needCeo || needRh) && canUseTitularesTable) {
         try {
           const now = new Date();
-          await prisma.$transaction(async (tx) => {
+          await prismaTx(async (tx) => {
             if (needCeo) {
               const created = await tx.empresaTitular.create({
                 data: { tenantId: ctx.tenantId, roleCode: 'CEO', funcionarioId: repFuncionarioId, ativo: true, dataInicio: now, dataFim: null },
@@ -1643,7 +1648,7 @@ export default async function v1Routes(server: FastifyInstance) {
         orderBy: { id: 'desc' },
       });
 
-      const created = await prisma.$transaction(async (tx) => {
+      const created = await prismaTx(async (tx) => {
         if (current) {
           await tx.empresaRepresentante.update({
             where: { id: current.id },
@@ -1716,7 +1721,7 @@ export default async function v1Routes(server: FastifyInstance) {
         orderBy: { id: 'desc' },
       });
 
-      const created = await prisma.$transaction(async (tx) => {
+      const created = await prismaTx(async (tx) => {
         if (current) {
           await tx.empresaEncarregadoSistema.update({ where: { id: current.id }, data: { ativo: false, dataFim: now } });
         }
@@ -1785,7 +1790,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
       let created: any;
       try {
-        created = await prisma.$transaction(async (tx) => {
+        created = await prismaTx(async (tx) => {
           if (current) {
             await tx.empresaTitular.update({ where: { id: current.id }, data: { ativo: false, dataFim: now } });
           }
@@ -1849,7 +1854,7 @@ export default async function v1Routes(server: FastifyInstance) {
       const matricula = `TEMP-${(last?.id || 0) + 1}-${timestamp}`;
       const cpfFake = `00${timestamp.toString().slice(-9)}`;
 
-      const created = await prisma.$transaction(async (tx) => {
+      const created = await prismaTx(async (tx) => {
         const f = await tx.funcionario.create({
           data: {
             tenantId: ctx.tenantId,
@@ -2057,7 +2062,7 @@ export default async function v1Routes(server: FastifyInstance) {
       const tempPassword = randomTempPassword();
       const hashed = await bcrypt.hash(tempPassword, 10);
 
-      const created = await prisma.$transaction(async (tx) => {
+      const created = await prismaTx(async (tx) => {
         const user =
           existingUser ||
           (await tx.user.create({
@@ -2131,7 +2136,7 @@ export default async function v1Routes(server: FastifyInstance) {
       if (!link) return fail(reply, 404, 'Usuário não encontrado');
 
       const before = link;
-      const updated = await prisma.$transaction(async (tx) => {
+      const updated = await prismaTx(async (tx) => {
         if (body.emailLogin) {
           await tx.user.update({ where: { id }, data: { email: normalizeEmail(String(body.emailLogin)) } });
         }
@@ -2240,7 +2245,7 @@ export default async function v1Routes(server: FastifyInstance) {
       const codigo = String(body.codigo || '').trim().toUpperCase();
       const nome = String(body.nome || '').trim();
       const tenantScope = `T${ctx.tenantId}`;
-      const created = await prisma.$transaction(async (tx) => {
+      const created = await prismaTx(async (tx) => {
         const perfil = await tx.perfil.create({
           data: { tenantId: ctx.tenantId, tenantScope, tipoPerfil: 'EMPRESA', codigo, nome, ativo: true },
         });
@@ -2287,7 +2292,7 @@ export default async function v1Routes(server: FastifyInstance) {
       if (perfil.tenantId !== ctx.tenantId) return fail(reply, 403, 'Acesso negado');
 
       const before = perfil;
-      await prisma.$transaction(async (tx) => {
+      await prismaTx(async (tx) => {
         const updated = await tx.perfil.update({
           where: { id },
           data: { nome: String(body.nome).trim(), codigo: String(body.codigo).trim().toUpperCase() },
@@ -2351,7 +2356,7 @@ export default async function v1Routes(server: FastifyInstance) {
       if (perfis.length !== perfisIds.length) return fail(reply, 400, 'Perfis inválidos');
 
       const before = await prisma.usuarioPerfil.findMany({ where: { userId: id }, select: { perfilId: true, ativo: true } });
-      await prisma.$transaction(async (tx) => {
+      await prismaTx(async (tx) => {
         await tx.usuarioPerfil.deleteMany({ where: { userId: id } });
         await tx.usuarioPerfil.createMany({ data: perfisIds.map((pid) => ({ userId: id, perfilId: pid, ativo: true })) });
         await tx.auditoriaEvento.create({
@@ -2513,7 +2518,7 @@ export default async function v1Routes(server: FastifyInstance) {
       }
       const now = new Date();
       const current = await prisma.backupPoliticaTenant.findFirst({ where: { tenantId: ctx.tenantId, ativo: true }, orderBy: { id: 'desc' } });
-      const policy = await prisma.$transaction(async (tx) => {
+      const policy = await prismaTx(async (tx) => {
         if (current) {
           await tx.backupPoliticaTenant.update({ where: { id: current.id }, data: { ativo: false } });
         }
@@ -2851,7 +2856,7 @@ export default async function v1Routes(server: FastifyInstance) {
       const funcionario = await prisma.funcionario.findFirst({ where: { tenantId: ctx.tenantId, id: Number(id) }, select: { id: true } });
       if (!funcionario) return fail(reply, 404, 'Funcionário não encontrado');
 
-      const created = await prisma.$transaction(async (tx) => {
+      const created = await prismaTx(async (tx) => {
         const now = new Date();
         await tx.funcionarioLotacao.updateMany({
           where: { funcionarioId: funcionario.id, atual: true },
@@ -3311,7 +3316,7 @@ export default async function v1Routes(server: FastifyInstance) {
       };
     };
 
-    const data = await prisma.$transaction(async (tx) => {
+    const data = await prismaTx(async (tx) => {
       const prismaAny = tx as any;
       const preset = padroes(tipoVinculo as any);
 
@@ -3562,7 +3567,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const preset = padroes(tipoVinculo as any);
 
-    const modeloData = await prisma.$transaction(async (tx) => {
+    const modeloData = await prismaTx(async (tx) => {
       const prismaAny = tx as any;
 
       const modelo =
@@ -3747,7 +3752,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const vinculo = await prisma.pessoaVinculo.findFirst({ where: { tenantId: ctx.tenantId, pessoaId: pessoa.id, tipoVinculo, dataFim: null }, select: { id: true } }).catch(() => null);
     if (!vinculo) return fail(reply, 404, 'Vínculo ativo não encontrado para este tipo');
 
-    const updated = await prisma.$transaction(async (tx) => {
+    const updated = await prismaTx(async (tx) => {
       const prismaAny = tx as any;
 
       const itemModelo = await prismaAny.rhChecklistItemModelo
@@ -4475,7 +4480,7 @@ export default async function v1Routes(server: FastifyInstance) {
     let inseridos = 0;
     let reativados = 0;
 
-    await prisma.$transaction(async (tx) => {
+    await prismaTx(async (tx) => {
       for (const row of pr) {
         const role = String(row.tipo || '').toUpperCase() === 'FISCAL_OBRA' ? 'FISCAL_OBRA' : 'RESPONSAVEL_TECNICO';
         const responsabilidade = row.abrangencia ? String(row.abrangencia).trim() : '';
@@ -4984,7 +4989,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
         const preparedOk = prepared.filter((p): p is Extract<(typeof prepared)[number], { ok: true }> => p.ok);
 
-        const created = await prisma.$transaction(async (tx: any) => {
+        const created = await prismaTx(async (tx: any) => {
           const maxRows = (await tx.$queryRawUnsafe(
             `SELECT COALESCE(MAX(numero_versao),0) AS "maxVersao" FROM obras_planilhas_versoes WHERE tenant_id = $1 AND id_obra = $2`,
             ctx.tenantId,
@@ -5066,7 +5071,7 @@ export default async function v1Routes(server: FastifyInstance) {
       const action = String(body.action || '').trim().toUpperCase();
 
       if (action === 'DUPLICAR_VERSAO') {
-        const created = await prisma.$transaction(async (tx: any) => {
+        const created = await prismaTx(async (tx: any) => {
           const sourcePlanilhaId = body.sourcePlanilhaId != null ? Number(body.sourcePlanilhaId) : NaN;
           if (!Number.isFinite(sourcePlanilhaId) || sourcePlanilhaId <= 0) throw new Error('sourcePlanilhaId inválido');
 
@@ -5241,7 +5246,7 @@ export default async function v1Routes(server: FastifyInstance) {
       }
 
       if (action === 'NOVA_VERSAO') {
-        const created = await prisma.$transaction(async (tx: any) => {
+        const created = await prismaTx(async (tx: any) => {
           const maxRows = (await tx.$queryRawUnsafe(
             `SELECT COALESCE(MAX(numero_versao),0) AS "maxVersao" FROM obras_planilhas_versoes WHERE tenant_id = $1 AND id_obra = $2`,
             ctx.tenantId,
@@ -5331,7 +5336,7 @@ export default async function v1Routes(server: FastifyInstance) {
         if (nome != null && !nome) return fail(reply, 422, 'nome inválido');
         if (numeroVersao == null && nome == null && origem == null) return ok(reply, { ok: true }, { message: 'Nada para alterar' });
 
-        const updated = await prisma.$transaction(async (tx: any) => {
+        const updated = await prismaTx(async (tx: any) => {
           const exists = (await tx.$queryRawUnsafe(
             `
             SELECT id_planilha AS "idPlanilha"
@@ -5388,7 +5393,7 @@ export default async function v1Routes(server: FastifyInstance) {
         const idPlanilha = body.idPlanilha != null ? Number(body.idPlanilha) : NaN;
         if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
 
-        const res = await prisma.$transaction(async (tx: any) => {
+        const res = await prismaTx(async (tx: any) => {
           const exists = (await tx.$queryRawUnsafe(
             `
             SELECT id_planilha AS "idPlanilha"
@@ -5419,7 +5424,7 @@ export default async function v1Routes(server: FastifyInstance) {
         const idPlanilha = body.idPlanilha != null ? Number(body.idPlanilha) : NaN;
         if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
 
-        const res = await prisma.$transaction(async (tx: any) => {
+        const res = await prismaTx(async (tx: any) => {
           await ensurePlanilhaServicosTables(tx);
           await ensurePlanilhaComposicaoTables(tx);
           await ensureInsumosPrecosTables(tx);
@@ -6620,7 +6625,7 @@ export default async function v1Routes(server: FastifyInstance) {
       return fail(reply, 409, `Composição do serviço ${codigoServico} já existe na planilha destino. Marque "Substituir composição" para continuar.`);
     }
 
-    await prisma.$transaction(async (tx: any) => {
+    await prismaTx(async (tx: any) => {
       if (!dst?.idServico) {
         await tx.$executeRawUnsafe(
           `
@@ -6935,7 +6940,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const chunkSize = 500;
     let upserted = 0;
-    await prisma.$transaction(async (tx: any) => {
+    await prismaTx(async (tx: any) => {
       for (let start = 0; start < preparedOk.length; start += chunkSize) {
         const chunk = preparedOk.slice(start, start + chunkSize);
         const params: any[] = [];
@@ -7255,7 +7260,7 @@ export default async function v1Routes(server: FastifyInstance) {
     } catch (e: any) {
       return fail(reply, 422, e?.message || 'Serviço inválido');
     }
-    await prisma.$transaction(async (tx: any) => {
+    await prismaTx(async (tx: any) => {
       await recalcularFixacaoCascata(tx, ctx.tenantId, idObra, idPlanilha, [codigoServico]);
     });
     const rows = (await prisma.$queryRawUnsafe(
@@ -7318,7 +7323,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
     if (Array.isArray(body.itens)) {
       const itens = body.itens as any[];
-      await prisma.$transaction(async (tx: any) => {
+      await prismaTx(async (tx: any) => {
         await ensureInsumosPrecosTables(tx);
         const vers = (await tx.$queryRawUnsafe(
           `
@@ -7612,7 +7617,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
     if (Array.isArray(body.updates)) {
       const updates = body.updates as any[];
-      await prisma.$transaction(async (tx: any) => {
+      await prismaTx(async (tx: any) => {
         for (const u of updates) {
           const idItemBase = u.idItemBase != null ? Number(u.idItemBase) : NaN;
           const codigoCentroCusto = u.codigoCentroCusto ? String(u.codigoCentroCusto).trim().slice(0, 40) : null;
@@ -7812,7 +7817,7 @@ export default async function v1Routes(server: FastifyInstance) {
       return { meta: { ...meta, updatedAt: new Date().toISOString() }, rows };
     };
 
-    const data = await prisma.$transaction(async (tx: any) => {
+    const data = await prismaTx(async (tx: any) => {
       if (!refresh) {
         const cached = await readCached(tx);
         if (cached) return cached;
@@ -7923,7 +7928,7 @@ export default async function v1Routes(server: FastifyInstance) {
     if (invalid && !invalid.ok) return fail(reply, 422, `Erro no CSV (linha ${invalid.rowIndex + 2}): ${invalid.message}`);
     const preparedOk = prepared.filter((p): p is Extract<(typeof prepared)[number], { ok: true }> => p.ok);
 
-    await prisma.$transaction(async (tx: any) => {
+    await prismaTx(async (tx: any) => {
       await tx.$executeRawUnsafe(
         `DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4`,
         ctx.tenantId,
@@ -8523,7 +8528,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
     let importedItens = 0;
     let importedComposicoes = 0;
-    await prisma.$transaction(async (tx: any) => {
+    await prismaTx(async (tx: any) => {
       const usedInsumosCodes = new Set<string>();
 
       const allParsedCodesForBase = Array.from(targetCodes);
@@ -9131,7 +9136,7 @@ export default async function v1Routes(server: FastifyInstance) {
     }
 
     let importedItens = 0;
-    await prisma.$transaction(async (tx: any) => {
+    await prismaTx(async (tx: any) => {
       const compCodigo = parsed.composicao?.codigo ? String(parsed.composicao.codigo).trim().toUpperCase() : codigoServico;
       const compDesc = parsed.composicao?.descricao == null ? null : String(parsed.composicao.descricao || '').trim().slice(0, 255);
       const compUnd = parsed.composicao?.und == null ? null : String(parsed.composicao.und || '').trim().slice(0, 40);
@@ -9889,7 +9894,7 @@ export default async function v1Routes(server: FastifyInstance) {
     }
 
     let importedItens = 0;
-    await prisma.$transaction(async (tx) => {
+    await prismaTx(async (tx) => {
       await ensureInsumosPrecosTables(tx);
 
       const desiredInsumoPrices = new Map<string, number>();
@@ -10266,7 +10271,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const idServ = serv?.[0]?.idServ != null ? Number(serv[0].idServ) : 0;
     if (!idServ) return fail(reply, 404, `Serviço não encontrado na base SINAPI (código: ${codigo}, data-base: ${dataBase}).`);
 
-    const { deletedItens, removedServico } = await prisma.$transaction(async (tx) => {
+    const { deletedItens, removedServico } = await prismaTx(async (tx) => {
       const deleted = await tx.$executeRawUnsafe(
         `
         DELETE FROM sinapi_composicoes_base
@@ -10648,7 +10653,7 @@ export default async function v1Routes(server: FastifyInstance) {
     )) as any[];
     const codigosIniciais = (iniciais || []).map((r: any) => String(r.codigo || '').trim().toUpperCase()).filter(Boolean);
 
-    await prisma.$transaction(async (tx: any) => {
+    await prismaTx(async (tx: any) => {
       await tx.$executeRawUnsafe(
         `
         INSERT INTO obras_insumos_precos
@@ -11335,7 +11340,7 @@ export default async function v1Routes(server: FastifyInstance) {
       const docInclusaoNumero = numeroDoc || `Vínculo via projeto #${projeto.id}`;
       const docInclusaoTipo = inferDocTipoFromNumero(numeroDoc);
 
-      await prisma.$transaction(async (tx) => {
+      await prismaTx(async (tx) => {
         const existing = await tx.responsavelObra.findMany({
           where: { obraId: { in: obraIds }, responsavelId: tecnico.id, role: body.tipo, endDate: null },
           select: { id: true, obraId: true, notes: true },
