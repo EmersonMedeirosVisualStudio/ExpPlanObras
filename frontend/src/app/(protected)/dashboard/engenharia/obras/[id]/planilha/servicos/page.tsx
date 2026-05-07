@@ -449,7 +449,6 @@ export default function Page() {
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
       {composicoesSemServico && (composicoesSemServico.total > 0 || composicoesSemServico.blankCount > 0) ? (
-      {composicoesSemServico && (composicoesSemServico.total > 0 || composicoesSemServico.blankCount > 0) ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           <div className="font-semibold">Composições sem serviço no catálogo</div>
           <div className="mt-1">
