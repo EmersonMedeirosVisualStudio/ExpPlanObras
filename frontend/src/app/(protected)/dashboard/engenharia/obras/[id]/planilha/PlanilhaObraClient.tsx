@@ -556,48 +556,9 @@ export default function PlanilhaObraClient({
   const [showParamsCard, setShowParamsCard] = useState(true);
   const [showPlanilhaCard, setShowPlanilhaCard] = useState(true);
   const [showAdicionarCard, setShowAdicionarCard] = useState(true);
-  const [showFontesCard, setShowFontesCard] = useState(false);
-  const [showParametrosCadCard, setShowParametrosCadCard] = useState(false);
 
   const [fontes, setFontes] = useState<FonteDadosDTO[]>([]);
   const [parametrosCad, setParametrosCad] = useState<ParametroDTO[]>([]);
-  const [fonteForm, setFonteForm] = useState<{
-    idFonteDados: number | null;
-    nome: string;
-    tipo: string;
-    uf: string;
-    dataBase: string;
-    tipoPreco: string;
-  }>({ idFonteDados: null, nome: "", tipo: "SINAPI", uf: "", dataBase: "", tipoPreco: "" });
-  const [paramForm, setParamForm] = useState<{
-    idParametros: number | null;
-    nome: string;
-    ufSinapi: string;
-    dataBaseSbc: string;
-    dataBaseSinapi: string;
-    bdiServicosSbc: string;
-    bdiServicosSinapi: string;
-    bdiDiferenciadoSbc: string;
-    bdiDiferenciadoSinapi: string;
-    encSociaisSemDesSbc: string;
-    encSociaisSemDesSinapi: string;
-    descontoSbc: string;
-    descontoSinapi: string;
-  }>({
-    idParametros: null,
-    nome: "",
-    ufSinapi: "",
-    dataBaseSbc: "",
-    dataBaseSinapi: "",
-    bdiServicosSbc: "",
-    bdiServicosSinapi: "",
-    bdiDiferenciadoSbc: "",
-    bdiDiferenciadoSinapi: "",
-    encSociaisSemDesSbc: "",
-    encSociaisSemDesSinapi: "",
-    descontoSbc: "",
-    descontoSinapi: "",
-  });
 
   const [modalNovaPlanilhaOpen, setModalNovaPlanilhaOpen] = useState(false);
   const [modalNovaPlanilhaMode, setModalNovaPlanilhaMode] = useState<"NOVA" | "CLONAR">("NOVA");
@@ -613,44 +574,14 @@ export default function PlanilhaObraClient({
   const [editarPlanilhaFonteId, setEditarPlanilhaFonteId] = useState<string>("");
   const [editarPlanilhaParametrosId, setEditarPlanilhaParametrosId] = useState<string>("");
 
+  const [modalClonarPlanilhaOpen, setModalClonarPlanilhaOpen] = useState(false);
+  const [clonarTarget, setClonarTarget] = useState<VersaoRow | null>(null);
+  const [clonarIncludeParametros, setClonarIncludeParametros] = useState(true);
+  const [clonarIncludeFonte, setClonarIncludeFonte] = useState(true);
+
   const paramsSectionRef = useRef<HTMLDivElement | null>(null);
   const planilhaSectionRef = useRef<HTMLDivElement | null>(null);
   const adicionarLinhaRef = useRef<HTMLDivElement | null>(null);
-  const fontesSectionRef = useRef<HTMLDivElement | null>(null);
-  const parametrosCadSectionRef = useRef<HTMLDivElement | null>(null);
-
-  const ufs = useMemo(
-    () => [
-      "AC",
-      "AL",
-      "AP",
-      "AM",
-      "BA",
-      "CE",
-      "DF",
-      "ES",
-      "GO",
-      "MA",
-      "MT",
-      "MS",
-      "MG",
-      "PA",
-      "PB",
-      "PR",
-      "PE",
-      "PI",
-      "RJ",
-      "RN",
-      "RS",
-      "RO",
-      "RR",
-      "SC",
-      "SP",
-      "SE",
-      "TO",
-    ],
-    []
-  );
 
   const podeEditar = useMemo(() => {
     return true;
@@ -1004,7 +935,7 @@ export default function PlanilhaObraClient({
                   <td class="p-v">${escapeHtml(fmtPercent(p.bdiDiferenciadoSinapi))}</td>
                 </tr>
                 <tr>
-                  <td class="p-k">Enc. Sociais SEM Desoneração:</td>
+                  <td class="p-k">Enc. Sociais:</td>
                   <td class="p-v">${escapeHtml(fmtPercent(p.encSociaisSemDesSbc))}</td>
                   <td class="p-v">${escapeHtml(fmtPercent(p.encSociaisSemDesSinapi))}</td>
                 </tr>
@@ -1220,104 +1151,6 @@ export default function PlanilhaObraClient({
       setParametrosCad(normalized);
     } catch {
       setParametrosCad([]);
-    }
-  }
-
-  async function salvarFonteCadastro() {
-    const nome = String(fonteForm.nome || "").trim();
-    const tipo = String(fonteForm.tipo || "").trim().toUpperCase();
-    const uf = String(fonteForm.uf || "").trim().toUpperCase();
-    const dataBase = String(fonteForm.dataBase || "").trim().toUpperCase();
-    const tipoPreco = String(fonteForm.tipoPreco || "").trim().toUpperCase();
-    if (!nome) {
-      setErr("Nome da fonte é obrigatório.");
-      return;
-    }
-    if (!tipo) {
-      setErr("Tipo da fonte é obrigatório.");
-      return;
-    }
-    try {
-      setLoading(true);
-      setErr(null);
-      setOkMsg(null);
-      const res = await authFetch(`/api/v1/engenharia/fontes-dados`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          idFonteDados: fonteForm.idFonteDados,
-          nome,
-          tipo,
-          uf,
-          dataBase,
-          tipoPreco,
-        }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao salvar fonte");
-      setOkMsg(json?.message || "Fonte salva");
-      setFonteForm({ idFonteDados: null, nome: "", tipo: "SINAPI", uf: "", dataBase: "", tipoPreco: "" });
-      await carregarFontes();
-    } catch (e: any) {
-      setErr(e?.message || "Erro ao salvar fonte");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function salvarParametroCadastro() {
-    const nome = String(paramForm.nome || "").trim();
-    if (!nome) {
-      setErr("Nome do parâmetro é obrigatório.");
-      return;
-    }
-    const payload = {
-      idParametros: paramForm.idParametros,
-      nome,
-      ufSinapi: String(paramForm.ufSinapi || "").trim().toUpperCase(),
-      dataBaseSbc: String(paramForm.dataBaseSbc || "").trim().toUpperCase(),
-      dataBaseSinapi: String(paramForm.dataBaseSinapi || "").trim().toUpperCase(),
-      bdiServicosSbc: parseNumberLoose(paramForm.bdiServicosSbc),
-      bdiServicosSinapi: parseNumberLoose(paramForm.bdiServicosSinapi),
-      bdiDiferenciadoSbc: parseNumberLoose(paramForm.bdiDiferenciadoSbc),
-      bdiDiferenciadoSinapi: parseNumberLoose(paramForm.bdiDiferenciadoSinapi),
-      encSociaisSemDesSbc: parseNumberLoose(paramForm.encSociaisSemDesSbc),
-      encSociaisSemDesSinapi: parseNumberLoose(paramForm.encSociaisSemDesSinapi),
-      descontoSbc: parseNumberLoose(paramForm.descontoSbc),
-      descontoSinapi: parseNumberLoose(paramForm.descontoSinapi),
-    };
-    try {
-      setLoading(true);
-      setErr(null);
-      setOkMsg(null);
-      const res = await authFetch(`/api/v1/engenharia/planilhas/parametros`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao salvar parâmetro");
-      setOkMsg(json?.message || "Parâmetro salvo");
-      setParamForm({
-        idParametros: null,
-        nome: "",
-        ufSinapi: "",
-        dataBaseSbc: "",
-        dataBaseSinapi: "",
-        bdiServicosSbc: "",
-        bdiServicosSinapi: "",
-        bdiDiferenciadoSbc: "",
-        bdiDiferenciadoSinapi: "",
-        encSociaisSemDesSbc: "",
-        encSociaisSemDesSinapi: "",
-        descontoSbc: "",
-        descontoSinapi: "",
-      });
-      await carregarParametrosCad();
-    } catch (e: any) {
-      setErr(e?.message || "Erro ao salvar parâmetro");
-    } finally {
-      setLoading(false);
     }
   }
 
@@ -1651,17 +1484,16 @@ export default function PlanilhaObraClient({
   async function clonarPlanilha(v: VersaoRow) {
     const sourcePlanilhaId = v?.idPlanilha ? Number(v.idPlanilha) : 0;
     if (!sourcePlanilhaId) return;
-    const msg =
-      "Clonar a planilha?\n\n" +
-      "Isso duplica:\n" +
-      "- Itens da planilha (itens, subitens e serviços)\n" +
-      "- Preços de insumos (da planilha)\n\n" +
-      "E reutiliza (NÃO clona):\n" +
-      "- Fonte de dados (catálogo de serviços, insumos e composições)\n" +
-      "- Parâmetros\n\n" +
-      "Atenção: alterações na Fonte/Parâmetros impactam TODAS as planilhas que usam o mesmo id.\n\n" +
-      "Deseja continuar?";
-    if (!window.confirm(msg)) return;
+    setClonarTarget(v);
+    setClonarIncludeParametros(true);
+    setClonarIncludeFonte(true);
+    setModalClonarPlanilhaOpen(true);
+  }
+
+  async function confirmarClonarPlanilha() {
+    const v = clonarTarget;
+    const sourcePlanilhaId = v?.idPlanilha ? Number(v.idPlanilha) : 0;
+    if (!sourcePlanilhaId) return;
     try {
       setLoading(true);
       setErr(null);
@@ -1675,6 +1507,60 @@ export default function PlanilhaObraClient({
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao clonar planilha");
       const idPlanilhaNew = Number(json.data?.idPlanilha || 0);
+      const numeroVersaoNew = Number(json.data?.numeroVersao || 0);
+
+      if (idPlanilhaNew && !clonarIncludeParametros) {
+        const resSrc = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${encodeURIComponent(String(sourcePlanilhaId))}`);
+        const jsonSrc = await resSrc.json().catch(() => null);
+        if (!resSrc.ok || !jsonSrc?.success) throw new Error(jsonSrc?.message || "Erro ao carregar parâmetros da planilha origem");
+        const p = (jsonSrc.data?.planilha?.parametros || {}) as any;
+        const baseNome = String(p.nome || v?.parametrosNome || "").trim();
+        const nomeClone = (`${baseNome || "Parâmetros"} (Clonado)` as string).slice(0, 160);
+
+        const resParam = await authFetch(`/api/v1/engenharia/planilhas/parametros`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nome: nomeClone,
+            ufSinapi: p.ufSinapi ?? null,
+            dataBaseSbc: p.dataBaseSbc ?? null,
+            dataBaseSinapi: p.dataBaseSinapi ?? null,
+            bdiServicosSbc: p.bdiServicosSbc ?? null,
+            bdiServicosSinapi: p.bdiServicosSinapi ?? null,
+            bdiDiferenciadoSbc: p.bdiDiferenciadoSbc ?? null,
+            bdiDiferenciadoSinapi: p.bdiDiferenciadoSinapi ?? null,
+            encSociaisSemDesSbc: p.encSociaisSemDesSbc ?? null,
+            encSociaisSemDesSinapi: p.encSociaisSemDesSinapi ?? null,
+            descontoSbc: p.descontoSbc ?? null,
+            descontoSinapi: p.descontoSinapi ?? null,
+          }),
+        });
+        const jsonParam = await resParam.json().catch(() => null);
+        if (!resParam.ok || !jsonParam?.success) throw new Error(jsonParam?.message || "Erro ao clonar parâmetros");
+        const idParametrosNew = Number(jsonParam.data?.idParametros || 0);
+        const idFonteDadosNew = v?.idFonteDados != null ? Number(v.idFonteDados) : 0;
+        if (!idFonteDadosNew) throw new Error("Fonte de dados da planilha origem não definida");
+        if (!numeroVersaoNew) throw new Error("Número da versão da planilha clonada inválido");
+        if (!idParametrosNew) throw new Error("Parâmetro clonado inválido");
+
+        const resEdit = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "EDITAR_VERSAO",
+            idPlanilha: idPlanilhaNew,
+            numeroVersao: numeroVersaoNew,
+            nome,
+            idFonteDados: idFonteDadosNew,
+            idParametros: idParametrosNew,
+          }),
+        });
+        const jsonEdit = await resEdit.json().catch(() => null);
+        if (!resEdit.ok || !jsonEdit?.success) throw new Error(jsonEdit?.message || "Erro ao vincular parâmetros clonados");
+        await carregarParametrosCad();
+      }
+
+      setModalClonarPlanilhaOpen(false);
       await carregarVersoes();
       if (idPlanilhaNew) setPlanilhaId(idPlanilhaNew);
       setOkMsg("Planilha clonada com sucesso.");
@@ -2219,6 +2105,83 @@ export default function PlanilhaObraClient({
         </div>
       ) : null}
 
+      {modalClonarPlanilhaOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl rounded-xl border bg-white shadow-lg">
+            <div className="flex items-center justify-between gap-3 border-b p-4">
+              <div className="text-lg font-semibold">Clonar planilha</div>
+              <button
+                className="rounded-lg border bg-white px-2 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                type="button"
+                onClick={() => setModalClonarPlanilhaOpen(false)}
+                disabled={loading}
+                title="Fechar"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                Atenção: Fonte de dados e Parâmetros podem ser compartilhados. Alterações na Fonte/Parâmetros podem impactar outras planilhas que usam o mesmo id.
+              </div>
+
+              <div className="space-y-3">
+                <label className="flex items-start gap-3">
+                  <input type="checkbox" checked disabled />
+                  <div>
+                    <div className="font-semibold">Planilha</div>
+                    <div className="text-sm text-slate-700">Itens (itens, subitens e serviços) e preços de insumos.</div>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={clonarIncludeParametros}
+                    onChange={(e) => setClonarIncludeParametros(Boolean(e.target.checked))}
+                    disabled={loading}
+                  />
+                  <div>
+                    <div className="font-semibold">Parâmetros da planilha</div>
+                    <div className="text-sm text-slate-700">UF (SINAPI), Data-base, BDI de Serviços (%), BDI Diferenciado (%), Enc. Sociais (%), Desconto (%).</div>
+                    <div className="text-xs text-slate-500">
+                      Desmarcado = cria um novo cadastro de Parâmetros com os mesmos valores (não fica compartilhado).
+                    </div>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-3">
+                  <input type="checkbox" checked={clonarIncludeFonte} disabled />
+                  <div>
+                    <div className="font-semibold">Fonte de dados da planilha</div>
+                    <div className="text-sm text-slate-700">Serviços, composições, insumos.</div>
+                  </div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={() => setModalClonarPlanilhaOpen(false)}
+                  disabled={loading}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                  type="button"
+                  onClick={confirmarClonarPlanilha}
+                  disabled={loading || !clonarTarget}
+                >
+                  Clonar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {modalEditarPlanilhaOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-2xl rounded-xl border bg-white shadow-lg">
@@ -2326,12 +2289,6 @@ export default function PlanilhaObraClient({
         </div>
       ) : null}
 
-      <datalist id="ufs-list">
-        {ufs.map((x) => (
-          <option key={x} value={x} />
-        ))}
-      </datalist>
-
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex-1 min-w-[260px]">
           <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />
@@ -2427,8 +2384,9 @@ export default function PlanilhaObraClient({
               className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
               type="button"
               onClick={() => {
-                setShowFontesCard(true);
-                scrollToRef(fontesSectionRef);
+                const qs = new URLSearchParams();
+                qs.set("returnTo", selfHref);
+                router.push(`/dashboard/engenharia/fontes-dados?${qs.toString()}`);
               }}
               disabled={loading}
               title="Cadastrar/editar fontes de dados"
@@ -2439,8 +2397,9 @@ export default function PlanilhaObraClient({
               className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
               type="button"
               onClick={() => {
-                setShowParametrosCadCard(true);
-                scrollToRef(parametrosCadSectionRef);
+                const qs = new URLSearchParams();
+                qs.set("returnTo", selfHref);
+                router.push(`/dashboard/engenharia/planilhas/parametros?${qs.toString()}`);
               }}
               disabled={loading}
               title="Cadastrar/editar parâmetros"
@@ -2706,355 +2665,6 @@ export default function PlanilhaObraClient({
         </div>
       </section>
 
-      <div ref={fontesSectionRef}>
-        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <button className="rounded border bg-white px-2 py-1 text-sm hover:bg-slate-50" type="button" onClick={() => setShowFontesCard((v) => !v)}>
-                {showFontesCard ? "⯆" : "⯈"}
-              </button>
-              <div className="text-lg font-semibold">Fontes de dados</div>
-            </div>
-            <button
-              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-              type="button"
-              onClick={carregarFontes}
-              disabled={loading}
-            >
-              Atualizar
-            </button>
-          </div>
-          {showFontesCard ? (
-            <>
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                Atenção: esta Fonte de dados é um catálogo compartilhado. Alterar Serviços/Insumos/Composições desta Fonte afeta TODAS as planilhas que usam este mesmo id.
-              </div>
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div className="overflow-auto rounded-lg border">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 text-left text-slate-700">
-                      <tr>
-                        <th className="px-3 py-2">#id - nome</th>
-                        <th className="px-3 py-2">Tipo</th>
-                        <th className="px-3 py-2">UF</th>
-                        <th className="px-3 py-2">Data-base</th>
-                        <th className="px-3 py-2">Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {fontes.map((f) => (
-                        <tr key={f.idFonteDados} className="border-t">
-                          <td className="px-3 py-2">{`#${f.idFonteDados} - ${f.nome || "—"}`}</td>
-                          <td className="px-3 py-2">{f.tipo || "—"}</td>
-                          <td className="px-3 py-2">{f.uf || "—"}</td>
-                          <td className="px-3 py-2">{f.dataBase || "—"}</td>
-                          <td className="px-3 py-2">
-                            <button
-                              className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
-                              type="button"
-                              onClick={() =>
-                                setFonteForm({
-                                  idFonteDados: f.idFonteDados,
-                                  nome: f.nome || "",
-                                  tipo: f.tipo || "SINAPI",
-                                  uf: f.uf || "",
-                                  dataBase: f.dataBase || "",
-                                  tipoPreco: f.tipoPreco || "",
-                                })
-                              }
-                              disabled={loading}
-                            >
-                              Editar
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                      {!fontes.length ? (
-                        <tr>
-                          <td colSpan={5} className="px-3 py-6 text-center text-slate-500">
-                            Nenhuma fonte cadastrada.
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="rounded-lg border p-3 space-y-3">
-                  <div className="text-sm font-semibold">{fonteForm.idFonteDados ? `Editar fonte #${fonteForm.idFonteDados}` : "Cadastrar fonte"}</div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <label className="space-y-1">
-                      <div className="text-xs text-slate-500">Nome</div>
-                      <input className="input bg-white w-full" value={fonteForm.nome} onChange={(e) => setFonteForm((p) => ({ ...p, nome: e.target.value }))} disabled={loading} />
-                    </label>
-                    <label className="space-y-1">
-                      <div className="text-xs text-slate-500">Tipo</div>
-                      <select className="input bg-white w-full" value={fonteForm.tipo} onChange={(e) => setFonteForm((p) => ({ ...p, tipo: e.target.value }))} disabled={loading}>
-                        <option value="SINAPI">SINAPI</option>
-                        <option value="SBC">SBC</option>
-                        <option value="MANUAL">MANUAL</option>
-                      </select>
-                    </label>
-                    <label className="space-y-1">
-                      <div className="text-xs text-slate-500">UF</div>
-                      <input
-                        className="input bg-white w-full"
-                        value={fonteForm.uf}
-                        onChange={(e) => setFonteForm((p) => ({ ...p, uf: e.target.value }))}
-                        disabled={loading}
-                        placeholder="SP"
-                        list="ufs-list"
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <div className="text-xs text-slate-500">Data-base</div>
-                      <input
-                        className="input bg-white w-full"
-                        value={fonteForm.dataBase}
-                        onChange={(e) => setFonteForm((p) => ({ ...p, dataBase: e.target.value }))}
-                        disabled={loading}
-                        placeholder="2024-01"
-                      />
-                    </label>
-                    <label className="space-y-1 md:col-span-2">
-                      <div className="text-xs text-slate-500">Tipo de preço</div>
-                      <input className="input bg-white w-full" value={fonteForm.tipoPreco} onChange={(e) => setFonteForm((p) => ({ ...p, tipoPreco: e.target.value }))} disabled={loading} />
-                    </label>
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-                      type="button"
-                      onClick={() => setFonteForm({ idFonteDados: null, nome: "", tipo: "SINAPI", uf: "", dataBase: "", tipoPreco: "" })}
-                      disabled={loading}
-                    >
-                      Limpar
-                    </button>
-                    <button
-                      className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
-                      type="button"
-                      onClick={salvarFonteCadastro}
-                      disabled={loading}
-                    >
-                      Salvar
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : null}
-        </section>
-      </div>
-
-      <div ref={parametrosCadSectionRef}>
-        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <button className="rounded border bg-white px-2 py-1 text-sm hover:bg-slate-50" type="button" onClick={() => setShowParametrosCadCard((v) => !v)}>
-                {showParametrosCadCard ? "⯆" : "⯈"}
-              </button>
-              <div className="text-lg font-semibold">Parâmetros</div>
-            </div>
-            <button
-              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-              type="button"
-              onClick={carregarParametrosCad}
-              disabled={loading}
-            >
-              Atualizar
-            </button>
-          </div>
-
-          {showParametrosCadCard ? (
-            <>
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                Atenção: este Parâmetro é compartilhado. Alterar este cadastro afeta TODAS as planilhas que usam este mesmo id.
-              </div>
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div className="overflow-auto rounded-lg border">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 text-left text-slate-700">
-                      <tr>
-                        <th className="px-3 py-2">#id - nome</th>
-                        <th className="px-3 py-2">SINAPI</th>
-                        <th className="px-3 py-2">SBC</th>
-                        <th className="px-3 py-2">Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {parametrosCad.map((p) => (
-                        <tr key={p.idParametros} className="border-t">
-                          <td className="px-3 py-2">{`#${p.idParametros} - ${p.nome || "—"}`}</td>
-                          <td className="px-3 py-2">{p.dataBaseSinapi ? `${p.ufSinapi || "—"} • ${p.dataBaseSinapi}` : "—"}</td>
-                          <td className="px-3 py-2">{p.dataBaseSbc || "—"}</td>
-                          <td className="px-3 py-2">
-                            <button
-                              className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
-                              type="button"
-                              onClick={() =>
-                                setParamForm({
-                                  idParametros: p.idParametros,
-                                  nome: p.nome || "",
-                                  ufSinapi: p.ufSinapi || "",
-                                  dataBaseSbc: p.dataBaseSbc || "",
-                                  dataBaseSinapi: p.dataBaseSinapi || "",
-                                  bdiServicosSbc: p.bdiServicosSbc == null ? "" : String(p.bdiServicosSbc),
-                                  bdiServicosSinapi: p.bdiServicosSinapi == null ? "" : String(p.bdiServicosSinapi),
-                                  bdiDiferenciadoSbc: p.bdiDiferenciadoSbc == null ? "" : String(p.bdiDiferenciadoSbc),
-                                  bdiDiferenciadoSinapi: p.bdiDiferenciadoSinapi == null ? "" : String(p.bdiDiferenciadoSinapi),
-                                  encSociaisSemDesSbc: p.encSociaisSemDesSbc == null ? "" : String(p.encSociaisSemDesSbc),
-                                  encSociaisSemDesSinapi: p.encSociaisSemDesSinapi == null ? "" : String(p.encSociaisSemDesSinapi),
-                                  descontoSbc: p.descontoSbc == null ? "" : String(p.descontoSbc),
-                                  descontoSinapi: p.descontoSinapi == null ? "" : String(p.descontoSinapi),
-                                })
-                              }
-                              disabled={loading}
-                            >
-                              Editar
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                      {!parametrosCad.length ? (
-                        <tr>
-                          <td colSpan={4} className="px-3 py-6 text-center text-slate-500">
-                            Nenhum parâmetro cadastrado.
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="rounded-lg border p-3 space-y-3">
-                  <div className="text-sm font-semibold">{paramForm.idParametros ? `Editar parâmetro #${paramForm.idParametros}` : "Cadastrar parâmetro"}</div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <label className="space-y-1 md:col-span-2">
-                      <div className="text-xs text-slate-500">Nome</div>
-                      <input className="input bg-white w-full" value={paramForm.nome} onChange={(e) => setParamForm((p) => ({ ...p, nome: e.target.value }))} disabled={loading} />
-                    </label>
-                    <label className="space-y-1">
-                      <div className="text-xs text-slate-500">UF (SINAPI)</div>
-                      <input
-                        className="input bg-white w-full"
-                        value={paramForm.ufSinapi}
-                        onChange={(e) => setParamForm((p) => ({ ...p, ufSinapi: e.target.value }))}
-                        disabled={loading}
-                        placeholder="SP"
-                        list="ufs-list"
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <div className="text-xs text-slate-500">Data-base SINAPI</div>
-                      <input
-                        className="input bg-white w-full"
-                        value={paramForm.dataBaseSinapi}
-                        onChange={(e) => setParamForm((p) => ({ ...p, dataBaseSinapi: e.target.value }))}
-                        disabled={loading}
-                        placeholder="2024-01"
-                      />
-                    </label>
-                    <label className="space-y-1 md:col-span-2">
-                      <div className="text-xs text-slate-500">Data-base SBC</div>
-                      <input
-                        className="input bg-white w-full"
-                        value={paramForm.dataBaseSbc}
-                        onChange={(e) => setParamForm((p) => ({ ...p, dataBaseSbc: e.target.value }))}
-                        disabled={loading}
-                        placeholder="2024-01"
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <div className="text-xs text-slate-500">BDI serviços (SBC)</div>
-                      <input
-                        className="input bg-white w-full"
-                        value={paramForm.bdiServicosSbc}
-                        onChange={(e) => setParamForm((p) => ({ ...p, bdiServicosSbc: e.target.value }))}
-                        disabled={loading}
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <div className="text-xs text-slate-500">BDI serviços (SINAPI)</div>
-                      <input
-                        className="input bg-white w-full"
-                        value={paramForm.bdiServicosSinapi}
-                        onChange={(e) => setParamForm((p) => ({ ...p, bdiServicosSinapi: e.target.value }))}
-                        disabled={loading}
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <div className="text-xs text-slate-500">Enc. Sociais sem des. (SBC)</div>
-                      <input
-                        className="input bg-white w-full"
-                        value={paramForm.encSociaisSemDesSbc}
-                        onChange={(e) => setParamForm((p) => ({ ...p, encSociaisSemDesSbc: e.target.value }))}
-                        disabled={loading}
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <div className="text-xs text-slate-500">Enc. Sociais sem des. (SINAPI)</div>
-                      <input
-                        className="input bg-white w-full"
-                        value={paramForm.encSociaisSemDesSinapi}
-                        onChange={(e) => setParamForm((p) => ({ ...p, encSociaisSemDesSinapi: e.target.value }))}
-                        disabled={loading}
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <div className="text-xs text-slate-500">Desconto (SBC)</div>
-                      <input className="input bg-white w-full" value={paramForm.descontoSbc} onChange={(e) => setParamForm((p) => ({ ...p, descontoSbc: e.target.value }))} disabled={loading} />
-                    </label>
-                    <label className="space-y-1">
-                      <div className="text-xs text-slate-500">Desconto (SINAPI)</div>
-                      <input
-                        className="input bg-white w-full"
-                        value={paramForm.descontoSinapi}
-                        onChange={(e) => setParamForm((p) => ({ ...p, descontoSinapi: e.target.value }))}
-                        disabled={loading}
-                      />
-                    </label>
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-                      type="button"
-                      onClick={() =>
-                        setParamForm({
-                          idParametros: null,
-                          nome: "",
-                          ufSinapi: "",
-                          dataBaseSbc: "",
-                          dataBaseSinapi: "",
-                          bdiServicosSbc: "",
-                          bdiServicosSinapi: "",
-                          bdiDiferenciadoSbc: "",
-                          bdiDiferenciadoSinapi: "",
-                          encSociaisSemDesSbc: "",
-                          encSociaisSemDesSinapi: "",
-                          descontoSbc: "",
-                          descontoSinapi: "",
-                        })
-                      }
-                      disabled={loading}
-                    >
-                      Limpar
-                    </button>
-                    <button
-                      className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
-                      type="button"
-                      onClick={salvarParametroCadastro}
-                      disabled={loading}
-                    >
-                      Salvar
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : null}
-        </section>
-      </div>
-
       {planilha ? (
         <>
           <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
@@ -3123,10 +2733,6 @@ export default function PlanilhaObraClient({
                       {planilha.idParametros ? `#${planilha.idParametros} - ${planilha.parametrosNome || planilha.parametros?.nome || "—"}` : "—"}
                     </span>
                   </div>
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                    Este card é somente leitura. Para cadastrar/editar Parâmetros (compartilhados), use o card{" "}
-                    <span className="font-semibold">Parâmetros</span>.
-                  </div>
                   <div className="overflow-auto">
                     <table className="min-w-full text-sm">
                       <thead className="bg-slate-50 text-left text-slate-700">
@@ -3158,7 +2764,7 @@ export default function PlanilhaObraClient({
                           <td className="px-3 py-2">{planilha.parametros?.bdiDiferenciadoSinapi == null ? "—" : String(planilha.parametros.bdiDiferenciadoSinapi)}</td>
                         </tr>
                         <tr className="border-t">
-                          <td className="px-3 py-2">Enc. Sociais SEM Desoneração (%)</td>
+                          <td className="px-3 py-2">Enc. Sociais (%)</td>
                           <td className="px-3 py-2">{planilha.parametros?.encSociaisSemDesSbc == null ? "—" : String(planilha.parametros.encSociaisSemDesSbc)}</td>
                           <td className="px-3 py-2">{planilha.parametros?.encSociaisSemDesSinapi == null ? "—" : String(planilha.parametros.encSociaisSemDesSinapi)}</td>
                         </tr>

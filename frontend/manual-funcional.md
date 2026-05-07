@@ -1695,7 +1695,7 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 - Edição por versão selecionada: após selecionar uma versão, o usuário pode **editar a planilha** (linhas) diretamente na versão selecionada.
   - O card **Parâmetros da planilha** é **somente leitura**: ele apenas mostra qual parâmetro está vinculado naquela versão.
   - Para trocar a Fonte/Parâmetro vinculados, use **Editar** na lista de versões.
-  - Para cadastrar/editar o conteúdo de uma Fonte/Parâmetro (cadastros compartilhados), use os cards **Fontes de dados** e **Parâmetros**.
+  - Para cadastrar/editar Fonte e Parâmetros (cadastros compartilhados), use as telas **Engenharia → Fontes de dados** e **Engenharia → Planilhas → Parâmetros** (acessadas pelos botões no canto superior direito).
 - Clonagem (com dependências): no card **Versões cadastradas**, a ação **Clonar** cria uma nova versão copiando:
   - itens da planilha (itens, subitens e serviços utilizados na planilha);
   - preços de insumos da planilha.
@@ -1719,8 +1719,8 @@ ETAPA 1 — Onde acessar
 
 ETAPA 2 — O que clicar
 - No canto superior direito, abaixo do botão **Voltar**, clique em:
-  - **Cadastrar Fonte de dados** (para cadastrar/editar fontes)
-  - **Cadastrar Parâmetro** (para cadastrar/editar parâmetros)
+  - **Cadastrar Fonte de dados** (abre a tela de cadastro/edição de fontes)
+  - **Cadastrar Parâmetro** (abre a tela de cadastro/edição de parâmetros)
 
 ETAPA 3 — O que preencher (Fonte de dados)
 - Nome: exemplo “SINAPI SP 2024-01” (ou um nome interno da sua empresa)

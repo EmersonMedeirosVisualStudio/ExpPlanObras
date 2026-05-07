@@ -126,9 +126,9 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 - Em **Nova planilha** e em **Editar**, selecione:
   - **Fonte de dados** (formato **#id - nome**)
   - **Parâmetro** (formato **#id - nome**)
-- Para cadastrar/editar os cadastros, use os botões no canto superior direito (abaixo de **Voltar**):
-  - **Cadastrar Fonte de dados**
-  - **Cadastrar Parâmetro**
+- Para cadastrar/editar os cadastros, use os botões no canto superior direito (abaixo de **Voltar**). Eles abrem telas separadas:
+  - **Cadastrar Fonte de dados** → tela de Fontes de dados
+  - **Cadastrar Parâmetro** → tela de Parâmetros
 
 ### ETAPA 4 — O que esperar
 - O sistema mostra um aviso de compartilhamento:
