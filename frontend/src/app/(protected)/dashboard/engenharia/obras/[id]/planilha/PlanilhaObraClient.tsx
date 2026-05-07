@@ -576,8 +576,8 @@ export default function PlanilhaObraClient({
 
   const [modalClonarPlanilhaOpen, setModalClonarPlanilhaOpen] = useState(false);
   const [clonarTarget, setClonarTarget] = useState<VersaoRow | null>(null);
-  const [clonarIncludeParametros, setClonarIncludeParametros] = useState(true);
-  const [clonarIncludeFonte, setClonarIncludeFonte] = useState(true);
+  const [clonarIncludeParametros, setClonarIncludeParametros] = useState(false);
+  const [clonarIncludeFonte, setClonarIncludeFonte] = useState(false);
 
   const paramsSectionRef = useRef<HTMLDivElement | null>(null);
   const planilhaSectionRef = useRef<HTMLDivElement | null>(null);
@@ -1485,8 +1485,8 @@ export default function PlanilhaObraClient({
     const sourcePlanilhaId = v?.idPlanilha ? Number(v.idPlanilha) : 0;
     if (!sourcePlanilhaId) return;
     setClonarTarget(v);
-    setClonarIncludeParametros(true);
-    setClonarIncludeFonte(true);
+    setClonarIncludeParametros(false);
+    setClonarIncludeFonte(false);
     setModalClonarPlanilhaOpen(true);
   }
 
@@ -1508,41 +1508,43 @@ export default function PlanilhaObraClient({
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao clonar planilha");
       const idPlanilhaNew = Number(json.data?.idPlanilha || 0);
       const numeroVersaoNew = Number(json.data?.numeroVersao || 0);
+      if (!idPlanilhaNew) throw new Error("Planilha clonada inválida");
+      if (!numeroVersaoNew) throw new Error("Número da versão da planilha clonada inválido");
 
-      if (idPlanilhaNew && !clonarIncludeParametros) {
-        const resSrc = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${encodeURIComponent(String(sourcePlanilhaId))}`);
-        const jsonSrc = await resSrc.json().catch(() => null);
-        if (!resSrc.ok || !jsonSrc?.success) throw new Error(jsonSrc?.message || "Erro ao carregar parâmetros da planilha origem");
-        const p = (jsonSrc.data?.planilha?.parametros || {}) as any;
-        const baseNome = String(p.nome || v?.parametrosNome || "").trim();
-        const nomeClone = (`${baseNome || "Parâmetros"} (Clonado)` as string).slice(0, 160);
+      let idFonteDadosFinal = v?.idFonteDados != null ? Number(v.idFonteDados) : 0;
+      let idParametrosFinal = v?.idParametros != null ? Number(v.idParametros) : 0;
+      if (!idFonteDadosFinal) throw new Error("Fonte de dados da planilha origem não definida");
+      if (!idParametrosFinal) throw new Error("Parâmetros da planilha origem não definidos");
 
-        const resParam = await authFetch(`/api/v1/engenharia/planilhas/parametros`, {
+      if (clonarIncludeFonte) {
+        const resFonte = await authFetch(`/api/v1/engenharia/fontes-dados/clonar`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            nome: nomeClone,
-            ufSinapi: p.ufSinapi ?? null,
-            dataBaseSbc: p.dataBaseSbc ?? null,
-            dataBaseSinapi: p.dataBaseSinapi ?? null,
-            bdiServicosSbc: p.bdiServicosSbc ?? null,
-            bdiServicosSinapi: p.bdiServicosSinapi ?? null,
-            bdiDiferenciadoSbc: p.bdiDiferenciadoSbc ?? null,
-            bdiDiferenciadoSinapi: p.bdiDiferenciadoSinapi ?? null,
-            encSociaisSemDesSbc: p.encSociaisSemDesSbc ?? null,
-            encSociaisSemDesSinapi: p.encSociaisSemDesSinapi ?? null,
-            descontoSbc: p.descontoSbc ?? null,
-            descontoSinapi: p.descontoSinapi ?? null,
-          }),
+          body: JSON.stringify({ idFonteDados: idFonteDadosFinal }),
+        });
+        const jsonFonte = await resFonte.json().catch(() => null);
+        if (!resFonte.ok || !jsonFonte?.success) throw new Error(jsonFonte?.message || "Erro ao clonar fonte de dados");
+        const idFonteNew = Number(jsonFonte.data?.idFonteDados || 0);
+        if (!idFonteNew) throw new Error("Fonte clonada inválida");
+        idFonteDadosFinal = idFonteNew;
+        await carregarFontes();
+      }
+
+      if (clonarIncludeParametros) {
+        const resParam = await authFetch(`/api/v1/engenharia/planilhas/parametros/clonar`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idParametros: idParametrosFinal }),
         });
         const jsonParam = await resParam.json().catch(() => null);
         if (!resParam.ok || !jsonParam?.success) throw new Error(jsonParam?.message || "Erro ao clonar parâmetros");
-        const idParametrosNew = Number(jsonParam.data?.idParametros || 0);
-        const idFonteDadosNew = v?.idFonteDados != null ? Number(v.idFonteDados) : 0;
-        if (!idFonteDadosNew) throw new Error("Fonte de dados da planilha origem não definida");
-        if (!numeroVersaoNew) throw new Error("Número da versão da planilha clonada inválido");
-        if (!idParametrosNew) throw new Error("Parâmetro clonado inválido");
+        const idParamNew = Number(jsonParam.data?.idParametros || 0);
+        if (!idParamNew) throw new Error("Parâmetro clonado inválido");
+        idParametrosFinal = idParamNew;
+        await carregarParametrosCad();
+      }
 
+      if (clonarIncludeFonte || clonarIncludeParametros) {
         const resEdit = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1551,13 +1553,12 @@ export default function PlanilhaObraClient({
             idPlanilha: idPlanilhaNew,
             numeroVersao: numeroVersaoNew,
             nome,
-            idFonteDados: idFonteDadosNew,
-            idParametros: idParametrosNew,
+            idFonteDados: idFonteDadosFinal,
+            idParametros: idParametrosFinal,
           }),
         });
         const jsonEdit = await resEdit.json().catch(() => null);
-        if (!resEdit.ok || !jsonEdit?.success) throw new Error(jsonEdit?.message || "Erro ao vincular parâmetros clonados");
-        await carregarParametrosCad();
+        if (!resEdit.ok || !jsonEdit?.success) throw new Error(jsonEdit?.message || "Erro ao vincular fonte/parâmetros clonados");
       }
 
       setModalClonarPlanilhaOpen(false);
@@ -1666,7 +1667,7 @@ export default function PlanilhaObraClient({
   async function excluirPlanilha(v: VersaoRow) {
     if (!v?.idPlanilha) return;
     const msg =
-      "Excluir a planilha inteira?\n\nIsso remove:\n- Parâmetros\n- Linhas/serviços\n- Composições/subcomposições\n- Preços de insumos\n\nEsta ação não pode ser desfeita.";
+      "Excluir a planilha inteira?\n\nIsso remove:\n- Linhas/serviços\n- Composições/subcomposições\n- Preços de insumos\n\nAlém disso, se a Fonte de dados e/ou os Parâmetros desta planilha NÃO estiverem compartilhados com outras planilhas, eles também serão excluídos.\n\nEsta ação não pode ser desfeita.";
     if (!window.confirm(msg)) return;
     try {
       setLoading(true);
@@ -2144,17 +2145,16 @@ export default function PlanilhaObraClient({
                   <div>
                     <div className="font-semibold">Parâmetros da planilha</div>
                     <div className="text-sm text-slate-700">UF (SINAPI), Data-base, BDI de Serviços (%), BDI Diferenciado (%), Enc. Sociais (%), Desconto (%).</div>
-                    <div className="text-xs text-slate-500">
-                      Desmarcado = cria um novo cadastro de Parâmetros com os mesmos valores (não fica compartilhado).
-                    </div>
+                    <div className="text-xs text-slate-500">Marcado = cria um novo cadastro de Parâmetros com os mesmos valores (não fica compartilhado).</div>
                   </div>
                 </label>
 
                 <label className="flex items-start gap-3">
-                  <input type="checkbox" checked={clonarIncludeFonte} disabled />
+                  <input type="checkbox" checked={clonarIncludeFonte} onChange={(e) => setClonarIncludeFonte(Boolean(e.target.checked))} disabled={loading} />
                   <div>
                     <div className="font-semibold">Fonte de dados da planilha</div>
                     <div className="text-sm text-slate-700">Serviços, composições, insumos.</div>
+                    <div className="text-xs text-slate-500">Marcado = cria uma nova Fonte (catálogo) clonando Serviços/Insumos/Composições.</div>
                   </div>
                 </label>
               </div>

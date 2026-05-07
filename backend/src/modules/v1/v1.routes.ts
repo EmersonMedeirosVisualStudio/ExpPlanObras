@@ -510,7 +510,7 @@ async function ensureFontesDadosTables(tx: any) {
       uf VARCHAR(2) NOT NULL DEFAULT '',
       data_base VARCHAR(16) NOT NULL DEFAULT '',
       tipo_preco VARCHAR(8) NOT NULL DEFAULT '',
-      descricao VARCHAR(160) NULL,
+      descricao VARCHAR(160) NOT NULL DEFAULT '',
       criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
@@ -518,13 +518,17 @@ async function ensureFontesDadosTables(tx: any) {
   await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN uf SET DEFAULT ''`).catch(() => null);
   await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN data_base SET DEFAULT ''`).catch(() => null);
   await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN tipo_preco SET DEFAULT ''`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN descricao SET DEFAULT ''`).catch(() => null);
   await tx.$executeRawUnsafe(`UPDATE obras_fontes_dados SET uf = '' WHERE uf IS NULL`).catch(() => null);
   await tx.$executeRawUnsafe(`UPDATE obras_fontes_dados SET data_base = '' WHERE data_base IS NULL`).catch(() => null);
   await tx.$executeRawUnsafe(`UPDATE obras_fontes_dados SET tipo_preco = '' WHERE tipo_preco IS NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`UPDATE obras_fontes_dados SET descricao = '' WHERE descricao IS NULL`).catch(() => null);
   await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN uf SET NOT NULL`).catch(() => null);
   await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN data_base SET NOT NULL`).catch(() => null);
   await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN tipo_preco SET NOT NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_fontes_dados_uk ON obras_fontes_dados (tenant_id, tipo, uf, data_base, tipo_preco)`);
+  await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN descricao SET NOT NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`DROP INDEX IF EXISTS obras_fontes_dados_uk`).catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_fontes_dados_uk ON obras_fontes_dados (tenant_id, tipo, uf, data_base, tipo_preco, descricao)`);
   await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_fontes_dados_idx ON obras_fontes_dados (tenant_id, tipo)`);
 }
 
@@ -679,12 +683,12 @@ async function upsertFonteDados(tx: any, tenantId: number, input: { tipo: string
   const uf = input.uf ? String(input.uf).trim().toUpperCase() : '';
   const dataBase = input.dataBase ? String(input.dataBase).trim().toUpperCase() : '';
   const tipoPreco = input.tipoPreco ? String(input.tipoPreco).trim().toUpperCase() : '';
-  const descricao = input.descricao ? String(input.descricao).trim().slice(0, 160) : null;
+  const descricao = input.descricao ? String(input.descricao).trim().slice(0, 160) : '';
   const rows = (await tx.$queryRawUnsafe(
     `
     INSERT INTO obras_fontes_dados (tenant_id, tipo, uf, data_base, tipo_preco, descricao)
     VALUES ($1,$2,$3,$4,$5,$6)
-    ON CONFLICT (tenant_id, tipo, uf, data_base, tipo_preco)
+    ON CONFLICT (tenant_id, tipo, uf, data_base, tipo_preco, descricao)
     DO UPDATE SET
       descricao = COALESCE(EXCLUDED.descricao, obras_fontes_dados.descricao),
       atualizado_em = NOW()
@@ -5298,7 +5302,7 @@ export default async function v1Routes(server: FastifyInstance) {
         `
         SELECT id_fonte_dados AS "idFonteDados"
         FROM obras_fontes_dados
-        WHERE tenant_id = $1 AND tipo = $2 AND uf = $3 AND data_base = $4 AND tipo_preco = $5 AND id_fonte_dados <> $6
+        WHERE tenant_id = $1 AND tipo = $2 AND uf = $3 AND data_base = $4 AND tipo_preco = $5 AND descricao = $6 AND id_fonte_dados <> $7
         LIMIT 1
         `,
         ctx.tenantId,
@@ -5306,6 +5310,7 @@ export default async function v1Routes(server: FastifyInstance) {
         uf,
         dataBase,
         tipoPreco,
+        nome,
         Number(body.idFonteDados)
       )) as any[];
       if (dup?.[0]) return fail(reply, 422, `Já existe outra fonte com essa configuração (id #${Number(dup[0].idFonteDados)})`);
@@ -5329,6 +5334,143 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const idFonteDados = await upsertFonteDados(prisma, ctx.tenantId, { tipo, uf, dataBase, tipoPreco, descricao: nome });
     return ok(reply, { idFonteDados }, { message: 'Fonte cadastrada' });
+  });
+
+  server.post('/engenharia/fontes-dados/clonar', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const body = z
+      .object({
+        idFonteDados: z.coerce.number().int().positive(),
+        nome: z.string().max(160).optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    const created = await prismaTx(async (tx: any) => {
+      await ensureFontesDadosTables(tx);
+      await ensureServicosFonteTables(tx);
+      await ensureInsumosFonteTables(tx);
+      await ensureComposicoesItensFonteTables(tx);
+
+      const srcRows = (await tx.$queryRawUnsafe(
+        `
+        SELECT
+          id_fonte_dados AS "idFonteDados",
+          tipo,
+          uf,
+          data_base AS "dataBase",
+          tipo_preco AS "tipoPreco",
+          COALESCE(descricao,'') AS "nome"
+        FROM obras_fontes_dados
+        WHERE tenant_id = $1 AND id_fonte_dados = $2
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        Number(body.idFonteDados)
+      )) as any[];
+      const src = srcRows?.[0] || null;
+      if (!src) throw new Error('Fonte não encontrada');
+
+      const baseNome = String(body.nome != null ? body.nome : src.nome || '').trim().slice(0, 160);
+      const nome = baseNome || `${String(src.nome || 'Fonte').trim().slice(0, 120)} (Clonada)`;
+
+      const insFonte = (await tx.$queryRawUnsafe(
+        `
+        INSERT INTO obras_fontes_dados (tenant_id, tipo, uf, data_base, tipo_preco, descricao)
+        VALUES ($1,$2,$3,$4,$5,$6)
+        RETURNING id_fonte_dados AS "idFonteDados"
+        `,
+        ctx.tenantId,
+        String(src.tipo || '').trim(),
+        String(src.uf || '').trim(),
+        String(src.dataBase || '').trim(),
+        String(src.tipoPreco || '').trim(),
+        String(nome || '').trim().slice(0, 160)
+      )) as any[];
+      const idFonteDadosNew = Number(insFonte?.[0]?.idFonteDados || 0);
+      if (!idFonteDadosNew) throw new Error('Falha ao clonar fonte');
+
+      await tx.$executeRawUnsafe(
+        `
+        INSERT INTO obras_servicos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+        SELECT tenant_id, $3 AS id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario
+        FROM obras_servicos_fonte
+        WHERE tenant_id = $1 AND id_fonte_dados = $2
+        `,
+        ctx.tenantId,
+        Number(body.idFonteDados),
+        idFonteDadosNew
+      );
+
+      await tx.$executeRawUnsafe(
+        `
+        INSERT INTO obras_insumos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+        SELECT tenant_id, $3 AS id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario
+        FROM obras_insumos_fonte
+        WHERE tenant_id = $1 AND id_fonte_dados = $2
+        `,
+        ctx.tenantId,
+        Number(body.idFonteDados),
+        idFonteDadosNew
+      );
+
+      await tx.$executeRawUnsafe(
+        `
+        WITH serv_map AS (
+          SELECT old.id_servico AS old_id, nw.id_servico AS new_id
+          FROM obras_servicos_fonte old
+          INNER JOIN obras_servicos_fonte nw
+            ON nw.tenant_id = old.tenant_id
+           AND nw.id_fonte_dados = $3
+           AND nw.codigo = old.codigo
+          WHERE old.tenant_id = $1 AND old.id_fonte_dados = $2
+        ),
+        ins_map AS (
+          SELECT old.id_insumo AS old_id, nw.id_insumo AS new_id
+          FROM obras_insumos_fonte old
+          INNER JOIN obras_insumos_fonte nw
+            ON nw.tenant_id = old.tenant_id
+           AND nw.id_fonte_dados = $3
+           AND nw.codigo = old.codigo
+          WHERE old.tenant_id = $1 AND old.id_fonte_dados = $2
+        )
+        INSERT INTO obras_composicoes_itens_fonte (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item, quantidade, unidade, ordem)
+        SELECT
+          c.tenant_id,
+          $3 AS id_fonte_dados,
+          sp.new_id AS id_servico_pai,
+          c.tipo_item,
+          CASE
+            WHEN c.tipo_item IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN si.new_id
+            ELSE ii.new_id
+          END AS id_item,
+          c.quantidade,
+          c.unidade,
+          c.ordem
+        FROM obras_composicoes_itens_fonte c
+        INNER JOIN serv_map sp
+          ON sp.old_id = c.id_servico_pai
+        LEFT JOIN serv_map si
+          ON si.old_id = c.id_item AND c.tipo_item IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+        LEFT JOIN ins_map ii
+          ON ii.old_id = c.id_item AND c.tipo_item NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+        WHERE c.tenant_id = $1
+          AND c.id_fonte_dados = $2
+          AND (
+            (c.tipo_item IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') AND si.new_id IS NOT NULL)
+            OR
+            (c.tipo_item NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') AND ii.new_id IS NOT NULL)
+          )
+        `,
+        ctx.tenantId,
+        Number(body.idFonteDados),
+        idFonteDadosNew
+      );
+
+      return { idFonteDados: idFonteDadosNew };
+    });
+
+    return ok(reply, created, { message: 'Fonte clonada' });
   });
 
   server.get('/engenharia/planilhas/parametros', async (request, reply) => {
@@ -5485,6 +5627,83 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const idParametros = await upsertParametros(prisma, ctx.tenantId, payload);
     return ok(reply, { idParametros }, { message: 'Parâmetro cadastrado' });
+  });
+
+  server.post('/engenharia/planilhas/parametros/clonar', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const body = z
+      .object({
+        idParametros: z.coerce.number().int().positive(),
+        nome: z.string().max(160).optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    const created = await prismaTx(async (tx: any) => {
+      await ensurePlanilhaParametrosTables(tx);
+
+      const rows = (await tx.$queryRawUnsafe(
+        `
+        SELECT
+          id_parametros AS "idParametros",
+          COALESCE(nome,'') AS "nome",
+          uf_sinapi AS "ufSinapi",
+          data_base_sbc AS "dataBaseSbc",
+          data_base_sinapi AS "dataBaseSinapi",
+          bdi_servicos_sbc AS "bdiServicosSbc",
+          bdi_servicos_sinapi AS "bdiServicosSinapi",
+          bdi_diferenciado_sbc AS "bdiDiferenciadoSbc",
+          bdi_diferenciado_sinapi AS "bdiDiferenciadoSinapi",
+          enc_sociais_sem_des_sbc AS "encSociaisSemDesSbc",
+          enc_sociais_sem_des_sinapi AS "encSociaisSemDesSinapi",
+          desconto_sbc AS "descontoSbc",
+          desconto_sinapi AS "descontoSinapi",
+          assinatura AS "assinatura"
+        FROM obras_planilhas_parametros
+        WHERE tenant_id = $1 AND id_parametros = $2
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        Number(body.idParametros)
+      )) as any[];
+      const src = rows?.[0] || null;
+      if (!src) throw new Error('Parâmetro não encontrado');
+
+      const baseNome = String(body.nome != null ? body.nome : src.nome || '').trim().slice(0, 160);
+      const nome = baseNome || `${String(src.nome || 'Parâmetros').trim().slice(0, 120)} (Clonado)`;
+      const assinatura = `${String(src.assinatura || '').trim()}:CLONE:${Date.now()}:${Math.random().toString(16).slice(2)}`.slice(0, 200);
+
+      const ins = (await tx.$queryRawUnsafe(
+        `
+        INSERT INTO obras_planilhas_parametros
+          (tenant_id, nome, uf_sinapi, data_base_sbc, data_base_sinapi,
+           bdi_servicos_sbc, bdi_servicos_sinapi, bdi_diferenciado_sbc, bdi_diferenciado_sinapi,
+           enc_sociais_sem_des_sbc, enc_sociais_sem_des_sinapi, desconto_sbc, desconto_sinapi, assinatura)
+        VALUES
+          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        RETURNING id_parametros AS "idParametros"
+        `,
+        ctx.tenantId,
+        String(nome || '').trim().slice(0, 160),
+        src.ufSinapi == null ? null : String(src.ufSinapi || '').trim().toUpperCase().slice(0, 2),
+        src.dataBaseSbc == null ? null : String(src.dataBaseSbc || '').trim().toUpperCase().slice(0, 16),
+        src.dataBaseSinapi == null ? null : String(src.dataBaseSinapi || '').trim().toUpperCase().slice(0, 16),
+        src.bdiServicosSbc == null ? null : Number(src.bdiServicosSbc),
+        src.bdiServicosSinapi == null ? null : Number(src.bdiServicosSinapi),
+        src.bdiDiferenciadoSbc == null ? null : Number(src.bdiDiferenciadoSbc),
+        src.bdiDiferenciadoSinapi == null ? null : Number(src.bdiDiferenciadoSinapi),
+        src.encSociaisSemDesSbc == null ? null : Number(src.encSociaisSemDesSbc),
+        src.encSociaisSemDesSinapi == null ? null : Number(src.encSociaisSemDesSinapi),
+        src.descontoSbc == null ? null : Number(src.descontoSbc),
+        src.descontoSinapi == null ? null : Number(src.descontoSinapi),
+        assinatura
+      )) as any[];
+      const idParametrosNew = Number(ins?.[0]?.idParametros || 0);
+      if (!idParametrosNew) throw new Error('Falha ao clonar parâmetros');
+      return { idParametros: idParametrosNew };
+    });
+
+    return ok(reply, created, { message: 'Parâmetros clonados' });
   });
 
   server.post('/engenharia/obras/historico', async (request, reply) => {
@@ -6441,13 +6660,14 @@ export default async function v1Routes(server: FastifyInstance) {
         if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
 
         const res = await prismaTx(async (tx: any) => {
+          await ensurePlanilhaModeloFonteTables(tx);
           await ensurePlanilhaServicosTables(tx);
           await ensurePlanilhaComposicaoTables(tx);
           await ensureInsumosPrecosTables(tx);
 
           const exists = (await tx.$queryRawUnsafe(
             `
-            SELECT atual
+            SELECT atual, id_fonte_dados AS "idFonteDados", id_parametros AS "idParametros"
             FROM obras_planilhas_versoes
             WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
             LIMIT 1
@@ -6458,6 +6678,44 @@ export default async function v1Routes(server: FastifyInstance) {
           )) as any[];
           const row = exists?.[0] || null;
           if (!row) throw new Error('Planilha não encontrada');
+          const idFonteDados = row.idFonteDados == null ? null : Number(row.idFonteDados);
+          const idParametros = row.idParametros == null ? null : Number(row.idParametros);
+
+          const fonteCompartilhada = idFonteDados
+            ? Boolean(
+                (
+                  (await tx.$queryRawUnsafe(
+                    `
+                    SELECT 1
+                    FROM obras_planilhas_versoes
+                    WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_planilha <> $3
+                    LIMIT 1
+                    `,
+                    ctx.tenantId,
+                    idFonteDados,
+                    idPlanilha
+                  )) as any[]
+                )?.[0]
+              )
+            : false;
+
+          const parametrosCompartilhados = idParametros
+            ? Boolean(
+                (
+                  (await tx.$queryRawUnsafe(
+                    `
+                    SELECT 1
+                    FROM obras_planilhas_versoes
+                    WHERE tenant_id = $1 AND id_parametros = $2 AND id_planilha <> $3
+                    LIMIT 1
+                    `,
+                    ctx.tenantId,
+                    idParametros,
+                    idPlanilha
+                  )) as any[]
+                )?.[0]
+              )
+            : false;
 
           await tx.$executeRawUnsafe(`DELETE FROM obras_planilhas_linhas WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, idPlanilha);
           await tx.$executeRawUnsafe(
@@ -6492,6 +6750,22 @@ export default async function v1Routes(server: FastifyInstance) {
             idPlanilha
           );
 
+          if (idParametros && !parametrosCompartilhados) {
+            await ensurePlanilhaParametrosTables(tx);
+            await tx.$executeRawUnsafe(`DELETE FROM obras_planilhas_parametros WHERE tenant_id = $1 AND id_parametros = $2`, ctx.tenantId, idParametros);
+          }
+
+          if (idFonteDados && !fonteCompartilhada) {
+            await ensureComposicoesItensFonteTables(tx);
+            await ensureInsumosFonteTables(tx);
+            await ensureServicosFonteTables(tx);
+            await ensureFontesDadosTables(tx);
+            await tx.$executeRawUnsafe(`DELETE FROM obras_composicoes_itens_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2`, ctx.tenantId, idFonteDados);
+            await tx.$executeRawUnsafe(`DELETE FROM obras_insumos_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2`, ctx.tenantId, idFonteDados);
+            await tx.$executeRawUnsafe(`DELETE FROM obras_servicos_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2`, ctx.tenantId, idFonteDados);
+            await tx.$executeRawUnsafe(`DELETE FROM obras_fontes_dados WHERE tenant_id = $1 AND id_fonte_dados = $2`, ctx.tenantId, idFonteDados);
+          }
+
           const remaining = (await tx.$queryRawUnsafe(
             `
             SELECT id_planilha AS "idPlanilha"
@@ -6514,7 +6788,14 @@ export default async function v1Routes(server: FastifyInstance) {
             );
           }
 
-          return { ok: true, idPlanilhaAtual: nextId };
+          return {
+            ok: true,
+            idPlanilhaAtual: nextId,
+            deleted: {
+              parametros: idParametros && !parametrosCompartilhados ? idParametros : null,
+              fonteDados: idFonteDados && !fonteCompartilhada ? idFonteDados : null,
+            },
+          };
         });
 
         return ok(reply, res, { message: 'Planilha excluída' });

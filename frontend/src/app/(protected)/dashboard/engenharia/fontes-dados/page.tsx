@@ -118,6 +118,29 @@ export default function FontesDadosPage() {
     }
   }
 
+  async function clonarFonte(idFonteDados: number) {
+    if (!idFonteDados) return;
+    const nome = window.prompt("Nome da nova fonte (opcional). Se deixar vazio, será gerado automaticamente.", "") || "";
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const res = await authFetch(`/api/v1/engenharia/fontes-dados/clonar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idFonteDados, nome: nome.trim() ? nome.trim() : null }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao clonar fonte");
+      setOkMsg(`Fonte clonada (#${Number(json.data?.idFonteDados || 0) || "?"}).`);
+      await carregar();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao clonar fonte");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     void carregar();
   }, []);
@@ -174,23 +197,34 @@ export default function FontesDadosPage() {
                     <td className="px-3 py-2">{f.uf || "—"}</td>
                     <td className="px-3 py-2">{f.dataBase || "—"}</td>
                     <td className="px-3 py-2">
-                      <button
-                        className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
-                        type="button"
-                        onClick={() =>
-                          setForm({
-                            idFonteDados: f.idFonteDados,
-                            nome: f.nome || "",
-                            tipo: f.tipo || "SINAPI",
-                            uf: f.uf || "",
-                            dataBase: f.dataBase || "",
-                            tipoPreco: f.tipoPreco || "",
-                          })
-                        }
-                        disabled={loading}
-                      >
-                        Editar
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
+                          type="button"
+                          onClick={() =>
+                            setForm({
+                              idFonteDados: f.idFonteDados,
+                              nome: f.nome || "",
+                              tipo: f.tipo || "SINAPI",
+                              uf: f.uf || "",
+                              dataBase: f.dataBase || "",
+                              tipoPreco: f.tipoPreco || "",
+                            })
+                          }
+                          disabled={loading}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
+                          type="button"
+                          onClick={() => clonarFonte(f.idFonteDados)}
+                          disabled={loading}
+                          title="Clonar esta Fonte (inclui serviços, composições e insumos)"
+                        >
+                          Clonar
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -252,4 +286,3 @@ export default function FontesDadosPage() {
     </div>
   );
 }
-

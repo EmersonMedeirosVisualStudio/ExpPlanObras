@@ -187,6 +187,29 @@ export default function ParametrosPage() {
     }
   }
 
+  async function clonarParametro(idParametros: number) {
+    if (!idParametros) return;
+    const nome = window.prompt("Nome do novo parâmetro (opcional). Se deixar vazio, será gerado automaticamente.", "") || "";
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const res = await authFetch(`/api/v1/engenharia/planilhas/parametros/clonar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idParametros, nome: nome.trim() ? nome.trim() : null }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao clonar parâmetro");
+      setOkMsg(`Parâmetro clonado (#${Number(json.data?.idParametros || 0) || "?"}).`);
+      await carregar();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao clonar parâmetro");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     void carregar();
   }, []);
@@ -241,30 +264,41 @@ export default function ParametrosPage() {
                     <td className="px-3 py-2">{p.dataBaseSinapi ? `${p.ufSinapi || "—"} • ${p.dataBaseSinapi}` : "—"}</td>
                     <td className="px-3 py-2">{p.dataBaseSbc || "—"}</td>
                     <td className="px-3 py-2">
-                      <button
-                        className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
-                        type="button"
-                        onClick={() =>
-                          setForm({
-                            idParametros: p.idParametros,
-                            nome: p.nome || "",
-                            ufSinapi: p.ufSinapi || "",
-                            dataBaseSbc: p.dataBaseSbc || "",
-                            dataBaseSinapi: p.dataBaseSinapi || "",
-                            bdiServicosSbc: p.bdiServicosSbc == null ? "" : String(p.bdiServicosSbc),
-                            bdiServicosSinapi: p.bdiServicosSinapi == null ? "" : String(p.bdiServicosSinapi),
-                            bdiDiferenciadoSbc: p.bdiDiferenciadoSbc == null ? "" : String(p.bdiDiferenciadoSbc),
-                            bdiDiferenciadoSinapi: p.bdiDiferenciadoSinapi == null ? "" : String(p.bdiDiferenciadoSinapi),
-                            encSociaisSemDesSbc: p.encSociaisSemDesSbc == null ? "" : String(p.encSociaisSemDesSbc),
-                            encSociaisSemDesSinapi: p.encSociaisSemDesSinapi == null ? "" : String(p.encSociaisSemDesSinapi),
-                            descontoSbc: p.descontoSbc == null ? "" : String(p.descontoSbc),
-                            descontoSinapi: p.descontoSinapi == null ? "" : String(p.descontoSinapi),
-                          })
-                        }
-                        disabled={loading}
-                      >
-                        Editar
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
+                          type="button"
+                          onClick={() =>
+                            setForm({
+                              idParametros: p.idParametros,
+                              nome: p.nome || "",
+                              ufSinapi: p.ufSinapi || "",
+                              dataBaseSbc: p.dataBaseSbc || "",
+                              dataBaseSinapi: p.dataBaseSinapi || "",
+                              bdiServicosSbc: p.bdiServicosSbc == null ? "" : String(p.bdiServicosSbc),
+                              bdiServicosSinapi: p.bdiServicosSinapi == null ? "" : String(p.bdiServicosSinapi),
+                              bdiDiferenciadoSbc: p.bdiDiferenciadoSbc == null ? "" : String(p.bdiDiferenciadoSbc),
+                              bdiDiferenciadoSinapi: p.bdiDiferenciadoSinapi == null ? "" : String(p.bdiDiferenciadoSinapi),
+                              encSociaisSemDesSbc: p.encSociaisSemDesSbc == null ? "" : String(p.encSociaisSemDesSbc),
+                              encSociaisSemDesSinapi: p.encSociaisSemDesSinapi == null ? "" : String(p.encSociaisSemDesSinapi),
+                              descontoSbc: p.descontoSbc == null ? "" : String(p.descontoSbc),
+                              descontoSinapi: p.descontoSinapi == null ? "" : String(p.descontoSinapi),
+                            })
+                          }
+                          disabled={loading}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
+                          type="button"
+                          onClick={() => clonarParametro(p.idParametros)}
+                          disabled={loading}
+                          title="Clonar este Parâmetro (cria um novo cadastro com os mesmos valores)"
+                        >
+                          Clonar
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -366,4 +400,3 @@ export default function ParametrosPage() {
     </div>
   );
 }
-
