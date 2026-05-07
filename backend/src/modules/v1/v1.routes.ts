@@ -5103,6 +5103,7 @@ export default async function v1Routes(server: FastifyInstance) {
           await ensurePlanilhaComposicaoTables(tx);
           await ensureInsumosPrecosTables(tx);
           await syncServicosCatalogoFromLinhas(tx, ctx.tenantId, idObra, sourcePlanilhaId);
+          await syncServicosCatalogoFromComposicoesRefs(tx, ctx.tenantId, idObra, sourcePlanilhaId);
           await assertPlanilhaServicosCompletos(tx, ctx.tenantId, idObra, sourcePlanilhaId);
           await assertComposicoesVinculadasAServicos(tx, ctx.tenantId, idObra, sourcePlanilhaId);
 
@@ -6334,6 +6335,8 @@ export default async function v1Routes(server: FastifyInstance) {
     try {
       await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, sourcePlanilhaId);
       await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, targetPlanilhaId);
+      await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, idObra, sourcePlanilhaId);
+      await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, idObra, targetPlanilhaId);
       await assertServicoExisteECompleto(prisma, ctx.tenantId, idObra, sourcePlanilhaId, codigoServico);
       await assertPlanilhaServicosCompletos(prisma, ctx.tenantId, idObra, targetPlanilhaId);
     } catch (e: any) {
@@ -6392,6 +6395,72 @@ export default async function v1Routes(server: FastifyInstance) {
     )) as any[];
     const existsComposicaoTarget = Boolean(dstHasComposicao?.[0]?.ok);
 
+    await prisma.$executeRawUnsafe(
+      `
+      WITH refs AS (
+        SELECT DISTINCT UPPER(COALESCE(codigo_item,'')) AS codigo
+        FROM obras_planilhas_composicoes_itens
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
+          AND UPPER(COALESCE(tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+          AND COALESCE(codigo_item,'') <> ''
+      ),
+      meta_from_itens AS (
+        SELECT
+          UPPER(COALESCE(codigo_item,'')) AS codigo,
+          MAX(COALESCE(NULLIF(trim(banco),''),'')) AS fonte,
+          MAX(COALESCE(NULLIF(trim(descricao),''),'')) AS servico,
+          MAX(COALESCE(NULLIF(trim(und),''),'')) AS und
+        FROM obras_planilhas_composicoes_itens
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
+          AND UPPER(COALESCE(tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+          AND COALESCE(codigo_item,'') <> ''
+        GROUP BY UPPER(COALESCE(codigo_item,''))
+      ),
+      src_catalog AS (
+        SELECT
+          UPPER(COALESCE(codigo,'')) AS codigo,
+          COALESCE(NULLIF(trim(fonte),''),'') AS fonte,
+          COALESCE(NULLIF(trim(servico),''),'') AS servico,
+          COALESCE(NULLIF(trim(und),''),'') AS und
+        FROM obras_planilhas_servicos
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+      )
+      INSERT INTO obras_planilhas_servicos
+        (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
+      SELECT
+        $1 AS tenant_id,
+        $2 AS id_obra,
+        $5 AS id_planilha,
+        r.codigo,
+        COALESCE(NULLIF(sc.fonte,''), NULLIF(mi.fonte,''), '') AS fonte,
+        COALESCE(NULLIF(sc.servico,''), NULLIF(mi.servico,''), '') AS servico,
+        COALESCE(NULLIF(sc.und,''), NULLIF(mi.und,''), '') AS und
+      FROM refs r
+      LEFT JOIN src_catalog sc ON sc.codigo = r.codigo
+      LEFT JOIN meta_from_itens mi ON mi.codigo = r.codigo
+      ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+      DO UPDATE SET
+        fonte = CASE
+          WHEN COALESCE(NULLIF(obras_planilhas_servicos.fonte,''), '') <> '' THEN obras_planilhas_servicos.fonte
+          ELSE NULLIF(EXCLUDED.fonte,'')
+        END,
+        servico = CASE
+          WHEN COALESCE(NULLIF(obras_planilhas_servicos.servico,''), '') <> '' THEN obras_planilhas_servicos.servico
+          ELSE NULLIF(EXCLUDED.servico,'')
+        END,
+        und = CASE
+          WHEN COALESCE(NULLIF(obras_planilhas_servicos.und,''), '') <> '' THEN obras_planilhas_servicos.und
+          ELSE NULLIF(EXCLUDED.und,'')
+        END,
+        atualizado_em = NOW()
+      `,
+      ctx.tenantId,
+      idObra,
+      sourcePlanilhaId,
+      codigoServico,
+      targetPlanilhaId
+    );
+
     const missingRef = (await prisma.$queryRawUnsafe(
       `
       WITH refs AS (
@@ -6418,6 +6487,34 @@ export default async function v1Routes(server: FastifyInstance) {
     const missingCode = String(missingRef?.[0]?.codigo || '').trim().toUpperCase();
     if (missingCode) {
       return fail(reply, 422, `A composição do serviço ${codigoServico} referencia a composição ${missingCode}, mas ela não existe como Serviço na planilha destino. Copie/cadastre esse serviço primeiro.`);
+    }
+
+    const incompleteRef = (await prisma.$queryRawUnsafe(
+      `
+      WITH refs AS (
+        SELECT DISTINCT UPPER(COALESCE(codigo_item,'')) AS codigo
+        FROM obras_planilhas_composicoes_itens
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
+          AND UPPER(COALESCE(tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+          AND COALESCE(codigo_item,'') <> ''
+      )
+      SELECT r.codigo
+      FROM refs r
+      JOIN obras_planilhas_servicos s
+        ON s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $5 AND UPPER(COALESCE(s.codigo,'')) = r.codigo
+      WHERE COALESCE(NULLIF(trim(s.servico),''),'') = '' OR COALESCE(NULLIF(trim(s.und),''),'') = ''
+      ORDER BY r.codigo
+      LIMIT 1
+      `,
+      ctx.tenantId,
+      idObra,
+      sourcePlanilhaId,
+      codigoServico,
+      targetPlanilhaId
+    )) as any[];
+    const incompleteCode = String(incompleteRef?.[0]?.codigo || '').trim().toUpperCase();
+    if (incompleteCode) {
+      return fail(reply, 422, `A composição do serviço ${codigoServico} referencia a composição ${incompleteCode}, mas ela ficou sem descrição e/ou unidade no catálogo da planilha destino. Cadastre o serviço (descrição e UND) no catálogo e tente novamente.`);
     }
 
     const mismatch = (await prisma.$queryRawUnsafe(
@@ -8850,6 +8947,7 @@ export default async function v1Routes(server: FastifyInstance) {
     await ensurePlanilhaOrcamentariaTables(prisma);
     await ensurePlanilhaComposicaoTables(prisma);
     await ensureSinapiBaseTables(prisma);
+    await ensurePlanilhaServicosTables(prisma);
 
     const body = (request.body || {}) as any;
     const parsed = z
@@ -9488,6 +9586,7 @@ export default async function v1Routes(server: FastifyInstance) {
     }
 
     await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, obraId, planilhaId);
+    await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, obraId, planilhaId);
     const metaSinapi = (await prisma.$queryRawUnsafe(
       `
       SELECT

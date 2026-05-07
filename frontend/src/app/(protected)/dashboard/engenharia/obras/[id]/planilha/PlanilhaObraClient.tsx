@@ -2672,74 +2672,76 @@ export default function PlanilhaObraClient({
                       </div>
                       <div>
                         <div className="text-sm text-slate-600">FONTE</div>
-                        <SearchSelect
-                          value={novo.fonte}
-                          options={servicosFonteOptions}
-                          inputClassName="input bg-white"
-                          onChange={(v) => {
-                            setLinhaFormErr(null);
-                            setNovo((p) => {
-                              const next: any = { ...p, fonte: v };
-                              const match = findServicoMatch({ codigo: next.codigo, servicos: next.servicos, fonte: v });
-                              if (match) {
-                                next.codigo = match.codigo;
-                                next.servicos = match.servicos;
-                                next.und = match.und;
-                              }
-                              return next;
-                            });
-                          }}
-                          disabled={!podeEditar || servicoCamposTravadosPorCatalogo}
-                          title={servicoCamposTravadosPorCatalogo ? "Campo vem do catálogo (Serviços (PLANILHA))." : undefined}
-                          placeholder="—"
-                        />
+                        <div title={servicoCamposTravadosPorCatalogo ? "Campo vem do catálogo (Serviços (PLANILHA))." : undefined}>
+                          <SearchSelect
+                            value={novo.fonte}
+                            options={servicosFonteOptions}
+                            inputClassName="input bg-white"
+                            onChange={(v) => {
+                              setLinhaFormErr(null);
+                              setNovo((p) => {
+                                const next: any = { ...p, fonte: v };
+                                const match = findServicoMatch({ codigo: next.codigo, servicos: next.servicos, fonte: v });
+                                if (match) {
+                                  next.codigo = match.codigo;
+                                  next.servicos = match.servicos;
+                                  next.und = match.und;
+                                }
+                                return next;
+                              });
+                            }}
+                            disabled={!podeEditar || servicoCamposTravadosPorCatalogo}
+                            placeholder="—"
+                          />
+                        </div>
                       </div>
                       <div className="md:col-span-2">
                         <div className="text-sm text-slate-600">SERVIÇOS</div>
-                        <SearchSelect
-                          value={novo.servicos}
-                          options={servicosDescricaoOptions}
-                          inputClassName={`input bg-white ${linhaErrors.servicos ? "border-red-300 bg-red-50" : ""}`}
-                          onChange={(v) => {
-                            setLinhaFormErr(null);
-                            const match = findServicoMatch({ codigo: novo.codigo, servicos: v, fonte: novo.fonte });
-                            const codigoForFetch = match?.codigo ? String(match.codigo) : String(novo.codigo || "");
-                            setNovo((p) => {
-                              const next: any = { ...p, servicos: v };
-                              const match = findServicoMatch({ codigo: next.codigo, servicos: v, fonte: next.fonte });
-                              if (match) {
-                                next.codigo = match.codigo;
-                                next.fonte = match.fonte;
-                                next.und = match.und;
-                              }
-                              return next;
-                            });
-                            setLinhaErrors((p) => {
-                              if (!("servicos" in p)) return p;
-                              const { servicos: _, ...rest } = p as any;
-                              return rest;
-                            });
-                            void (async () => {
-                              const codigo = String(codigoForFetch || "").trim();
-                              if (!codigo) return;
-                              const info = await obterPrecoUnitarioServico(codigo, planilha?.idPlanilha ?? null);
-                              const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
+                        <div title={servicoCamposTravadosPorCatalogo ? "Campo vem do catálogo (Serviços (PLANILHA))." : undefined}>
+                          <SearchSelect
+                            value={novo.servicos}
+                            options={servicosDescricaoOptions}
+                            inputClassName={`input bg-white ${linhaErrors.servicos ? "border-red-300 bg-red-50" : ""}`}
+                            onChange={(v) => {
+                              setLinhaFormErr(null);
+                              const match = findServicoMatch({ codigo: novo.codigo, servicos: v, fonte: novo.fonte });
+                              const codigoForFetch = match?.codigo ? String(match.codigo) : String(novo.codigo || "");
                               setNovo((p) => {
-                                if (p.tipoLinha !== "SERVICO") return p;
-                                if (String(p.codigo || "").trim().toUpperCase() !== codigo.toUpperCase()) return p;
-                                return applyValorParcialAuto({ ...p, valorUnitario: String(vu) });
+                                const next: any = { ...p, servicos: v };
+                                const match = findServicoMatch({ codigo: next.codigo, servicos: v, fonte: next.fonte });
+                                if (match) {
+                                  next.codigo = match.codigo;
+                                  next.fonte = match.fonte;
+                                  next.und = match.und;
+                                }
+                                return next;
                               });
-                            })();
-                          }}
-                          onBlur={async () => {
-                            if (!String(novo.codigo || "").trim()) return;
-                            const info = await obterPrecoUnitarioServico(novo.codigo, planilha?.idPlanilha ?? null);
-                            const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
-                            setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: String(vu) }) : p));
-                          }}
-                          disabled={!podeEditar || servicoCamposTravadosPorCatalogo}
-                          title={servicoCamposTravadosPorCatalogo ? "Campo vem do catálogo (Serviços (PLANILHA))." : undefined}
-                        />
+                              setLinhaErrors((p) => {
+                                if (!("servicos" in p)) return p;
+                                const { servicos: _, ...rest } = p as any;
+                                return rest;
+                              });
+                              void (async () => {
+                                const codigo = String(codigoForFetch || "").trim();
+                                if (!codigo) return;
+                                const info = await obterPrecoUnitarioServico(codigo, planilha?.idPlanilha ?? null);
+                                const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
+                                setNovo((p) => {
+                                  if (p.tipoLinha !== "SERVICO") return p;
+                                  if (String(p.codigo || "").trim().toUpperCase() !== codigo.toUpperCase()) return p;
+                                  return applyValorParcialAuto({ ...p, valorUnitario: String(vu) });
+                                });
+                              })();
+                            }}
+                            onBlur={async () => {
+                              if (!String(novo.codigo || "").trim()) return;
+                              const info = await obterPrecoUnitarioServico(novo.codigo, planilha?.idPlanilha ?? null);
+                              const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
+                              setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: String(vu) }) : p));
+                            }}
+                            disabled={!podeEditar || servicoCamposTravadosPorCatalogo}
+                          />
+                        </div>
                       </div>
                       <div>
                         <div className="text-sm text-slate-600">UND</div>
