@@ -1706,6 +1706,7 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
   - Colunas importadas (CSV): `item`, `codigo`, `fonte`, `servicos`, `und`, `quant`, `valor_unitario` (o **valor parcial** é calculado automaticamente).
   - Observação de compatibilidade: leitura “smart” de encoding (UTF-8 / Windows-1252) para reduzir erros de acentuação no texto importado.
   - Observação: ao importar linhas do tipo Serviço, o sistema sincroniza esses serviços para o catálogo (Serviços (PLANILHA)).
+  - Observação: ao salvar/importar composições, o sistema sincroniza automaticamente os códigos referenciados como **Composição/Composição Auxiliar** para o catálogo quando houver banco/descrição/UND disponíveis nos itens (reduz “cadastros órfãos”).
 - Após selecionar uma versão, o sistema exibe o card **Visualizando** e, em seguida, o card **Navegação** (visível apenas com planilha selecionada) para abrir/fechar e rolar até: **Parâmetros**, **Planilha** e **Adicionar linha**.
 - Planilha (visual): linhas do tipo **Item** e **Subitem** são exibidas em negrito; o usuário pode definir **tamanho da fonte** e **cor de fundo** (Item/Subitem) e essas preferências ficam salvas para o usuário.
 - Ordem/organização das linhas: o campo **Ordem** foi removido da edição. A visualização segue a ordem do **ITEM** (ordenação numérica/hierárquica, por exemplo: `1.2` vem antes de `1.10`).
@@ -1724,12 +1725,14 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 - Serviços:
   - Importação e modelo de CSV de composições ficam na própria tela **Serviços**.
   - A tela marca serviços **sem composição** e **divergentes** comparando total da planilha x total calculado por composição.
+  - A tela pode exibir um aviso **“Composições sem serviço no catálogo”** com a lista de códigos que existem em Composições (itens), mas ainda não existem no catálogo (Serviços (PLANILHA)).
   - Existe ação para **copiar serviço/composição entre versões** (origem → destino), com prévia e regras de consistência. A cópia alimenta o catálogo (Serviços (PLANILHA)) e a composição na versão destino; o serviço só vira linha quando o usuário inserir o serviço em Serviços (linhas).
 - Análise de composição (editar itens):
   - em **Composições**, é permitido alterar apenas **Código** e **Qtd** (demais campos são preenchidos/calculados automaticamente);
   - em **Insumos**, é permitido alterar apenas **Código**, **Qtd** e **Valor Unit** (demais campos são preenchidos/calculados automaticamente);
   - alterações têm efeito em cascata: recalculam composições dependentes e atualizam o valor do serviço na planilha;
   - a tecla **Esc** cancela a edição e restaura o último estado salvo.
+  - Indicador de carregamento: a tela exibe “Carregando página…” e “Página carregada” para deixar claro quando o carregamento inicial terminou.
 - Insumos consolidados:
   - A lista é derivada das **composições** da planilha selecionada (versão) e soma a **Quantidade total** por **código de insumo**.
   - O **preço do insumo é único por código** na planilha (versão) e pode ser ajustado:

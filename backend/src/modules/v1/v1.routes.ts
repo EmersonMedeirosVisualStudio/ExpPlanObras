@@ -552,6 +552,73 @@ async function syncServicosCatalogoFromLinhas(tx: any, tenantId: number, idObra:
   );
 }
 
+async function syncServicosCatalogoFromComposicoesRefs(tx: any, tenantId: number, idObra: number, idPlanilha: number) {
+  await ensurePlanilhaServicosTables(tx);
+  await tx.$executeRawUnsafe(
+    `
+    WITH src AS (
+      SELECT
+        UPPER(COALESCE(i.codigo_item,'')) AS codigo,
+        COALESCE(NULLIF(trim(i.banco),''), '') AS fonte,
+        COALESCE(NULLIF(trim(i.descricao),''), '') AS servico,
+        COALESCE(NULLIF(trim(i.und),''), '') AS und,
+        i.atualizado_em AS atualizado_em,
+        i.id_item AS id_item
+      FROM obras_planilhas_composicoes_itens i
+      WHERE i.tenant_id = $1
+        AND i.id_obra = $2
+        AND i.id_planilha = $3
+        AND UPPER(COALESCE(i.tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+        AND COALESCE(i.codigo_item,'') <> ''
+    ),
+    dedup AS (
+      SELECT DISTINCT ON (codigo)
+        codigo,
+        fonte,
+        servico,
+        und
+      FROM src
+      ORDER BY
+        codigo,
+        (servico <> '') DESC,
+        (und <> '') DESC,
+        (fonte <> '') DESC,
+        atualizado_em DESC NULLS LAST,
+        id_item DESC
+    )
+    INSERT INTO obras_planilhas_servicos
+      (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
+    SELECT
+      $1 AS tenant_id,
+      $2 AS id_obra,
+      $3 AS id_planilha,
+      d.codigo,
+      d.fonte,
+      d.servico,
+      d.und
+    FROM dedup d
+    ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+    DO UPDATE SET
+      fonte = CASE
+        WHEN COALESCE(NULLIF(obras_planilhas_servicos.fonte,''), '') <> '' THEN obras_planilhas_servicos.fonte
+        ELSE NULLIF(EXCLUDED.fonte,'')
+      END,
+      servico = CASE
+        WHEN COALESCE(NULLIF(obras_planilhas_servicos.servico,''), '') <> '' THEN obras_planilhas_servicos.servico
+        ELSE NULLIF(EXCLUDED.servico,'')
+      END,
+      und = CASE
+        WHEN COALESCE(NULLIF(obras_planilhas_servicos.und,''), '') <> '' THEN obras_planilhas_servicos.und
+        ELSE NULLIF(EXCLUDED.und,'')
+      END,
+      atualizado_em = NOW()
+    `,
+    tenantId,
+    idObra,
+    idPlanilha
+  );
+}
+
 async function resolvePlanilhaIdForObra(tx: any, tenantId: number, idObra: number, requestedPlanilhaId?: number | null) {
   const req = requestedPlanilhaId != null ? Number(requestedPlanilhaId) : 0;
   if (Number.isFinite(req) && req > 0) {
@@ -4735,6 +4802,7 @@ export default async function v1Routes(server: FastifyInstance) {
       )) as any[];
 
       await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, idPlanilha);
+      await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, idObra, idPlanilha);
       const servicosPlanilha = (await prisma.$queryRawUnsafe(
         `
         SELECT
@@ -5724,6 +5792,7 @@ export default async function v1Routes(server: FastifyInstance) {
     await ensurePlanilhaServicosTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
     await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, idPlanilha);
+    await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, idObra, idPlanilha);
 
     const rows = (await prisma.$queryRawUnsafe(
       `
@@ -5942,6 +6011,7 @@ export default async function v1Routes(server: FastifyInstance) {
     await ensurePlanilhaComposicaoTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
     await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, idPlanilha);
+    await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, idObra, idPlanilha);
     const rows = (await prisma.$queryRawUnsafe(
       `
       WITH comp AS (
@@ -6002,6 +6072,7 @@ export default async function v1Routes(server: FastifyInstance) {
     await ensurePlanilhaComposicaoTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
     await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, idPlanilha);
+    await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, idObra, idPlanilha);
 
     const rows = (await prisma.$queryRawUnsafe(
       `
@@ -6054,6 +6125,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
     await ensurePlanilhaOrcamentariaTables(prisma);
+    await ensurePlanilhaServicosTables(prisma);
     await ensurePlanilhaComposicaoTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
     const rows = (await prisma.$queryRawUnsafe(
@@ -6616,6 +6688,7 @@ export default async function v1Routes(server: FastifyInstance) {
     await ensurePlanilhaComposicaoTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
     await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, idPlanilha);
+    await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, idObra, idPlanilha);
     const isMultipart = typeof (request as any).isMultipart === 'function' ? (request as any).isMultipart() : false;
     if (!isMultipart) return fail(reply, 422, 'Envie multipart/form-data com arquivo no campo "file"');
 
@@ -7049,6 +7122,7 @@ export default async function v1Routes(server: FastifyInstance) {
     await ensurePlanilhaComposicaoTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
     await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, idPlanilha);
+    await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, idObra, idPlanilha);
     try {
       await assertServicoExisteECompleto(prisma, ctx.tenantId, idObra, idPlanilha, codigoServico);
     } catch (e: any) {
@@ -7107,6 +7181,7 @@ export default async function v1Routes(server: FastifyInstance) {
     await ensurePlanilhaComposicaoTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
     await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, idPlanilha);
+    await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, idObra, idPlanilha);
     try {
       await assertServicoExisteECompleto(prisma, ctx.tenantId, idObra, idPlanilha, codigoServico);
     } catch (e: any) {
@@ -7640,6 +7715,7 @@ export default async function v1Routes(server: FastifyInstance) {
       .parse(request.query || {});
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
     await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, idPlanilha);
+    await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, idObra, idPlanilha);
     try {
       await assertServicoExisteECompleto(prisma, ctx.tenantId, idObra, idPlanilha, codigoServico);
     } catch (e: any) {

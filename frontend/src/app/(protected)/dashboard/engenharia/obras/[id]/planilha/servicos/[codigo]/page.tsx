@@ -194,6 +194,8 @@ async function readTextSmart(file: File) {
   const [returnToMem, setReturnToMem] = useState<string | null>(null);
  
    const [loading, setLoading] = useState(false);
+  const [bootLoading, setBootLoading] = useState(false);
+  const [bootDone, setBootDone] = useState(false);
    const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
    const [itens, setItens] = useState<ItemRow[]>([]);
@@ -975,10 +977,22 @@ async function readTextSmart(file: File) {
 
   useEffect(() => {
     if (!idObra || !codigoServico) return;
-    carregar(true);
-    carregarPrevistoPlanilha();
-    carregarComposicoesDefinidas();
-    carregarEmpresaDocumentosLayout();
+    let cancelled = false;
+    setBootLoading(true);
+    setBootDone(false);
+    void (async () => {
+      try {
+        await Promise.all([carregar(true), carregarPrevistoPlanilha(), carregarComposicoesDefinidas(), carregarEmpresaDocumentosLayout()]);
+      } finally {
+        if (!cancelled) {
+          setBootLoading(false);
+          setBootDone(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [idObra, codigoServico]);
 
   useEffect(() => {
@@ -2070,7 +2084,16 @@ async function readTextSmart(file: File) {
        <div className="flex items-start justify-between gap-3 flex-wrap">
          <div>
           <div className="text-xs text-slate-500">{breadcrumb}</div>
-          <h1 className="text-2xl font-semibold">Análise de composição — {analysisTitle}</h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-2xl font-semibold">Análise de composição — {analysisTitle}</h1>
+            <span
+              className={`rounded-full border px-2 py-0.5 text-xs ${
+                bootLoading ? "border-blue-200 bg-blue-50 text-blue-700" : bootDone ? "border-slate-200 bg-slate-50 text-slate-700" : "border-slate-200 bg-white text-slate-600"
+              }`}
+            >
+              {bootLoading ? "Carregando página..." : bootDone ? "Página carregada" : "—"}
+            </span>
+          </div>
          </div>
          <div className="flex items-center gap-2 flex-wrap">
            <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={voltar} title="Voltar para a tela anterior">
