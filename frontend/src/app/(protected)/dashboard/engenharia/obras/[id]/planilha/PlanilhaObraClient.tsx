@@ -1907,7 +1907,7 @@ export default function PlanilhaObraClient({
             }}
             disabled={loading}
           >
-            Serviços
+            Serviços (catálogo da fonte)
           </button>
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
