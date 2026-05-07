@@ -112,6 +112,32 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 - Clique em **Confirmar importação**
 - A nova versão aparece na lista de versões e pode ser selecionada
 
+## 3.1.1 Nova planilha / Editar / Clonar (Fonte e Parâmetros)
+
+### ETAPA 1 — Onde acessar
+- Abra **Obra #ID** → clique em **Planilha orçamentária**
+
+### ETAPA 2 — O que clicar
+- Para criar: clique em **Nova planilha**
+- Para editar: na lista de versões, clique em **Editar**
+- Para clonar: na lista de versões, clique em **Clonar**
+
+### ETAPA 3 — O que preencher
+- Em **Nova planilha** e em **Editar**, selecione:
+  - **Fonte de dados** (formato **#id - nome**)
+  - **Parâmetro** (formato **#id - nome**)
+- Para cadastrar/editar os cadastros, use os botões no canto superior direito (abaixo de **Voltar**):
+  - **Cadastrar Fonte de dados**
+  - **Cadastrar Parâmetro**
+
+### ETAPA 4 — O que esperar
+- O sistema mostra um aviso de compartilhamento:
+  - Alterar Serviço/Insumo/Composição da Fonte afeta todas as planilhas que usam essa Fonte
+  - Alterar um Parâmetro afeta todas as planilhas que usam esse Parâmetro
+
+### ETAPA 5 — Como validar
+- Volte em **Versões cadastradas** e confirme que as colunas **Fonte** e **Parâmetros** aparecem preenchidas na versão criada/editada
+
 ---
 
 ## 3.2 SINAPI (Excel) — Importar composições para a obra (com prévia)

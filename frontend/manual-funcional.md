@@ -1692,40 +1692,57 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
   - **Parâmetros** (nome resumido dos parâmetros aplicados: data-base/UF/BDI);
   - **Serviços** (quantidade de itens do tipo Serviço na planilha);
   - **Valor total** (soma dos valores parciais dos itens de serviço).
-- Edição por versão selecionada: após selecionar uma versão, o usuário pode **editar a planilha** (linhas e parâmetros) diretamente na versão selecionada. Os parâmetros (Obra pública) são da **planilha**, não da obra.
+- Edição por versão selecionada: após selecionar uma versão, o usuário pode **editar a planilha** (linhas) diretamente na versão selecionada.
+  - O card **Parâmetros da planilha** é **somente leitura**: ele apenas mostra qual parâmetro está vinculado naquela versão.
+  - Para trocar a Fonte/Parâmetro vinculados, use **Editar** na lista de versões.
+  - Para cadastrar/editar o conteúdo de uma Fonte/Parâmetro (cadastros compartilhados), use os cards **Fontes de dados** e **Parâmetros**.
 - Clonagem (com dependências): no card **Versões cadastradas**, a ação **Clonar** cria uma nova versão copiando:
-  - parâmetros da planilha (novo registro de parâmetros);
   - itens da planilha (itens, subitens e serviços utilizados na planilha);
   - preços de insumos da planilha.
-  - Observação: o catálogo técnico e as composições pertencem à **Fonte de dados**; a planilha clonada referencia a mesma fonte (reuso).
+  - Importante: a clonagem **não clona** a Fonte nem os Parâmetros; ela apenas copia os **ids** (reuso). Alterações na Fonte/Parâmetros afetam todas as planilhas que usam o mesmo id.
 
-#### Nova planilha (Nova versão) x Clonar (Duplicar versão)
+#### Nova planilha x Clonar (Duplicar versão)
 
-- **Nova planilha (Nova versão)**: cria uma versão nova **vazia** (sem itens) e define como **Atual**. A fonte e os parâmetros começam como **MANUAL / A definir** até o usuário preencher os parâmetros e/ou aplicar uma fonte (ex.: SINAPI).
+- **Nova planilha**: abre uma janela para criar uma versão nova. O usuário deve escolher:
+  - **Fonte de dados** (#id - nome);
+  - **Parâmetro** (#id - nome).
+  A versão nova pode ser criada **vazia** (sem itens) ou com opção de **Clonar de outra planilha**.
 - **Clonar (Duplicar versão)**: cria uma versão nova, define como **Atual**, e duplica:
   - **itens** da planilha (estrutura e quantidades);
   - **preços de insumos** da planilha.
-  Reusa a mesma **Fonte de dados** (catálogo de serviços e composições).
+  Reusa (não clona) os mesmos **ids** de **Fonte de dados** e **Parâmetros**.
 
 #### Como cadastrar Fonte de dados e Parâmetros (para uso na planilha)
 
 ETAPA 1 — Onde acessar
 - Acesse **Engenharia → Obras → Obra selecionada → Planilha orçamentária**
 
-ETAPA 2 — O que clicar (Parâmetros)
-- Selecione uma versão em **Versões cadastradas**
-- Clique no card **Parâmetros**
+ETAPA 2 — O que clicar
+- No canto superior direito, abaixo do botão **Voltar**, clique em:
+  - **Cadastrar Fonte de dados** (para cadastrar/editar fontes)
+  - **Cadastrar Parâmetro** (para cadastrar/editar parâmetros)
+
+ETAPA 3 — O que preencher (Fonte de dados)
+- Nome: exemplo “SINAPI SP 2024-01” (ou um nome interno da sua empresa)
+- Tipo: SINAPI / SBC / MANUAL
+- UF e Data-base (quando aplicável)
+- Clique em **Salvar**
 
 ETAPA 3 — O que preencher (Parâmetros)
-- Preencha **UF / Data-base / BDI / Encargos / Desconto** conforme a sua referência
+- Nome: exemplo “SINAPI SP 2024-01 • BDI 20% • LS 0%”
+- UF / Data-base / BDI / Encargos / Desconto conforme sua referência
 - Clique em **Salvar**
 
 ETAPA 4 — O que esperar
-- O sistema cria (ou reaproveita) um registro de **Parâmetros** e passa a mostrar o “nome resumido” na coluna **Parâmetros** da versão
-- Ao informar **Data-base SINAPI + UF**, o sistema vincula (ou cria) automaticamente a **Fonte SINAPI** correspondente e passa a mostrar o nome na coluna **Fonte**
+- Ao salvar, a lista passa a exibir o registro como **#id - nome**.
+- Ao editar um registro, você escolhe a linha na lista e clica em **Editar**, ajusta os campos e clica em **Salvar**.
+- Aviso importante: Fonte e Parâmetros são **compartilhados**. Alterações nestes cadastros impactam todas as planilhas que usam o mesmo id.
 
 ETAPA 5 — Como validar
-- Volte no card **Versões cadastradas** e confira se **Fonte** e **Parâmetros** aparecem preenchidos para a versão selecionada
+- Volte no card **Versões cadastradas** e:
+  - clique em **Nova planilha**
+  - selecione **Fonte** e **Parâmetro** (em formato **#id - nome**)
+  - confirme e veja se as colunas **Fonte** e **Parâmetros** aparecem preenchidas na versão criada
 - Lógica de criação de uma planilha (obra):
   - 1) Planilha: a planilha combina **Obra + Parâmetros + Fonte de dados**.
   - 2) Parâmetros: ao criar/clonar uma planilha, define-se o conjunto de **parâmetros** (UF, data-base, BDI, encargos e descontos). Eles determinam como os custos são calculados na planilha.

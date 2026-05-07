@@ -211,6 +211,11 @@ export default function Page() {
         </div>
       </div>
 
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        Atenção: alterações aqui são compartilhadas. Se você alterar Serviço/Insumo/Composição da Fonte, muda em TODAS as planilhas que usam essa Fonte. Se você alterar um
+        Parâmetro, muda em TODAS as planilhas que usam esse Parâmetro.
+      </div>
+
       <div className="flex items-center justify-end gap-2 flex-wrap">
         <button
           className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"

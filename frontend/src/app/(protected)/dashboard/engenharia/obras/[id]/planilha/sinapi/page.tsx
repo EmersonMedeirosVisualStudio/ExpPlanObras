@@ -2081,6 +2081,11 @@ export default function SinapiImportPage() {
         </div>
       </div>
 
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        Atenção: alterações aqui são compartilhadas. Se você alterar Serviço/Insumo/Composição da Fonte, muda em TODAS as planilhas que usam essa Fonte. Se você alterar um
+        Parâmetro, muda em TODAS as planilhas que usam esse Parâmetro.
+      </div>
+
       {pageOkMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{pageOkMsg}</div> : null}
       {pageErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{pageErr}</div> : null}
 

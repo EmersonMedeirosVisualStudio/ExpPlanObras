@@ -533,6 +533,7 @@ async function ensurePlanilhaParametrosTables(tx: any) {
     CREATE TABLE IF NOT EXISTS obras_planilhas_parametros (
       id_parametros BIGSERIAL PRIMARY KEY,
       tenant_id BIGINT NOT NULL,
+      nome VARCHAR(160) NULL,
       uf_sinapi VARCHAR(2) NULL,
       data_base_sbc VARCHAR(16) NULL,
       data_base_sinapi VARCHAR(16) NULL,
@@ -549,6 +550,7 @@ async function ensurePlanilhaParametrosTables(tx: any) {
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_parametros ADD COLUMN IF NOT EXISTS nome VARCHAR(160) NULL`).catch(() => null);
   await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_planilhas_parametros_uk ON obras_planilhas_parametros (tenant_id, assinatura)`);
   await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_parametros_idx ON obras_planilhas_parametros (tenant_id)`);
 }
@@ -701,19 +703,23 @@ async function upsertFonteDados(tx: any, tenantId: number, input: { tipo: string
 async function upsertParametros(tx: any, tenantId: number, p: any) {
   await ensurePlanilhaParametrosTables(tx);
   const assinatura = buildParametrosAssinatura(p);
+  const nome = p?.nome != null ? String(p.nome || '').trim().slice(0, 160) : '';
   const rows = (await tx.$queryRawUnsafe(
     `
     INSERT INTO obras_planilhas_parametros
-      (tenant_id, uf_sinapi, data_base_sbc, data_base_sinapi,
+      (tenant_id, nome, uf_sinapi, data_base_sbc, data_base_sinapi,
        bdi_servicos_sbc, bdi_servicos_sinapi, bdi_diferenciado_sbc, bdi_diferenciado_sinapi,
        enc_sociais_sem_des_sbc, enc_sociais_sem_des_sinapi, desconto_sbc, desconto_sinapi, assinatura)
     VALUES
-      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
     ON CONFLICT (tenant_id, assinatura)
-    DO UPDATE SET atualizado_em = NOW()
+    DO UPDATE SET
+      nome = COALESCE(NULLIF(EXCLUDED.nome,''), obras_planilhas_parametros.nome),
+      atualizado_em = NOW()
     RETURNING id_parametros AS "idParametros"
     `,
     tenantId,
+    nome || null,
     p.ufSinapi ? String(p.ufSinapi).trim().toUpperCase() : null,
     p.dataBaseSbc ? String(p.dataBaseSbc).trim().toUpperCase() : null,
     p.dataBaseSinapi ? String(p.dataBaseSinapi).trim().toUpperCase() : null,
@@ -5223,6 +5229,264 @@ export default async function v1Routes(server: FastifyInstance) {
     );
   });
 
+  server.get('/engenharia/fontes-dados', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    await ensureFontesDadosTables(prisma);
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        id_fonte_dados AS "idFonteDados",
+        COALESCE(descricao,'') AS "nome",
+        tipo,
+        uf,
+        data_base AS "dataBase",
+        tipo_preco AS "tipoPreco",
+        criado_em AS "criadoEm",
+        atualizado_em AS "atualizadoEm"
+      FROM obras_fontes_dados
+      WHERE tenant_id = $1
+      ORDER BY id_fonte_dados DESC
+      LIMIT 2000
+      `,
+      ctx.tenantId
+    )) as any[];
+    return ok(reply, {
+      fontes: (rows || []).map((r: any) => ({
+        idFonteDados: Number(r.idFonteDados),
+        nome: String(r.nome || '').trim(),
+        tipo: String(r.tipo || '').trim(),
+        uf: String(r.uf || '').trim(),
+        dataBase: String(r.dataBase || '').trim(),
+        tipoPreco: String(r.tipoPreco || '').trim(),
+        criadoEm: r.criadoEm ? new Date(r.criadoEm).toISOString() : null,
+        atualizadoEm: r.atualizadoEm ? new Date(r.atualizadoEm).toISOString() : null,
+      })),
+    });
+  });
+
+  server.post('/engenharia/fontes-dados', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const body = z
+      .object({
+        idFonteDados: z.coerce.number().int().positive().optional().nullable(),
+        nome: z.string().min(1).max(160),
+        tipo: z.string().min(1).max(24),
+        uf: z.string().max(2).optional().nullable(),
+        dataBase: z.string().max(16).optional().nullable(),
+        tipoPreco: z.string().max(8).optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    await ensureFontesDadosTables(prisma);
+    const tipo = String(body.tipo || '').trim().toUpperCase();
+    const uf = body.uf ? String(body.uf).trim().toUpperCase() : '';
+    const dataBase = body.dataBase ? String(body.dataBase).trim().toUpperCase() : '';
+    const tipoPreco = body.tipoPreco ? String(body.tipoPreco).trim().toUpperCase() : '';
+    const nome = String(body.nome || '').trim().slice(0, 160);
+
+    if (body.idFonteDados) {
+      const exists = (await prisma.$queryRawUnsafe(
+        `SELECT 1 AS ok FROM obras_fontes_dados WHERE tenant_id = $1 AND id_fonte_dados = $2 LIMIT 1`,
+        ctx.tenantId,
+        Number(body.idFonteDados)
+      )) as any[];
+      if (!exists?.[0]) return fail(reply, 404, 'Fonte não encontrada');
+
+      const dup = (await prisma.$queryRawUnsafe(
+        `
+        SELECT id_fonte_dados AS "idFonteDados"
+        FROM obras_fontes_dados
+        WHERE tenant_id = $1 AND tipo = $2 AND uf = $3 AND data_base = $4 AND tipo_preco = $5 AND id_fonte_dados <> $6
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        tipo,
+        uf,
+        dataBase,
+        tipoPreco,
+        Number(body.idFonteDados)
+      )) as any[];
+      if (dup?.[0]) return fail(reply, 422, `Já existe outra fonte com essa configuração (id #${Number(dup[0].idFonteDados)})`);
+
+      await prisma.$executeRawUnsafe(
+        `
+        UPDATE obras_fontes_dados
+        SET tipo = $3, uf = $4, data_base = $5, tipo_preco = $6, descricao = $7, atualizado_em = NOW()
+        WHERE tenant_id = $1 AND id_fonte_dados = $2
+        `,
+        ctx.tenantId,
+        Number(body.idFonteDados),
+        tipo,
+        uf,
+        dataBase,
+        tipoPreco,
+        nome
+      );
+      return ok(reply, { idFonteDados: Number(body.idFonteDados) }, { message: 'Fonte atualizada' });
+    }
+
+    const idFonteDados = await upsertFonteDados(prisma, ctx.tenantId, { tipo, uf, dataBase, tipoPreco, descricao: nome });
+    return ok(reply, { idFonteDados }, { message: 'Fonte cadastrada' });
+  });
+
+  server.get('/engenharia/planilhas/parametros', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    await ensurePlanilhaParametrosTables(prisma);
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        id_parametros AS "idParametros",
+        COALESCE(nome,'') AS "nome",
+        uf_sinapi AS "ufSinapi",
+        data_base_sbc AS "dataBaseSbc",
+        data_base_sinapi AS "dataBaseSinapi",
+        bdi_servicos_sbc AS "bdiServicosSbc",
+        bdi_servicos_sinapi AS "bdiServicosSinapi",
+        bdi_diferenciado_sbc AS "bdiDiferenciadoSbc",
+        bdi_diferenciado_sinapi AS "bdiDiferenciadoSinapi",
+        enc_sociais_sem_des_sbc AS "encSociaisSemDesSbc",
+        enc_sociais_sem_des_sinapi AS "encSociaisSemDesSinapi",
+        desconto_sbc AS "descontoSbc",
+        desconto_sinapi AS "descontoSinapi",
+        assinatura AS "assinatura",
+        criado_em AS "criadoEm",
+        atualizado_em AS "atualizadoEm"
+      FROM obras_planilhas_parametros
+      WHERE tenant_id = $1
+      ORDER BY id_parametros DESC
+      LIMIT 2000
+      `,
+      ctx.tenantId
+    )) as any[];
+
+    return ok(reply, {
+      parametros: (rows || []).map((r: any) => ({
+        idParametros: Number(r.idParametros),
+        nome: String(r.nome || '').trim(),
+        ufSinapi: r.ufSinapi == null ? '' : String(r.ufSinapi || '').trim(),
+        dataBaseSbc: r.dataBaseSbc == null ? '' : String(r.dataBaseSbc || '').trim(),
+        dataBaseSinapi: r.dataBaseSinapi == null ? '' : String(r.dataBaseSinapi || '').trim(),
+        bdiServicosSbc: r.bdiServicosSbc == null ? null : Number(r.bdiServicosSbc),
+        bdiServicosSinapi: r.bdiServicosSinapi == null ? null : Number(r.bdiServicosSinapi),
+        bdiDiferenciadoSbc: r.bdiDiferenciadoSbc == null ? null : Number(r.bdiDiferenciadoSbc),
+        bdiDiferenciadoSinapi: r.bdiDiferenciadoSinapi == null ? null : Number(r.bdiDiferenciadoSinapi),
+        encSociaisSemDesSbc: r.encSociaisSemDesSbc == null ? null : Number(r.encSociaisSemDesSbc),
+        encSociaisSemDesSinapi: r.encSociaisSemDesSinapi == null ? null : Number(r.encSociaisSemDesSinapi),
+        descontoSbc: r.descontoSbc == null ? null : Number(r.descontoSbc),
+        descontoSinapi: r.descontoSinapi == null ? null : Number(r.descontoSinapi),
+        assinatura: String(r.assinatura || ''),
+        criadoEm: r.criadoEm ? new Date(r.criadoEm).toISOString() : null,
+        atualizadoEm: r.atualizadoEm ? new Date(r.atualizadoEm).toISOString() : null,
+      })),
+    });
+  });
+
+  server.post('/engenharia/planilhas/parametros', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const body = z
+      .object({
+        idParametros: z.coerce.number().int().positive().optional().nullable(),
+        nome: z.string().min(1).max(160),
+        ufSinapi: z.string().max(2).optional().nullable(),
+        dataBaseSbc: z.string().max(16).optional().nullable(),
+        dataBaseSinapi: z.string().max(16).optional().nullable(),
+        bdiServicosSbc: z.coerce.number().optional().nullable(),
+        bdiServicosSinapi: z.coerce.number().optional().nullable(),
+        bdiDiferenciadoSbc: z.coerce.number().optional().nullable(),
+        bdiDiferenciadoSinapi: z.coerce.number().optional().nullable(),
+        encSociaisSemDesSbc: z.coerce.number().optional().nullable(),
+        encSociaisSemDesSinapi: z.coerce.number().optional().nullable(),
+        descontoSbc: z.coerce.number().optional().nullable(),
+        descontoSinapi: z.coerce.number().optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    await ensurePlanilhaParametrosTables(prisma);
+    const payload: any = {
+      nome: String(body.nome || '').trim(),
+      ufSinapi: body.ufSinapi ? String(body.ufSinapi).trim().toUpperCase() : null,
+      dataBaseSbc: body.dataBaseSbc ? String(body.dataBaseSbc).trim().toUpperCase() : null,
+      dataBaseSinapi: body.dataBaseSinapi ? String(body.dataBaseSinapi).trim().toUpperCase() : null,
+      bdiServicosSbc: body.bdiServicosSbc == null ? null : Number(body.bdiServicosSbc),
+      bdiServicosSinapi: body.bdiServicosSinapi == null ? null : Number(body.bdiServicosSinapi),
+      bdiDiferenciadoSbc: body.bdiDiferenciadoSbc == null ? null : Number(body.bdiDiferenciadoSbc),
+      bdiDiferenciadoSinapi: body.bdiDiferenciadoSinapi == null ? null : Number(body.bdiDiferenciadoSinapi),
+      encSociaisSemDesSbc: body.encSociaisSemDesSbc == null ? null : Number(body.encSociaisSemDesSbc),
+      encSociaisSemDesSinapi: body.encSociaisSemDesSinapi == null ? null : Number(body.encSociaisSemDesSinapi),
+      descontoSbc: body.descontoSbc == null ? null : Number(body.descontoSbc),
+      descontoSinapi: body.descontoSinapi == null ? null : Number(body.descontoSinapi),
+    };
+    if (payload.dataBaseSinapi && !payload.ufSinapi) return fail(reply, 422, 'UF (SINAPI) é obrigatória quando Data-base SINAPI está preenchida');
+
+    const assinatura = buildParametrosAssinatura(payload);
+    if (body.idParametros) {
+      const exists = (await prisma.$queryRawUnsafe(
+        `SELECT 1 AS ok FROM obras_planilhas_parametros WHERE tenant_id = $1 AND id_parametros = $2 LIMIT 1`,
+        ctx.tenantId,
+        Number(body.idParametros)
+      )) as any[];
+      if (!exists?.[0]) return fail(reply, 404, 'Parâmetro não encontrado');
+
+      const dup = (await prisma.$queryRawUnsafe(
+        `
+        SELECT id_parametros AS "idParametros"
+        FROM obras_planilhas_parametros
+        WHERE tenant_id = $1 AND assinatura = $2 AND id_parametros <> $3
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        assinatura,
+        Number(body.idParametros)
+      )) as any[];
+      if (dup?.[0]) return fail(reply, 422, `Já existe outro parâmetro com essa configuração (id #${Number(dup[0].idParametros)})`);
+
+      await prisma.$executeRawUnsafe(
+        `
+        UPDATE obras_planilhas_parametros
+        SET
+          nome = $3,
+          uf_sinapi = $4,
+          data_base_sbc = $5,
+          data_base_sinapi = $6,
+          bdi_servicos_sbc = $7,
+          bdi_servicos_sinapi = $8,
+          bdi_diferenciado_sbc = $9,
+          bdi_diferenciado_sinapi = $10,
+          enc_sociais_sem_des_sbc = $11,
+          enc_sociais_sem_des_sinapi = $12,
+          desconto_sbc = $13,
+          desconto_sinapi = $14,
+          assinatura = $15,
+          atualizado_em = NOW()
+        WHERE tenant_id = $1 AND id_parametros = $2
+        `,
+        ctx.tenantId,
+        Number(body.idParametros),
+        payload.nome,
+        payload.ufSinapi,
+        payload.dataBaseSbc,
+        payload.dataBaseSinapi,
+        payload.bdiServicosSbc,
+        payload.bdiServicosSinapi,
+        payload.bdiDiferenciadoSbc,
+        payload.bdiDiferenciadoSinapi,
+        payload.encSociaisSemDesSbc,
+        payload.encSociaisSemDesSinapi,
+        payload.descontoSbc,
+        payload.descontoSinapi,
+        assinatura
+      );
+      return ok(reply, { idParametros: Number(body.idParametros) }, { message: 'Parâmetro atualizado' });
+    }
+
+    const idParametros = await upsertParametros(prisma, ctx.tenantId, payload);
+    return ok(reply, { idParametros }, { message: 'Parâmetro cadastrado' });
+  });
+
   server.post('/engenharia/obras/historico', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
@@ -5320,6 +5584,8 @@ export default async function v1Routes(server: FastifyInstance) {
             v.numero_versao AS "numeroVersao",
             v.nome AS "nome",
             v.atual AS "atual",
+            v.id_fonte_dados AS "idFonteDados",
+            v.id_parametros AS "idParametros",
             f.descricao AS "fonteDescricao",
             f.tipo AS "fonteTipo",
             f.uf AS "fonteUf",
@@ -5340,7 +5606,7 @@ export default async function v1Routes(server: FastifyInstance) {
             ON l.tenant_id = v.tenant_id AND l.id_planilha = v.id_planilha
           WHERE v.tenant_id = $1 AND v.id_obra = $2
           GROUP BY
-            v.id_planilha, v.numero_versao, v.nome, v.atual,
+            v.id_planilha, v.numero_versao, v.nome, v.atual, v.id_fonte_dados, v.id_parametros,
             f.descricao, f.tipo, f.uf, f.data_base,
             p.uf_sinapi, p.data_base_sbc, p.data_base_sinapi, p.bdi_servicos_sbc, p.bdi_servicos_sinapi
           ORDER BY v.numero_versao DESC, v.id_planilha DESC
@@ -5382,6 +5648,8 @@ export default async function v1Routes(server: FastifyInstance) {
             numeroVersao: Number(r.numeroVersao),
             nome: String(r.nome || ''),
             atual: Boolean(r.atual),
+            idFonteDados: r.idFonteDados == null ? null : Number(r.idFonteDados),
+            idParametros: r.idParametros == null ? null : Number(r.idParametros),
             fonteNome: formatFonteNome(r),
             parametrosNome: formatParametrosNome(r),
             valorTotal: r.valorTotal == null ? 0 : Number(r.valorTotal),
@@ -5959,8 +6227,24 @@ export default async function v1Routes(server: FastifyInstance) {
             idParametros = mig?.idParametros ? Number(mig.idParametros) : null;
             if (!idFonteDados) throw new Error('Fonte de dados da planilha origem não definida');
           } else {
-            idFonteDados = await upsertFonteDados(tx, ctx.tenantId, { tipo: 'MANUAL', uf: '', dataBase: '', tipoPreco: '', descricao: 'MANUAL' });
-            idParametros = await upsertParametros(tx, ctx.tenantId, {});
+            const reqFonte = body.idFonteDados != null ? Number(body.idFonteDados) : NaN;
+            const reqParametros = body.idParametros != null ? Number(body.idParametros) : NaN;
+            if (!Number.isFinite(reqFonte) || reqFonte <= 0) throw new Error('Selecione a Fonte de dados');
+            if (!Number.isFinite(reqParametros) || reqParametros <= 0) throw new Error('Selecione o Parâmetro');
+            const fonteOk = (await tx.$queryRawUnsafe(
+              `SELECT 1 AS ok FROM obras_fontes_dados WHERE tenant_id = $1 AND id_fonte_dados = $2 LIMIT 1`,
+              ctx.tenantId,
+              reqFonte
+            )) as any[];
+            if (!fonteOk?.[0]) throw new Error('Fonte de dados não encontrada');
+            const paramOk = (await tx.$queryRawUnsafe(
+              `SELECT 1 AS ok FROM obras_planilhas_parametros WHERE tenant_id = $1 AND id_parametros = $2 LIMIT 1`,
+              ctx.tenantId,
+              reqParametros
+            )) as any[];
+            if (!paramOk?.[0]) throw new Error('Parâmetro não encontrado');
+            idFonteDados = reqFonte;
+            idParametros = reqParametros;
           }
 
           const ins = (await tx.$queryRawUnsafe(
@@ -6035,13 +6319,17 @@ export default async function v1Routes(server: FastifyInstance) {
         const numeroVersao = body.numeroVersao != null && String(body.numeroVersao).trim() !== '' ? Number(body.numeroVersao) : null;
         const nome = body.nome != null ? String(body.nome).trim().slice(0, 120) : null;
         const origem = body.origem != null ? String(body.origem).trim().toUpperCase() : null;
+        const idFonteDados = body.idFonteDados != null && String(body.idFonteDados).trim() !== '' ? Number(body.idFonteDados) : null;
+        const idParametros = body.idParametros != null && String(body.idParametros).trim() !== '' ? Number(body.idParametros) : null;
         const allowedOrigem = new Set(['MANUAL', 'CSV', 'MIGRACAO', 'DUPLICADA']);
         if (origem != null && !allowedOrigem.has(origem)) return fail(reply, 422, 'origem inválida');
         if (numeroVersao != null && (!Number.isFinite(numeroVersao) || numeroVersao <= 0 || Math.floor(numeroVersao) !== numeroVersao)) {
           return fail(reply, 422, 'numeroVersao inválido');
         }
         if (nome != null && !nome) return fail(reply, 422, 'nome inválido');
-        if (numeroVersao == null && nome == null && origem == null) return ok(reply, { ok: true }, { message: 'Nada para alterar' });
+        if (idFonteDados != null && (!Number.isFinite(idFonteDados) || idFonteDados <= 0)) return fail(reply, 422, 'idFonteDados inválido');
+        if (idParametros != null && (!Number.isFinite(idParametros) || idParametros <= 0)) return fail(reply, 422, 'idParametros inválido');
+        if (numeroVersao == null && nome == null && origem == null && idFonteDados == null && idParametros == null) return ok(reply, { ok: true }, { message: 'Nada para alterar' });
 
         const updated = await prismaTx(async (tx: any) => {
           const exists = (await tx.$queryRawUnsafe(
@@ -6056,6 +6344,23 @@ export default async function v1Routes(server: FastifyInstance) {
             idPlanilha
           )) as any[];
           if (!exists?.[0]) throw new Error('Planilha não encontrada');
+
+          if (idFonteDados != null) {
+            const fonteOk = (await tx.$queryRawUnsafe(
+              `SELECT 1 AS ok FROM obras_fontes_dados WHERE tenant_id = $1 AND id_fonte_dados = $2 LIMIT 1`,
+              ctx.tenantId,
+              idFonteDados
+            )) as any[];
+            if (!fonteOk?.[0]) throw new Error('Fonte de dados não encontrada');
+          }
+          if (idParametros != null) {
+            const paramOk = (await tx.$queryRawUnsafe(
+              `SELECT 1 AS ok FROM obras_planilhas_parametros WHERE tenant_id = $1 AND id_parametros = $2 LIMIT 1`,
+              ctx.tenantId,
+              idParametros
+            )) as any[];
+            if (!paramOk?.[0]) throw new Error('Parâmetro não encontrado');
+          }
 
           if (numeroVersao != null) {
             const dup = (await tx.$queryRawUnsafe(
@@ -6080,6 +6385,8 @@ export default async function v1Routes(server: FastifyInstance) {
               numero_versao = COALESCE($4, numero_versao),
               nome = COALESCE($5, nome),
               origem = COALESCE($6, origem),
+              id_fonte_dados = COALESCE($7, id_fonte_dados),
+              id_parametros = COALESCE($8, id_parametros),
               atualizado_em = NOW()
             WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
             `,
@@ -6088,7 +6395,9 @@ export default async function v1Routes(server: FastifyInstance) {
             idPlanilha,
             numeroVersao,
             nome,
-            origem
+            origem,
+            idFonteDados,
+            idParametros
           );
           return { ok: true };
         });
@@ -6235,22 +6544,11 @@ export default async function v1Routes(server: FastifyInstance) {
           descontoSinapi: p.descontoSinapi == null || p.descontoSinapi === '' ? null : toDec(p.descontoSinapi),
         });
 
-        const tipoFonte = dataBaseSinapi ? 'SINAPI' : dataBaseSbc ? 'SBC' : 'MANUAL';
-        const fonteUf = tipoFonte === 'SINAPI' && ufSinapi ? ufSinapi : '';
-        const fonteDataBase = tipoFonte === 'SINAPI' ? String(dataBaseSinapi || '').trim() : tipoFonte === 'SBC' ? String(dataBaseSbc || '').trim() : '';
-        const fonteDesc =
-          tipoFonte === 'SINAPI'
-            ? `SINAPI ${fonteUf} ${fonteDataBase}`.trim()
-            : tipoFonte === 'SBC'
-              ? `SBC ${fonteDataBase}`.trim()
-              : 'MANUAL';
-        const idFonteDados = await upsertFonteDados(prisma, ctx.tenantId, { tipo: tipoFonte, uf: fonteUf, dataBase: fonteDataBase, tipoPreco: '', descricao: fonteDesc });
         await prisma.$executeRawUnsafe(
-          `UPDATE obras_planilhas_versoes SET id_fonte_dados = $4, id_parametros = $5, atualizado_em = NOW() WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+          `UPDATE obras_planilhas_versoes SET id_parametros = $4, atualizado_em = NOW() WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
           ctx.tenantId,
           idObra,
           idPlanilha,
-          idFonteDados,
           idParametros
         );
 
