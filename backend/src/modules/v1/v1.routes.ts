@@ -5063,7 +5063,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
           await syncServicosCatalogoFromLinhas(tx, ctx.tenantId, idObra, idPlanilha);
           return { idPlanilha, numeroVersao: nextVersao };
-        }, { timeout: 120000, maxWait: 20000 });
+        });
 
         return ok(reply, { idObra, idPlanilha: created.idPlanilha, numeroVersao: created.numeroVersao }, { message: 'CSV importado' });
       }
@@ -6991,7 +6991,7 @@ export default async function v1Routes(server: FastifyInstance) {
         );
         upserted += chunk.length;
       }
-    }, { timeout: 120000, maxWait: 20000 });
+    });
 
     return ok(reply, { upserted }, { message: 'Composições importadas' });
   });
@@ -7611,7 +7611,7 @@ export default async function v1Routes(server: FastifyInstance) {
             afetados
           );
         }
-      }, { timeout: 120000, maxWait: 20000 });
+      });
 
       return ok(reply, { ok: true }, { message: 'Composição atualizada' });
     }
@@ -7824,7 +7824,7 @@ export default async function v1Routes(server: FastifyInstance) {
         if (cached) return cached;
       }
       return computeAndSave(tx);
-    }, { timeout: 120000, maxWait: 20000 });
+    });
 
     return ok(reply, data, { message: refresh ? 'Composição primitiva atualizada' : 'Composição primitiva carregada' });
   });
@@ -7977,7 +7977,7 @@ export default async function v1Routes(server: FastifyInstance) {
           ...params
         );
       }
-    }, { timeout: 120000, maxWait: 20000 });
+    });
 
     return ok(reply, { ok: true }, { message: 'Composição importada' });
   });
@@ -8920,7 +8920,7 @@ export default async function v1Routes(server: FastifyInstance) {
         }
         importedComposicoes++;
       }
-    }, { timeout: 120000, maxWait: 20000 });
+    });
 
     return ok(
       reply,
@@ -9506,7 +9506,7 @@ export default async function v1Routes(server: FastifyInstance) {
           );
         }
       }
-    }, { timeout: 120000, maxWait: 20000 });
+    });
 
     return ok(
       reply,
@@ -10120,7 +10120,7 @@ export default async function v1Routes(server: FastifyInstance) {
         dataBase,
         tipoPreco: insumosModo,
       });
-    }, { timeout: 120000, maxWait: 20000 });
+    });
 
     return ok(
       reply,
