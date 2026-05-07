@@ -1714,6 +1714,7 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 - Edição de serviço (regra de preço):
   - ao selecionar **Tipo = Serviço**, os campos **Código**, **Serviços** e **Fonte** viram campos de **seleção com busca** (clicar mostra opções, digitar filtra em tempo real);
   - ao selecionar um valor (ou concluir a digitação), o sistema **preenche/filtra os demais campos** com base no catálogo de serviços da planilha (Código/Serviços/Fonte/UND);
+  - quando o **Código** já existe no catálogo (Serviços (PLANILHA)), os campos **Fonte/Serviços/UND** ficam travados na linha e passam a ser tratados como leitura do catálogo (evita divergência entre linhas e catálogo);
   - o campo **Valor Unit.** do serviço **não é digitável**;
   - ele é preenchido automaticamente a partir da composição vinculada ao código do serviço (ou **0** quando não existe composição definida);
   - ao informar/alterar o **Código** do serviço, o sistema recalcula o valor unitário.

@@ -5551,9 +5551,9 @@ export default async function v1Routes(server: FastifyInstance) {
         const ordem = linha.ordem != null ? Number(linha.ordem) : 0;
         const item = linha.item ? String(linha.item).trim().slice(0, 80) : null;
         const codigo = linha.codigo ? String(linha.codigo).trim().slice(0, 80) : null;
-        const fonte = linha.fonte ? String(linha.fonte).trim().slice(0, 80) : null;
-        const servico = linha.servicos ? String(linha.servicos).trim().slice(0, 800) : null;
-        const und = linha.und ? String(linha.und).trim().slice(0, 40) : null;
+        let fonteLinha = linha.fonte ? String(linha.fonte).trim().slice(0, 80) : null;
+        let servicoLinha = linha.servicos ? String(linha.servicos).trim().slice(0, 800) : null;
+        let undLinha = linha.und ? String(linha.und).trim().slice(0, 40) : null;
         const quantidade = linha.quant == null || linha.quant === '' ? null : toDec(linha.quant);
         const tipoLinha = String(linha.tipoLinha || '').trim().toUpperCase() || 'ITEM';
         const nivel = item ? item.split('.').filter(Boolean).length : 0;
@@ -5562,6 +5562,36 @@ export default async function v1Routes(server: FastifyInstance) {
         let valorParcialBody = linha.valorParcial == null || linha.valorParcial === '' ? null : toDec(linha.valorParcial);
         let valorParcial =
           valorParcialBody != null ? valorParcialBody : quantidade != null && valorUnitario != null ? Number((quantidade * valorUnitario).toFixed(6)) : null;
+
+        if (tipoLinha === 'SERVICO' && codigo) {
+          await ensurePlanilhaServicosTables(prisma);
+          const code = String(codigo || '').trim().toUpperCase();
+          const cat = (await prisma.$queryRawUnsafe(
+            `
+            SELECT
+              COALESCE(fonte,'') AS fonte,
+              COALESCE(servico,'') AS servico,
+              COALESCE(und,'') AS und
+            FROM obras_planilhas_servicos
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4
+            ORDER BY id_servico ASC
+            LIMIT 1
+            `,
+            ctx.tenantId,
+            idObra,
+            idPlanilha,
+            code
+          )) as any[];
+          const c = cat?.[0] || null;
+          if (c) {
+            const f = String(c?.fonte || '').trim();
+            const s = String(c?.servico || '').trim();
+            const u = String(c?.und || '').trim();
+            if (f) fonteLinha = f;
+            if (s) servicoLinha = s;
+            if (u) undLinha = u;
+          }
+        }
 
         if (tipoLinha === 'SERVICO' && codigo) {
           await ensurePlanilhaComposicaoTables(prisma);
@@ -5638,9 +5668,9 @@ export default async function v1Routes(server: FastifyInstance) {
             ordem,
             item,
             codigo,
-            fonte,
-            servico,
-            und,
+            fonteLinha,
+            servicoLinha,
+            undLinha,
             quantidade,
             valorUnitario,
             valorParcial,
@@ -5660,9 +5690,9 @@ export default async function v1Routes(server: FastifyInstance) {
             ordem,
             item,
             codigo,
-            fonte,
-            servico,
-            und,
+            fonteLinha,
+            servicoLinha,
+            undLinha,
             quantidade,
             valorUnitario,
             valorParcial,
@@ -5690,9 +5720,9 @@ export default async function v1Routes(server: FastifyInstance) {
             idObra,
             idPlanilha,
             String(codigo || '').trim().toUpperCase(),
-            fonte || '',
-            servico || '',
-            und || ''
+            fonteLinha || '',
+            servicoLinha || '',
+            undLinha || ''
           );
         }
 

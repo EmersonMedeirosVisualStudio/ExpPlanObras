@@ -1713,6 +1713,29 @@ export default function PlanilhaObraClient({
     return null;
   }
 
+  const servicoCatalogoByCodigo = useMemo(() => {
+    if (novo.tipoLinha !== "SERVICO") return null;
+    const codigo = String(novo.codigo || "").trim().toUpperCase();
+    if (!codigo) return null;
+    return servicosCatalogo.find((r) => r.codigo === codigo) || null;
+  }, [novo.codigo, novo.tipoLinha, servicosCatalogo]);
+
+  const servicoCamposTravadosPorCatalogo = Boolean(servicoCatalogoByCodigo);
+
+  useEffect(() => {
+    if (!servicoCatalogoByCodigo) return;
+    setNovo((p) => {
+      if (p.tipoLinha !== "SERVICO") return p;
+      const codigo = String(p.codigo || "").trim().toUpperCase();
+      if (!codigo || codigo !== servicoCatalogoByCodigo.codigo) return p;
+      const next: any = { ...p };
+      next.fonte = servicoCatalogoByCodigo.fonte;
+      next.servicos = servicoCatalogoByCodigo.servicos;
+      next.und = servicoCatalogoByCodigo.und;
+      return next;
+    });
+  }, [servicoCatalogoByCodigo]);
+
   const subtotalByItemKey = useMemo(() => {
     const map = new Map<string, { sum: number; count: number }>();
     const rows = planilha?.linhas || [];
@@ -2666,7 +2689,8 @@ export default function PlanilhaObraClient({
                               return next;
                             });
                           }}
-                          disabled={!podeEditar}
+                          disabled={!podeEditar || servicoCamposTravadosPorCatalogo}
+                          title={servicoCamposTravadosPorCatalogo ? "Campo vem do catálogo (Serviços (PLANILHA))." : undefined}
                           placeholder="—"
                         />
                       </div>
@@ -2713,7 +2737,8 @@ export default function PlanilhaObraClient({
                             const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
                             setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: String(vu) }) : p));
                           }}
-                          disabled={!podeEditar}
+                          disabled={!podeEditar || servicoCamposTravadosPorCatalogo}
+                          title={servicoCamposTravadosPorCatalogo ? "Campo vem do catálogo (Serviços (PLANILHA))." : undefined}
                         />
                       </div>
                       <div>
@@ -2731,7 +2756,8 @@ export default function PlanilhaObraClient({
                               return rest;
                             });
                           }}
-                          disabled={!podeEditar}
+                          disabled={!podeEditar || servicoCamposTravadosPorCatalogo}
+                          title={servicoCamposTravadosPorCatalogo ? "Campo vem do catálogo (Serviços (PLANILHA))." : undefined}
                           placeholder="m²"
                         />
                       </div>
