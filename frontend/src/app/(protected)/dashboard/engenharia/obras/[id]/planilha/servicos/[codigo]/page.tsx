@@ -2081,20 +2081,29 @@ async function readTextSmart(file: File) {
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-7xl text-slate-900">
-       <div className="flex items-start justify-between gap-3 flex-wrap">
-         <div>
-          <div className="text-xs text-slate-500">{breadcrumb}</div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-semibold">Análise de composição — {analysisTitle}</h1>
-            <span
-              className={`rounded-full border px-2 py-0.5 text-xs ${
-                bootLoading ? "border-blue-200 bg-blue-50 text-blue-700" : bootDone ? "border-slate-200 bg-slate-50 text-slate-700" : "border-slate-200 bg-white text-slate-600"
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="mb-1" aria-live="polite">
+            <div
+              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1 text-sm font-semibold ${
+                bootLoading
+                  ? "border-blue-200 bg-blue-50 text-blue-800"
+                  : bootDone
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-slate-200 bg-white text-slate-700"
               }`}
             >
+              <span
+                className={`inline-block h-2.5 w-2.5 rounded-full ${
+                  bootLoading ? "bg-blue-600 animate-pulse" : bootDone ? "bg-emerald-600" : "bg-slate-400"
+                }`}
+              />
               {bootLoading ? "Carregando página..." : bootDone ? "Página carregada" : "—"}
-            </span>
+            </div>
           </div>
-         </div>
+          <div className="text-xs text-slate-500">{breadcrumb}</div>
+          <h1 className="text-2xl font-semibold">Análise de composição — {analysisTitle}</h1>
+        </div>
          <div className="flex items-center gap-2 flex-wrap">
            <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={voltar} title="Voltar para a tela anterior">
              Voltar
