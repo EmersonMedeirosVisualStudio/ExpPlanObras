@@ -2581,7 +2581,7 @@ export default function PlanilhaObraClient({
                   <td className="px-3 py-2 font-semibold">v{v.numeroVersao}</td>
                   <td className="px-3 py-2">{v.nome}</td>
                   <td className="px-3 py-2">{v.fonteNome || "—"}</td>
-                  <td className="px-3 py-2">{v.parametrosNome || "—"}</td>
+                  <td className="px-3 py-2">{v.idParametros ? `#${v.idParametros} - ${v.parametrosNome || "—"}` : "—"}</td>
                   <td className="px-3 py-2 text-right">{v.totalServicos}</td>
                   <td className="px-3 py-2 text-right">{moeda(Number(v.valorTotal || 0))}</td>
                   <td className="px-3 py-2">
