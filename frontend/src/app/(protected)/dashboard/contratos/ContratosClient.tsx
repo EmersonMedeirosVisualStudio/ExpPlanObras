@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { realtimeClient } from "@/lib/realtime/client";
+import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type ContratoRow = {
   id: number;
@@ -359,6 +360,8 @@ export default function ContratosClient() {
   }, [returnToParam]);
 
   const [loading, setLoading] = useState(false);
+  const [bootLoading, setBootLoading] = useState(false);
+  const [bootDone, setBootDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [rows, setRows] = useState<ContratoRow[]>([]);
   const [contrapartes, setContrapartes] = useState<ContraparteLite[]>([]);
@@ -778,7 +781,22 @@ export default function ContratosClient() {
   }
 
   useEffect(() => {
-    carregarLista();
+    let cancelled = false;
+    setBootLoading(true);
+    setBootDone(false);
+    void (async () => {
+      try {
+        await carregarLista();
+      } finally {
+        if (!cancelled) {
+          setBootLoading(false);
+          setBootDone(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -1400,7 +1418,10 @@ export default function ContratosClient() {
                         <button
                           className="text-xs font-semibold text-[#2563EB] hover:underline"
                           type="button"
-                          onClick={() => router.push("/dashboard/engenharia/contrapartes")}
+                          onClick={() => {
+                            const returnTo = encodeURIComponent(currentPath());
+                            router.push(`/dashboard/engenharia/contrapartes?returnTo=${returnTo}`);
+                          }}
                         >
                           Gerenciar contrapartes
                         </button>
@@ -1481,6 +1502,7 @@ export default function ContratosClient() {
     <div className="space-y-6 text-[#111827]">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
+          <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />
           <h1 className="text-2xl font-semibold">Contratos Cadastrados</h1>
           <div className="text-sm text-[#6B7280]">Cadastre, acompanhe e integre com medições/pagamentos e obras.</div>
         </div>

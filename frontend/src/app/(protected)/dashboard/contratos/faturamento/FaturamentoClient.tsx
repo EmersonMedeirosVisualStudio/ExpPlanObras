@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import api from "@/lib/api";
+import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type ContratoLite = {
   id: number;
@@ -57,6 +58,10 @@ function buildLinePath(points: Array<{ x: number; y: number }>) {
 }
 
 export default function FaturamentoClient() {
+  const [bootLoading, setBootLoading] = useState(true);
+  const [bootDone, setBootDone] = useState(false);
+  const bootDoneRef = useRef(false);
+
   const [periodoInicio, setPeriodoInicio] = useState(() => {
     const now = new Date();
     const d = new Date(now.getFullYear(), now.getMonth() - 11, 1);
@@ -141,6 +146,7 @@ export default function FaturamentoClient() {
 
   async function carregar() {
     try {
+      if (!bootDoneRef.current) setBootLoading(true);
       setLoading(true);
       setErr(null);
       const params: any = { start: periodoInicio, end: periodoFim };
@@ -156,6 +162,11 @@ export default function FaturamentoClient() {
       setResumo(null);
     } finally {
       setLoading(false);
+      if (!bootDoneRef.current) {
+        bootDoneRef.current = true;
+        setBootDone(true);
+        setBootLoading(false);
+      }
     }
   }
 
@@ -275,6 +286,7 @@ export default function FaturamentoClient() {
   return (
     <div className="p-6 space-y-6 bg-[#f7f8fa] text-[#111827]">
       <div>
+        <PageLoadStatusBadge loading={bootLoading} done={bootDone} />
         <h1 className="text-2xl font-semibold">Contratos → Faturamento</h1>
         <div className="text-sm text-[#6B7280]">DRE simplificado por contrato: Receita, Despesa e Receita Líquida.</div>
       </div>

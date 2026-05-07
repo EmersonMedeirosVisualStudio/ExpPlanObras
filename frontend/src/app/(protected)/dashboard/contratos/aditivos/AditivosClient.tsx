@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { realtimeClient } from "@/lib/realtime/client";
+import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type AditivoRow = {
   id: number;
@@ -285,8 +286,38 @@ export default function AditivosClient() {
       ? `${contratoSelfPath}&returnTo=${encodeURIComponent(effectiveReturnTo)}`
       : contratoPath;
 
+  const [bootLoading, setBootLoading] = useState(false);
+  const [bootDone, setBootDone] = useState(false);
+  const bootDoneRef = useRef(false);
+  const bootPendingRef = useRef(0);
+
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const bootStart = () => {
+    if (bootDoneRef.current) return;
+    if (bootPendingRef.current === 0) setBootLoading(true);
+    bootPendingRef.current += 1;
+  };
+
+  const bootFinish = () => {
+    if (bootDoneRef.current) return;
+    bootPendingRef.current = Math.max(0, bootPendingRef.current - 1);
+    if (bootPendingRef.current === 0) {
+      bootDoneRef.current = true;
+      setBootDone(true);
+      setBootLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (bootDoneRef.current) return;
+    if (!contratoId) {
+      bootDoneRef.current = true;
+      setBootDone(true);
+      setBootLoading(false);
+    }
+  }, [contratoId]);
 
   const [consolidado, setConsolidado] = useState<Consolidado | null>(null);
   const [aditivos, setAditivos] = useState<AditivoRow[]>([]);
@@ -337,6 +368,7 @@ export default function AditivosClient() {
   async function carregarContratoSelecionado() {
     if (!contratoId) return;
     try {
+      bootStart();
       setLoading(true);
       setErr(null);
       const [cres, ares] = await Promise.all([
@@ -351,6 +383,7 @@ export default function AditivosClient() {
       setErr(e?.response?.data?.message || e?.message || "Erro ao carregar aditivos do contrato");
     } finally {
       setLoading(false);
+      bootFinish();
     }
   }
 
@@ -362,6 +395,7 @@ export default function AditivosClient() {
     if (filtroObras) origens.push("OBRA");
     if (filtroDocumentos) origens.push("DOCUMENTO");
     try {
+      bootStart();
       setLoading(true);
       setErr(null);
       const res = await api.get(`/api/contratos/${contratoId}/eventos`, {
@@ -380,6 +414,7 @@ export default function AditivosClient() {
       setErr(e?.response?.data?.message || e?.message || "Erro ao carregar histórico");
     } finally {
       setLoading(false);
+      bootFinish();
     }
   }
 
@@ -640,6 +675,7 @@ export default function AditivosClient() {
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
+            <PageLoadStatusBadge loading={bootLoading} done={bootDone} />
             <div className="text-xs text-slate-500">{breadcrumb}</div>
             <h1 className="text-2xl font-semibold">{tab === "eventos" ? "Eventos / Observações" : "Aditivos de Contrato"}</h1>
             <div className="text-sm text-slate-600">

@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GovernancaApi } from '@/lib/modules/governanca/api';
 import { parsePermissionCode, stringifyPermission } from '@/lib/modules/governanca/permission-map';
 import BackupSegurancaClient from '../backup/BackupSegurancaClient';
 import { Lock, Pencil, RotateCcw, UserX } from 'lucide-react';
+import { PageLoadStatusBadge } from '@/components/PageLoadStatus';
 
 type TabKey = 'USUARIOS' | 'PERFIS' | 'PERMISSOES' | 'ABRANGENCIAS' | 'BACKUP' | 'AUDITORIA';
 
@@ -153,6 +154,9 @@ export default function GovernancaClient() {
   const [solicitouSaida, setSolicitouSaida] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [bootLoading, setBootLoading] = useState(true);
+  const [bootDone, setBootDone] = useState(false);
+  const bootDoneRef = useRef(false);
 
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [perfis, setPerfis] = useState<Perfil[]>([]);
@@ -205,6 +209,7 @@ export default function GovernancaClient() {
 
   const carregarTudo = useCallback(async () => {
     try {
+      if (!bootDoneRef.current) setBootLoading(true);
       setLoading(true);
       setError(null);
 
@@ -266,6 +271,11 @@ export default function GovernancaClient() {
       setError(e?.message || 'Erro ao carregar dados.');
     } finally {
       setLoading(false);
+      if (!bootDoneRef.current) {
+        bootDoneRef.current = true;
+        setBootDone(true);
+        setBootLoading(false);
+      }
     }
   }, [abrangenciaForm.usuarioId, perfilSelecionadoId]);
 
@@ -572,17 +582,28 @@ export default function GovernancaClient() {
   };
 
   if (loading) {
-    return <div className="rounded-xl border bg-white p-6">Carregando governança...</div>;
+    return (
+      <div className="space-y-2">
+        <PageLoadStatusBadge loading={bootLoading} done={bootDone} />
+        <div className="rounded-xl border bg-white p-6">Carregando governança...</div>
+      </div>
+    );
   }
 
   if (error) {
-    return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">{error}</div>;
+    return (
+      <div className="space-y-2">
+        <PageLoadStatusBadge loading={bootLoading} done={bootDone} />
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">{error}</div>
+      </div>
+    );
   }
 
   return (
     <div className="max-w-7xl">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
+          <PageLoadStatusBadge loading={bootLoading} done={bootDone} />
           <h1 className="text-2xl font-semibold text-slate-900">Administração do Sistema</h1>
           <div className="mt-1 text-sm text-slate-600">Gestão de usuários, perfis, permissões, abrangências e segurança.</div>
         </div>

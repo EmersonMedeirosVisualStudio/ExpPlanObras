@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
+import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type ContratoBasic = {
   id: number;
@@ -152,6 +153,8 @@ export default function ProgramacaoFinanceiraClient() {
   const contratoReturnTo = contratoId ? encodeURIComponent(`/dashboard/contratos?id=${contratoId}`) : "";
 
   const [loading, setLoading] = useState(false);
+  const [bootLoading, setBootLoading] = useState(false);
+  const [bootDone, setBootDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const [contrato, setContrato] = useState<ContratoBasic | null>(null);
@@ -209,7 +212,23 @@ export default function ProgramacaoFinanceiraClient() {
   }
 
   useEffect(() => {
-    carregar();
+    if (!contratoId) return;
+    let cancelled = false;
+    setBootLoading(true);
+    setBootDone(false);
+    void (async () => {
+      try {
+        await carregar();
+      } finally {
+        if (!cancelled) {
+          setBootLoading(false);
+          setBootDone(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [contratoId]);
 
   const medidoAprovByYm = useMemo(() => {
@@ -291,6 +310,7 @@ export default function ProgramacaoFinanceiraClient() {
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
+            <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />
             <div className="text-xs text-slate-500">{breadcrumb}</div>
             <h1 className="text-2xl font-semibold">Programação financeira</h1>
             <div className="text-sm text-slate-600">Cadastre a programação de execução financeira e compare com medições aprovadas.</div>

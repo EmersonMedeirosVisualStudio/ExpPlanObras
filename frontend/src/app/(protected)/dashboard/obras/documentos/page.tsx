@@ -6,6 +6,7 @@ import { DocumentosApi } from '@/lib/modules/documentos/api';
 import type { DocumentoRegistroDTO } from '@/lib/modules/documentos/types';
 import api from '@/lib/api';
 import { ExternalLink, FileText, Info, Pencil, RefreshCcw, Search, Trash2, Upload, X } from 'lucide-react';
+import { PageLoadStatusBadge } from '@/components/PageLoadStatus';
 
 type ContratoOption = { id: number; numeroContrato: string; objeto: string | null };
 type ObraOption = { id: number; nome: string };
@@ -101,6 +102,8 @@ export default function ObrasDocumentosPage() {
   const [obraOpen, setObraOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [bootStarted, setBootStarted] = useState(false);
+  const [bootDone, setBootDone] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [rows, setRows] = useState<DocumentoRegistroDTO[]>([]);
 
@@ -281,6 +284,19 @@ export default function ObrasDocumentosPage() {
   }, [categoriaPrefixFiltro, idRef, incluirObras, returnTo, router, tipo]);
 
   useEffect(() => {
+    if (loading) setBootStarted(true);
+    if (bootStarted && !loading) setBootDone(true);
+  }, [bootStarted, loading]);
+
+  useEffect(() => {
+    if (bootDone) return;
+    const t = window.setTimeout(() => {
+      setBootDone(true);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [bootDone]);
+
+  useEffect(() => {
     if (!lockTipoContext) return;
     const id = Number(idRef || 0);
     if (!id) return;
@@ -414,12 +430,34 @@ export default function ObrasDocumentosPage() {
     }
   }
 
+  const contratoLabel = useMemo(() => {
+    if (tipo !== 'CONTRATO') return null;
+    const id = Number(idRef || 0);
+    if (!Number.isFinite(id) || id <= 0) return null;
+    const found = contratos.find((c) => c.id === id) || null;
+    if (found?.numeroContrato) return `Contrato ${found.numeroContrato}`;
+    return `Contrato #${id}`;
+  }, [contratos, idRef, tipo]);
+
+  const obraLabel = useMemo(() => {
+    if (tipo !== 'OBRA') return null;
+    const id = Number(idRef || 0);
+    if (!Number.isFinite(id) || id <= 0) return null;
+    const nome = obraNome || (obras.find((o) => o.id === id)?.nome ?? '');
+    if (nome.trim()) return `Obra ${nome.trim()}`;
+    return `Obra #${id}`;
+  }, [idRef, obraNome, obras, tipo]);
+
   const breadcrumb = useMemo(() => {
     const labels = labelsFromPath(effectiveReturnTo);
     if (labels.length) return `${labels.join(' → ')} → Documentos`;
-    if (tipo === 'CONTRATO') return 'Contratos → Documentos';
-    return 'Engenharia → Obras → Obra selecionada → Documentos';
-  }, [effectiveReturnTo, tipo]);
+    if (tipo === 'CONTRATO') {
+      return contratoLabel ? `Contratos → ${contratoLabel} → Documentos` : 'Contratos → Documentos';
+    }
+    const id = Number(idRef || 0);
+    if (Number.isFinite(id) && id > 0) return `Engenharia → Obras → ${obraLabel || `Obra #${id}`} → Documentos`;
+    return 'Engenharia → Obras → Documentos';
+  }, [contratoLabel, effectiveReturnTo, idRef, obraLabel, tipo]);
 
   function voltar() {
     if (effectiveReturnTo) return router.push(effectiveReturnTo);
@@ -471,6 +509,7 @@ export default function ObrasDocumentosPage() {
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
+            <PageLoadStatusBadge loading={!bootDone || loading} done={bootDone && !loading} />
             <div className="text-xs text-slate-500">{breadcrumb}</div>
             <div className="mt-1 flex items-center gap-3 flex-wrap">
               <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700">

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { realtimeClient } from "@/lib/realtime/client";
+import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type DashboardKpis = {
   totalContratos: number;
@@ -95,6 +96,8 @@ function iconBoxStyle(color: string) {
 export default function ContratosDashboardClient() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [bootLoading, setBootLoading] = useState(false);
+  const [bootDone, setBootDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [papel, setPapel] = useState("");
@@ -154,7 +157,22 @@ export default function ContratosDashboardClient() {
   }
 
   useEffect(() => {
-    carregar();
+    let cancelled = false;
+    setBootLoading(true);
+    setBootDone(false);
+    void (async () => {
+      try {
+        await carregar();
+      } finally {
+        if (!cancelled) {
+          setBootLoading(false);
+          setBootDone(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -221,6 +239,7 @@ export default function ContratosDashboardClient() {
     <div className="space-y-6 text-[#111827]">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
+          <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />
           <h1 className="text-2xl font-semibold">Dashboard de Contratos</h1>
           <div className="text-sm text-[#6B7280]">Visão geral da gestão dos contratos.</div>
         </div>

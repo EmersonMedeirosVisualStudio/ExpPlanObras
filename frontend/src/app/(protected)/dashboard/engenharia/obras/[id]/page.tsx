@@ -6,6 +6,7 @@ import { setActiveObra } from "@/lib/obra/active";
 import api from "@/lib/api";
 import { DocumentosApi } from "@/lib/modules/documentos/api";
 import { ArrowDownCircle, Clock, ExternalLink, LayoutDashboard, Pencil, Plus, Trash2 } from "lucide-react";
+import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type ApiEnvelope<T> = { success: boolean; message?: string; data: T };
 function unwrapApiData<T>(json: any): T {
@@ -776,6 +777,8 @@ export default function EngenhariaObraHomePage() {
   const [erroObra, setErroObra] = useState<string | null>(null);
   const [contrato, setContrato] = useState<ContratoDaObra | null>(null);
   const [carregandoContrato, setCarregandoContrato] = useState(false);
+  const [bootLoading, setBootLoading] = useState(false);
+  const [bootDone, setBootDone] = useState(false);
 
   const [crudOpen, setCrudOpen] = useState(false);
   const [crudTipo, setCrudTipo] = useState<"RESPONSAVEL_TECNICO" | "FISCAL_OBRA">("RESPONSAVEL_TECNICO");
@@ -800,6 +803,21 @@ export default function EngenhariaObraHomePage() {
     if (!idObra) return;
     setActiveObra({ id: idObra, nome: obraNomeParam || undefined });
   }, [idObra, obraNomeParam]);
+
+  useEffect(() => {
+    if (!idObra) return;
+    setBootLoading(true);
+    setBootDone(false);
+  }, [idObra]);
+
+  useEffect(() => {
+    if (!idObra) return;
+    if (carregandoObra) return;
+    if (carregandoContrato) return;
+    if (!obra && !erroObra) return;
+    setBootLoading(false);
+    setBootDone(true);
+  }, [idObra, carregandoObra, carregandoContrato, obra, erroObra]);
 
   useEffect(() => {
     try {
@@ -1266,6 +1284,7 @@ export default function EngenhariaObraHomePage() {
       />
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
+          <PageLoadStatusBadge loading={bootLoading || carregandoObra || carregandoContrato} done={bootDone && !bootLoading && !carregandoObra && !carregandoContrato} />
           <div className="text-xs text-slate-500">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Obra - Menu Diversos</h1>
           <div className="text-sm text-slate-600">

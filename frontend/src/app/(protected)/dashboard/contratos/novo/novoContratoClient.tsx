@@ -909,7 +909,17 @@ export default function NovoContratoClient() {
         <div className="rounded-xl border bg-slate-50 p-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="text-sm font-semibold">Contraparte</div>
-            <button className="rounded-lg border bg-white px-3 py-1 text-sm hover:bg-slate-50" type="button" onClick={() => router.push("/dashboard/engenharia/contrapartes")}>
+            <button
+              className="rounded-lg border bg-white px-3 py-1 text-sm hover:bg-slate-50"
+              type="button"
+              onClick={() => {
+                const rawReturnTo =
+                  typeof window === "undefined"
+                    ? "/dashboard/contratos/novo"
+                    : `${window.location.pathname || "/dashboard/contratos/novo"}${window.location.search || ""}`;
+                router.push(`/dashboard/engenharia/contrapartes?returnTo=${encodeURIComponent(rawReturnTo)}`);
+              }}
+            >
               Gerenciar contrapartes
             </button>
           </div>

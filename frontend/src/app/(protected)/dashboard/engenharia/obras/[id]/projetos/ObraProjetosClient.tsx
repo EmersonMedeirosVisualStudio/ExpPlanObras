@@ -6,6 +6,7 @@ import api from "@/lib/api";
 import { getActiveObra } from "@/lib/obra/active";
 import { DocumentosApi } from "@/lib/modules/documentos/api";
 import { ExternalLink, Link2, Plus, Trash2 } from "lucide-react";
+import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type ApiEnvelope<T> = { success: boolean; message?: string; data: T };
 function unwrapApiData<T>(json: any): T {
@@ -97,6 +98,8 @@ export default function ObraProjetosClient() {
 
   const [rows, setRows] = useState<ProjetoRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [bootLoading, setBootLoading] = useState(false);
+  const [bootDone, setBootDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function carregar() {
@@ -135,7 +138,23 @@ export default function ObraProjetosClient() {
   }
 
   useEffect(() => {
-    carregar();
+    if (!idObra) return;
+    let cancelled = false;
+    setBootLoading(true);
+    setBootDone(false);
+    void (async () => {
+      try {
+        await carregar();
+      } finally {
+        if (!cancelled) {
+          setBootLoading(false);
+          setBootDone(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [idObra]);
 
   async function registrarDocumentoProjetoVinculado(input: { idProjeto: number; titulo?: string | null; numeroProjeto?: string | null; revisao?: string | null }) {
@@ -235,6 +254,7 @@ export default function ObraProjetosClient() {
     <div className="p-6 space-y-6 max-w-6xl text-[#111827]">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
+          <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />
           <div className="text-xs text-[#6B7280]">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Projetos da Obra</h1>
           <div className="mt-1 text-sm text-[#6B7280]">

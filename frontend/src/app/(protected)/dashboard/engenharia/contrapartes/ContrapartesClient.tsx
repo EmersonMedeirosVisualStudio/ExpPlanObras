@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { FileText, Pencil, Plus, Trash2 } from "lucide-react";
+import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 const MapaObras = dynamic(() => import("@/components/MapaObras"), { ssr: false });
 
@@ -281,6 +282,9 @@ export default function ContrapartesClient() {
   const [rows, setRows] = useState<ContraparteDTO[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [bootLoading, setBootLoading] = useState(true);
+  const [bootDone, setBootDone] = useState(false);
+  const bootDoneRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -432,6 +436,7 @@ export default function ContrapartesClient() {
 
   async function carregar() {
     try {
+      if (!bootDoneRef.current) setBootLoading(true);
       setLoading(true);
       setErr(null);
       const res = await api.get(`/api/v1/engenharia/contrapartes${queryString}`);
@@ -442,6 +447,11 @@ export default function ContrapartesClient() {
       setRows([]);
     } finally {
       setLoading(false);
+      if (!bootDoneRef.current) {
+        bootDoneRef.current = true;
+        setBootDone(true);
+        setBootLoading(false);
+      }
     }
   }
 
@@ -943,6 +953,7 @@ export default function ContrapartesClient() {
     <div className="space-y-6 text-[#111827]">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
+          <PageLoadStatusBadge loading={bootLoading} done={bootDone} />
           <div className="text-xs text-[#6B7280]">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Parceiros Comerciais (Contrapartes)</h1>
           <p className="text-sm text-[#6B7280]">Cadastro unificado de pessoas jurídicas e pessoas físicas.</p>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Filter, Plus, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { setActiveObra } from "@/lib/obra/active";
 import api from "@/lib/api";
+import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type ObraRow = {
   id: number;
@@ -119,6 +120,8 @@ export default function EngenhariaObrasPage() {
   const [filtrosAberto, setFiltrosAberto] = useState(false);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
+  const [bootLoading, setBootLoading] = useState(false);
+  const [bootDone, setBootDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [obras, setObras] = useState<ObraRow[]>([]);
   const [contratos, setContratos] = useState<ContratoRow[]>([]);
@@ -215,7 +218,22 @@ export default function EngenhariaObrasPage() {
   }, [contrapartes]);
 
   useEffect(() => {
-    carregar();
+    let cancelled = false;
+    setBootLoading(true);
+    setBootDone(false);
+    void (async () => {
+      try {
+        await carregar();
+      } finally {
+        if (!cancelled) {
+          setBootLoading(false);
+          setBootDone(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const contratoNumeroOptions = useMemo(() => {
@@ -355,6 +373,7 @@ export default function EngenhariaObrasPage() {
     <div className="p-4 sm:p-6 space-y-6 w-full max-w-none text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
+          <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />
           <h1 className="text-2xl font-semibold text-slate-900">Engenharia → Obras</h1>
           <div className="text-sm text-slate-600">Selecione uma obra para abrir as janelas operacionais (planejamento, apropriação, equipamentos, insumos e documentos).</div>
         </div>

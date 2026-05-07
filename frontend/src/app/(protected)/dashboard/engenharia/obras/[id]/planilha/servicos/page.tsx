@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type ValidacaoRow = {
   item: string;
@@ -47,6 +48,8 @@ export default function Page() {
   }, [backHref, idObra, planilhaIdFromQuery]);
 
   const [loading, setLoading] = useState(false);
+  const [bootLoading, setBootLoading] = useState(false);
+  const [bootDone, setBootDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const [planilhaId, setPlanilhaId] = useState<number | null>(null);
@@ -214,7 +217,23 @@ export default function Page() {
   }
 
   useEffect(() => {
-    carregarTudo();
+    if (!idObra) return;
+    let cancelled = false;
+    setBootLoading(true);
+    setBootDone(false);
+    void (async () => {
+      try {
+        await carregarTudo();
+      } finally {
+        if (!cancelled) {
+          setBootLoading(false);
+          setBootDone(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [idObra]);
 
   const filteredRows = useMemo(() => rows.filter((r) => Boolean(statusFilter[r.status])), [rows, statusFilter]);
@@ -336,6 +355,7 @@ export default function Page() {
     <div className="p-4 md:p-6 space-y-4 max-w-7xl text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
+          <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />
           <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Serviços</div>
           <h1 className="text-2xl font-semibold">Serviços — Obra #{idObra}</h1>
           <div className="text-sm text-slate-600">Lista e verificação dos serviços da planilha selecionada (versão).</div>

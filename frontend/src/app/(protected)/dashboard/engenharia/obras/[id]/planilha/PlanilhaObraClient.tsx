@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, Check, Printer, FileSpreadsheet, Pencil, Trash2, XCircle, TriangleAlert, Image } from "lucide-react";
+import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type ComposicaoItem = {
   idItemBase: number;
@@ -415,6 +416,9 @@ export default function PlanilhaObraClient({
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [bootLoading, setBootLoading] = useState(false);
+  const [bootDone, setBootDone] = useState(false);
+  const bootPendingRef = useRef(0);
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const [obraStatus, setObraStatus] = useState<string | null>(null);
@@ -1163,15 +1167,48 @@ export default function PlanilhaObraClient({
 
   useEffect(() => {
     if (!idObra) return;
-    carregarVersoes();
-    carregarEmpresaDocumentosLayout();
+    let cancelled = false;
+    bootPendingRef.current = 2;
+    setBootLoading(true);
+    setBootDone(false);
+    void (async () => {
+      try {
+        await Promise.all([carregarVersoes(), carregarEmpresaDocumentosLayout()]);
+      } finally {
+        if (!cancelled) {
+          bootPendingRef.current = Math.max(0, bootPendingRef.current - 1);
+          if (bootPendingRef.current <= 0) {
+            setBootLoading(false);
+            setBootDone(true);
+          }
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [idObra]);
 
   useEffect(() => {
-    if (planilhaId) carregarPlanilha(planilhaId);
-    carregarComposicaoStatus(planilhaId);
-    carregarComposicaoValidacao(planilhaId);
-  }, [planilhaId]);
+    if (!idObra) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await Promise.all([planilhaId ? carregarPlanilha(planilhaId) : Promise.resolve(), carregarComposicaoStatus(planilhaId), carregarComposicaoValidacao(planilhaId)]);
+      } finally {
+        if (!cancelled) {
+          bootPendingRef.current = Math.max(0, bootPendingRef.current - 1);
+          if (bootPendingRef.current <= 0) {
+            setBootLoading(false);
+            setBootDone(true);
+          }
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [idObra, planilhaId]);
 
   if (!idObra) return <div className="p-6 rounded-xl border bg-white">Obra inválida.</div>;
 
@@ -1821,6 +1858,7 @@ export default function PlanilhaObraClient({
     <div className="p-4 md:p-6 space-y-6 max-w-7xl text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex-1 min-w-[260px]">
+          <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />
           <div className="text-xs text-slate-500">{breadcrumb}</div>
           <h1 className="text-2xl font-semibold">Planilha orçamentária — Obra #{idObra}</h1>
           {obraResumo ? (
