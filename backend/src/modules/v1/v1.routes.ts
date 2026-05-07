@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import type { Prisma } from '@prisma/client';
 import prisma from '../../plugins/prisma.js';
 import { authenticate } from '../../utils/authenticate.js';
 import bcrypt from 'bcryptjs';
@@ -15,8 +16,8 @@ type ApiSuccess<T> = { success: true; message?: string; data: T; meta?: any };
 type ApiError = { success: false; message: string; errors?: Record<string, string[]> };
 
 const PRISMA_TX_OPTIONS = { maxWait: 60_000, timeout: 120_000 };
-async function prismaTx<T>(fn: (tx: any) => Promise<T>) {
-  return prisma.$transaction(fn as any, PRISMA_TX_OPTIONS as any);
+async function prismaTx<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) {
+  return prisma.$transaction(fn, PRISMA_TX_OPTIONS);
 }
 
 function ok<T>(reply: FastifyReply, data: T, input?: { message?: string; meta?: any }) {
