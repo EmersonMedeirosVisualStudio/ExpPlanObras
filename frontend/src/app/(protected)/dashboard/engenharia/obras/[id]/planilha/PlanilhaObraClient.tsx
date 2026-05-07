@@ -23,8 +23,8 @@ type VersaoRow = {
   numeroVersao: number;
   nome: string;
   atual: boolean;
-  origem: string;
-  criadoEm: string;
+  fonteNome: string;
+  parametrosNome: string;
   valorTotal: number;
   totalServicos: number;
 };
@@ -1065,8 +1065,8 @@ export default function PlanilhaObraClient({
         numeroVersao: Number(v.numeroVersao),
         nome: String(v.nome || ""),
         atual: Boolean(v.atual),
-        origem: String(v.origem || "MANUAL"),
-        criadoEm: String(v.criadoEm || ""),
+        fonteNome: String(v.fonteNome || "—"),
+        parametrosNome: String(v.parametrosNome || "—"),
         valorTotal: v.valorTotal == null ? 0 : Number(v.valorTotal),
         totalServicos: Number(v.totalServicos || 0),
       }));
@@ -1444,7 +1444,7 @@ export default function PlanilhaObraClient({
   async function clonarPlanilha(v: VersaoRow) {
     const sourcePlanilhaId = v?.idPlanilha ? Number(v.idPlanilha) : 0;
     if (!sourcePlanilhaId) return;
-    const msg = "Clonar a planilha?\n\nIsso copia:\n- Parâmetros da planilha\n- Linhas/serviços\n- Composições/subcomposições\n- Preços de insumos";
+    const msg = "Clonar a planilha?\n\nIsso duplica:\n- Itens da planilha (itens, subitens e serviços)\n- Preços de insumos (da planilha)\n\nE reutiliza:\n- Catálogo de serviços da fonte\n- Composições da fonte";
     if (!window.confirm(msg)) return;
     try {
       setLoading(true);
@@ -1504,8 +1504,6 @@ export default function PlanilhaObraClient({
       setErr("Número de versão inválido.");
       return;
     }
-    const origem = window.prompt("Origem (MANUAL/CSV/MIGRACAO/DUPLICADA):", String(v.origem || "MANUAL").trim().toUpperCase());
-    if (origem == null) return;
     try {
       setLoading(true);
       setErr(null);
@@ -1518,7 +1516,6 @@ export default function PlanilhaObraClient({
           idPlanilha: v.idPlanilha,
           numeroVersao,
           nome: String(nome || "").trim(),
-          origem: String(origem || "").trim().toUpperCase(),
         }),
       });
       const json = await res.json().catch(() => null);
@@ -2100,11 +2097,11 @@ export default function PlanilhaObraClient({
               <tr>
                 <th className="px-3 py-2">Versão</th>
                 <th className="px-3 py-2">Nome</th>
-                <th className="px-3 py-2">Origem</th>
+                <th className="px-3 py-2">Fonte</th>
+                <th className="px-3 py-2">Parâmetros</th>
                 <th className="px-3 py-2 text-right">Serviços</th>
                 <th className="px-3 py-2 text-right">Valor total</th>
                 <th className="px-3 py-2">Atual</th>
-                <th className="px-3 py-2">Criada em</th>
                 <th className="px-3 py-2">Ações</th>
               </tr>
             </thead>
@@ -2117,7 +2114,8 @@ export default function PlanilhaObraClient({
                 >
                   <td className="px-3 py-2 font-semibold">v{v.numeroVersao}</td>
                   <td className="px-3 py-2">{v.nome}</td>
-                  <td className="px-3 py-2">{v.origem}</td>
+                  <td className="px-3 py-2">{v.fonteNome || "—"}</td>
+                  <td className="px-3 py-2">{v.parametrosNome || "—"}</td>
                   <td className="px-3 py-2 text-right">{v.totalServicos}</td>
                   <td className="px-3 py-2 text-right">{moeda(Number(v.valorTotal || 0))}</td>
                   <td className="px-3 py-2">
@@ -2141,7 +2139,6 @@ export default function PlanilhaObraClient({
                       </button>
                     )}
                   </td>
-                  <td className="px-3 py-2">{v.criadoEm ? new Date(v.criadoEm).toLocaleString("pt-BR") : "-"}</td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
                       <button
@@ -2153,7 +2150,7 @@ export default function PlanilhaObraClient({
                           clonarPlanilha(v);
                         }}
                         disabled={loading}
-                        title="Clonar planilha (inclui parâmetros, linhas, composições e insumos)"
+                        title="Clonar planilha (duplica itens e preços de insumos; reusa catálogo/composições da fonte)"
                       >
                         <FileSpreadsheet className="h-3.5 w-3.5" />
                         Clonar

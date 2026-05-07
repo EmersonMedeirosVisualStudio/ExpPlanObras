@@ -1687,12 +1687,45 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
   - Ações no card **Versões cadastradas**: **Atualizar**, **Importar CSV**, **Modelo CSV** e **Nova planilha**.
   - Coluna **Ações** (na lista de versões): **Clonar**, **Editar** e **Excluir planilha**.
   - Coluna **Atual**: botão **Definir atual** para marcar uma planilha como a versão atual da obra.
+- Lista de versões (card **Versões cadastradas**): exibe, para cada versão:
+  - **Fonte** (nome da fonte de dados utilizada pela versão);
+  - **Parâmetros** (nome resumido dos parâmetros aplicados: data-base/UF/BDI);
+  - **Serviços** (quantidade de itens do tipo Serviço na planilha);
+  - **Valor total** (soma dos valores parciais dos itens de serviço).
 - Edição por versão selecionada: após selecionar uma versão, o usuário pode **editar a planilha** (linhas e parâmetros) diretamente na versão selecionada. Os parâmetros (Obra pública) são da **planilha**, não da obra.
 - Clonagem (com dependências): no card **Versões cadastradas**, a ação **Clonar** cria uma nova versão copiando:
   - parâmetros da planilha (novo registro de parâmetros);
   - itens da planilha (itens, subitens e serviços utilizados na planilha);
   - preços de insumos da planilha.
   - Observação: o catálogo técnico e as composições pertencem à **Fonte de dados**; a planilha clonada referencia a mesma fonte (reuso).
+
+#### Nova planilha (Nova versão) x Clonar (Duplicar versão)
+
+- **Nova planilha (Nova versão)**: cria uma versão nova **vazia** (sem itens) e define como **Atual**. A fonte e os parâmetros começam como **MANUAL / A definir** até o usuário preencher os parâmetros e/ou aplicar uma fonte (ex.: SINAPI).
+- **Clonar (Duplicar versão)**: cria uma versão nova, define como **Atual**, e duplica:
+  - **itens** da planilha (estrutura e quantidades);
+  - **preços de insumos** da planilha.
+  Reusa a mesma **Fonte de dados** (catálogo de serviços e composições).
+
+#### Como cadastrar Fonte de dados e Parâmetros (para uso na planilha)
+
+ETAPA 1 — Onde acessar
+- Acesse **Engenharia → Obras → Obra selecionada → Planilha orçamentária**
+
+ETAPA 2 — O que clicar (Parâmetros)
+- Selecione uma versão em **Versões cadastradas**
+- Clique no card **Parâmetros**
+
+ETAPA 3 — O que preencher (Parâmetros)
+- Preencha **UF / Data-base / BDI / Encargos / Desconto** conforme a sua referência
+- Clique em **Salvar**
+
+ETAPA 4 — O que esperar
+- O sistema cria (ou reaproveita) um registro de **Parâmetros** e passa a mostrar o “nome resumido” na coluna **Parâmetros** da versão
+- Ao informar **Data-base SINAPI + UF**, o sistema vincula (ou cria) automaticamente a **Fonte SINAPI** correspondente e passa a mostrar o nome na coluna **Fonte**
+
+ETAPA 5 — Como validar
+- Volte no card **Versões cadastradas** e confira se **Fonte** e **Parâmetros** aparecem preenchidos para a versão selecionada
 - Lógica de criação de uma planilha (obra):
   - 1) Planilha: a planilha combina **Obra + Parâmetros + Fonte de dados**.
   - 2) Parâmetros: ao criar/clonar uma planilha, define-se o conjunto de **parâmetros** (UF, data-base, BDI, encargos e descontos). Eles determinam como os custos são calculados na planilha.

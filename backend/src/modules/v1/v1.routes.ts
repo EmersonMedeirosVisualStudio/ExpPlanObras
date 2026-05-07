@@ -5295,6 +5295,24 @@ export default async function v1Routes(server: FastifyInstance) {
       };
 
       if (view === 'versoes') {
+        const ids = (await prisma.$queryRawUnsafe(
+          `
+          SELECT id_planilha AS "idPlanilha"
+          FROM obras_planilhas_versoes
+          WHERE tenant_id = $1 AND id_obra = $2
+          ORDER BY numero_versao DESC, id_planilha DESC
+          `,
+          ctx.tenantId,
+          idObra
+        )) as any[];
+        for (const r of ids || []) {
+          const pid = r?.idPlanilha ? Number(r.idPlanilha) : 0;
+          if (!pid) continue;
+          try {
+            await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, pid);
+          } catch {}
+        }
+
         const rows = (await prisma.$queryRawUnsafe(
           `
           SELECT
@@ -5302,20 +5320,58 @@ export default async function v1Routes(server: FastifyInstance) {
             v.numero_versao AS "numeroVersao",
             v.nome AS "nome",
             v.atual AS "atual",
-            v.origem AS "origem",
-            v.criado_em AS "criadoEm",
+            f.descricao AS "fonteDescricao",
+            f.tipo AS "fonteTipo",
+            f.uf AS "fonteUf",
+            f.data_base AS "fonteDataBase",
+            p.uf_sinapi AS "pUfSinapi",
+            p.data_base_sbc AS "pDataBaseSbc",
+            p.data_base_sinapi AS "pDataBaseSinapi",
+            p.bdi_servicos_sbc AS "pBdiServicosSbc",
+            p.bdi_servicos_sinapi AS "pBdiServicosSinapi",
             COALESCE(SUM(CASE WHEN l.tipo_linha = 'SERVICO' THEN COALESCE(l.valor_parcial, 0) ELSE 0 END), 0) AS "valorTotal",
             SUM(CASE WHEN l.tipo_linha = 'SERVICO' THEN 1 ELSE 0 END) AS "totalServicos"
           FROM obras_planilhas_versoes v
+          LEFT JOIN obras_fontes_dados f
+            ON f.tenant_id = v.tenant_id AND f.id_fonte_dados = v.id_fonte_dados
+          LEFT JOIN obras_planilhas_parametros p
+            ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
           LEFT JOIN obras_planilha_itens l
             ON l.tenant_id = v.tenant_id AND l.id_planilha = v.id_planilha
           WHERE v.tenant_id = $1 AND v.id_obra = $2
-          GROUP BY v.id_planilha, v.numero_versao, v.nome, v.atual, v.origem, v.criado_em
+          GROUP BY
+            v.id_planilha, v.numero_versao, v.nome, v.atual,
+            f.descricao, f.tipo, f.uf, f.data_base,
+            p.uf_sinapi, p.data_base_sbc, p.data_base_sinapi, p.bdi_servicos_sbc, p.bdi_servicos_sinapi
           ORDER BY v.numero_versao DESC, v.id_planilha DESC
           `,
           ctx.tenantId,
           idObra
         )) as any[];
+
+        function formatFonteNome(row: any) {
+          const descr = row?.fonteDescricao != null ? String(row.fonteDescricao || '').trim() : '';
+          if (descr) return descr;
+          const tipo = row?.fonteTipo != null ? String(row.fonteTipo || '').trim() : '';
+          const uf = row?.fonteUf != null ? String(row.fonteUf || '').trim() : '';
+          const db = row?.fonteDataBase != null ? String(row.fonteDataBase || '').trim() : '';
+          const parts = [tipo, uf, db].filter(Boolean);
+          return parts.length ? parts.join(' ') : 'A definir';
+        }
+
+        function formatParametrosNome(row: any) {
+          const uf = row?.pUfSinapi != null ? String(row.pUfSinapi || '').trim().toUpperCase() : '';
+          const sinapi = row?.pDataBaseSinapi != null ? String(row.pDataBaseSinapi || '').trim().toUpperCase() : '';
+          const sbc = row?.pDataBaseSbc != null ? String(row.pDataBaseSbc || '').trim().toUpperCase() : '';
+          const bdiSin = row?.pBdiServicosSinapi == null ? null : Number(row.pBdiServicosSinapi);
+          const bdiSbc = row?.pBdiServicosSbc == null ? null : Number(row.pBdiServicosSbc);
+          const parts: string[] = [];
+          if (sinapi) parts.push(`SINAPI ${uf ? `${uf} ` : ''}${sinapi}`.trim());
+          if (sbc) parts.push(`SBC ${sbc}`.trim());
+          const bdi = bdiSin != null ? bdiSin : bdiSbc != null ? bdiSbc : null;
+          if (bdi != null) parts.push(`BDI ${Number(bdi).toFixed(2).replace('.', ',')}%`);
+          return parts.length ? parts.join(' • ') : 'A definir';
+        }
 
         return ok(reply, {
           idObra,
@@ -5326,8 +5382,8 @@ export default async function v1Routes(server: FastifyInstance) {
             numeroVersao: Number(r.numeroVersao),
             nome: String(r.nome || ''),
             atual: Boolean(r.atual),
-            origem: String(r.origem || 'MANUAL'),
-            criadoEm: r.criadoEm ? new Date(r.criadoEm).toISOString() : '',
+            fonteNome: formatFonteNome(r),
+            parametrosNome: formatParametrosNome(r),
             valorTotal: r.valorTotal == null ? 0 : Number(r.valorTotal),
             totalServicos: Number(r.totalServicos || 0),
           })),
@@ -5885,6 +5941,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
       if (action === 'NOVA_VERSAO') {
         const created = await prismaTx(async (tx: any) => {
+          await ensurePlanilhaModeloFonteTables(tx);
           const maxRows = (await tx.$queryRawUnsafe(
             `SELECT COALESCE(MAX(numero_versao),0) AS "maxVersao" FROM obras_planilhas_versoes WHERE tenant_id = $1 AND id_obra = $2`,
             ctx.tenantId,
@@ -5894,19 +5951,33 @@ export default async function v1Routes(server: FastifyInstance) {
           const nome = String(body.nome || `Versão ${nextVersao}`).trim() || `Versão ${nextVersao}`;
           const copyFrom = body.copyFromPlanilhaId != null ? Number(body.copyFromPlanilhaId) : null;
 
+          let idFonteDados: number | null = null;
+          let idParametros: number | null = null;
+          if (copyFrom && Number.isFinite(copyFrom) && copyFrom > 0) {
+            const mig = await ensurePlanilhaMigratedToModeloFonte(tx, ctx.tenantId, idObra, copyFrom);
+            idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : null;
+            idParametros = mig?.idParametros ? Number(mig.idParametros) : null;
+            if (!idFonteDados) throw new Error('Fonte de dados da planilha origem não definida');
+          } else {
+            idFonteDados = await upsertFonteDados(tx, ctx.tenantId, { tipo: 'MANUAL', uf: '', dataBase: '', tipoPreco: '', descricao: 'MANUAL' });
+            idParametros = await upsertParametros(tx, ctx.tenantId, {});
+          }
+
           const ins = (await tx.$queryRawUnsafe(
             `
             INSERT INTO obras_planilhas_versoes
-              (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador)
+              (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador, id_fonte_dados, id_parametros)
             VALUES
-              ($1,$2,$3,$4,TRUE,'MANUAL',$5)
+              ($1,$2,$3,$4,TRUE,'MANUAL',$5,$6,$7)
             RETURNING id_planilha AS "idPlanilha"
             `,
             ctx.tenantId,
             idObra,
             nextVersao,
             nome,
-            ctx.userId
+            ctx.userId,
+            idFonteDados,
+            idParametros
           )) as any[];
           const idPlanilha = Number(ins?.[0]?.idPlanilha || 0);
           await tx.$executeRawUnsafe(`UPDATE obras_planilhas_versoes SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2`, ctx.tenantId, idObra);
@@ -5918,20 +5989,18 @@ export default async function v1Routes(server: FastifyInstance) {
           );
 
           if (copyFrom && Number.isFinite(copyFrom) && copyFrom > 0) {
-            await ensurePlanilhaServicosTables(tx);
-            await syncServicosCatalogoFromLinhas(tx, ctx.tenantId, idObra, copyFrom);
-            await assertPlanilhaServicosCompletos(tx, ctx.tenantId, idObra, copyFrom);
+            await ensureInsumosPrecosTables(tx);
             await tx.$executeRawUnsafe(
               `
-              INSERT INTO obras_planilhas_linhas
-                (tenant_id, id_planilha, ordem, item, codigo, fonte, servico, und, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha)
+              INSERT INTO obras_planilha_itens
+                (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
               SELECT
                 $1 AS tenant_id,
                 $2 AS id_planilha,
-                ordem, item, codigo, fonte, servico, und, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha
-              FROM obras_planilhas_linhas
+                ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao
+              FROM obras_planilha_itens
               WHERE tenant_id = $1 AND id_planilha = $3
-              ORDER BY ordem ASC, id_linha ASC
+              ORDER BY ordem ASC, id_planilha_item ASC
               `,
               ctx.tenantId,
               idPlanilha,
@@ -5940,11 +6009,11 @@ export default async function v1Routes(server: FastifyInstance) {
 
             await tx.$executeRawUnsafe(
               `
-              INSERT INTO obras_planilhas_servicos
-                (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
+              INSERT INTO obras_insumos_precos
+                (tenant_id, id_obra, id_planilha, codigo_item, valor_unitario)
               SELECT
-                tenant_id, id_obra, $3 AS id_planilha, codigo, fonte, servico, und
-              FROM obras_planilhas_servicos
+                tenant_id, id_obra, $3 AS id_planilha, codigo_item, valor_unitario
+              FROM obras_insumos_precos
               WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
               `,
               ctx.tenantId,
@@ -6150,6 +6219,8 @@ export default async function v1Routes(server: FastifyInstance) {
         const dataBaseSinapi = p.dataBaseSinapi ? String(p.dataBaseSinapi).trim().slice(0, 16) : null;
         const ufSinapi = p.ufSinapi ? String(p.ufSinapi).trim().toUpperCase().slice(0, 2) : null;
 
+        if (dataBaseSinapi && !ufSinapi) return fail(reply, 422, 'UF (SINAPI) é obrigatória quando Data-base SINAPI está preenchida');
+
         const idParametros = await upsertParametros(prisma, ctx.tenantId, {
           dataBaseSbc,
           dataBaseSinapi,
@@ -6163,11 +6234,23 @@ export default async function v1Routes(server: FastifyInstance) {
           descontoSbc: p.descontoSbc == null || p.descontoSbc === '' ? null : toDec(p.descontoSbc),
           descontoSinapi: p.descontoSinapi == null || p.descontoSinapi === '' ? null : toDec(p.descontoSinapi),
         });
+
+        const tipoFonte = dataBaseSinapi ? 'SINAPI' : dataBaseSbc ? 'SBC' : 'MANUAL';
+        const fonteUf = tipoFonte === 'SINAPI' && ufSinapi ? ufSinapi : '';
+        const fonteDataBase = tipoFonte === 'SINAPI' ? String(dataBaseSinapi || '').trim() : tipoFonte === 'SBC' ? String(dataBaseSbc || '').trim() : '';
+        const fonteDesc =
+          tipoFonte === 'SINAPI'
+            ? `SINAPI ${fonteUf} ${fonteDataBase}`.trim()
+            : tipoFonte === 'SBC'
+              ? `SBC ${fonteDataBase}`.trim()
+              : 'MANUAL';
+        const idFonteDados = await upsertFonteDados(prisma, ctx.tenantId, { tipo: tipoFonte, uf: fonteUf, dataBase: fonteDataBase, tipoPreco: '', descricao: fonteDesc });
         await prisma.$executeRawUnsafe(
-          `UPDATE obras_planilhas_versoes SET id_parametros = $4, atualizado_em = NOW() WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+          `UPDATE obras_planilhas_versoes SET id_fonte_dados = $4, id_parametros = $5, atualizado_em = NOW() WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
           ctx.tenantId,
           idObra,
           idPlanilha,
+          idFonteDados,
           idParametros
         );
 
