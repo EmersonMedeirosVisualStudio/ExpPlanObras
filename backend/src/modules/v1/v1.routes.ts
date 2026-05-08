@@ -5706,6 +5706,61 @@ export default async function v1Routes(server: FastifyInstance) {
     return ok(reply, created, { message: 'Parâmetros clonados' });
   });
 
+  server.get('/engenharia/planilhas/versoes', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    const scope = (request.user as any)?.abrangencia as any;
+    const obraIds = scope?.empresaTotal ? null : (Array.isArray(scope?.obras) ? (scope.obras as any[]).map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0) : []);
+    if (obraIds && !obraIds.length) return ok(reply, { versoes: [] });
+
+    const obras = await prisma.obra.findMany({
+      where: obraIds ? { tenantId: ctx.tenantId, id: { in: obraIds } } : { tenantId: ctx.tenantId },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+      take: 500,
+    });
+    const allowedIds = obras.map((o) => Number(o.id));
+    if (!allowedIds.length) return ok(reply, { versoes: [] });
+    const obraNomeById = new Map<number, string>();
+    for (const o of obras) obraNomeById.set(Number(o.id), String(o.name || ''));
+
+    await ensurePlanilhaModeloFonteTables(prisma);
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        id_obra AS "idObra",
+        id_planilha AS "idPlanilha",
+        numero_versao AS "numeroVersao",
+        nome,
+        atual,
+        id_fonte_dados AS "idFonteDados",
+        id_parametros AS "idParametros"
+      FROM obras_planilhas_versoes
+      WHERE tenant_id = $1 AND id_obra = ANY($2::bigint[])
+      ORDER BY id_obra ASC, numero_versao DESC, id_planilha DESC
+      `,
+      ctx.tenantId,
+      allowedIds
+    )) as any[];
+
+    const versoes = (rows || []).map((v: any) => {
+      const idObra = Number(v?.idObra || 0);
+      return {
+        idObra,
+        obraNome: obraNomeById.get(idObra) || null,
+        idPlanilha: Number(v?.idPlanilha || 0),
+        numeroVersao: Number(v?.numeroVersao || 0),
+        nome: String(v?.nome || ''),
+        atual: Boolean(v?.atual),
+        idFonteDados: v?.idFonteDados == null ? null : Number(v.idFonteDados),
+        idParametros: v?.idParametros == null ? null : Number(v.idParametros),
+      };
+    });
+
+    return ok(reply, { versoes });
+  });
+
   server.post('/engenharia/obras/historico', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
@@ -6096,6 +6151,7 @@ export default async function v1Routes(server: FastifyInstance) {
         let action = '';
         let idPlanilhaRaw = '';
         let modoImportacaoRaw = '';
+        let selectedRowIndexesRaw = '';
         let fileBuffer: Buffer | null = null;
         for await (const part of parts) {
           if (part.type === 'file') {
@@ -6106,6 +6162,7 @@ export default async function v1Routes(server: FastifyInstance) {
           if (field === 'action') action = String(part.value || '').trim().toUpperCase();
           if (field === 'idPlanilha') idPlanilhaRaw = String(part.value || '').trim();
           if (field === 'modoImportacao') modoImportacaoRaw = String(part.value || '').trim().toUpperCase();
+          if (field === 'selectedRowIndexes') selectedRowIndexesRaw = String(part.value || '').trim();
         }
 
         if (action !== 'IMPORTAR_CSV') return fail(reply, 422, 'Ação inválida');
@@ -6127,7 +6184,22 @@ export default async function v1Routes(server: FastifyInstance) {
         const missing = required.filter((k) => idx[k] == null);
         if (missing.length) return fail(reply, 422, `Colunas obrigatórias ausentes no CSV: ${missing.join(', ')}`);
 
-        const prepared = rows.map((r, i) => {
+        let selectedSet: Set<number> | null = null;
+        if (selectedRowIndexesRaw) {
+          try {
+            const parsed = JSON.parse(selectedRowIndexesRaw);
+            if (Array.isArray(parsed)) {
+              const nums = parsed.map((x: any) => Number(x)).filter((n: any) => Number.isFinite(n) && n >= 0);
+              selectedSet = new Set<number>(nums);
+            }
+          } catch {}
+        }
+
+        const prepared: any[] = [];
+        let seq = 0;
+        for (let i = 0; i < rows.length; i++) {
+          if (selectedSet && !selectedSet.has(i)) continue;
+          const r = rows[i];
           const item = get(r, 'item');
           const codigo = get(r, 'codigo');
           const fonte = get(r, 'fonte');
@@ -6145,25 +6217,60 @@ export default async function v1Routes(server: FastifyInstance) {
           const vUnit = toDec(valorUnit);
           const valorParcialCalc = quantidade != null && vUnit != null ? Number((quantidade * vUnit).toFixed(6)) : null;
 
-          if (!item.trim()) return { ok: false as const, rowIndex: i, message: 'Campo "item" é obrigatório', field: 'item' as const };
-          if (!servicos.trim()) return { ok: false as const, rowIndex: i, message: 'Campo "servicos" é obrigatório', field: 'servicos' as const };
-          if (tipoLinhaNorm && !tipoLinhaFromCsv) return { ok: false as const, rowIndex: i, message: 'Campo "tipo_linha" inválido (use ITEM, SUBITEM ou SERVICO)', field: 'tipo_linha' as const };
-
-          if (det.tipo === 'SERVICO') {
-            if (!codigo.trim()) return { ok: false as const, rowIndex: i, message: 'Campo "codigo" é obrigatório para serviço', field: 'codigo' as const };
-            if (!und.trim()) return { ok: false as const, rowIndex: i, message: 'Campo "und" é obrigatório para serviço', field: 'und' as const };
-            if (quantidade == null || !(quantidade > 0)) return { ok: false as const, rowIndex: i, message: 'Campo "quant" inválido para serviço', field: 'quant' as const };
-            if (vUnit == null || !(vUnit >= 0)) return { ok: false as const, rowIndex: i, message: 'Campo "valor_unitario" inválido para serviço', field: 'valor_unitario' as const };
-          } else {
-            if (codigo.trim()) return { ok: false as const, rowIndex: i, message: 'Não usar "codigo" em ITEM/SUBITEM', field: 'codigo' as const };
-            if (und.trim()) return { ok: false as const, rowIndex: i, message: 'Não usar "und" em ITEM/SUBITEM', field: 'und' as const };
-            if (quant.trim()) return { ok: false as const, rowIndex: i, message: 'Não usar "quant" em ITEM/SUBITEM', field: 'quant' as const };
-            if (valorUnit.trim()) return { ok: false as const, rowIndex: i, message: 'Não usar "valor_unitario" em ITEM/SUBITEM', field: 'valor_unitario' as const };
+          if (!item.trim()) {
+            prepared.push({ ok: false as const, rowIndex: i, message: 'Campo "item" é obrigatório', field: 'item' as const });
+            continue;
+          }
+          if (!servicos.trim()) {
+            prepared.push({ ok: false as const, rowIndex: i, message: 'Campo "servicos" é obrigatório', field: 'servicos' as const });
+            continue;
+          }
+          if (tipoLinhaNorm && !tipoLinhaFromCsv) {
+            prepared.push({ ok: false as const, rowIndex: i, message: 'Campo "tipo_linha" inválido (use ITEM, SUBITEM ou SERVICO)', field: 'tipo_linha' as const });
+            continue;
           }
 
-          return {
+          if (det.tipo === 'SERVICO') {
+            if (!codigo.trim()) {
+              prepared.push({ ok: false as const, rowIndex: i, message: 'Campo "codigo" é obrigatório para serviço', field: 'codigo' as const });
+              continue;
+            }
+            if (!und.trim()) {
+              prepared.push({ ok: false as const, rowIndex: i, message: 'Campo "und" é obrigatório para serviço', field: 'und' as const });
+              continue;
+            }
+            if (quantidade == null || !(quantidade > 0)) {
+              prepared.push({ ok: false as const, rowIndex: i, message: 'Campo "quant" inválido para serviço', field: 'quant' as const });
+              continue;
+            }
+            if (vUnit == null || !(vUnit >= 0)) {
+              prepared.push({ ok: false as const, rowIndex: i, message: 'Campo "valor_unitario" inválido para serviço', field: 'valor_unitario' as const });
+              continue;
+            }
+          } else {
+            if (codigo.trim()) {
+              prepared.push({ ok: false as const, rowIndex: i, message: 'Não usar "codigo" em ITEM/SUBITEM', field: 'codigo' as const });
+              continue;
+            }
+            if (und.trim()) {
+              prepared.push({ ok: false as const, rowIndex: i, message: 'Não usar "und" em ITEM/SUBITEM', field: 'und' as const });
+              continue;
+            }
+            if (quant.trim()) {
+              prepared.push({ ok: false as const, rowIndex: i, message: 'Não usar "quant" em ITEM/SUBITEM', field: 'quant' as const });
+              continue;
+            }
+            if (valorUnit.trim()) {
+              prepared.push({ ok: false as const, rowIndex: i, message: 'Não usar "valor_unitario" em ITEM/SUBITEM', field: 'valor_unitario' as const });
+              continue;
+            }
+          }
+
+          seq++;
+          prepared.push({
             ok: true as const,
-            ordem: i + 1,
+            ordem: seq,
+            rowIndex: i,
             item: item ? String(item).slice(0, 80) : null,
             codigo: codigo ? String(codigo).slice(0, 80) : null,
             fonte: fonte ? String(fonte).slice(0, 80) : null,
@@ -6174,8 +6281,8 @@ export default async function v1Routes(server: FastifyInstance) {
             valorParcial: valorParcialCalc,
             nivel: det.nivel,
             tipoLinha: det.tipo,
-          };
-        });
+          });
+        }
 
         const invalid = prepared.find((p) => !p.ok);
         if (invalid && !invalid.ok) {
@@ -6385,8 +6492,9 @@ export default async function v1Routes(server: FastifyInstance) {
             rows: z
               .array(
                 z.object({
+                  tipoLinha: z.string().optional().nullable(),
                   item: z.string().optional().nullable(),
-                  codigo: z.string().min(1),
+                  codigo: z.string().optional().nullable(),
                   fonte: z.string().optional().nullable(),
                   servicos: z.string().optional().nullable(),
                   und: z.string().optional().nullable(),
@@ -6422,16 +6530,19 @@ export default async function v1Routes(server: FastifyInstance) {
 
           const sourceOk = (await tx.$queryRawUnsafe(
             `
-            SELECT 1 AS ok
+            SELECT id_obra AS "idObra"
             FROM obras_planilhas_versoes
-            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+            WHERE tenant_id = $1 AND id_planilha = $2
             LIMIT 1
             `,
             ctx.tenantId,
-            idObra,
             Number(payload.idPlanilhaSource)
           )) as any[];
-          if (!sourceOk?.[0]) throw new Error('Planilha origem não encontrada');
+          const src = sourceOk?.[0] || null;
+          if (!src) throw new Error('Planilha origem não encontrada');
+          const idObraSource = Number(src?.idObra || 0);
+          if (!idObraSource) throw new Error('Planilha origem inválida');
+          if (!canAccessObraId(idObraSource, scope)) throw new Error('Sem acesso à obra da planilha origem');
 
           if (modoImportacao === 'REPLACE') {
             await tx.$executeRawUnsafe(`DELETE FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, Number(payload.idPlanilhaTarget));
@@ -6444,33 +6555,69 @@ export default async function v1Routes(server: FastifyInstance) {
           const baseOrd = modoImportacao === 'APPEND' ? Number(maxOrdRows?.[0]?.maxOrd || 0) : 0;
 
           const svcMap = new Map<string, { codigo: string; banco: string; descricao: string; und: string; valorUnitario: number | null }>();
-          const rowsPrepared = payload.rows.map((r) => {
-            const codigo = String(r.codigo || '').trim().toUpperCase();
+          const rowsPrepared = payload.rows.map((r, i) => {
+            const item = r.item != null ? String(r.item || '').trim().slice(0, 80) : '';
+            const codigo = r.codigo != null ? String(r.codigo || '').trim().toUpperCase() : '';
             const banco = r.fonte != null ? String(r.fonte || '').trim() : '';
             const descricao = r.servicos != null ? String(r.servicos || '').trim() : '';
             const und = r.und != null ? String(r.und || '').trim() : '';
-            const valorUnitario = r.valorUnitario != null ? toDec(String(r.valorUnitario)) : null;
-            const quant = r.quant != null ? toDec(String(r.quant)) : null;
-            const item = r.item != null ? String(r.item || '').trim().slice(0, 80) : null;
-            const nivel = item ? item.split('.').filter(Boolean).length : 0;
-            if (!codigo) throw new Error('Código inválido');
-            const prev = svcMap.get(codigo);
-            if (!prev) svcMap.set(codigo, { codigo, banco, descricao, und, valorUnitario: valorUnitario == null ? null : Number(valorUnitario) });
-            else
-              svcMap.set(codigo, {
+            const quantRaw = r.quant != null ? String(r.quant || '').trim() : '';
+            const valorUnitRaw = r.valorUnitario != null ? String(r.valorUnitario || '').trim() : '';
+            const quantidade = quantRaw ? toDec(quantRaw) : null;
+            const valorUnitario = valorUnitRaw ? toDec(valorUnitRaw) : null;
+
+            const tipoLinhaNorm = r.tipoLinha != null ? String(r.tipoLinha || '').trim().toUpperCase() : '';
+            const tipoLinhaFromClient = tipoLinhaNorm === 'ITEM' || tipoLinhaNorm === 'SUBITEM' || tipoLinhaNorm === 'SERVICO' ? tipoLinhaNorm : '';
+            const det = tipoLinhaFromClient
+              ? { tipo: tipoLinhaFromClient as any, nivel: item.trim() ? Math.max(0, item.split('.').filter(Boolean).length) : 0 }
+              : detectTipoLinha(item, codigo, und, quantRaw, valorUnitRaw);
+
+            if (!item.trim()) throw new Error(`Linha ${i + 1}: "item" é obrigatório`);
+            if (!descricao.trim()) throw new Error(`Linha ${i + 1}: "servicos" é obrigatório`);
+
+            if (det.tipo === 'SERVICO') {
+              if (!codigo.trim()) throw new Error(`Linha ${i + 1}: "codigo" é obrigatório para serviço`);
+              if (!und.trim()) throw new Error(`Linha ${i + 1}: "und" é obrigatório para serviço`);
+              if (quantidade == null || !(quantidade > 0)) throw new Error(`Linha ${i + 1}: "quant" inválido para serviço`);
+              if (valorUnitario == null || !(valorUnitario >= 0)) throw new Error(`Linha ${i + 1}: "valorUnitario" inválido para serviço`);
+              const prev = svcMap.get(codigo);
+              if (!prev) svcMap.set(codigo, { codigo, banco, descricao, und, valorUnitario: valorUnitario == null ? null : Number(valorUnitario) });
+              else
+                svcMap.set(codigo, {
+                  codigo,
+                  banco: prev.banco || banco,
+                  descricao: prev.descricao || descricao,
+                  und: prev.und || und,
+                  valorUnitario: prev.valorUnitario ?? (valorUnitario == null ? null : Number(valorUnitario)),
+                });
+              return {
+                ordem: i + 1,
+                item: item || null,
                 codigo,
-                banco: prev.banco || banco,
-                descricao: prev.descricao || descricao,
-                und: prev.und || und,
-                valorUnitario: prev.valorUnitario ?? (valorUnitario == null ? null : Number(valorUnitario)),
-              });
+                quantidade: quantidade == null ? null : Number(quantidade),
+                valorUnitario: valorUnitario == null ? null : Number(valorUnitario),
+                valorParcial: quantidade != null && valorUnitario != null ? Number((Number(quantidade) * Number(valorUnitario)).toFixed(6)) : null,
+                nivel: det.nivel,
+                tipoLinha: det.tipo,
+                observacao: null,
+              };
+            }
+
+            if (codigo.trim()) throw new Error(`Linha ${i + 1}: não usar "codigo" em ITEM/SUBITEM`);
+            if (und.trim()) throw new Error(`Linha ${i + 1}: não usar "und" em ITEM/SUBITEM`);
+            if (quantRaw.trim()) throw new Error(`Linha ${i + 1}: não usar "quant" em ITEM/SUBITEM`);
+            if (valorUnitRaw.trim()) throw new Error(`Linha ${i + 1}: não usar "valorUnitario" em ITEM/SUBITEM`);
+
             return {
-              item,
-              codigo,
-              quantidade: quant == null ? null : Number(quant),
-              valorUnitario: valorUnitario == null ? null : Number(valorUnitario),
-              valorParcial: quant != null && valorUnitario != null ? Number((Number(quant) * Number(valorUnitario)).toFixed(6)) : null,
-              nivel,
+              ordem: i + 1,
+              item: item || null,
+              codigo: null,
+              quantidade: null,
+              valorUnitario: null,
+              valorParcial: null,
+              nivel: det.nivel,
+              tipoLinha: det.tipo,
+              observacao: descricao.slice(0, 800) || null,
             };
           });
 
@@ -6561,7 +6708,7 @@ export default async function v1Routes(server: FastifyInstance) {
             const values = chunk
               .map((r, idx) => {
                 const ordem = baseOrd + start + idx + 1;
-                const base = [ordem, r.item, r.codigo, r.quantidade, r.valorUnitario, r.valorParcial, r.nivel];
+                const base = [ordem, r.item, r.codigo, r.quantidade, r.valorUnitario, r.valorParcial, r.nivel, r.tipoLinha, r.observacao];
                 for (const v of base) params.push(v);
                 const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
                 return `(${placeholders})`;
@@ -6570,7 +6717,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
             await tx.$executeRawUnsafe(
               `
-              WITH v(ordem, item, codigo, quantidade, valor_unitario, valor_parcial, nivel) AS (
+              WITH v(ordem, item, codigo, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao) AS (
                 VALUES ${values}
               )
               INSERT INTO obras_planilha_itens
@@ -6580,15 +6727,18 @@ export default async function v1Routes(server: FastifyInstance) {
                 $2 AS id_planilha,
                 v.ordem,
                 v.item,
-                sf.id_servico AS id_servico,
-                v.quantidade,
-                v.valor_unitario,
-                v.valor_parcial,
+                CASE
+                  WHEN v.tipo_linha = 'SERVICO' AND COALESCE(v.codigo,'') <> '' THEN sf.id_servico
+                  ELSE NULL
+                END AS id_servico,
+                CASE WHEN v.tipo_linha = 'SERVICO' THEN v.quantidade ELSE NULL END AS quantidade,
+                CASE WHEN v.tipo_linha = 'SERVICO' THEN v.valor_unitario ELSE NULL END AS valor_unitario,
+                CASE WHEN v.tipo_linha = 'SERVICO' THEN v.valor_parcial ELSE NULL END AS valor_parcial,
                 v.nivel,
-                'SERVICO' AS tipo_linha,
-                NULL AS observacao
+                v.tipo_linha,
+                NULLIF(v.observacao,'') AS observacao
               FROM v
-              INNER JOIN obras_servicos_fonte sf
+              LEFT JOIN obras_servicos_fonte sf
                 ON sf.tenant_id = $1 AND sf.id_fonte_dados = $3 AND sf.codigo = UPPER(COALESCE(v.codigo,''))
               `,
               ctx.tenantId,

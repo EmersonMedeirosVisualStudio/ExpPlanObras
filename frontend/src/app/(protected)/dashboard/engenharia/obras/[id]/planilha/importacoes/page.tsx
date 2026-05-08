@@ -14,9 +14,12 @@ type VersaoRow = {
   idParametros: number | null;
   fonteNome: string;
   parametrosNome: string;
+  idObra?: number | null;
+  obraNome?: string | null;
 };
 
 type LinhaServico = {
+  tipoLinha: "ITEM" | "SUBITEM" | "SERVICO";
   item: string;
   codigo: string;
   fonte: string;
@@ -126,7 +129,14 @@ function detectTipoLinha(item: string, codigo: string, und: string, quant: strin
 async function readTextSmart(file: File) {
   const buf = await file.arrayBuffer();
   const u8 = new Uint8Array(buf);
-  const text = new TextDecoder("utf-8", { fatal: false }).decode(u8);
+  const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(u8);
+  const latin1 = new TextDecoder("windows-1252", { fatal: false }).decode(u8);
+  const score = (t: string) => {
+    const replacement = (t.match(/\uFFFD/g) || []).length;
+    const mojibake = (t.match(/[ÃÂ]/g) || []).length;
+    return replacement * 10 + mojibake;
+  };
+  const text = score(utf8) <= score(latin1) ? utf8 : latin1;
   return text.replace(/^\uFEFF/, "");
 }
 
@@ -152,12 +162,15 @@ export default function PlanilhaImportacoesPage() {
 
   const [versoes, setVersoes] = useState<VersaoRow[]>([]);
   const [targetPlanilhaId, setTargetPlanilhaId] = useState<string>(planilhaIdFromQs ? String(planilhaIdFromQs) : "");
+  const [planilhasOutrasObras, setPlanilhasOutrasObras] = useState<VersaoRow[]>([]);
+  const [includeOutrasObras, setIncludeOutrasObras] = useState(false);
 
   const [csvMode, setCsvMode] = useState<"APPEND" | "REPLACE">("APPEND");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [csvPreview, setCsvPreview] = useState<{
     file: File | null;
     rows: Array<{
+      checked: boolean;
       rowIndex: number;
       item: string;
       codigo: string;
@@ -207,6 +220,8 @@ export default function PlanilhaImportacoesPage() {
         idParametros: v.idParametros == null ? null : Number(v.idParametros),
         fonteNome: String(v.fonteNome || ""),
         parametrosNome: String(v.parametrosNome || ""),
+        idObra: v.idObra == null ? null : Number(v.idObra),
+        obraNome: v.obraNome == null ? null : String(v.obraNome || ""),
       }));
       setVersoes(normalized);
       if (!targetPlanilhaId) {
@@ -219,14 +234,40 @@ export default function PlanilhaImportacoesPage() {
     }
   }
 
+  async function carregarPlanilhasDeOutrasObras() {
+    try {
+      setErr(null);
+      const res = await authFetch(`/api/v1/engenharia/planilhas/versoes`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar planilhas");
+      const list = Array.isArray(json.data?.versoes) ? (json.data.versoes as any[]) : [];
+      const normalized: VersaoRow[] = list.map((v) => ({
+        idPlanilha: Number(v.idPlanilha),
+        numeroVersao: Number(v.numeroVersao),
+        nome: String(v.nome || ""),
+        atual: Boolean(v.atual),
+        idFonteDados: v.idFonteDados == null ? null : Number(v.idFonteDados),
+        idParametros: v.idParametros == null ? null : Number(v.idParametros),
+        fonteNome: String(v.fonteNome || ""),
+        parametrosNome: String(v.parametrosNome || ""),
+        idObra: v.idObra == null ? null : Number(v.idObra),
+        obraNome: v.obraNome == null ? null : String(v.obraNome || ""),
+      }));
+      setPlanilhasOutrasObras(normalized);
+    } catch (e: any) {
+      setPlanilhasOutrasObras([]);
+      setErr(e?.message || "Erro ao carregar planilhas");
+    }
+  }
+
   function baixarModeloCsv() {
     const sep = ";";
     const lines = [
       ["item", "codigo", "fonte", "servicos", "und", "quant", "valor_unitario", "tipo_linha"].join(sep),
       ["1", "", "", "ADMINISTRAÇÃO GERAL DA OBRA", "", "", "", "ITEM"].join(sep),
-      ["1.1", "COMP.UPA.155", "PRÓPRIO", "ADMINISTRAÇÃO TÉCNICA E GERAL DA OBRA", "%", "100", "3540,99", "SERVICO"].join(sep),
+      ["1.1", "COMP.UPA.155", "PROPRIO", "ADMINISTRAÇÃO TÉCNICA E GERAL DA OBRA", "%", "100", "3540,99", "SERVICO"].join(sep),
       ["2", "", "", "CANTEIRO DE OBRA", "", "", "", "ITEM"].join(sep),
-      ["2.1", "COMP.JOS 07", "PRÓPRIO", "SINAPI (REF: 93207_12/2023) - EXECUÇÃO DE ESCRITÓRIO...", "m²", "12", "926,76", "SERVICO"].join(sep),
+      ["2.1", "COMP.JOS 07", "PROPRIO", "SINAPI (REF: 93207_12/2023) - EXECUCAO DE ESCRITORIO...", "m2", "12", "926,76", "SERVICO"].join(sep),
     ];
     const csv = `${lines.join("\n")}\n`;
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -289,7 +330,7 @@ export default function PlanilhaImportacoesPage() {
         }
         return { rowIndex: i, item, codigo, fonte, servicos, und, quant, valorUnitario, tipoLinha: det.tipo, errors };
       });
-      setCsvPreview({ file, rows: mapped, missingColumns });
+      setCsvPreview({ file, rows: mapped.map((x) => ({ checked: true, ...x })), missingColumns });
     } catch (e: any) {
       setCsvPreview({ file: null, rows: [], missingColumns: [] });
       setErr(e?.message || "Erro ao ler CSV.");
@@ -301,7 +342,7 @@ export default function PlanilhaImportacoesPage() {
   const csvHasBlockingErrors = useMemo(() => {
     if (!csvPreview.file) return false;
     if (csvPreview.missingColumns.length) return true;
-    return csvPreview.rows.some((r) => Object.keys(r.errors || {}).length > 0);
+    return csvPreview.rows.some((r) => r.checked && Object.keys(r.errors || {}).length > 0);
   }, [csvPreview]);
 
   async function confirmarImportacaoCsv() {
@@ -314,6 +355,10 @@ export default function PlanilhaImportacoesPage() {
       setErr("Selecione um CSV.");
       return;
     }
+    if (!csvPreview.rows.some((r) => r.checked)) {
+      setErr("Selecione ao menos 1 linha para importar.");
+      return;
+    }
     try {
       setLoading(true);
       setErr(null);
@@ -322,6 +367,8 @@ export default function PlanilhaImportacoesPage() {
       form.append("action", "IMPORTAR_CSV");
       form.append("idPlanilha", String(idPlanilha));
       form.append("modoImportacao", csvMode);
+      const selected = csvPreview.rows.filter((r) => r.checked).map((r) => r.rowIndex);
+      form.append("selectedRowIndexes", JSON.stringify(selected));
       form.append("file", csvPreview.file);
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, { method: "POST", body: form });
       const json = await res.json().catch(() => null);
@@ -338,17 +385,19 @@ export default function PlanilhaImportacoesPage() {
   async function carregarServicosDaPlanilha() {
     const srcId = Number(String(sourcePlanilhaId || "").trim() || 0);
     if (!srcId) return;
+    const src = [...versoes, ...planilhasOutrasObras].find((v) => Number(v.idPlanilha) === srcId) || null;
+    const idObraSource = src?.idObra != null && Number(src.idObra) > 0 ? Number(src.idObra) : idObra;
     try {
       setLoading(true);
       setErr(null);
       setOkMsg(null);
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${encodeURIComponent(String(srcId))}`);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObraSource}/planilha?planilhaId=${encodeURIComponent(String(srcId))}`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar planilha origem");
       const linhas = Array.isArray(json.data?.planilha?.linhas) ? (json.data.planilha.linhas as any[]) : [];
-      const services = linhas
-        .filter((l) => String(l.tipoLinha || "").toUpperCase() === "SERVICO")
+      const all = linhas
         .map((l) => ({
+          tipoLinha: (String(l.tipoLinha || "").trim().toUpperCase() || "ITEM") as any,
           item: String(l.item || "").trim(),
           codigo: String(l.codigo || "").trim(),
           fonte: String(l.fonte || "").trim(),
@@ -357,8 +406,8 @@ export default function PlanilhaImportacoesPage() {
           quant: String(l.quant || "").trim(),
           valorUnitario: String(l.valorUnitario || "").trim(),
         }))
-        .filter((l) => l.codigo);
-      setSourceRows(services.map((r) => ({ checked: true, r })));
+        .filter((l) => l.item || l.codigo || l.servicos);
+      setSourceRows(all.map((r) => ({ checked: true, r })));
     } catch (e: any) {
       setErr(e?.message || "Erro ao carregar planilha origem");
       setSourceRows([]);
@@ -380,7 +429,7 @@ export default function PlanilhaImportacoesPage() {
     }
     const selected = sourceRows.filter((x) => x.checked).map((x) => x.r);
     if (!selected.length) {
-      setErr("Selecione ao menos 1 serviço para importar.");
+      setErr("Selecione ao menos 1 linha para importar.");
       return;
     }
     try {
@@ -417,6 +466,12 @@ export default function PlanilhaImportacoesPage() {
       setBootDone(true);
     });
   }, [idObra]);
+
+  useEffect(() => {
+    if (!includeOutrasObras) return;
+    if (planilhasOutrasObras.length) return;
+    void carregarPlanilhasDeOutrasObras();
+  }, [includeOutrasObras, planilhasOutrasObras.length]);
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-7xl text-slate-900">
@@ -520,6 +575,22 @@ export default function PlanilhaImportacoesPage() {
                 <button
                   className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
                   type="button"
+                  onClick={() => setCsvPreview((prev) => ({ ...prev, rows: prev.rows.map((r) => ({ ...r, checked: true })) }))}
+                  disabled={loading || !csvPreview.rows.length}
+                >
+                  Todos
+                </button>
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={() => setCsvPreview((prev) => ({ ...prev, rows: prev.rows.map((r) => ({ ...r, checked: false })) }))}
+                  disabled={loading || !csvPreview.rows.length}
+                >
+                  Nenhum
+                </button>
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
                   onClick={() => setCsvPreview({ file: null, rows: [], missingColumns: [] })}
                   disabled={loading}
                 >
@@ -545,6 +616,7 @@ export default function PlanilhaImportacoesPage() {
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 text-left text-slate-700">
                   <tr>
+                    <th className="px-3 py-2">Sel</th>
                     <th className="px-3 py-2">Linha</th>
                     <th className="px-3 py-2">Item</th>
                     <th className="px-3 py-2">Código</th>
@@ -560,6 +632,17 @@ export default function PlanilhaImportacoesPage() {
                     const hasErr = Object.keys(r.errors || {}).length > 0;
                     return (
                       <tr key={r.rowIndex} className={`border-t ${hasErr ? "bg-red-50" : ""}`}>
+                        <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={r.checked}
+                            onChange={(e) => {
+                              const checked = Boolean(e.target.checked);
+                              setCsvPreview((prev) => ({ ...prev, rows: prev.rows.map((x) => (x.rowIndex === r.rowIndex ? { ...x, checked } : x)) }));
+                            }}
+                            disabled={loading}
+                          />
+                        </td>
                         <td className="px-3 py-2 text-xs text-slate-500">{r.rowIndex + 2}</td>
                         <td className="px-3 py-2">{r.item || "—"}</td>
                         <td className="px-3 py-2">{r.codigo || "—"}</td>
@@ -580,20 +663,23 @@ export default function PlanilhaImportacoesPage() {
 
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="text-lg font-semibold">Importar serviços de outra planilha</div>
-        <div className="text-sm text-slate-600">Mostra uma prévia com os serviços (SERVICOS_LINHAS) da planilha origem e permite selecionar.</div>
+        <div className="text-sm text-slate-600">Mostra uma prévia com as linhas (SERVICOS_LINHAS / obras_planilha_itens) da planilha origem e permite selecionar.</div>
 
         <div className="grid gap-3 md:grid-cols-3">
           <label className="space-y-1">
             <div className="text-xs text-slate-500">Planilha origem</div>
             <select className="input bg-white w-full" value={sourcePlanilhaId} onChange={(e) => setSourcePlanilhaId(e.target.value)} disabled={loading}>
               <option value="">Selecione...</option>
-              {versoes
+              {[...versoes, ...(includeOutrasObras ? planilhasOutrasObras.filter((v) => Number(v.idObra || 0) !== Number(idObra)) : [])]
                 .filter((v) => String(v.idPlanilha) !== String(targetPlanilhaId))
-                .map((v) => (
-                  <option key={v.idPlanilha} value={String(v.idPlanilha)}>
-                    {`v${v.numeroVersao} • ${v.nome}`}
-                  </option>
-                ))}
+                .map((v) => {
+                  const obraPrefix = v.idObra != null && Number(v.idObra) !== Number(idObra) ? `${v.obraNome ? `${v.obraNome} • ` : ""}` : "";
+                  return (
+                    <option key={`${v.idPlanilha}-${v.numeroVersao}`} value={String(v.idPlanilha)}>
+                      {`${obraPrefix}v${v.numeroVersao} • ${v.nome}`}
+                    </option>
+                  );
+                })}
             </select>
           </label>
           <label className="space-y-1">
@@ -603,9 +689,15 @@ export default function PlanilhaImportacoesPage() {
               <option value="REPLACE">Substituir (apaga e importa)</option>
             </select>
           </label>
-          <div className="text-sm mt-6 text-slate-700">
-            Serviços serão garantidos no catálogo da Fonte de dados (SERVICOS_FONTE).
-          </div>
+          <label className="flex items-center gap-2 mt-6 text-sm text-slate-700 select-none">
+            <input
+              type="checkbox"
+              checked={includeOutrasObras}
+              onChange={(e) => setIncludeOutrasObras(Boolean(e.target.checked))}
+              disabled={loading}
+            />
+            De outra obra
+          </label>
         </div>
 
         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -617,72 +709,89 @@ export default function PlanilhaImportacoesPage() {
           >
             Carregar prévia
           </button>
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-              type="button"
-              onClick={() => setSourceRows((prev) => prev.map((x) => ({ ...x, checked: true })))}
-              disabled={loading || !sourceRows.length}
-            >
-              Todos
-            </button>
-            <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-              type="button"
-              onClick={() => setSourceRows((prev) => prev.map((x) => ({ ...x, checked: false })))}
-              disabled={loading || !sourceRows.length}
-            >
-              Nenhum
-            </button>
-            <button
-              className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
-              type="button"
-              onClick={confirmarImportacaoPlanilha}
-              disabled={loading || !targetPlanilhaId || !sourcePlanilhaId || !sourceRows.some((x) => x.checked)}
-            >
-              Importar selecionados
-            </button>
-          </div>
         </div>
 
         {sourceRows.length ? (
-          <div className="overflow-auto rounded-lg border">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-slate-700">
-                <tr>
-                  <th className="px-3 py-2">Sel</th>
-                  <th className="px-3 py-2">Item</th>
-                  <th className="px-3 py-2">Código</th>
-                  <th className="px-3 py-2">Serviços</th>
-                  <th className="px-3 py-2">Und</th>
-                  <th className="px-3 py-2 text-right">Quant</th>
-                  <th className="px-3 py-2 text-right">Valor unitário</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sourceRows.map((x, idx) => (
-                  <tr key={`${x.r.codigo}-${idx}`} className="border-t">
-                    <td className="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        checked={x.checked}
-                        onChange={(e) => {
-                          const checked = Boolean(e.target.checked);
-                          setSourceRows((prev) => prev.map((p, i) => (i === idx ? { ...p, checked } : p)));
-                        }}
-                        disabled={loading}
-                      />
-                    </td>
-                    <td className="px-3 py-2">{x.r.item || "—"}</td>
-                    <td className="px-3 py-2">{x.r.codigo || "—"}</td>
-                    <td className="px-3 py-2">{x.r.servicos || "—"}</td>
-                    <td className="px-3 py-2">{x.r.und || "—"}</td>
-                    <td className="px-3 py-2 text-right">{x.r.quant || "—"}</td>
-                    <td className="px-3 py-2 text-right">{x.r.valorUnitario || "—"}</td>
+          <div className="rounded-lg border p-3 space-y-2">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="text-sm text-slate-700">
+                Linhas: <span className="font-semibold">{sourceRows.length}</span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={() => setSourceRows((prev) => prev.map((x) => ({ ...x, checked: true })))}
+                  disabled={loading || !sourceRows.length}
+                >
+                  Todos
+                </button>
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={() => setSourceRows((prev) => prev.map((x) => ({ ...x, checked: false })))}
+                  disabled={loading || !sourceRows.length}
+                >
+                  Nenhum
+                </button>
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={() => setSourceRows([])}
+                  disabled={loading}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                  type="button"
+                  onClick={confirmarImportacaoPlanilha}
+                  disabled={loading || !targetPlanilhaId || !sourcePlanilhaId || !sourceRows.some((x) => x.checked)}
+                >
+                  Importar
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto rounded-lg border">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-left text-slate-700">
+                  <tr>
+                    <th className="px-3 py-2">Sel</th>
+                    <th className="px-3 py-2">Item</th>
+                    <th className="px-3 py-2">Código</th>
+                    <th className="px-3 py-2">Serviços</th>
+                    <th className="px-3 py-2">Und</th>
+                    <th className="px-3 py-2 text-right">Quant</th>
+                    <th className="px-3 py-2 text-right">Valor unitário</th>
+                    <th className="px-3 py-2">Tipo</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {sourceRows.map((x, idx) => (
+                    <tr key={`${x.r.tipoLinha}-${x.r.item}-${x.r.codigo}-${idx}`} className="border-t">
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={x.checked}
+                          onChange={(e) => {
+                            const checked = Boolean(e.target.checked);
+                            setSourceRows((prev) => prev.map((p, i) => (i === idx ? { ...p, checked } : p)));
+                          }}
+                          disabled={loading}
+                        />
+                      </td>
+                      <td className="px-3 py-2">{x.r.item || "—"}</td>
+                      <td className="px-3 py-2">{x.r.codigo || "—"}</td>
+                      <td className="px-3 py-2">{x.r.servicos || "—"}</td>
+                      <td className="px-3 py-2">{x.r.und || "—"}</td>
+                      <td className="px-3 py-2 text-right">{x.r.quant || "—"}</td>
+                      <td className="px-3 py-2 text-right">{x.r.valorUnitario || "—"}</td>
+                      <td className="px-3 py-2">{x.r.tipoLinha}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ) : null}
       </section>

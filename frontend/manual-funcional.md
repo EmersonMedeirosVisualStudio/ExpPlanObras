@@ -1684,7 +1684,7 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 - Engenharia → Obras → Planilha contratada / Planilha orçamentária
 - Navegação (UI): as telas **Planilha orçamentária**, **Serviços**, **SINAPI** e **Insumos consolidados** possuem botões de navegação no **canto superior direito**, alinhados ao título da página (Planilha/Serviços/SINAPI/Insumos/Voltar). Os botões específicos de cada tela ficam logo abaixo desses botões principais.
 - Versões: ao entrar na tela, o sistema **não abre automaticamente** nenhuma planilha. O usuário deve selecionar a versão desejada no card **Versões cadastradas**.
-  - Ações no card **Versões cadastradas**: **Atualizar**, **Importar CSV**, **Modelo CSV** e **Nova planilha**.
+  - Ações no card **Versões cadastradas**: **Atualizar**, **Importações** e **Nova planilha**.
   - Coluna **Ações** (na lista de versões): **Clonar**, **Editar** e **Excluir planilha**.
   - Coluna **Atual**: botão **Definir atual** para marcar uma planilha como a versão atual da obra.
 - Lista de versões (card **Versões cadastradas**): exibe, para cada versão:
@@ -1756,6 +1756,56 @@ ETAPA 5 — Como validar
   - Observação de compatibilidade: leitura “smart” de encoding (UTF-8 / Windows-1252) para reduzir erros de acentuação no texto importado.
   - Observação: ao importar itens do tipo Serviço, o sistema garante que o serviço exista no catálogo da fonte (Serviços (FONTE)).
   - Observação: ao salvar/importar composições, o sistema garante que subcomposições referenciadas existam no catálogo da fonte (reduz “cadastros órfãos”).
+- Importações (tela dedicada): as importações ficam na tela **Importações** (botão no card **Versões cadastradas**). O botão **Importar** só aparece quando a **prévia** estiver aberta.
+
+#### Como usar — Tela Importações (Planilha orçamentária)
+
+##### Importar CSV
+
+ETAPA 1 — Onde acessar
+- Acesse: Engenharia → Obras → (selecione a obra) → Planilha orçamentária → clique em **Importações**
+
+ETAPA 2 — O que clicar
+- No card **Planilha destino**, selecione a versão que receberá as linhas
+- No card **Importar CSV**, clique em **Selecionar CSV**
+
+ETAPA 3 — O que preencher
+- Em **Modo**, escolha:
+  - **Complementar (padrão)**: mantém as linhas existentes e adiciona as novas
+  - **Substituir (apaga e importa)**: remove as linhas existentes e grava as linhas importadas
+- Na **prévia**, use as caixas de seleção para escolher as linhas que serão importadas (Item, Subitem e Serviço)
+  - Use **Todos** e **Nenhum** para marcar/desmarcar em massa
+
+ETAPA 4 — O que esperar
+- A prévia destaca linhas inválidas (campos obrigatórios faltando ou tipo incompatível)
+- Se nada estiver marcado, o sistema bloqueia a importação
+
+ETAPA 5 — Como validar
+- Clique em **Importar**
+- Volte para a tela **Planilha orçamentária** e confira se as linhas foram inseridas na versão selecionada
+
+##### Importar serviços de outra planilha (inclui Item/Subitem/Serviço)
+
+ETAPA 1 — Onde acessar
+- Acesse: Engenharia → Obras → (selecione a obra) → Planilha orçamentária → clique em **Importações**
+
+ETAPA 2 — O que clicar
+- No card **Importar serviços de outra planilha**, selecione a **Planilha origem**
+- (Opcional) marque **De outra obra** para listar também planilhas de outras obras que você tem acesso
+- Clique em **Carregar prévia**
+
+ETAPA 3 — O que preencher
+- Em **Modo**, escolha **Complementar** ou **Substituir**
+- Na prévia, escolha as linhas a importar (Item/Subitem/Serviço)
+  - Use **Todos** e **Nenhum** para marcar/desmarcar em massa
+
+ETAPA 4 — O que esperar
+- O sistema mostra a grade de conferência antes de permitir importar
+- Se nada estiver marcado, o sistema bloqueia a importação
+
+ETAPA 5 — Como validar
+- Clique em **Importar**
+- Volte para a tela **Planilha orçamentária** e confira se as linhas foram inseridas na versão selecionada
 - Após selecionar uma versão, o sistema exibe o card **Visualizando** e, em seguida, o card **Navegação** (visível apenas com planilha selecionada) para abrir/fechar e rolar até: **Parâmetros**, **Planilha** e **Adicionar linha**.
 - Planilha (visual): linhas do tipo **Item** e **Subitem** são exibidas em negrito; o usuário pode definir **tamanho da fonte** e **cor de fundo** (Item/Subitem) e essas preferências ficam salvas para o usuário.
 - Ordem/organização das linhas: o campo **Ordem** foi removido da edição. A visualização segue a ordem do **ITEM** (ordenação numérica/hierárquica, por exemplo: `1.2` vem antes de `1.10`).
