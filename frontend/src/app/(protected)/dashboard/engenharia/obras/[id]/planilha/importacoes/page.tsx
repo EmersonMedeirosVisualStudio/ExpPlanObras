@@ -466,29 +466,16 @@ export default function PlanilhaImportacoesPage() {
             <div className="text-lg font-semibold">Importar CSV</div>
             <div className="text-sm text-slate-600">Converte o CSV em linhas (SERVICOS_LINHAS / obras_planilha_itens) na planilha destino.</div>
           </div>
-          <button
-            className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60 inline-flex items-center gap-2"
-            type="button"
-            onClick={baixarModeloCsv}
-            disabled={loading}
-          >
-            <Download className="h-4 w-4" />
-            Modelo CSV
-          </button>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-3">
-          <label className="space-y-1">
-            <div className="text-xs text-slate-500">Modo</div>
-            <select className="input bg-white w-full" value={csvMode} onChange={(e) => setCsvMode(e.target.value as any)} disabled={loading}>
-              <option value="APPEND">Complementar (padrão)</option>
-              <option value="REPLACE">Substituir (apaga e importa)</option>
-            </select>
-          </label>
-          <div className="text-sm mt-6 text-slate-700 md:col-span-2">
-            Serviços do CSV serão garantidos no catálogo da Fonte de dados (SERVICOS_FONTE).
-          </div>
-          <div className="flex items-end justify-end gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60 inline-flex items-center gap-2"
+              type="button"
+              onClick={baixarModeloCsv}
+              disabled={loading}
+            >
+              <Download className="h-4 w-4" />
+              Modelo CSV
+            </button>
             <input
               ref={fileInputRef}
               type="file"
@@ -499,23 +486,56 @@ export default function PlanilhaImportacoesPage() {
                 if (f) void prepararCsvPreview(f);
               }}
             />
-            <button className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => fileInputRef.current?.click()} disabled={loading}>
-              Selecionar CSV
-            </button>
             <button
-              className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
               type="button"
-              onClick={confirmarImportacaoCsv}
-              disabled={loading || !csvPreview.file || csvHasBlockingErrors || !targetPlanilhaId}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              title="Selecionar arquivo CSV para prévia"
             >
-              Importar
+              Selecionar CSV
             </button>
           </div>
         </div>
 
+        <div className="grid gap-3 md:grid-cols-3">
+          <label className="space-y-1">
+            <div className="text-xs text-slate-500">Modo</div>
+            <select className="input bg-white w-full" value={csvMode} onChange={(e) => setCsvMode(e.target.value as any)} disabled={loading}>
+              <option value="APPEND">Complementar (padrão)</option>
+              <option value="REPLACE">Substituir (apaga e importa)</option>
+            </select>
+          </label>
+          <div className="md:col-span-2" />
+        </div>
+
         {csvPreview.file ? (
           <div className="rounded-lg border p-3 space-y-2">
-            <div className="text-sm text-slate-700">Arquivo: <span className="font-semibold">{csvPreview.file.name}</span></div>
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="text-sm text-slate-700">
+                Arquivo: <span className="font-semibold">{csvPreview.file.name}</span> • Linhas:{" "}
+                <span className="font-semibold">{csvPreview.rows.length}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={() => setCsvPreview({ file: null, rows: [], missingColumns: [] })}
+                  disabled={loading}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                  type="button"
+                  onClick={confirmarImportacaoCsv}
+                  disabled={loading || csvHasBlockingErrors || !targetPlanilhaId}
+                  title={csvHasBlockingErrors ? "Corrija o CSV antes de importar" : "Importar prévia na planilha destino"}
+                >
+                  Importar
+                </button>
+              </div>
+            </div>
             {csvPreview.missingColumns.length ? (
               <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                 Colunas obrigatórias ausentes: {csvPreview.missingColumns.join(", ")}
