@@ -1684,7 +1684,7 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 - Engenharia → Obras → Planilha contratada / Planilha orçamentária
 - Navegação (UI): as telas **Planilha orçamentária**, **Serviços**, **SINAPI** e **Insumos consolidados** possuem botões de navegação no **canto superior direito**, alinhados ao título da página (Planilha/Serviços/SINAPI/Insumos/Voltar). Os botões específicos de cada tela ficam logo abaixo desses botões principais.
 - Versões: ao entrar na tela, o sistema **não abre automaticamente** nenhuma planilha. O usuário deve selecionar a versão desejada no card **Versões cadastradas**.
-  - Ações no card **Versões cadastradas**: **Atualizar**, **Importações** e **Nova planilha**.
+  - Ações no card **Versões cadastradas**: **Atualizar**, **Importações**, **Adequação** e **Nova planilha**.
   - Coluna **Ações** (na lista de versões): **Clonar**, **Editar** e **Excluir planilha**.
   - Coluna **Atual**: botão **Definir atual** para marcar uma planilha como a versão atual da obra.
 - Lista de versões (card **Versões cadastradas**): exibe, para cada versão:
@@ -1771,7 +1771,7 @@ ETAPA 2 — O que clicar
 
 ETAPA 3 — O que preencher
 - Em **Modo**, escolha:
-  - **Complementar (padrão)**: mantém as linhas existentes e adiciona as novas
+  - **Complementar**: mantém as linhas existentes e adiciona as novas
   - **Substituir (apaga e importa)**: remove as linhas existentes e grava as linhas importadas
 - Na **prévia**, use as caixas de seleção para escolher as linhas que serão importadas (Item, Subitem e Serviço)
   - Use **Todos** e **Nenhum** para marcar/desmarcar em massa
@@ -1783,6 +1783,36 @@ ETAPA 4 — O que esperar
 ETAPA 5 — Como validar
 - Clique em **Importar**
 - Volte para a tela **Planilha orçamentária** e confira se as linhas foram inseridas na versão selecionada
+
+##### Adequação entre versões (consulta)
+
+Esta tela gera uma **planilha de adequação** (somente consulta) para comparar **duas versões** da planilha:
+
+- **Origem (Contratado)**: versão base (antes das alterações)
+- **Destino (Adequado)**: versão final (após as alterações)
+
+O sistema calcula, para cada serviço:
+
+- **Quantidades**: Aditado / Suprimido / Adequado
+- **Valores**: Aditado / Suprimido / Adequado
+
+ETAPA 1 — Onde acessar
+- Acesse: Engenharia → Obras → (selecione a obra) → **Planilha orçamentária**
+
+ETAPA 2 — O que clicar
+- No card **Versões cadastradas**, selecione a versão desejada
+- Clique em **Adequação**
+
+ETAPA 3 — O que preencher
+- Escolha a **Origem (Contratado)**
+- O **Destino (Adequado)** fica fixado na versão selecionada (quando a tela é aberta a partir da Planilha)
+
+ETAPA 4 — O que esperar
+- A tela mostra a grade no formato “PLANILHA DE ADEQUAÇÃO DE SERVIÇOS”
+- A tela exibe o status **Carregando página… / Página carregada**
+
+ETAPA 5 — Como validar
+- Use **Imprimir** ou **CSV** para conferir o relatório
 
 ##### Importar serviços de outra planilha (inclui Item/Subitem/Serviço)
 

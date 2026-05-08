@@ -2480,6 +2480,21 @@ export default function PlanilhaObraClient({
               Importações
             </button>
             <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+              type="button"
+              onClick={() =>
+                router.push(
+                  `/dashboard/engenharia/obras/${idObra}/planilha/adequacao?planilhaId=${encodeURIComponent(String(effectivePlanilhaId || ""))}&returnTo=${encodeURIComponent(
+                    selfHref
+                  )}`
+                )
+              }
+              disabled={loading || !effectivePlanilhaId}
+              title={!effectivePlanilhaId ? "Selecione uma versão para gerar a adequação" : "Adequação entre versões (origem x destino)"}
+            >
+              Adequação
+            </button>
+            <button
               className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
               type="button"
               onClick={criarNovaVersao}

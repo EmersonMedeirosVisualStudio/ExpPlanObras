@@ -12558,6 +12558,207 @@ export default async function v1Routes(server: FastifyInstance) {
     });
   });
 
+  server.get(
+    '/engenharia/obras/:id/planilha/adequacao',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        querystring: z.object({
+          sourcePlanilhaId: z.coerce.number().int().positive(),
+          targetPlanilhaId: z.coerce.number().int().positive(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const ctx = await requireTenantUser(request, reply);
+      if (!ctx || (ctx as any).success === false) return;
+
+      const params = request.params as any;
+      const q = request.query as any;
+      const idObra = Number(params.id);
+      const sourcePlanilhaId = Number(q.sourcePlanilhaId);
+      const targetPlanilhaId = Number(q.targetPlanilhaId);
+
+      const scope = (request.user as any)?.abrangencia as any;
+      if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+      await ensurePlanilhaModeloFonteTables(prisma);
+
+      const versoes = (await prisma.$queryRawUnsafe(
+        `
+        SELECT
+          id_planilha AS "idPlanilha",
+          numero_versao AS "numeroVersao",
+          nome,
+          id_fonte_dados AS "idFonteDados",
+          id_parametros AS "idParametros"
+        FROM obras_planilhas_versoes
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha IN ($3, $4)
+        `,
+        ctx.tenantId,
+        idObra,
+        sourcePlanilhaId,
+        targetPlanilhaId
+      )) as any[];
+      const srcMeta = versoes.find((v: any) => Number(v.idPlanilha) === sourcePlanilhaId) || null;
+      const dstMeta = versoes.find((v: any) => Number(v.idPlanilha) === targetPlanilhaId) || null;
+      if (!srcMeta) return fail(reply, 404, 'Planilha origem não encontrada');
+      if (!dstMeta) return fail(reply, 404, 'Planilha destino não encontrada');
+
+      type Linha = {
+        tipoLinha: 'ITEM' | 'SUBITEM' | 'SERVICO';
+        item: string;
+        codigo: string;
+        servicos: string;
+        und: string;
+        quantidade: number | null;
+        valorUnitario: number | null;
+        valorParcial: number | null;
+        nivel: number;
+      };
+
+      async function loadLinhas(pid: number) {
+        const rows = (await prisma.$queryRawUnsafe(
+          `
+          SELECT
+            COALESCE(i.item,'') AS item,
+            i.tipo_linha AS "tipoLinha",
+            COALESCE(sf.codigo,'') AS codigo,
+            CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(sf.descricao,'') ELSE COALESCE(i.observacao,'') END AS servicos,
+            COALESCE(sf.und,'') AS und,
+            i.quantidade AS quantidade,
+            i.valor_unitario AS "valorUnitario",
+            i.valor_parcial AS "valorParcial",
+            COALESCE(i.nivel,0) AS nivel
+          FROM obras_planilha_itens i
+          LEFT JOIN obras_servicos_fonte sf
+            ON sf.tenant_id = i.tenant_id AND sf.id_servico = i.id_servico
+          WHERE i.tenant_id = $1 AND i.id_planilha = $2
+          `,
+          ctx.tenantId,
+          pid
+        )) as any[];
+
+        return (rows || []).map((r: any) => ({
+          tipoLinha: String(r.tipoLinha || 'ITEM').trim().toUpperCase() as any,
+          item: String(r.item || '').trim(),
+          codigo: String(r.codigo || '').trim().toUpperCase(),
+          servicos: String(r.servicos || '').trim(),
+          und: String(r.und || '').trim(),
+          quantidade: r.quantidade == null ? null : Number(r.quantidade),
+          valorUnitario: r.valorUnitario == null ? null : Number(r.valorUnitario),
+          valorParcial: r.valorParcial == null ? null : Number(r.valorParcial),
+          nivel: Number(r.nivel || 0),
+        })) as Linha[];
+      }
+
+      const [srcLinhas, dstLinhas] = await Promise.all([loadLinhas(sourcePlanilhaId), loadLinhas(targetPlanilhaId)]);
+
+      function parseItemParts(item: string) {
+        const raw = String(item || '').trim();
+        if (!raw || !/^[0-9]+(\.[0-9]+)*$/.test(raw)) return null;
+        return raw.split('.').map((p) => Number(p));
+      }
+
+      function compareItems(a: string, b: string) {
+        const pa = parseItemParts(a);
+        const pb = parseItemParts(b);
+        if (!pa && !pb) return String(a || '').localeCompare(String(b || ''));
+        if (!pa) return 1;
+        if (!pb) return -1;
+        const len = Math.max(pa.length, pb.length);
+        for (let i = 0; i < len; i++) {
+          const va = pa[i] ?? -1;
+          const vb = pb[i] ?? -1;
+          if (va !== vb) return va - vb;
+        }
+        return 0;
+      }
+
+      function keyOf(r: Linha) {
+        const tipo = String(r.tipoLinha || '').trim().toUpperCase();
+        const item = String(r.item || '').trim();
+        const codigo = String(r.codigo || '').trim().toUpperCase();
+        if (tipo === 'SERVICO') return `S|${item}|${codigo || ''}`;
+        return `N|${tipo}|${item}`;
+      }
+
+      const srcByKey = new Map<string, Linha>();
+      const dstByKey = new Map<string, Linha>();
+      for (const r of srcLinhas) srcByKey.set(keyOf(r), r);
+      for (const r of dstLinhas) dstByKey.set(keyOf(r), r);
+
+      const keys = new Set<string>([...srcByKey.keys(), ...dstByKey.keys()]);
+
+      const rows = Array.from(keys)
+        .map((k) => {
+          const src = srcByKey.get(k) || null;
+          const dst = dstByKey.get(k) || null;
+          const base = dst || src;
+          const tipoLinha = (base?.tipoLinha || 'ITEM') as any;
+          const item = String(base?.item || '').trim();
+          const servicos = String(base?.servicos || '').trim();
+          const und = String(base?.und || '').trim();
+
+          if (String(tipoLinha).toUpperCase() !== 'SERVICO') {
+            return {
+              tipoLinha,
+              item,
+              servicos,
+              und,
+              contratadoQuant: 0,
+              contratadoPreco: 0,
+              contratadoTotal: 0,
+              qAditado: 0,
+              qSuprimido: 0,
+              qAdequado: 0,
+              vAditado: 0,
+              vSuprimido: 0,
+              vAdequado: 0,
+            };
+          }
+
+          const cQty = src?.quantidade != null ? Number(src.quantidade) : 0;
+          const cPreco = src?.valorUnitario != null ? Number(src.valorUnitario) : 0;
+          const cTotal = src?.valorParcial != null ? Number(src.valorParcial) : Number((cQty * cPreco).toFixed(6));
+          const aQty = dst?.quantidade != null ? Number(dst.quantidade) : 0;
+          const aTotal = dst?.valorParcial != null ? Number(dst.valorParcial) : 0;
+
+          return {
+            tipoLinha,
+            item,
+            servicos,
+            und,
+            contratadoQuant: cQty,
+            contratadoPreco: cPreco,
+            contratadoTotal: cTotal,
+            qAditado: Math.max(0, aQty - cQty),
+            qSuprimido: Math.max(0, cQty - aQty),
+            qAdequado: aQty,
+            vAditado: Math.max(0, aTotal - cTotal),
+            vSuprimido: Math.max(0, cTotal - aTotal),
+            vAdequado: aTotal,
+          };
+        })
+        .sort((a, b) => compareItems(a.item, b.item));
+
+      return ok(reply, {
+        obraId: idObra,
+        source: {
+          idPlanilha: sourcePlanilhaId,
+          numeroVersao: Number(srcMeta.numeroVersao || 0),
+          nome: String(srcMeta.nome || ''),
+        },
+        target: {
+          idPlanilha: targetPlanilhaId,
+          numeroVersao: Number(dstMeta.numeroVersao || 0),
+          nome: String(dstMeta.nome || ''),
+        },
+        rows,
+      });
+    }
+  );
+
   server.post('/engenharia/obras/:id/planilha/insumos/precos', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
