@@ -6090,6 +6090,8 @@ export default async function v1Routes(server: FastifyInstance) {
         const parts = (request as any).parts();
         let action = '';
         let nome = '';
+        let idFonteDadosRaw = '';
+        let idParametrosRaw = '';
         let fileBuffer: Buffer | null = null;
         for await (const part of parts) {
           if (part.type === 'file') {
@@ -6099,10 +6101,16 @@ export default async function v1Routes(server: FastifyInstance) {
           const field = String(part.fieldname || '');
           if (field === 'action') action = String(part.value || '').trim().toUpperCase();
           if (field === 'nome') nome = String(part.value || '').trim();
+          if (field === 'idFonteDados') idFonteDadosRaw = String(part.value || '').trim();
+          if (field === 'idParametros') idParametrosRaw = String(part.value || '').trim();
         }
 
         if (action !== 'IMPORTAR_CSV') return fail(reply, 422, 'Ação inválida');
         if (!fileBuffer) return fail(reply, 422, 'Arquivo CSV é obrigatório (campo "file")');
+        const idFonteDados = Number(idFonteDadosRaw || NaN);
+        const idParametros = Number(idParametrosRaw || NaN);
+        if (!Number.isFinite(idFonteDados) || idFonteDados <= 0) return fail(reply, 422, 'Selecione uma Fonte de dados válida para importar o CSV');
+        if (!Number.isFinite(idParametros) || idParametros <= 0) return fail(reply, 422, 'Selecione um cadastro de Parâmetros válido para importar o CSV');
 
         let csvText = decodeCsvBuffer(fileBuffer);
         csvText = csvText.replace(/^\uFEFF/, '');
@@ -6175,6 +6183,21 @@ export default async function v1Routes(server: FastifyInstance) {
 
         const created = await prismaTx(async (tx: any) => {
           await ensurePlanilhaModeloFonteTables(tx);
+          await ensureFontesDadosTables(tx);
+          await ensurePlanilhaParametrosTables(tx);
+          const fonteOk = (await tx.$queryRawUnsafe(
+            `SELECT 1 FROM obras_fontes_dados WHERE tenant_id = $1 AND id_fonte_dados = $2 LIMIT 1`,
+            ctx.tenantId,
+            idFonteDados
+          )) as any[];
+          if (!fonteOk?.[0]) throw new Error('Fonte de dados não encontrada');
+          const paramOk = (await tx.$queryRawUnsafe(
+            `SELECT 1 FROM obras_planilhas_parametros WHERE tenant_id = $1 AND id_parametros = $2 LIMIT 1`,
+            ctx.tenantId,
+            idParametros
+          )) as any[];
+          if (!paramOk?.[0]) throw new Error('Parâmetros não encontrados');
+
           const maxRows = (await tx.$queryRawUnsafe(
             `SELECT COALESCE(MAX(numero_versao),0) AS "maxVersao" FROM obras_planilhas_versoes WHERE tenant_id = $1 AND id_obra = $2`,
             ctx.tenantId,
@@ -6186,16 +6209,18 @@ export default async function v1Routes(server: FastifyInstance) {
           const ins = (await tx.$queryRawUnsafe(
             `
             INSERT INTO obras_planilhas_versoes
-              (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador)
+              (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador, id_fonte_dados, id_parametros)
             VALUES
-              ($1,$2,$3,$4,TRUE,'CSV',$5)
+              ($1,$2,$3,$4,TRUE,'CSV',$5,$6,$7)
             RETURNING id_planilha AS "idPlanilha"
             `,
             ctx.tenantId,
             idObra,
             nextVersao,
             nomeFinal,
-            ctx.userId
+            ctx.userId,
+            idFonteDados,
+            idParametros
           )) as any[];
           const idPlanilha = Number(ins?.[0]?.idPlanilha || 0);
           await tx.$executeRawUnsafe(`UPDATE obras_planilhas_versoes SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2`, ctx.tenantId, idObra);
@@ -6204,17 +6229,6 @@ export default async function v1Routes(server: FastifyInstance) {
             ctx.tenantId,
             idObra,
             idPlanilha
-          );
-
-          const idFonteDados = await upsertFonteDados(tx, ctx.tenantId, { tipo: 'CSV', uf: '', dataBase: '', tipoPreco: '', descricao: 'CSV' });
-          const idParametros = await upsertParametros(tx, ctx.tenantId, {});
-          await tx.$executeRawUnsafe(
-            `UPDATE obras_planilhas_versoes SET id_fonte_dados = $4, id_parametros = $5, atualizado_em = NOW() WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
-            ctx.tenantId,
-            idObra,
-            idPlanilha,
-            idFonteDados,
-            idParametros
           );
 
           const svcMap = new Map<string, { codigo: string; banco: string; descricao: string; und: string; valorUnitario: number | null }>();

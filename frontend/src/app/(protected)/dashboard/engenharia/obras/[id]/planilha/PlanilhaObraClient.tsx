@@ -502,6 +502,8 @@ export default function PlanilhaObraClient({
     }>;
     missingColumns: string[];
   }>({ file: null, nomeVersao: "", rows: [], missingColumns: [] });
+  const [importFonteId, setImportFonteId] = useState<string>("");
+  const [importParametrosId, setImportParametrosId] = useState<string>("");
 
   const [uiPrefs, setUiPrefs] = useState<{
     fontSizePx: number;
@@ -1702,6 +1704,8 @@ export default function PlanilhaObraClient({
       const form = new FormData();
       form.append("action", "IMPORTAR_CSV");
       form.append("nome", String(nomeVersao || `Versão ${Math.max(0, ...versoes.map((v) => v.numeroVersao)) + 1} (CSV)`));
+      form.append("idFonteDados", String(importFonteId || ""));
+      form.append("idParametros", String(importParametrosId || ""));
       form.append("file", file);
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, { method: "POST", body: form });
       const json = await res.json().catch(() => null);
@@ -1783,6 +1787,10 @@ export default function PlanilhaObraClient({
       });
 
       setImportPreview({ file, nomeVersao, rows: mapped, missingColumns });
+      const fonteFromPlanilha = (planilha as any)?.idFonteDados != null ? String((planilha as any).idFonteDados) : "";
+      const paramFromPlanilha = (planilha as any)?.idParametros != null ? String((planilha as any).idParametros) : "";
+      setImportFonteId(fonteFromPlanilha || (fontes[0]?.idFonteDados != null ? String(fontes[0].idFonteDados) : ""));
+      setImportParametrosId(paramFromPlanilha || (parametrosCad[0]?.idParametros != null ? String(parametrosCad[0].idParametros) : ""));
     } catch (e: any) {
       setImportPreview({ file: null, nomeVersao: "", rows: [], missingColumns: [] });
       setErr(e?.message || "Erro ao ler CSV.");
@@ -2430,6 +2438,35 @@ export default function PlanilhaObraClient({
               <div className="text-sm text-slate-600">
                 Arquivo: <span className="font-medium">{importPreview.file.name}</span> • Nova versão: <span className="font-medium">{importPreview.nomeVersao}</span>
               </div>
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                <label className="space-y-1">
+                  <div className="text-xs text-slate-500">Fonte de dados (SERVICOS_FONTE)</div>
+                  <select className="input bg-white w-full" value={importFonteId} onChange={(e) => setImportFonteId(e.target.value)} disabled={loading}>
+                    <option value="">Selecione...</option>
+                    {fontes.map((f) => (
+                      <option key={f.idFonteDados} value={String(f.idFonteDados)}>
+                        {`#${f.idFonteDados} - ${f.nome || "—"}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1">
+                  <div className="text-xs text-slate-500">Parâmetros (BDI/UF/Data-base)</div>
+                  <select
+                    className="input bg-white w-full"
+                    value={importParametrosId}
+                    onChange={(e) => setImportParametrosId(e.target.value)}
+                    disabled={loading}
+                  >
+                    <option value="">Selecione...</option>
+                    {parametrosCad.map((p) => (
+                      <option key={p.idParametros} value={String(p.idParametros)}>
+                        {`#${p.idParametros} - ${p.nome || "—"}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <div className="mt-1 text-sm text-slate-700">
                 Total consolidado (serviços): <span className="font-semibold">{moeda(Number(valorTotalPreview || 0))}</span>
               </div>
@@ -2460,7 +2497,7 @@ export default function PlanilhaObraClient({
                   await importarCsv(importPreview.file, importPreview.nomeVersao);
                   setImportPreview({ file: null, nomeVersao: "", rows: [], missingColumns: [] });
                 }}
-                disabled={loading || importHasBlockingErrors || !podeEditar}
+                disabled={loading || importHasBlockingErrors || !podeEditar || !importFonteId || !importParametrosId}
                 title={importHasBlockingErrors ? "Corrija os campos destacados antes de importar" : "Confirmar importação"}
               >
                 Confirmar importação
