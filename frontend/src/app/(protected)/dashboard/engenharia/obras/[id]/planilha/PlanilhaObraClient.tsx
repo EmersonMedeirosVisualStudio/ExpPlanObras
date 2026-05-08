@@ -2321,13 +2321,16 @@ export default function PlanilhaObraClient({
               {(obraResumo.valorPrevisto != null || (diffPrevistoPlanilha != null && Math.abs(diffPrevistoPlanilha) >= 0.01)) ? (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {obraResumo.valorPrevisto != null ? (
-                    <div className="rounded-lg border bg-white px-3 py-2">
+                    <div className="rounded-lg border bg-white px-3 py-2" title="Valor previsto cadastrado para a obra (referência gerencial)">
                       <div className="text-[11px] uppercase tracking-wide text-slate-500">Valor previsto</div>
                       <div className="text-sm font-semibold text-slate-900">{moeda(Number(obraResumo.valorPrevisto || 0))}</div>
                     </div>
                   ) : null}
                   {diffPrevistoPlanilha != null && Math.abs(diffPrevistoPlanilha) >= 0.01 ? (
-                    <div className="rounded-lg border bg-white px-3 py-2">
+                    <div
+                      className="rounded-lg border bg-white px-3 py-2"
+                      title="Diferença entre o valor previsto da obra e o valor total calculado na planilha selecionada"
+                    >
                       <div className="text-[11px] uppercase tracking-wide text-slate-500">Diferença (previsto - planilha)</div>
                       <div className="text-sm font-semibold text-red-700">{moeda(Number(diffPrevistoPlanilha || 0))}</div>
                     </div>
@@ -2344,6 +2347,7 @@ export default function PlanilhaObraClient({
               type="button"
               onClick={() => router.push(selfHref)}
               disabled={loading}
+              title="Você está na tela Planilha orçamentária"
             >
               Planilha
             </button>
@@ -2357,6 +2361,7 @@ export default function PlanilhaObraClient({
                 router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos?${qs.toString()}`);
               }}
               disabled={loading}
+              title="Abrir o catálogo de serviços da Fonte de dados vinculada à planilha selecionada"
             >
               Serviços (catálogo da fonte)
             </button>
@@ -2384,6 +2389,7 @@ export default function PlanilhaObraClient({
                 router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?${qs.toString()}`);
               }}
               disabled={loading}
+              title="Abrir a tela de Insumos consolidados da planilha selecionada"
             >
               Insumos
             </button>
@@ -2392,6 +2398,7 @@ export default function PlanilhaObraClient({
               type="button"
               onClick={() => router.push(safeReturnTo || `/dashboard/engenharia/obras/${idObra}`)}
               disabled={loading}
+              title="Voltar para a obra"
             >
               Voltar
             </button>
@@ -2443,6 +2450,7 @@ export default function PlanilhaObraClient({
                 carregarComposicaoValidacao(planilhaId);
               }}
               disabled={loading}
+              title="Recarregar a lista de versões e os indicadores da planilha selecionada"
             >
               Atualizar
             </button>
@@ -2515,6 +2523,7 @@ export default function PlanilhaObraClient({
                           definirPlanilhaComoAtual(v.idPlanilha);
                         }}
                         disabled={loading}
+                        title="Definir esta versão como Atual (padrão da obra)"
                       >
                         Definir atual
                       </button>
@@ -2700,15 +2709,20 @@ export default function PlanilhaObraClient({
             <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2">
-                  <button className="rounded border bg-white px-2 py-1 text-sm hover:bg-slate-50" type="button" onClick={() => setShowPlanilhaCard((v) => !v)}>
+                  <button
+                    className="rounded border bg-white px-2 py-1 text-sm hover:bg-slate-50"
+                    type="button"
+                    onClick={() => setShowPlanilhaCard((v) => !v)}
+                    title={showPlanilhaCard ? "Recolher card da planilha" : "Expandir card da planilha"}
+                  >
                     {showPlanilhaCard ? "⯆" : "⯈"}
                   </button>
                   <div className="text-lg font-semibold">Planilha orçamentária</div>
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
                   <div className="flex items-center gap-3 flex-wrap text-sm text-slate-600">
-                    <div>{linhasVisiveis.length} linha(s)</div>
-                    <div>
+                    <div title="Quantidade de linhas visíveis na planilha selecionada">{linhasVisiveis.length} linha(s)</div>
+                    <div title="Soma dos valores parciais dos itens do tipo Serviço (na planilha selecionada)">
                       Valor total: <span className="font-semibold text-slate-900">{moeda(Number(valorTotalPlanilha || 0))}</span>
                     </div>
                   </div>
@@ -2718,6 +2732,7 @@ export default function PlanilhaObraClient({
                       type="button"
                       onClick={imprimirPlanilha}
                       disabled={loading || !planilha}
+                      title="Abrir impressão da planilha"
                     >
                       <Printer className="h-4 w-4" />
                       Imprimir
@@ -2736,6 +2751,7 @@ export default function PlanilhaObraClient({
                       type="button"
                       onClick={exportarCsvPlanilha}
                       disabled={loading || !planilha}
+                      title="Exportar a planilha para CSV"
                     >
                       <FileSpreadsheet className="h-4 w-4" />
                       CSV

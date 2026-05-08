@@ -5874,6 +5874,49 @@ export default async function v1Routes(server: FastifyInstance) {
         });
       }
 
+      if (view === 'versoes-info' || view === 'versoes_info') {
+        const rows = (await prisma.$queryRawUnsafe(
+          `
+          SELECT
+            v.id_planilha AS "idPlanilha",
+            v.numero_versao AS "numeroVersao",
+            v.nome AS "nome",
+            v.atual AS "atual",
+            v.id_fonte_dados AS "idFonteDados",
+            v.id_parametros AS "idParametros",
+            COALESCE(f.descricao,'') AS "fonteNome",
+            COALESCE(p.nome,'') AS "parametrosNome"
+          FROM obras_planilhas_versoes v
+          LEFT JOIN obras_fontes_dados f
+            ON f.tenant_id = v.tenant_id AND f.id_fonte_dados = v.id_fonte_dados
+          LEFT JOIN obras_planilhas_parametros p
+            ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
+          WHERE v.tenant_id = $1 AND v.id_obra = $2
+          ORDER BY v.numero_versao DESC, v.id_planilha DESC
+          `,
+          ctx.tenantId,
+          idObra
+        )) as any[];
+
+        return ok(reply, {
+          idObra,
+          obraStatus,
+          obra: obraResumo,
+          versoes: (rows || []).map((r: any) => ({
+            idPlanilha: Number(r.idPlanilha),
+            numeroVersao: Number(r.numeroVersao),
+            nome: String(r.nome || ''),
+            atual: Boolean(r.atual),
+            idFonteDados: r.idFonteDados == null ? null : Number(r.idFonteDados),
+            idParametros: r.idParametros == null ? null : Number(r.idParametros),
+            fonteNome: String(r.fonteNome || ''),
+            parametrosNome: String(r.parametrosNome || ''),
+            valorTotal: 0,
+            totalServicos: 0,
+          })),
+        });
+      }
+
       if (view === 'versoes') {
         const ids = (await prisma.$queryRawUnsafe(
           `

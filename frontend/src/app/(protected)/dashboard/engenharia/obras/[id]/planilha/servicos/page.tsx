@@ -16,7 +16,16 @@ type ValidacaoRow = {
 };
 
 type RefRow = { codigo: string; tipo: string; definida: boolean };
-type VersaoRow = { idPlanilha: number; numeroVersao: number; nome: string; atual: boolean };
+type VersaoRow = {
+  idPlanilha: number;
+  numeroVersao: number;
+  nome: string;
+  atual: boolean;
+  idFonteDados?: number | null;
+  idParametros?: number | null;
+  fonteNome?: string;
+  parametrosNome?: string;
+};
 
 function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -102,7 +111,7 @@ export default function Page() {
   async function carregarPlanilhaAtual() {
     if (!idObra) return;
     try {
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes`);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes-info`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar versões");
       const versoes = Array.isArray(json.data?.versoes) ? json.data.versoes : [];
@@ -112,6 +121,10 @@ export default function Page() {
           numeroVersao: Number(v?.numeroVersao || 0),
           nome: String(v?.nome || ""),
           atual: Boolean(v?.atual),
+          idFonteDados: v?.idFonteDados == null ? null : Number(v.idFonteDados),
+          idParametros: v?.idParametros == null ? null : Number(v.idParametros),
+          fonteNome: String(v?.fonteNome || ""),
+          parametrosNome: String(v?.parametrosNome || ""),
         }))
         .filter((v: VersaoRow) => Number.isFinite(v.idPlanilha) && v.idPlanilha > 0);
       setVersoes(mapped);
@@ -209,12 +222,23 @@ export default function Page() {
       setErr(null);
       setOkMsg(null);
       const pid = await carregarPlanilhaAtual();
-      await carregarReferencias();
-      if (pid) await Promise.all([carregarValidacao(pid), carregarComposicoesSemServico(pid)]);
+      await Promise.all([carregarReferencias(), pid ? Promise.all([carregarValidacao(pid), carregarComposicoesSemServico(pid)]) : Promise.resolve()]);
     } finally {
       setLoading(false);
     }
   }
+
+  const selectedVersao = useMemo(() => {
+    const pid = planilhaId != null ? Number(planilhaId) : null;
+    if (!pid) return null;
+    return versoes.find((v) => Number(v.idPlanilha) === pid) || null;
+  }, [planilhaId, versoes]);
+
+  useEffect(() => {
+    if (!copyForm.replaceComposicao && copyForm.insumosPrecoMode === "SUBSTITUIR") {
+      setCopyForm((p) => ({ ...p, insumosPrecoMode: "MANTER" }));
+    }
+  }, [copyForm.insumosPrecoMode, copyForm.replaceComposicao]);
 
   useEffect(() => {
     if (!idObra) return;
@@ -323,6 +347,14 @@ export default function Page() {
       return;
     }
     try {
+      const warnings: string[] = [];
+      if (copyForm.replaceServico) warnings.push("Substituir serviço no destino pode alterar dados compartilhados da Fonte do destino (impacta outras planilhas que usam a mesma Fonte).");
+      if (copyForm.replaceComposicao) warnings.push("Substituir composição no destino pode alterar dados compartilhados da Fonte do destino (impacta outras planilhas que usam a mesma Fonte).");
+      if (copyForm.insumosPrecoMode === "SUBSTITUIR") warnings.push("Substituir preço de insumos altera os preços na planilha destino (versão).");
+      if (warnings.length) {
+        const ok = window.confirm(`${warnings.join("\n\n")}\n\nDeseja continuar?`);
+        if (!ok) return;
+      }
       setLoading(true);
       setErr(null);
       setOkMsg(null);
@@ -359,6 +391,11 @@ export default function Page() {
           <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Serviços (catálogo da fonte)</div>
           <h1 className="text-2xl font-semibold">Serviços (catálogo da fonte) — Obra #{idObra}</h1>
           <div className="text-sm text-slate-600">Catálogo técnico de serviços da fonte de dados vinculada à planilha.</div>
+          <div className="mt-1 text-sm text-slate-700">
+            {selectedVersao?.idPlanilha ? <div className="font-semibold">{`Planilha: #${selectedVersao.idPlanilha} - ${selectedVersao.nome || "—"}`}</div> : null}
+            {selectedVersao?.idParametros ? <div>{`Parâmetros: #${selectedVersao.idParametros} - ${selectedVersao.parametrosNome || "—"}`}</div> : null}
+            {selectedVersao?.idFonteDados ? <div>{`Fonte de dados: #${selectedVersao.idFonteDados} - ${selectedVersao.fonteNome || "—"}`}</div> : null}
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
@@ -371,6 +408,7 @@ export default function Page() {
               router.push(`/dashboard/engenharia/obras/${idObra}/planilha?${qs.toString()}`);
             }}
             disabled={loading}
+            title="Voltar para a tela Planilha orçamentária"
           >
             Planilha
           </button>
@@ -379,6 +417,7 @@ export default function Page() {
             type="button"
             onClick={() => router.push(selfHref)}
             disabled={loading}
+            title="Abrir o catálogo de serviços da Fonte de dados vinculada à planilha selecionada"
           >
             Serviços (fonte)
           </button>
@@ -392,6 +431,7 @@ export default function Page() {
               router.push(`/dashboard/engenharia/obras/${idObra}/planilha/sinapi?${qs.toString()}`);
             }}
             disabled={loading}
+            title="Abrir a tela SINAPI para importar/aplicar serviços e composições"
           >
             SINAPI
           </button>
@@ -405,6 +445,7 @@ export default function Page() {
               router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?${qs.toString()}`);
             }}
             disabled={loading}
+            title="Abrir a tela de Insumos consolidados da planilha selecionada"
           >
             Insumos
           </button>
@@ -413,6 +454,7 @@ export default function Page() {
             type="button"
             onClick={() => router.push(backHref)}
             disabled={loading}
+            title="Voltar para a tela anterior"
           >
             Voltar
           </button>
@@ -420,7 +462,7 @@ export default function Page() {
       </div>
 
       <div className="flex items-center justify-end gap-2 flex-wrap">
-        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregarTudo} disabled={loading}>
+        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregarTudo} disabled={loading} title="Recarregar dados da tela">
           Atualizar
         </button>
         <input
@@ -433,10 +475,22 @@ export default function Page() {
             if (f) importarComposicoesCsv(f);
           }}
         />
-        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => fileInputRef.current?.click()} disabled={loading}>
+        <button
+          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={loading}
+          title="Importar itens de composição (insumos/composições auxiliares) por CSV para a Fonte de dados"
+        >
           Importar CSV (composições)
         </button>
-        <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={baixarModeloComposicoesCsv} disabled={loading}>
+        <button
+          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+          type="button"
+          onClick={baixarModeloComposicoesCsv}
+          disabled={loading}
+          title="Baixar um modelo de CSV para importação de composições"
+        >
           Modelo CSV (composições)
         </button>
       </div>
@@ -478,6 +532,7 @@ export default function Page() {
               value={copyForm.sourcePlanilhaId ?? ""}
               onChange={(e) => setCopyForm((p) => ({ ...p, sourcePlanilhaId: e.target.value ? Number(e.target.value) : null }))}
               disabled={loading}
+              title="Versão de origem: de onde o serviço/composição será copiado"
             >
               <option value="">(selecione)</option>
               {versoes.map((v) => (
@@ -488,12 +543,13 @@ export default function Page() {
             </select>
           </div>
           <div className="md:col-span-4 space-y-1">
-            <div className="text-sm text-slate-600">Destino (versão)</div>
+            <div className="text-sm font-semibold text-slate-800">Destino (versão)</div>
             <select
-              className="input bg-white"
+              className="input bg-white text-base font-semibold"
               value={copyForm.targetPlanilhaId ?? ""}
               onChange={(e) => setCopyForm((p) => ({ ...p, targetPlanilhaId: e.target.value ? Number(e.target.value) : null }))}
               disabled={loading}
+              title="Versão de destino: para onde o serviço/composição será copiado"
             >
               <option value="">(selecione)</option>
               {versoes.map((v) => (
@@ -511,16 +567,29 @@ export default function Page() {
               onChange={(e) => setCopyForm((p) => ({ ...p, codigoServico: e.target.value.toUpperCase() }))}
               placeholder="Ex: 100309"
               disabled={loading}
+              title="Código do serviço no catálogo (ex.: SINAPI/SBC/Próprio)"
             />
           </div>
 
           <div className="md:col-span-12 flex flex-wrap items-center gap-4 text-sm">
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={copyForm.replaceServico} onChange={(e) => setCopyForm((p) => ({ ...p, replaceServico: Boolean(e.target.checked) }))} disabled={loading} />
+              <input
+                type="checkbox"
+                checked={copyForm.replaceServico}
+                onChange={(e) => setCopyForm((p) => ({ ...p, replaceServico: Boolean(e.target.checked) }))}
+                disabled={loading}
+                title="Se marcado, atualiza o serviço no destino quando o código já existir. Isso altera a Fonte do destino (cadastro compartilhado)."
+              />
               <span>Substituir serviço no destino</span>
             </label>
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={copyForm.replaceComposicao} onChange={(e) => setCopyForm((p) => ({ ...p, replaceComposicao: Boolean(e.target.checked) }))} disabled={loading} />
+              <input
+                type="checkbox"
+                checked={copyForm.replaceComposicao}
+                onChange={(e) => setCopyForm((p) => ({ ...p, replaceComposicao: Boolean(e.target.checked) }))}
+                disabled={loading}
+                title="Se marcado, substitui os itens da composição no destino quando já existir. Isso altera a Fonte do destino (cadastro compartilhado)."
+              />
               <span>Substituir composição no destino</span>
             </label>
             <label className="flex items-center gap-2">
@@ -530,6 +599,7 @@ export default function Page() {
                 checked={copyForm.insumosPrecoMode === "MANTER"}
                 onChange={() => setCopyForm((p) => ({ ...p, insumosPrecoMode: "MANTER" }))}
                 disabled={loading}
+                title="Mantém os preços dos insumos já cadastrados na planilha destino (recomendado)"
               />
               <span>Manter preço de insumos do destino (padrão)</span>
             </label>
@@ -539,14 +609,31 @@ export default function Page() {
                 name="insumosPrecoMode"
                 checked={copyForm.insumosPrecoMode === "SUBSTITUIR"}
                 onChange={() => setCopyForm((p) => ({ ...p, insumosPrecoMode: "SUBSTITUIR" }))}
-                disabled={loading}
+                disabled={loading || !copyForm.replaceComposicao}
+                title={
+                  !copyForm.replaceComposicao
+                    ? "Disponível somente quando você marcar 'Substituir composição no destino'."
+                    : "Substitui os preços de insumos da planilha destino pelos preços da origem."
+                }
               />
               <span>Substituir preço de insumos pelo da origem</span>
             </label>
           </div>
+          {copyForm.replaceServico || copyForm.replaceComposicao ? (
+            <div className="md:col-span-12 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              <div className="font-semibold">Atenção</div>
+              <div>- Substituir serviço/composição altera a Fonte de dados do destino (cadastro compartilhado) e pode impactar outras planilhas que usam a mesma Fonte.</div>
+            </div>
+          ) : null}
 
           <div className="md:col-span-12 flex items-center justify-end gap-2 flex-wrap">
-            <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={previewCopiar} disabled={loading}>
+            <button
+              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+              type="button"
+              onClick={previewCopiar}
+              disabled={loading}
+              title="Verificar o que será copiado e se já existe no destino"
+            >
               Prévia
             </button>
             <button
@@ -554,6 +641,7 @@ export default function Page() {
               type="button"
               onClick={executarCopiar}
               disabled={loading}
+              title="Executar a cópia do serviço/composição"
             >
               Copiar
             </button>
