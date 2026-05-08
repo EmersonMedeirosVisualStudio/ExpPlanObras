@@ -409,8 +409,8 @@ function toDec(v: unknown) {
   return Number.isFinite(n) ? n : null;
 }
 
-function detectTipoLinha(item: string, und: string, quant: string, valorUnit: string) {
-  const hasServ = !!(und.trim() || quant.trim() || valorUnit.trim());
+function detectTipoLinha(item: string, codigo: string, und: string, quant: string, valorUnit: string) {
+  const hasServ = !!(codigo.trim() || und.trim() || quant.trim() || valorUnit.trim());
   if (hasServ) return { tipo: 'SERVICO' as const, nivel: item.trim() ? Math.max(0, item.split('.').filter(Boolean).length) : 0 };
   const parts = item.trim() ? item.split('.').filter(Boolean) : [];
   if (parts.length <= 1) return { tipo: 'ITEM' as const, nivel: parts.length };
@@ -6124,19 +6124,30 @@ export default async function v1Routes(server: FastifyInstance) {
           const und = get(r, 'und');
           const quant = get(r, 'quant');
           const valorUnit = get(r, 'valor_unitario');
-          const det = detectTipoLinha(item, und, quant, valorUnit);
+          const tipoLinhaRaw = idx['tipo_linha'] != null ? get(r, 'tipo_linha') : '';
+          const tipoLinhaNorm = String(tipoLinhaRaw || '').trim().toUpperCase();
+          const tipoLinhaFromCsv = tipoLinhaNorm === 'ITEM' || tipoLinhaNorm === 'SUBITEM' || tipoLinhaNorm === 'SERVICO' ? tipoLinhaNorm : '';
+          const det = tipoLinhaFromCsv
+            ? { tipo: tipoLinhaFromCsv as any, nivel: item.trim() ? Math.max(0, item.split('.').filter(Boolean).length) : 0 }
+            : detectTipoLinha(item, codigo, und, quant, valorUnit);
           const quantidade = toDec(quant);
           const vUnit = toDec(valorUnit);
           const valorParcialCalc = quantidade != null && vUnit != null ? Number((quantidade * vUnit).toFixed(6)) : null;
 
           if (!item.trim()) return { ok: false as const, rowIndex: i, message: 'Campo "item" é obrigatório', field: 'item' as const };
           if (!servicos.trim()) return { ok: false as const, rowIndex: i, message: 'Campo "servicos" é obrigatório', field: 'servicos' as const };
+          if (tipoLinhaNorm && !tipoLinhaFromCsv) return { ok: false as const, rowIndex: i, message: 'Campo "tipo_linha" inválido (use ITEM, SUBITEM ou SERVICO)', field: 'tipo_linha' as const };
 
           if (det.tipo === 'SERVICO') {
             if (!codigo.trim()) return { ok: false as const, rowIndex: i, message: 'Campo "codigo" é obrigatório para serviço', field: 'codigo' as const };
             if (!und.trim()) return { ok: false as const, rowIndex: i, message: 'Campo "und" é obrigatório para serviço', field: 'und' as const };
             if (quantidade == null || !(quantidade > 0)) return { ok: false as const, rowIndex: i, message: 'Campo "quant" inválido para serviço', field: 'quant' as const };
             if (vUnit == null || !(vUnit >= 0)) return { ok: false as const, rowIndex: i, message: 'Campo "valor_unitario" inválido para serviço', field: 'valor_unitario' as const };
+          } else {
+            if (codigo.trim()) return { ok: false as const, rowIndex: i, message: 'Não usar "codigo" em ITEM/SUBITEM', field: 'codigo' as const };
+            if (und.trim()) return { ok: false as const, rowIndex: i, message: 'Não usar "und" em ITEM/SUBITEM', field: 'und' as const };
+            if (quant.trim()) return { ok: false as const, rowIndex: i, message: 'Não usar "quant" em ITEM/SUBITEM', field: 'quant' as const };
+            if (valorUnit.trim()) return { ok: false as const, rowIndex: i, message: 'Não usar "valor_unitario" em ITEM/SUBITEM', field: 'valor_unitario' as const };
           }
 
           return {

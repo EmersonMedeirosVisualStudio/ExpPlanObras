@@ -222,8 +222,8 @@ function toDec(v: unknown) {
   return parseNumberLoose(v);
 }
 
-function detectTipoLinha(item: string, und: string, quant: string, valorUnit: string) {
-  const hasServ = !!(und.trim() || quant.trim() || valorUnit.trim());
+function detectTipoLinha(item: string, codigo: string, und: string, quant: string, valorUnit: string) {
+  const hasServ = !!(codigo.trim() || und.trim() || quant.trim() || valorUnit.trim());
   if (hasServ) return { tipo: "SERVICO" as const, nivel: item.trim() ? Math.max(0, item.split(".").filter(Boolean).length) : 0 };
   const parts = item.trim() ? item.split(".").filter(Boolean) : [];
   if (parts.length <= 1) return { tipo: "ITEM" as const, nivel: parts.length };
@@ -713,10 +713,10 @@ export default function PlanilhaObraClient({
   function baixarModeloCsv() {
     const sep = ";";
     const lines = [
-      ["item", "codigo", "fonte", "servicos", "und", "quant", "valor_unitario"].join(sep),
-      ["1", "", "", "SERVIÇOS PRELIMINARES", "", "", ""].join(sep),
-      ["1.1", "", "", "Terraplenagem", "", "", ""].join(sep),
-      ["1.1.1", "SER-0001", "SINAPI", "Escavação manual", "m³", "10", "100,00"].join(sep),
+      ["item", "codigo", "fonte", "servicos", "und", "quant", "valor_unitario", "tipo_linha"].join(sep),
+      ["1", "", "", "SERVIÇOS PRELIMINARES", "", "", "", "ITEM"].join(sep),
+      ["1.1", "", "", "Terraplenagem", "", "", "", "SUBITEM"].join(sep),
+      ["1.1.1", "SER-0001", "SINAPI", "Escavação manual", "m³", "10", "100,00", "SERVICO"].join(sep),
     ];
     const csv = `${lines.join("\n")}\n`;
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -1741,7 +1741,10 @@ export default function PlanilhaObraClient({
         const und = get(r, "und");
         const quant = get(r, "quant");
         const valorUnitario = get(r, "valor_unitario");
-        const det = detectTipoLinha(item, und, quant, valorUnitario);
+        const tipoLinhaRaw = idx["tipo_linha"] != null ? get(r, "tipo_linha") : "";
+        const tipoLinhaNorm = String(tipoLinhaRaw || "").trim().toUpperCase();
+        const tipoLinhaFromCsv = tipoLinhaNorm === "ITEM" || tipoLinhaNorm === "SUBITEM" || tipoLinhaNorm === "SERVICO" ? tipoLinhaNorm : "";
+        const det = tipoLinhaFromCsv ? { tipo: tipoLinhaFromCsv as any, nivel: item.trim() ? Math.max(0, item.split(".").filter(Boolean).length) : 0 } : detectTipoLinha(item, codigo, und, quant, valorUnitario);
         const quantidade = toDec(quant);
         const vUnit = toDec(valorUnitario);
         const valorParcialCalc = quantidade != null && vUnit != null ? Number((quantidade * vUnit).toFixed(6)) : null;
@@ -1749,12 +1752,18 @@ export default function PlanilhaObraClient({
         const errors: any = {};
         if (!item.trim()) errors.item = "Obrigatório";
         if (!servicos.trim()) errors.servicos = "Obrigatório";
+        if (tipoLinhaNorm && !tipoLinhaFromCsv) errors.tipoLinha = "tipo_linha inválido (use ITEM, SUBITEM ou SERVICO)";
 
         if (det.tipo === "SERVICO") {
           if (!codigo.trim()) errors.codigo = "Obrigatório (serviço)";
           if (!und.trim()) errors.und = "Obrigatório (serviço)";
           if (quantidade == null || !(quantidade > 0)) errors.quant = "Inválido (serviço)";
           if (vUnit == null || !(vUnit >= 0)) errors.valorUnitario = "Inválido (serviço)";
+        } else {
+          if (codigo.trim()) errors.codigo = "Não usar código em ITEM/SUBITEM";
+          if (und.trim()) errors.und = "Não usar und em ITEM/SUBITEM";
+          if (quant.trim()) errors.quant = "Não usar quant em ITEM/SUBITEM";
+          if (valorUnitario.trim()) errors.valorUnitario = "Não usar valor_unitario em ITEM/SUBITEM";
         }
 
         return {
@@ -2429,7 +2438,9 @@ export default function PlanilhaObraClient({
                   Colunas obrigatórias ausentes: {importPreview.missingColumns.join(", ")}
                 </div>
               ) : (
-                <div className="mt-2 text-xs text-slate-500">Campos importados: item, codigo, fonte, servicos, und, quant, valor_unitario. Valor parcial é calculado automaticamente.</div>
+                <div className="mt-2 text-xs text-slate-500">
+                  Campos importados: item, codigo, fonte, servicos, und, quant, valor_unitario. Coluna opcional: tipo_linha (ITEM, SUBITEM, SERVICO). Valor parcial é calculado automaticamente.
+                </div>
               )}
             </div>
             <div className="flex gap-2">
