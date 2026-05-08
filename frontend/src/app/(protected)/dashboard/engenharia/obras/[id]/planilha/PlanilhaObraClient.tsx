@@ -2430,126 +2430,6 @@ export default function PlanilhaObraClient({
       {okMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{okMsg}</div> : null}
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
 
-      {importPreview.file ? (
-        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div>
-              <div className="text-lg font-semibold">Prévia da importação (CSV)</div>
-              <div className="text-sm text-slate-600">
-                Arquivo: <span className="font-medium">{importPreview.file.name}</span> • Nova versão: <span className="font-medium">{importPreview.nomeVersao}</span>
-              </div>
-              <div className="mt-2 grid gap-2 md:grid-cols-2">
-                <label className="space-y-1">
-                  <div className="text-xs text-slate-500">Fonte de dados (SERVICOS_FONTE)</div>
-                  <select className="input bg-white w-full" value={importFonteId} onChange={(e) => setImportFonteId(e.target.value)} disabled={loading}>
-                    <option value="">Selecione...</option>
-                    {fontes.map((f) => (
-                      <option key={f.idFonteDados} value={String(f.idFonteDados)}>
-                        {`#${f.idFonteDados} - ${f.nome || "—"}`}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="space-y-1">
-                  <div className="text-xs text-slate-500">Parâmetros (BDI/UF/Data-base)</div>
-                  <select
-                    className="input bg-white w-full"
-                    value={importParametrosId}
-                    onChange={(e) => setImportParametrosId(e.target.value)}
-                    disabled={loading}
-                  >
-                    <option value="">Selecione...</option>
-                    {parametrosCad.map((p) => (
-                      <option key={p.idParametros} value={String(p.idParametros)}>
-                        {`#${p.idParametros} - ${p.nome || "—"}`}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div className="mt-1 text-sm text-slate-700">
-                Total consolidado (serviços): <span className="font-semibold">{moeda(Number(valorTotalPreview || 0))}</span>
-              </div>
-              {importPreview.missingColumns.length ? (
-                <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                  Colunas obrigatórias ausentes: {importPreview.missingColumns.join(", ")}
-                </div>
-              ) : (
-                <div className="mt-2 text-xs text-slate-500">
-                  Campos importados: item, codigo, fonte, servicos, und, quant, valor_unitario. Coluna opcional: tipo_linha (ITEM, SUBITEM, SERVICO). Valor parcial é calculado automaticamente.
-                </div>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <button
-                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-                type="button"
-                onClick={() => setImportPreview({ file: null, nomeVersao: "", rows: [], missingColumns: [] })}
-                disabled={loading}
-              >
-                Cancelar
-              </button>
-              <button
-                className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
-                type="button"
-                onClick={async () => {
-                  if (!importPreview.file) return;
-                  await importarCsv(importPreview.file, importPreview.nomeVersao);
-                  setImportPreview({ file: null, nomeVersao: "", rows: [], missingColumns: [] });
-                }}
-                disabled={loading || importHasBlockingErrors || !podeEditar || !importFonteId || !importParametrosId}
-                title={importHasBlockingErrors ? "Corrija os campos destacados antes de importar" : "Confirmar importação"}
-              >
-                Confirmar importação
-              </button>
-            </div>
-          </div>
-
-          <div className="overflow-auto rounded-lg border">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-slate-700">
-                <tr>
-                  <th className="px-3 py-2">Linha</th>
-                  <th className="px-3 py-2">Item</th>
-                  <th className="px-3 py-2">Código</th>
-                  <th className="px-3 py-2">Fonte</th>
-                  <th className="px-3 py-2">Serviços</th>
-                  <th className="px-3 py-2">Und</th>
-                  <th className="px-3 py-2 text-right">Quant</th>
-                  <th className="px-3 py-2 text-right">Valor unitário</th>
-                  <th className="px-3 py-2 text-right">Valor parcial (calc.)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {importPreview.rows.slice(0, 2000).map((r) => {
-                  const cellClass = (key: keyof typeof r.errors) => (r.errors?.[key] ? "bg-red-50 text-red-700" : "");
-                  return (
-                    <tr key={r.rowIndex} className="border-t">
-                      <td className="px-3 py-2 text-xs text-slate-500">{r.rowIndex + 2}</td>
-                      <td className={`px-3 py-2 ${cellClass("item")}`}>{r.item || "—"}</td>
-                      <td className={`px-3 py-2 ${cellClass("codigo")}`}>{r.codigo || "—"}</td>
-                      <td className={`px-3 py-2 ${cellClass("fonte")}`}>{r.fonte || "—"}</td>
-                      <td className={`px-3 py-2 ${cellClass("servicos")}`}>{r.servicos || "—"}</td>
-                      <td className={`px-3 py-2 ${cellClass("und")}`}>{r.und || "—"}</td>
-                      <td className={`px-3 py-2 text-right ${cellClass("quant")}`}>{r.quant || "—"}</td>
-                      <td className={`px-3 py-2 text-right ${cellClass("valorUnitario")}`}>{r.valorUnitario || "—"}</td>
-                      <td className="px-3 py-2 text-right">{r.valorParcialCalc == null ? "—" : moeda(Number(r.valorParcialCalc || 0))}</td>
-                    </tr>
-                  );
-                })}
-                {importPreview.rows.length > 2000 ? (
-                  <tr className="border-t">
-                    <td colSpan={9} className="px-3 py-3 text-xs text-slate-500">
-                      Mostrando as primeiras 2000 linhas para prévia. Total no arquivo: {importPreview.rows.length}.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      ) : null}
-
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="text-lg font-semibold">Versões cadastradas</div>
@@ -2566,33 +2446,14 @@ export default function PlanilhaObraClient({
             >
               Atualizar
             </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,text/csv"
-              className="hidden"
-              onChange={(e) => {
-                const f = (e.target.files || [])[0] || null;
-                if (f) prepararImportacaoCsv(f);
-              }}
-            />
             <button
               className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/importacoes?planilhaId=${encodeURIComponent(String(effectivePlanilhaId || ""))}`)}
               disabled={loading || !podeEditar}
-              title="Importar CSV"
+              title="Importações"
             >
-              Importar CSV
-            </button>
-            <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60 inline-flex items-center gap-2"
-              type="button"
-              onClick={baixarModeloCsv}
-              disabled={loading}
-            >
-              <Download className="h-4 w-4" />
-              Modelo CSV
+              Importações
             </button>
             <button
               className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"

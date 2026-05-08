@@ -5955,7 +5955,7 @@ export default async function v1Routes(server: FastifyInstance) {
           item,
           COALESCE(sf.codigo,'') AS codigo,
           COALESCE(sf.banco,'') AS fonte,
-          COALESCE(sf.descricao,'') AS servico,
+          CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(sf.descricao,'') ELSE COALESCE(i.observacao,'') END AS servico,
           COALESCE(sf.und,'') AS und,
           quantidade,
           i.valor_unitario AS "valorUnitario",
@@ -6089,9 +6089,9 @@ export default async function v1Routes(server: FastifyInstance) {
       if (isMultipart) {
         const parts = (request as any).parts();
         let action = '';
-        let nome = '';
-        let idFonteDadosRaw = '';
-        let idParametrosRaw = '';
+        let idPlanilhaRaw = '';
+        let modoImportacaoRaw = '';
+        let cadastrarServicosRaw = '';
         let fileBuffer: Buffer | null = null;
         for await (const part of parts) {
           if (part.type === 'file') {
@@ -6100,17 +6100,17 @@ export default async function v1Routes(server: FastifyInstance) {
           }
           const field = String(part.fieldname || '');
           if (field === 'action') action = String(part.value || '').trim().toUpperCase();
-          if (field === 'nome') nome = String(part.value || '').trim();
-          if (field === 'idFonteDados') idFonteDadosRaw = String(part.value || '').trim();
-          if (field === 'idParametros') idParametrosRaw = String(part.value || '').trim();
+          if (field === 'idPlanilha') idPlanilhaRaw = String(part.value || '').trim();
+          if (field === 'modoImportacao') modoImportacaoRaw = String(part.value || '').trim().toUpperCase();
+          if (field === 'cadastrarServicosFaltantes') cadastrarServicosRaw = String(part.value || '').trim();
         }
 
         if (action !== 'IMPORTAR_CSV') return fail(reply, 422, 'Ação inválida');
         if (!fileBuffer) return fail(reply, 422, 'Arquivo CSV é obrigatório (campo "file")');
-        const idFonteDados = Number(idFonteDadosRaw || NaN);
-        const idParametros = Number(idParametrosRaw || NaN);
-        if (!Number.isFinite(idFonteDados) || idFonteDados <= 0) return fail(reply, 422, 'Selecione uma Fonte de dados válida para importar o CSV');
-        if (!Number.isFinite(idParametros) || idParametros <= 0) return fail(reply, 422, 'Selecione um cadastro de Parâmetros válido para importar o CSV');
+        const idPlanilhaTarget = Number(idPlanilhaRaw || NaN);
+        if (!Number.isFinite(idPlanilhaTarget) || idPlanilhaTarget <= 0) return fail(reply, 422, 'Selecione uma planilha destino válida para importar o CSV');
+        const modoImportacao = modoImportacaoRaw === 'REPLACE' ? 'REPLACE' : 'APPEND';
+        const cadastrarServicosFaltantes = cadastrarServicosRaw === '1' || cadastrarServicosRaw === 'true' || cadastrarServicosRaw === 'TRUE';
 
         let csvText = decodeCsvBuffer(fileBuffer);
         csvText = csvText.replace(/^\uFEFF/, '');
@@ -6183,53 +6183,34 @@ export default async function v1Routes(server: FastifyInstance) {
 
         const created = await prismaTx(async (tx: any) => {
           await ensurePlanilhaModeloFonteTables(tx);
-          await ensureFontesDadosTables(tx);
-          await ensurePlanilhaParametrosTables(tx);
-          const fonteOk = (await tx.$queryRawUnsafe(
-            `SELECT 1 FROM obras_fontes_dados WHERE tenant_id = $1 AND id_fonte_dados = $2 LIMIT 1`,
-            ctx.tenantId,
-            idFonteDados
-          )) as any[];
-          if (!fonteOk?.[0]) throw new Error('Fonte de dados não encontrada');
-          const paramOk = (await tx.$queryRawUnsafe(
-            `SELECT 1 FROM obras_planilhas_parametros WHERE tenant_id = $1 AND id_parametros = $2 LIMIT 1`,
-            ctx.tenantId,
-            idParametros
-          )) as any[];
-          if (!paramOk?.[0]) throw new Error('Parâmetros não encontrados');
-
-          const maxRows = (await tx.$queryRawUnsafe(
-            `SELECT COALESCE(MAX(numero_versao),0) AS "maxVersao" FROM obras_planilhas_versoes WHERE tenant_id = $1 AND id_obra = $2`,
-            ctx.tenantId,
-            idObra
-          )) as any[];
-          const nextVersao = Number(maxRows?.[0]?.maxVersao || 0) + 1;
-          const nomeFinal = String(nome || `Versão ${nextVersao}`).trim() || `Versão ${nextVersao}`;
-
-          const ins = (await tx.$queryRawUnsafe(
+          const versaoRows = (await tx.$queryRawUnsafe(
             `
-            INSERT INTO obras_planilhas_versoes
-              (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador, id_fonte_dados, id_parametros)
-            VALUES
-              ($1,$2,$3,$4,TRUE,'CSV',$5,$6,$7)
-            RETURNING id_planilha AS "idPlanilha"
+            SELECT id_planilha AS "idPlanilha", id_fonte_dados AS "idFonteDados", id_parametros AS "idParametros"
+            FROM obras_planilhas_versoes
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+            LIMIT 1
             `,
             ctx.tenantId,
             idObra,
-            nextVersao,
-            nomeFinal,
-            ctx.userId,
-            idFonteDados,
-            idParametros
+            idPlanilhaTarget
           )) as any[];
-          const idPlanilha = Number(ins?.[0]?.idPlanilha || 0);
-          await tx.$executeRawUnsafe(`UPDATE obras_planilhas_versoes SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2`, ctx.tenantId, idObra);
-          await tx.$executeRawUnsafe(
-            `UPDATE obras_planilhas_versoes SET atual = TRUE WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+          const v = versaoRows?.[0] || null;
+          if (!v) throw new Error('Planilha destino não encontrada');
+          const idPlanilha = Number(v.idPlanilha || 0);
+          const idFonteDados = v.idFonteDados != null ? Number(v.idFonteDados) : 0;
+          const idParametros = v.idParametros != null ? Number(v.idParametros) : 0;
+          if (!idFonteDados) throw new Error('Fonte de dados da planilha destino não definida');
+          if (!idParametros) throw new Error('Parâmetros da planilha destino não definidos');
+
+          if (modoImportacao === 'REPLACE') {
+            await tx.$executeRawUnsafe(`DELETE FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, idPlanilha);
+          }
+          const maxOrdRows = (await tx.$queryRawUnsafe(
+            `SELECT COALESCE(MAX(ordem),0) AS "maxOrd" FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`,
             ctx.tenantId,
-            idObra,
             idPlanilha
-          );
+          )) as any[];
+          const baseOrd = modoImportacao === 'APPEND' ? Number(maxOrdRows?.[0]?.maxOrd || 0) : 0;
 
           const svcMap = new Map<string, { codigo: string; banco: string; descricao: string; und: string; valorUnitario: number | null }>();
           for (const r of preparedOk) {
@@ -6255,44 +6236,84 @@ export default async function v1Routes(server: FastifyInstance) {
           }
 
           const svcRows = Array.from(svcMap.values());
-          const svcChunk = 450;
-          for (let start = 0; start < svcRows.length; start += svcChunk) {
-            const chunk = svcRows.slice(start, start + svcChunk);
-            const params: any[] = [];
-            let p = 1;
-            const values = chunk
-              .map((s) => {
-                const base = [
+          if (cadastrarServicosFaltantes && svcRows.length) {
+            const svcChunk = 450;
+            for (let start = 0; start < svcRows.length; start += svcChunk) {
+              const chunk = svcRows.slice(start, start + svcChunk);
+              const params: any[] = [];
+              let p = 1;
+              const values = chunk
+                .map((s) => {
+                  const base = [
+                    ctx.tenantId,
+                    idFonteDados,
+                    'SERVICO',
+                    s.codigo,
+                    s.banco || null,
+                    s.descricao || null,
+                    s.und || null,
+                    s.valorUnitario,
+                  ];
+                  for (const v of base) params.push(v);
+                  const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+                  return `(${placeholders})`;
+                })
+                .join(',');
+              await tx.$executeRawUnsafe(
+                `
+                INSERT INTO obras_servicos_fonte
+                  (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+                VALUES
+                  ${values}
+                ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+                DO UPDATE SET
+                  banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
+                  descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
+                  und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
+                  valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
+                  atualizado_em = NOW()
+                `,
+                ...params
+              );
+            }
+          }
+
+          if (!cadastrarServicosFaltantes) {
+            const codes = svcRows.map((s) => s.codigo).filter(Boolean);
+            if (codes.length) {
+              const missingCodes: string[] = [];
+              const chunkSize = 600;
+              for (let start = 0; start < codes.length; start += chunkSize) {
+                const chunk = codes.slice(start, start + chunkSize);
+                const params: any[] = [];
+                let p = 3;
+                const values = chunk
+                  .map((c) => {
+                    params.push(String(c || '').trim().toUpperCase());
+                    return `($${p++})`;
+                  })
+                  .join(',');
+                const rows = (await tx.$queryRawUnsafe(
+                  `
+                  WITH v(codigo) AS (VALUES ${values})
+                  SELECT v.codigo AS codigo
+                  FROM v
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM obras_servicos_fonte sf
+                    WHERE sf.tenant_id = $1 AND sf.id_fonte_dados = $2 AND sf.codigo = v.codigo
+                  )
+                  `,
                   ctx.tenantId,
                   idFonteDados,
-                  'SERVICO',
-                  s.codigo,
-                  s.banco || null,
-                  s.descricao || null,
-                  s.und || null,
-                  s.valorUnitario,
-                ];
-                for (const v of base) params.push(v);
-                const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
-                return `(${placeholders})`;
-              })
-              .join(',');
-            await tx.$executeRawUnsafe(
-              `
-              INSERT INTO obras_servicos_fonte
-                (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-              VALUES
-                ${values}
-              ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-              DO UPDATE SET
-                banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-                descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-                und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
-                valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
-                atualizado_em = NOW()
-              `,
-              ...params
-            );
+                  ...params
+                )) as any[];
+                for (const r of rows || []) {
+                  const c = String(r?.codigo || '').trim().toUpperCase();
+                  if (c) missingCodes.push(c);
+                }
+              }
+              if (missingCodes.length) throw new Error(`Serviços não encontrados na Fonte de dados (#${idFonteDados}): ${missingCodes.slice(0, 30).join(', ')}${missingCodes.length > 30 ? '…' : ''}`);
+            }
           }
 
           const chunkSize = 600;
@@ -6302,7 +6323,7 @@ export default async function v1Routes(server: FastifyInstance) {
             let p = 1;
             const values = chunk
               .map((r) => {
-                const base = [r.ordem, r.item, r.codigo, r.quantidade, r.valorUnitario, r.valorParcial, r.nivel, r.tipoLinha];
+                const base = [r.ordem, r.item, r.codigo, r.quantidade, r.valorUnitario, r.valorParcial, r.nivel, r.tipoLinha, r.servico];
                 for (const v of base) params.push(v);
                 const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
                 return `(${placeholders})`;
@@ -6311,25 +6332,26 @@ export default async function v1Routes(server: FastifyInstance) {
 
             await tx.$executeRawUnsafe(
               `
-              WITH v(ordem, item, codigo, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha) AS (
+              WITH v(ordem, item, codigo, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao) AS (
                 VALUES ${values}
               )
               INSERT INTO obras_planilha_itens
-                (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha)
+                (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
               SELECT
                 $1 AS tenant_id,
                 $2 AS id_planilha,
-                v.ordem,
+                v.ordem + $4 AS ordem,
                 v.item,
                 CASE
                   WHEN v.tipo_linha = 'SERVICO' AND COALESCE(v.codigo,'') <> '' THEN sf.id_servico
                   ELSE NULL
                 END AS id_servico,
-                v.quantidade,
-                v.valor_unitario,
-                v.valor_parcial,
+                CASE WHEN v.tipo_linha = 'SERVICO' THEN v.quantidade ELSE NULL END AS quantidade,
+                CASE WHEN v.tipo_linha = 'SERVICO' THEN v.valor_unitario ELSE NULL END AS valor_unitario,
+                CASE WHEN v.tipo_linha = 'SERVICO' THEN v.valor_parcial ELSE NULL END AS valor_parcial,
                 v.nivel,
-                v.tipo_linha
+                v.tipo_linha,
+                NULLIF(v.observacao,'') AS observacao
               FROM v
               LEFT JOIN obras_servicos_fonte sf
                 ON sf.tenant_id = $1 AND sf.id_fonte_dados = $3 AND sf.codigo = UPPER(COALESCE(v.codigo,''))
@@ -6337,18 +6359,248 @@ export default async function v1Routes(server: FastifyInstance) {
               ctx.tenantId,
               idPlanilha,
               idFonteDados,
+              baseOrd,
               ...params
             );
           }
 
-          return { idPlanilha, numeroVersao: nextVersao };
+          return { idPlanilha };
         });
 
-        return ok(reply, { idObra, idPlanilha: created.idPlanilha, numeroVersao: created.numeroVersao }, { message: 'CSV importado' });
+        return ok(reply, { idObra, idPlanilha: created.idPlanilha }, { message: 'CSV importado' });
       }
 
       const body = (request.body || {}) as any;
       const action = String(body.action || '').trim().toUpperCase();
+
+      if (action === 'IMPORTAR_SERVICOS_DE_OUTRA_PLANILHA') {
+        const payload = z
+          .object({
+            idPlanilhaTarget: z.coerce.number().int().positive(),
+            idPlanilhaSource: z.coerce.number().int().positive(),
+            modoImportacao: z.enum(['APPEND', 'REPLACE']).optional().nullable(),
+            cadastrarServicosFaltantes: z.boolean().optional().nullable(),
+            rows: z
+              .array(
+                z.object({
+                  item: z.string().optional().nullable(),
+                  codigo: z.string().min(1),
+                  fonte: z.string().optional().nullable(),
+                  servicos: z.string().optional().nullable(),
+                  und: z.string().optional().nullable(),
+                  quant: z.string().optional().nullable(),
+                  valorUnitario: z.string().optional().nullable(),
+                })
+              )
+              .min(1),
+          })
+          .parse(body || {});
+
+        const modoImportacao = payload.modoImportacao === 'REPLACE' ? 'REPLACE' : 'APPEND';
+        const cadastrarServicosFaltantes = payload.cadastrarServicosFaltantes !== false;
+
+        const created = await prismaTx(async (tx: any) => {
+          await ensurePlanilhaModeloFonteTables(tx);
+
+          const targetRows = (await tx.$queryRawUnsafe(
+            `
+            SELECT id_planilha AS "idPlanilha", id_fonte_dados AS "idFonteDados", id_parametros AS "idParametros"
+            FROM obras_planilhas_versoes
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+            LIMIT 1
+            `,
+            ctx.tenantId,
+            idObra,
+            Number(payload.idPlanilhaTarget)
+          )) as any[];
+          const target = targetRows?.[0] || null;
+          if (!target) throw new Error('Planilha destino não encontrada');
+          const idFonteDados = target.idFonteDados != null ? Number(target.idFonteDados) : 0;
+          if (!idFonteDados) throw new Error('Fonte de dados da planilha destino não definida');
+
+          const sourceOk = (await tx.$queryRawUnsafe(
+            `
+            SELECT 1 AS ok
+            FROM obras_planilhas_versoes
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+            LIMIT 1
+            `,
+            ctx.tenantId,
+            idObra,
+            Number(payload.idPlanilhaSource)
+          )) as any[];
+          if (!sourceOk?.[0]) throw new Error('Planilha origem não encontrada');
+
+          if (modoImportacao === 'REPLACE') {
+            await tx.$executeRawUnsafe(`DELETE FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, Number(payload.idPlanilhaTarget));
+          }
+          const maxOrdRows = (await tx.$queryRawUnsafe(
+            `SELECT COALESCE(MAX(ordem),0) AS "maxOrd" FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`,
+            ctx.tenantId,
+            Number(payload.idPlanilhaTarget)
+          )) as any[];
+          const baseOrd = modoImportacao === 'APPEND' ? Number(maxOrdRows?.[0]?.maxOrd || 0) : 0;
+
+          const svcMap = new Map<string, { codigo: string; banco: string; descricao: string; und: string; valorUnitario: number | null }>();
+          const rowsPrepared = payload.rows.map((r) => {
+            const codigo = String(r.codigo || '').trim().toUpperCase();
+            const banco = r.fonte != null ? String(r.fonte || '').trim() : '';
+            const descricao = r.servicos != null ? String(r.servicos || '').trim() : '';
+            const und = r.und != null ? String(r.und || '').trim() : '';
+            const valorUnitario = r.valorUnitario != null ? toDec(String(r.valorUnitario)) : null;
+            const quant = r.quant != null ? toDec(String(r.quant)) : null;
+            const item = r.item != null ? String(r.item || '').trim().slice(0, 80) : null;
+            const nivel = item ? item.split('.').filter(Boolean).length : 0;
+            if (!codigo) throw new Error('Código inválido');
+            const prev = svcMap.get(codigo);
+            if (!prev) svcMap.set(codigo, { codigo, banco, descricao, und, valorUnitario: valorUnitario == null ? null : Number(valorUnitario) });
+            else
+              svcMap.set(codigo, {
+                codigo,
+                banco: prev.banco || banco,
+                descricao: prev.descricao || descricao,
+                und: prev.und || und,
+                valorUnitario: prev.valorUnitario ?? (valorUnitario == null ? null : Number(valorUnitario)),
+              });
+            return {
+              item,
+              codigo,
+              quantidade: quant == null ? null : Number(quant),
+              valorUnitario: valorUnitario == null ? null : Number(valorUnitario),
+              valorParcial: quant != null && valorUnitario != null ? Number((Number(quant) * Number(valorUnitario)).toFixed(6)) : null,
+              nivel,
+            };
+          });
+
+          const svcRows = Array.from(svcMap.values());
+          if (cadastrarServicosFaltantes && svcRows.length) {
+            const svcChunk = 450;
+            for (let start = 0; start < svcRows.length; start += svcChunk) {
+              const chunk = svcRows.slice(start, start + svcChunk);
+              const params: any[] = [];
+              let p = 1;
+              const values = chunk
+                .map((s) => {
+                  const base = [
+                    ctx.tenantId,
+                    idFonteDados,
+                    'SERVICO',
+                    s.codigo,
+                    s.banco || null,
+                    s.descricao || null,
+                    s.und || null,
+                    s.valorUnitario,
+                  ];
+                  for (const v of base) params.push(v);
+                  const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+                  return `(${placeholders})`;
+                })
+                .join(',');
+              await tx.$executeRawUnsafe(
+                `
+                INSERT INTO obras_servicos_fonte
+                  (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+                VALUES
+                  ${values}
+                ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+                DO UPDATE SET
+                  banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
+                  descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
+                  und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
+                  valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
+                  atualizado_em = NOW()
+                `,
+                ...params
+              );
+            }
+          } else {
+            const codes = svcRows.map((s) => s.codigo).filter(Boolean);
+            if (codes.length) {
+              const missingCodes: string[] = [];
+              const chunkSize = 600;
+              for (let start = 0; start < codes.length; start += chunkSize) {
+                const chunk = codes.slice(start, start + chunkSize);
+                const params: any[] = [];
+                let p = 3;
+                const values = chunk
+                  .map((c) => {
+                    params.push(String(c || '').trim().toUpperCase());
+                    return `($${p++})`;
+                  })
+                  .join(',');
+                const rows = (await tx.$queryRawUnsafe(
+                  `
+                  WITH v(codigo) AS (VALUES ${values})
+                  SELECT v.codigo AS codigo
+                  FROM v
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM obras_servicos_fonte sf
+                    WHERE sf.tenant_id = $1 AND sf.id_fonte_dados = $2 AND sf.codigo = v.codigo
+                  )
+                  `,
+                  ctx.tenantId,
+                  idFonteDados,
+                  ...params
+                )) as any[];
+                for (const r of rows || []) {
+                  const c = String(r?.codigo || '').trim().toUpperCase();
+                  if (c) missingCodes.push(c);
+                }
+              }
+              if (missingCodes.length) throw new Error(`Serviços não encontrados na Fonte de dados (#${idFonteDados}): ${missingCodes.slice(0, 30).join(', ')}${missingCodes.length > 30 ? '…' : ''}`);
+            }
+          }
+
+          const chunkSize = 600;
+          for (let start = 0; start < rowsPrepared.length; start += chunkSize) {
+            const chunk = rowsPrepared.slice(start, start + chunkSize);
+            const params: any[] = [];
+            let p = 1;
+            const values = chunk
+              .map((r, idx) => {
+                const ordem = baseOrd + start + idx + 1;
+                const base = [ordem, r.item, r.codigo, r.quantidade, r.valorUnitario, r.valorParcial, r.nivel];
+                for (const v of base) params.push(v);
+                const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
+                return `(${placeholders})`;
+              })
+              .join(',');
+
+            await tx.$executeRawUnsafe(
+              `
+              WITH v(ordem, item, codigo, quantidade, valor_unitario, valor_parcial, nivel) AS (
+                VALUES ${values}
+              )
+              INSERT INTO obras_planilha_itens
+                (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
+              SELECT
+                $1 AS tenant_id,
+                $2 AS id_planilha,
+                v.ordem,
+                v.item,
+                sf.id_servico AS id_servico,
+                v.quantidade,
+                v.valor_unitario,
+                v.valor_parcial,
+                v.nivel,
+                'SERVICO' AS tipo_linha,
+                NULL AS observacao
+              FROM v
+              INNER JOIN obras_servicos_fonte sf
+                ON sf.tenant_id = $1 AND sf.id_fonte_dados = $3 AND sf.codigo = UPPER(COALESCE(v.codigo,''))
+              `,
+              ctx.tenantId,
+              Number(payload.idPlanilhaTarget),
+              idFonteDados,
+              ...params
+            );
+          }
+
+          return { ok: true };
+        });
+
+        return ok(reply, created, { message: 'Serviços importados' });
+      }
 
       if (action === 'DUPLICAR_VERSAO') {
         const created = await prismaTx(async (tx: any) => {
@@ -6914,6 +7166,15 @@ export default async function v1Routes(server: FastifyInstance) {
           idServico = upserted?.[0]?.idServico ? Number(upserted[0].idServico) : null;
         }
 
+        const observacao = tipoLinha === 'SERVICO' ? (linha.observacao ? String(linha.observacao).trim().slice(0, 800) : null) : servicoLinha;
+        if (tipoLinha !== 'SERVICO') {
+          fonteLinha = null;
+          undLinha = null;
+          valorUnitario = null;
+          valorParcialBody = null;
+          valorParcial = null;
+        }
+
         if (tipoLinha === 'SERVICO' && codigo) {
           await ensurePlanilhaComposicaoTables(prisma);
           const rows = (await prisma.$queryRawUnsafe(
@@ -6979,6 +7240,7 @@ export default async function v1Routes(server: FastifyInstance) {
               valor_parcial = $9,
               nivel = $10,
               tipo_linha = $11,
+              observacao = $12,
               atualizado_em = NOW()
             WHERE tenant_id = $1 AND id_planilha = $2 AND id_planilha_item = $3
             `,
@@ -6992,15 +7254,16 @@ export default async function v1Routes(server: FastifyInstance) {
             valorUnitario,
             valorParcial,
             nivel,
-            tipoLinha
+            tipoLinha,
+            observacao || null
           );
         } else {
           await prisma.$executeRawUnsafe(
             `
             INSERT INTO obras_planilha_itens
-              (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha)
+              (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
             VALUES
-              ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+              ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
             `,
             ctx.tenantId,
             idPlanilha,
@@ -7011,7 +7274,8 @@ export default async function v1Routes(server: FastifyInstance) {
             valorUnitario,
             valorParcial,
             nivel,
-            tipoLinha
+            tipoLinha,
+            observacao || null
           );
         }
 
