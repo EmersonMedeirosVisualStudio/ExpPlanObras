@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Download } from "lucide-react";
+import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type VersaoRow = {
   idPlanilha: number;
@@ -144,6 +145,8 @@ export default function PlanilhaImportacoesPage() {
   }, [returnTo]);
 
   const [loading, setLoading] = useState(false);
+  const [bootLoading, setBootLoading] = useState(false);
+  const [bootDone, setBootDone] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
 
@@ -151,7 +154,6 @@ export default function PlanilhaImportacoesPage() {
   const [targetPlanilhaId, setTargetPlanilhaId] = useState<string>(planilhaIdFromQs ? String(planilhaIdFromQs) : "");
 
   const [csvMode, setCsvMode] = useState<"APPEND" | "REPLACE">("APPEND");
-  const [csvCreateMissingServices, setCsvCreateMissingServices] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [csvPreview, setCsvPreview] = useState<{
     file: File | null;
@@ -171,7 +173,6 @@ export default function PlanilhaImportacoesPage() {
   }>({ file: null, rows: [], missingColumns: [] });
 
   const [planilhaImportMode, setPlanilhaImportMode] = useState<"APPEND" | "REPLACE">("APPEND");
-  const [planilhaCreateMissingServices, setPlanilhaCreateMissingServices] = useState(true);
   const [sourcePlanilhaId, setSourcePlanilhaId] = useState<string>("");
   const [sourceRows, setSourceRows] = useState<Array<{ checked: boolean; r: LinhaServico }>>([]);
 
@@ -321,7 +322,6 @@ export default function PlanilhaImportacoesPage() {
       form.append("action", "IMPORTAR_CSV");
       form.append("idPlanilha", String(idPlanilha));
       form.append("modoImportacao", csvMode);
-      form.append("cadastrarServicosFaltantes", csvCreateMissingServices ? "1" : "0");
       form.append("file", csvPreview.file);
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, { method: "POST", body: form });
       const json = await res.json().catch(() => null);
@@ -395,7 +395,6 @@ export default function PlanilhaImportacoesPage() {
           idPlanilhaTarget,
           idPlanilhaSource,
           modoImportacao: planilhaImportMode,
-          cadastrarServicosFaltantes: planilhaCreateMissingServices,
           rows: selected,
         }),
       });
@@ -411,7 +410,12 @@ export default function PlanilhaImportacoesPage() {
 
   useEffect(() => {
     if (!idObra) return;
-    void carregarVersoes();
+    setBootLoading(true);
+    setBootDone(false);
+    void carregarVersoes().finally(() => {
+      setBootLoading(false);
+      setBootDone(true);
+    });
   }, [idObra]);
 
   return (
@@ -423,6 +427,7 @@ export default function PlanilhaImportacoesPage() {
           <div className="text-sm text-slate-600">Importe linhas (SERVICOS_LINHAS) a partir de CSV ou de outra planilha.</div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />
           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregarVersoes} disabled={loading}>
             Atualizar
           </button>
@@ -480,10 +485,9 @@ export default function PlanilhaImportacoesPage() {
               <option value="REPLACE">Substituir (apaga e importa)</option>
             </select>
           </label>
-          <label className="flex items-center gap-2 text-sm mt-6">
-            <input type="checkbox" checked={csvCreateMissingServices} onChange={(e) => setCsvCreateMissingServices(Boolean(e.target.checked))} disabled={loading} />
-            Cadastrar serviços faltantes na Fonte de dados (SERVICOS_FONTE)
-          </label>
+          <div className="text-sm mt-6 text-slate-700 md:col-span-2">
+            Serviços do CSV serão garantidos no catálogo da Fonte de dados (SERVICOS_FONTE).
+          </div>
           <div className="flex items-end justify-end gap-2">
             <input
               ref={fileInputRef}
@@ -579,10 +583,9 @@ export default function PlanilhaImportacoesPage() {
               <option value="REPLACE">Substituir (apaga e importa)</option>
             </select>
           </label>
-          <label className="flex items-center gap-2 text-sm mt-6">
-            <input type="checkbox" checked={planilhaCreateMissingServices} onChange={(e) => setPlanilhaCreateMissingServices(Boolean(e.target.checked))} disabled={loading} />
-            Cadastrar serviços faltantes na Fonte de dados (SERVICOS_FONTE)
-          </label>
+          <div className="text-sm mt-6 text-slate-700">
+            Serviços serão garantidos no catálogo da Fonte de dados (SERVICOS_FONTE).
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -666,4 +669,3 @@ export default function PlanilhaImportacoesPage() {
     </div>
   );
 }
-

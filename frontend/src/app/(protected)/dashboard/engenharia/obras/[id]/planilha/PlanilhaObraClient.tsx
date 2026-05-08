@@ -1095,7 +1095,7 @@ export default function PlanilhaObraClient({
     try {
       setLoading(true);
       setErr(null);
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${idPlanilha}`);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${idPlanilha}&includeCatalog=0`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar planilha");
       const data = json.data || {};
@@ -2449,7 +2449,13 @@ export default function PlanilhaObraClient({
             <button
               className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
               type="button"
-              onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha/importacoes?planilhaId=${encodeURIComponent(String(effectivePlanilhaId || ""))}`)}
+              onClick={() =>
+                router.push(
+                  `/dashboard/engenharia/obras/${idObra}/planilha/importacoes?planilhaId=${encodeURIComponent(String(effectivePlanilhaId || ""))}&returnTo=${encodeURIComponent(
+                    selfHref
+                  )}`
+                )
+              }
               disabled={loading || !podeEditar}
               title="Importações"
             >

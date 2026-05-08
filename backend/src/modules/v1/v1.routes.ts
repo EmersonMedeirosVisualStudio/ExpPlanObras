@@ -5739,6 +5739,7 @@ export default async function v1Routes(server: FastifyInstance) {
           .object({
             view: z.string().optional().nullable(),
             planilhaId: z.coerce.number().int().positive().optional().nullable(),
+            includeCatalog: z.string().optional().nullable(),
           })
           .optional(),
       },
@@ -5752,6 +5753,10 @@ export default async function v1Routes(server: FastifyInstance) {
       const idObra = Number(params.id);
       const view = String(q.view || '').trim().toLowerCase();
       const planilhaIdParam = q.planilhaId != null ? Number(q.planilhaId) : null;
+      const includeCatalog =
+        String(q.includeCatalog || '').trim() === '1' ||
+        String(q.includeCatalog || '').trim().toLowerCase() === 'true' ||
+        String(q.includeCatalog || '').trim().toLowerCase() === 'yes';
 
       const scope = (request.user as any)?.abrangencia as any;
       if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
@@ -5980,7 +5985,7 @@ export default async function v1Routes(server: FastifyInstance) {
         idPlanilha
       )) as any[];
 
-      const servicosPlanilha = idFonteDados
+      const servicosPlanilha = includeCatalog && idFonteDados
         ? ((await prisma.$queryRawUnsafe(
         `
         SELECT
@@ -6091,7 +6096,6 @@ export default async function v1Routes(server: FastifyInstance) {
         let action = '';
         let idPlanilhaRaw = '';
         let modoImportacaoRaw = '';
-        let cadastrarServicosRaw = '';
         let fileBuffer: Buffer | null = null;
         for await (const part of parts) {
           if (part.type === 'file') {
@@ -6102,7 +6106,6 @@ export default async function v1Routes(server: FastifyInstance) {
           if (field === 'action') action = String(part.value || '').trim().toUpperCase();
           if (field === 'idPlanilha') idPlanilhaRaw = String(part.value || '').trim();
           if (field === 'modoImportacao') modoImportacaoRaw = String(part.value || '').trim().toUpperCase();
-          if (field === 'cadastrarServicosFaltantes') cadastrarServicosRaw = String(part.value || '').trim();
         }
 
         if (action !== 'IMPORTAR_CSV') return fail(reply, 422, 'Ação inválida');
@@ -6110,7 +6113,7 @@ export default async function v1Routes(server: FastifyInstance) {
         const idPlanilhaTarget = Number(idPlanilhaRaw || NaN);
         if (!Number.isFinite(idPlanilhaTarget) || idPlanilhaTarget <= 0) return fail(reply, 422, 'Selecione uma planilha destino válida para importar o CSV');
         const modoImportacao = modoImportacaoRaw === 'REPLACE' ? 'REPLACE' : 'APPEND';
-        const cadastrarServicosFaltantes = cadastrarServicosRaw === '1' || cadastrarServicosRaw === 'true' || cadastrarServicosRaw === 'TRUE';
+        const cadastrarServicosFaltantes = true;
 
         let csvText = decodeCsvBuffer(fileBuffer);
         csvText = csvText.replace(/^\uFEFF/, '');
@@ -6379,7 +6382,6 @@ export default async function v1Routes(server: FastifyInstance) {
             idPlanilhaTarget: z.coerce.number().int().positive(),
             idPlanilhaSource: z.coerce.number().int().positive(),
             modoImportacao: z.enum(['APPEND', 'REPLACE']).optional().nullable(),
-            cadastrarServicosFaltantes: z.boolean().optional().nullable(),
             rows: z
               .array(
                 z.object({
@@ -6397,7 +6399,7 @@ export default async function v1Routes(server: FastifyInstance) {
           .parse(body || {});
 
         const modoImportacao = payload.modoImportacao === 'REPLACE' ? 'REPLACE' : 'APPEND';
-        const cadastrarServicosFaltantes = payload.cadastrarServicosFaltantes !== false;
+        const cadastrarServicosFaltantes = true;
 
         const created = await prismaTx(async (tx: any) => {
           await ensurePlanilhaModeloFonteTables(tx);
