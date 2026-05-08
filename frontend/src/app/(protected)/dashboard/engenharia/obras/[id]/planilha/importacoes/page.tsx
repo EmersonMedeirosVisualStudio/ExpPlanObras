@@ -165,6 +165,7 @@ export default function PlanilhaImportacoesPage() {
   const [planilhasOutrasObras, setPlanilhasOutrasObras] = useState<VersaoRow[]>([]);
   const [includeOutrasObras, setIncludeOutrasObras] = useState(false);
 
+  const [importMode, setImportMode] = useState<"CSV" | "PLANILHA">("CSV");
   const [csvMode, setCsvMode] = useState<"APPEND" | "REPLACE">("APPEND");
   const [csvCatalogDupPolicy, setCsvCatalogDupPolicy] = useState<"FILL" | "KEEP" | "OVERWRITE">("FILL");
   const [csvSkipExistingLines, setCsvSkipExistingLines] = useState(false);
@@ -511,7 +512,27 @@ export default function PlanilhaImportacoesPage() {
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="text-lg font-semibold">Planilha destino</div>
         <label className="space-y-1 block max-w-2xl">
-          <div className="text-xs text-slate-500">Escolha a versão que receberá as linhas</div>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="text-xs text-slate-500">Escolha a versão que receberá as linhas</div>
+            <div className="inline-flex items-center rounded-lg border bg-white p-1">
+              <button
+                type="button"
+                className={`rounded-md px-3 py-1.5 text-xs ${importMode === "CSV" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"}`}
+                onClick={() => setImportMode("CSV")}
+                disabled={loading}
+              >
+                Importar CSV
+              </button>
+              <button
+                type="button"
+                className={`rounded-md px-3 py-1.5 text-xs ${importMode === "PLANILHA" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"}`}
+                onClick={() => setImportMode("PLANILHA")}
+                disabled={loading}
+              >
+                Importar de outra planilha
+              </button>
+            </div>
+          </div>
           <select className="input bg-white w-full" value={targetPlanilhaId} onChange={(e) => setTargetPlanilhaId(e.target.value)} disabled={loading}>
             <option value="">Selecione...</option>
             {versoes.map((v) => (
@@ -523,11 +544,12 @@ export default function PlanilhaImportacoesPage() {
         </label>
       </section>
 
+      {importMode === "CSV" ? (
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="text-lg font-semibold">Importar CSV</div>
-            <div className="text-sm text-slate-600">Converte o CSV em linhas (SERVICOS_LINHAS / obras_planilha_itens) na planilha destino.</div>
+            <div className="text-sm text-slate-600">Converte o CSV em linhas (Itens, subitens e serviços) na planilha destino.</div>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -695,10 +717,12 @@ export default function PlanilhaImportacoesPage() {
           </div>
         ) : null}
       </section>
+      ) : null}
 
+      {importMode === "PLANILHA" ? (
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="text-lg font-semibold">Importar serviços de outra planilha</div>
-        <div className="text-sm text-slate-600">Mostra uma prévia com as linhas (SERVICOS_LINHAS / obras_planilha_itens) da planilha origem e permite selecionar.</div>
+        <div className="text-sm text-slate-600">Importa linhas (Itens, subitens e serviços) de uma planilha existente para a planilha destino.</div>
 
         <div className="grid gap-3 md:grid-cols-3">
           <label className="space-y-1">
@@ -857,6 +881,7 @@ export default function PlanilhaImportacoesPage() {
           </div>
         ) : null}
       </section>
+      ) : null}
     </div>
   );
 }
