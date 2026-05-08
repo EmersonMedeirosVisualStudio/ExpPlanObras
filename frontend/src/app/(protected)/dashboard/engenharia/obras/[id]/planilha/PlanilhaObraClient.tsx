@@ -2319,7 +2319,26 @@ export default function PlanilhaObraClient({
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex-1 min-w-[260px]">
           <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />
-          <div className="text-xs text-slate-500">{breadcrumb}</div>
+          <div className="text-xs text-slate-500 flex flex-wrap items-center gap-1">
+            <button className="hover:underline" type="button" onClick={() => router.push("/dashboard/engenharia")} title="Ir para Engenharia">
+              Engenharia
+            </button>
+            <span>→</span>
+            <button className="hover:underline" type="button" onClick={() => router.push("/dashboard/engenharia/obras")} title="Ir para Obras">
+              Obras
+            </button>
+            <span>→</span>
+            <button
+              className="hover:underline"
+              type="button"
+              onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}`)}
+              title="Ir para a Obra selecionada"
+            >
+              {obraResumo?.nome ? obraResumo.nome : "Obra selecionada"}
+            </button>
+            <span>→</span>
+            <span className="font-semibold text-slate-700">Planilha orçamentária</span>
+          </div>
           <h1 className="text-2xl font-semibold">Planilha orçamentária — Obra #{idObra}</h1>
           {obraResumo ? (
             <div className="mt-2 text-sm text-slate-700">
@@ -2469,21 +2488,6 @@ export default function PlanilhaObraClient({
               type="button"
               onClick={() =>
                 router.push(
-                  `/dashboard/engenharia/obras/${idObra}/planilha/importacoes?planilhaId=${encodeURIComponent(String(effectivePlanilhaId || ""))}&returnTo=${encodeURIComponent(
-                    selfHref
-                  )}`
-                )
-              }
-              disabled={loading || !podeEditar}
-              title="Importações"
-            >
-              Importações
-            </button>
-            <button
-              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-              type="button"
-              onClick={() =>
-                router.push(
                   `/dashboard/engenharia/obras/${idObra}/planilha/adequacao?planilhaId=${encodeURIComponent(String(effectivePlanilhaId || ""))}&returnTo=${encodeURIComponent(
                     selfHref
                   )}`
@@ -2556,20 +2560,6 @@ export default function PlanilhaObraClient({
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <button
-                        className="inline-flex items-center gap-1 rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          clonarPlanilha(v);
-                        }}
-                        disabled={loading}
-                        title="Clonar planilha (duplica itens e preços de insumos; reusa catálogo/composições da fonte)"
-                      >
-                        <FileSpreadsheet className="h-3.5 w-3.5" />
-                        Clonar
-                      </button>
                       <button
                         className="inline-flex items-center gap-1 rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
                         type="button"
@@ -2994,6 +2984,23 @@ export default function PlanilhaObraClient({
                   <div className="text-sm font-semibold">
                     {editingLinhaId ? (novo.tipoLinha === "SERVICO" ? "Editar serviço" : "Editar linha") : novo.tipoLinha === "SERVICO" ? "Adicionar serviço" : "Adicionar linha"}
                   </div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                    type="button"
+                    onClick={() =>
+                      router.push(
+                        `/dashboard/engenharia/obras/${idObra}/planilha/importacoes?planilhaId=${encodeURIComponent(String(effectivePlanilhaId || ""))}&returnTo=${encodeURIComponent(
+                          selfHref
+                        )}`
+                      )
+                    }
+                    disabled={loading || !effectivePlanilhaId}
+                    title={!effectivePlanilhaId ? "Selecione uma versão da planilha para abrir Importações" : "Importar itens, subitens e serviços (CSV ou outra planilha)"}
+                  >
+                    Importações
+                  </button>
                 </div>
               </div>
               {showAdicionarCard ? (

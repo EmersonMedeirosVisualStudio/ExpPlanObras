@@ -1684,8 +1684,8 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 - Engenharia → Obras → Planilha contratada / Planilha orçamentária
 - Navegação (UI): as telas **Planilha orçamentária**, **Serviços**, **SINAPI** e **Insumos consolidados** possuem botões de navegação no **canto superior direito**, alinhados ao título da página (Planilha/Serviços/SINAPI/Insumos/Voltar). Os botões específicos de cada tela ficam logo abaixo desses botões principais.
 - Versões: ao entrar na tela, o sistema **não abre automaticamente** nenhuma planilha. O usuário deve selecionar a versão desejada no card **Versões cadastradas**.
-  - Ações no card **Versões cadastradas**: **Atualizar**, **Importações**, **Adequação** e **Nova planilha**.
-  - Coluna **Ações** (na lista de versões): **Clonar**, **Editar** e **Excluir planilha**.
+  - Ações no card **Versões cadastradas**: **Atualizar**, **Adequação** e **Nova planilha**.
+  - Coluna **Ações** (na lista de versões): **Editar** e **Excluir planilha**.
   - Coluna **Atual**: botão **Definir atual** para marcar uma planilha como a versão atual da obra.
 - Lista de versões (card **Versões cadastradas**): exibe, para cada versão:
   - **Fonte** (nome da fonte de dados utilizada pela versão);
@@ -1756,7 +1756,7 @@ ETAPA 5 — Como validar
   - Observação de compatibilidade: leitura “smart” de encoding (UTF-8 / Windows-1252) para reduzir erros de acentuação no texto importado.
   - Observação: ao importar itens do tipo Serviço, o sistema garante que o serviço exista no catálogo da fonte (Serviços (FONTE)).
   - Observação: ao salvar/importar composições, o sistema garante que subcomposições referenciadas existam no catálogo da fonte (reduz “cadastros órfãos”).
-- Importações (tela dedicada): as importações ficam na tela **Importações** (botão no card **Versões cadastradas**). O botão **Importar** só aparece quando a **prévia** estiver aberta.
+- Importações (tela dedicada): as importações ficam na tela **Importações** (botão no card **Adicionar serviço**). O botão **Importar** só aparece quando a **prévia** estiver aberta.
 
 #### Como usar — Tela Importações (Planilha orçamentária)
 
@@ -1766,7 +1766,8 @@ ETAPA 1 — Onde acessar
 - Acesse: Engenharia → Obras → (selecione a obra) → Planilha orçamentária → clique em **Importações**
 
 ETAPA 2 — O que clicar
-- No card **Planilha destino**, selecione a versão que receberá as linhas
+- No card **Adicionar serviço**, clique em **Importações**
+- No card **Planilha destino**, confirme a versão que receberá as linhas
 - No card **Importar CSV**, clique em **Selecionar CSV**
 
 ETAPA 3 — O que preencher
@@ -1810,6 +1811,8 @@ ETAPA 3 — O que preencher
 ETAPA 4 — O que esperar
 - A tela mostra a grade no formato “PLANILHA DE ADEQUAÇÃO DE SERVIÇOS”
 - A tela exibe o status **Carregando página… / Página carregada**
+- O card **Visual** permite ajustar: **Somente itens**, **Fonte**, **Fundo Item**, **Fundo Subitem** e **largura das colunas**
+- O card **Impressão — ajustes finos** permite imprimir em **paisagem** com o **cabeçalho padronizado da empresa** e controlar fonte/espaçamentos
 
 ETAPA 5 — Como validar
 - Use **Imprimir** ou **CSV** para conferir o relatório
