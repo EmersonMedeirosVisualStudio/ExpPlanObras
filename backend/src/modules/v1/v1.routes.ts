@@ -5837,6 +5837,43 @@ export default async function v1Routes(server: FastifyInstance) {
         valorPrevisto: obra.valorPrevisto == null ? null : Number(obra.valorPrevisto),
       };
 
+      if (view === 'versoes-min' || view === 'versoes_min') {
+        const rows = (await prisma.$queryRawUnsafe(
+          `
+          SELECT
+            v.id_planilha AS "idPlanilha",
+            v.numero_versao AS "numeroVersao",
+            v.nome AS "nome",
+            v.atual AS "atual",
+            v.id_fonte_dados AS "idFonteDados",
+            v.id_parametros AS "idParametros"
+          FROM obras_planilhas_versoes v
+          WHERE v.tenant_id = $1 AND v.id_obra = $2
+          ORDER BY v.numero_versao DESC, v.id_planilha DESC
+          `,
+          ctx.tenantId,
+          idObra
+        )) as any[];
+
+        return ok(reply, {
+          idObra,
+          obraStatus,
+          obra: obraResumo,
+          versoes: (rows || []).map((r: any) => ({
+            idPlanilha: Number(r.idPlanilha),
+            numeroVersao: Number(r.numeroVersao),
+            nome: String(r.nome || ''),
+            atual: Boolean(r.atual),
+            idFonteDados: r.idFonteDados == null ? null : Number(r.idFonteDados),
+            idParametros: r.idParametros == null ? null : Number(r.idParametros),
+            fonteNome: '',
+            parametrosNome: '',
+            valorTotal: 0,
+            totalServicos: 0,
+          })),
+        });
+      }
+
       if (view === 'versoes') {
         const ids = (await prisma.$queryRawUnsafe(
           `
@@ -6152,6 +6189,8 @@ export default async function v1Routes(server: FastifyInstance) {
         let idPlanilhaRaw = '';
         let modoImportacaoRaw = '';
         let selectedRowIndexesRaw = '';
+        let catalogDupPolicyRaw = '';
+        let skipExistingLinesRaw = '';
         let fileBuffer: Buffer | null = null;
         for await (const part of parts) {
           if (part.type === 'file') {
@@ -6163,6 +6202,8 @@ export default async function v1Routes(server: FastifyInstance) {
           if (field === 'idPlanilha') idPlanilhaRaw = String(part.value || '').trim();
           if (field === 'modoImportacao') modoImportacaoRaw = String(part.value || '').trim().toUpperCase();
           if (field === 'selectedRowIndexes') selectedRowIndexesRaw = String(part.value || '').trim();
+          if (field === 'catalogDupPolicy') catalogDupPolicyRaw = String(part.value || '').trim().toUpperCase();
+          if (field === 'skipExistingLines') skipExistingLinesRaw = String(part.value || '').trim();
         }
 
         if (action !== 'IMPORTAR_CSV') return fail(reply, 422, 'Ação inválida');
@@ -6170,6 +6211,11 @@ export default async function v1Routes(server: FastifyInstance) {
         const idPlanilhaTarget = Number(idPlanilhaRaw || NaN);
         if (!Number.isFinite(idPlanilhaTarget) || idPlanilhaTarget <= 0) return fail(reply, 422, 'Selecione uma planilha destino válida para importar o CSV');
         const modoImportacao = modoImportacaoRaw === 'REPLACE' ? 'REPLACE' : 'APPEND';
+        const catalogDupPolicy = catalogDupPolicyRaw === 'KEEP' || catalogDupPolicyRaw === 'OVERWRITE' ? (catalogDupPolicyRaw as any) : ('FILL' as const);
+        const skipExistingLines =
+          String(skipExistingLinesRaw || '').trim() === '1' ||
+          String(skipExistingLinesRaw || '').trim().toLowerCase() === 'true' ||
+          String(skipExistingLinesRaw || '').trim().toLowerCase() === 'yes';
         const cadastrarServicosFaltantes = true;
 
         let csvText = decodeCsvBuffer(fileBuffer);
@@ -6289,7 +6335,7 @@ export default async function v1Routes(server: FastifyInstance) {
           return fail(reply, 422, `Erro no CSV (linha ${invalid.rowIndex + 2}): ${invalid.message}`);
         }
 
-        const preparedOk = prepared.filter((p): p is Extract<(typeof prepared)[number], { ok: true }> => p.ok);
+        const preparedOkBase = prepared.filter((p): p is Extract<(typeof prepared)[number], { ok: true }> => p.ok);
 
         const created = await prismaTx(async (tx: any) => {
           await ensurePlanilhaModeloFonteTables(tx);
@@ -6321,6 +6367,59 @@ export default async function v1Routes(server: FastifyInstance) {
             idPlanilha
           )) as any[];
           const baseOrd = modoImportacao === 'APPEND' ? Number(maxOrdRows?.[0]?.maxOrd || 0) : 0;
+
+          let preparedOk = preparedOkBase;
+          if (skipExistingLines && preparedOk.length) {
+            const existing = (await tx.$queryRawUnsafe(
+              `
+              SELECT
+                COALESCE(i.item,'') AS item,
+                COALESCE(sf.codigo,'') AS codigo,
+                COALESCE(i.quantidade,0) AS quantidade,
+                COALESCE(i.valor_unitario,0) AS "valorUnitario",
+                COALESCE(i.observacao,'') AS observacao,
+                i.tipo_linha AS "tipoLinha"
+              FROM obras_planilha_itens i
+              LEFT JOIN obras_servicos_fonte sf
+                ON sf.tenant_id = i.tenant_id AND sf.id_servico = i.id_servico
+              WHERE i.tenant_id = $1 AND i.id_planilha = $2
+              `,
+              ctx.tenantId,
+              idPlanilha
+            )) as any[];
+            const keySet = new Set<string>();
+            for (const r of existing || []) {
+              const tipo = String(r?.tipoLinha || '').trim().toUpperCase();
+              const item = String(r?.item || '').trim();
+              const codigo = String(r?.codigo || '').trim().toUpperCase();
+              const obs = String(r?.observacao || '').trim();
+              if (tipo === 'SERVICO') {
+                const q = Number(r?.quantidade ?? 0);
+                const vu = Number(r?.valorUnitario ?? 0);
+                keySet.add(`S|${item}|${codigo}|${q.toFixed(6)}|${vu.toFixed(6)}`);
+              } else {
+                keySet.add(`N|${tipo}|${item}|${obs}`);
+              }
+            }
+
+            const filtered = preparedOk.filter((r: any) => {
+              const tipo = String(r?.tipoLinha || '').trim().toUpperCase();
+              const item = String(r?.item || '').trim();
+              if (tipo === 'SERVICO') {
+                const codigo = String(r?.codigo || '').trim().toUpperCase();
+                const q = Number(r?.quantidade ?? 0);
+                const vu = Number(r?.valorUnitario ?? 0);
+                const key = `S|${item}|${codigo}|${q.toFixed(6)}|${vu.toFixed(6)}`;
+                return !keySet.has(key);
+              }
+              const obs = String(r?.servico || '').trim();
+              const key = `N|${tipo}|${item}|${obs}`;
+              return !keySet.has(key);
+            });
+
+            preparedOk = filtered.map((r: any, idx: number) => ({ ...r, ordem: idx + 1 }));
+            if (!preparedOk.length) throw new Error('Nenhuma linha nova para importar (todas eram repetidas na planilha)');
+          }
 
           const svcMap = new Map<string, { codigo: string; banco: string; descricao: string; und: string; valorUnitario: number | null }>();
           for (const r of preparedOk) {
@@ -6369,22 +6468,53 @@ export default async function v1Routes(server: FastifyInstance) {
                   return `(${placeholders})`;
                 })
                 .join(',');
-              await tx.$executeRawUnsafe(
-                `
-                INSERT INTO obras_servicos_fonte
-                  (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-                VALUES
-                  ${values}
-                ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-                DO UPDATE SET
-                  banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-                  descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-                  und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
-                  valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
-                  atualizado_em = NOW()
-                `,
-                ...params
-              );
+              if (catalogDupPolicy === 'KEEP') {
+                await tx.$executeRawUnsafe(
+                  `
+                  INSERT INTO obras_servicos_fonte
+                    (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+                  VALUES
+                    ${values}
+                  ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+                  DO NOTHING
+                  `,
+                  ...params
+                );
+              } else if (catalogDupPolicy === 'OVERWRITE') {
+                await tx.$executeRawUnsafe(
+                  `
+                  INSERT INTO obras_servicos_fonte
+                    (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+                  VALUES
+                    ${values}
+                  ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+                  DO UPDATE SET
+                    banco = CASE WHEN EXCLUDED.banco IS NOT NULL AND EXCLUDED.banco <> '' THEN EXCLUDED.banco ELSE obras_servicos_fonte.banco END,
+                    descricao = CASE WHEN EXCLUDED.descricao IS NOT NULL AND EXCLUDED.descricao <> '' THEN EXCLUDED.descricao ELSE obras_servicos_fonte.descricao END,
+                    und = CASE WHEN EXCLUDED.und IS NOT NULL AND EXCLUDED.und <> '' THEN EXCLUDED.und ELSE obras_servicos_fonte.und END,
+                    valor_unitario = CASE WHEN EXCLUDED.valor_unitario IS NOT NULL THEN EXCLUDED.valor_unitario ELSE obras_servicos_fonte.valor_unitario END,
+                    atualizado_em = NOW()
+                  `,
+                  ...params
+                );
+              } else {
+                await tx.$executeRawUnsafe(
+                  `
+                  INSERT INTO obras_servicos_fonte
+                    (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+                  VALUES
+                    ${values}
+                  ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+                  DO UPDATE SET
+                    banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
+                    descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
+                    und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
+                    valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
+                    atualizado_em = NOW()
+                  `,
+                  ...params
+                );
+              }
             }
           }
 
@@ -6489,6 +6619,8 @@ export default async function v1Routes(server: FastifyInstance) {
             idPlanilhaTarget: z.coerce.number().int().positive(),
             idPlanilhaSource: z.coerce.number().int().positive(),
             modoImportacao: z.enum(['APPEND', 'REPLACE']).optional().nullable(),
+            catalogDupPolicy: z.enum(['FILL', 'KEEP', 'OVERWRITE']).optional().nullable(),
+            skipExistingLines: z.coerce.boolean().optional().nullable(),
             rows: z
               .array(
                 z.object({
@@ -6507,6 +6639,8 @@ export default async function v1Routes(server: FastifyInstance) {
           .parse(body || {});
 
         const modoImportacao = payload.modoImportacao === 'REPLACE' ? 'REPLACE' : 'APPEND';
+        const catalogDupPolicy = payload.catalogDupPolicy === 'KEEP' || payload.catalogDupPolicy === 'OVERWRITE' ? payload.catalogDupPolicy : ('FILL' as const);
+        const skipExistingLines = Boolean(payload.skipExistingLines);
         const cadastrarServicosFaltantes = true;
 
         const created = await prismaTx(async (tx: any) => {
@@ -6555,7 +6689,7 @@ export default async function v1Routes(server: FastifyInstance) {
           const baseOrd = modoImportacao === 'APPEND' ? Number(maxOrdRows?.[0]?.maxOrd || 0) : 0;
 
           const svcMap = new Map<string, { codigo: string; banco: string; descricao: string; und: string; valorUnitario: number | null }>();
-          const rowsPrepared = payload.rows.map((r, i) => {
+          const rowsPreparedBase = payload.rows.map((r, i) => {
             const item = r.item != null ? String(r.item || '').trim().slice(0, 80) : '';
             const codigo = r.codigo != null ? String(r.codigo || '').trim().toUpperCase() : '';
             const banco = r.fonte != null ? String(r.fonte || '').trim() : '';
@@ -6621,6 +6755,57 @@ export default async function v1Routes(server: FastifyInstance) {
             };
           });
 
+          let rowsPrepared = rowsPreparedBase;
+          if (skipExistingLines && rowsPrepared.length) {
+            const existing = (await tx.$queryRawUnsafe(
+              `
+              SELECT
+                COALESCE(i.item,'') AS item,
+                COALESCE(sf.codigo,'') AS codigo,
+                COALESCE(i.quantidade,0) AS quantidade,
+                COALESCE(i.valor_unitario,0) AS "valorUnitario",
+                COALESCE(i.observacao,'') AS observacao,
+                i.tipo_linha AS "tipoLinha"
+              FROM obras_planilha_itens i
+              LEFT JOIN obras_servicos_fonte sf
+                ON sf.tenant_id = i.tenant_id AND sf.id_servico = i.id_servico
+              WHERE i.tenant_id = $1 AND i.id_planilha = $2
+              `,
+              ctx.tenantId,
+              Number(payload.idPlanilhaTarget)
+            )) as any[];
+            const keySet = new Set<string>();
+            for (const r of existing || []) {
+              const tipo = String(r?.tipoLinha || '').trim().toUpperCase();
+              const item = String(r?.item || '').trim();
+              const codigo = String(r?.codigo || '').trim().toUpperCase();
+              const obs = String(r?.observacao || '').trim();
+              if (tipo === 'SERVICO') {
+                const q = Number(r?.quantidade ?? 0);
+                const vu = Number(r?.valorUnitario ?? 0);
+                keySet.add(`S|${item}|${codigo}|${q.toFixed(6)}|${vu.toFixed(6)}`);
+              } else {
+                keySet.add(`N|${tipo}|${item}|${obs}`);
+              }
+            }
+            const filtered = rowsPrepared.filter((r: any) => {
+              const tipo = String(r?.tipoLinha || '').trim().toUpperCase();
+              const item = String(r?.item || '').trim();
+              if (tipo === 'SERVICO') {
+                const codigo = String(r?.codigo || '').trim().toUpperCase();
+                const q = Number(r?.quantidade ?? 0);
+                const vu = Number(r?.valorUnitario ?? 0);
+                const key = `S|${item}|${codigo}|${q.toFixed(6)}|${vu.toFixed(6)}`;
+                return !keySet.has(key);
+              }
+              const obs = String(r?.observacao || '').trim();
+              const key = `N|${tipo}|${item}|${obs}`;
+              return !keySet.has(key);
+            });
+            rowsPrepared = filtered.map((r: any, idx: number) => ({ ...r, ordem: idx + 1 }));
+            if (!rowsPrepared.length) throw new Error('Nenhuma linha nova para importar (todas eram repetidas na planilha)');
+          }
+
           const svcRows = Array.from(svcMap.values());
           if (cadastrarServicosFaltantes && svcRows.length) {
             const svcChunk = 450;
@@ -6645,22 +6830,53 @@ export default async function v1Routes(server: FastifyInstance) {
                   return `(${placeholders})`;
                 })
                 .join(',');
-              await tx.$executeRawUnsafe(
-                `
-                INSERT INTO obras_servicos_fonte
-                  (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-                VALUES
-                  ${values}
-                ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-                DO UPDATE SET
-                  banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-                  descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-                  und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
-                  valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
-                  atualizado_em = NOW()
-                `,
-                ...params
-              );
+              if (catalogDupPolicy === 'KEEP') {
+                await tx.$executeRawUnsafe(
+                  `
+                  INSERT INTO obras_servicos_fonte
+                    (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+                  VALUES
+                    ${values}
+                  ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+                  DO NOTHING
+                  `,
+                  ...params
+                );
+              } else if (catalogDupPolicy === 'OVERWRITE') {
+                await tx.$executeRawUnsafe(
+                  `
+                  INSERT INTO obras_servicos_fonte
+                    (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+                  VALUES
+                    ${values}
+                  ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+                  DO UPDATE SET
+                    banco = CASE WHEN EXCLUDED.banco IS NOT NULL AND EXCLUDED.banco <> '' THEN EXCLUDED.banco ELSE obras_servicos_fonte.banco END,
+                    descricao = CASE WHEN EXCLUDED.descricao IS NOT NULL AND EXCLUDED.descricao <> '' THEN EXCLUDED.descricao ELSE obras_servicos_fonte.descricao END,
+                    und = CASE WHEN EXCLUDED.und IS NOT NULL AND EXCLUDED.und <> '' THEN EXCLUDED.und ELSE obras_servicos_fonte.und END,
+                    valor_unitario = CASE WHEN EXCLUDED.valor_unitario IS NOT NULL THEN EXCLUDED.valor_unitario ELSE obras_servicos_fonte.valor_unitario END,
+                    atualizado_em = NOW()
+                  `,
+                  ...params
+                );
+              } else {
+                await tx.$executeRawUnsafe(
+                  `
+                  INSERT INTO obras_servicos_fonte
+                    (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+                  VALUES
+                    ${values}
+                  ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+                  DO UPDATE SET
+                    banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
+                    descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
+                    und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
+                    valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
+                    atualizado_em = NOW()
+                  `,
+                  ...params
+                );
+              }
             }
           } else {
             const codes = svcRows.map((s) => s.codigo).filter(Boolean);

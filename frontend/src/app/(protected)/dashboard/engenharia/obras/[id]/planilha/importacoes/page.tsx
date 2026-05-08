@@ -166,6 +166,8 @@ export default function PlanilhaImportacoesPage() {
   const [includeOutrasObras, setIncludeOutrasObras] = useState(false);
 
   const [csvMode, setCsvMode] = useState<"APPEND" | "REPLACE">("APPEND");
+  const [csvCatalogDupPolicy, setCsvCatalogDupPolicy] = useState<"FILL" | "KEEP" | "OVERWRITE">("FILL");
+  const [csvSkipExistingLines, setCsvSkipExistingLines] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [csvPreview, setCsvPreview] = useState<{
     file: File | null;
@@ -186,6 +188,8 @@ export default function PlanilhaImportacoesPage() {
   }>({ file: null, rows: [], missingColumns: [] });
 
   const [planilhaImportMode, setPlanilhaImportMode] = useState<"APPEND" | "REPLACE">("APPEND");
+  const [planilhaCatalogDupPolicy, setPlanilhaCatalogDupPolicy] = useState<"FILL" | "KEEP" | "OVERWRITE">("FILL");
+  const [planilhaSkipExistingLines, setPlanilhaSkipExistingLines] = useState(false);
   const [sourcePlanilhaId, setSourcePlanilhaId] = useState<string>("");
   const [sourceRows, setSourceRows] = useState<Array<{ checked: boolean; r: LinhaServico }>>([]);
 
@@ -207,7 +211,7 @@ export default function PlanilhaImportacoesPage() {
   async function carregarVersoes() {
     try {
       setErr(null);
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes`);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes-min`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar versões");
       const list = Array.isArray(json.data?.versoes) ? (json.data.versoes as any[]) : [];
@@ -367,6 +371,8 @@ export default function PlanilhaImportacoesPage() {
       form.append("action", "IMPORTAR_CSV");
       form.append("idPlanilha", String(idPlanilha));
       form.append("modoImportacao", csvMode);
+      form.append("catalogDupPolicy", csvCatalogDupPolicy);
+      form.append("skipExistingLines", csvSkipExistingLines ? "1" : "0");
       const selected = csvPreview.rows.filter((r) => r.checked).map((r) => r.rowIndex);
       form.append("selectedRowIndexes", JSON.stringify(selected));
       form.append("file", csvPreview.file);
@@ -444,6 +450,8 @@ export default function PlanilhaImportacoesPage() {
           idPlanilhaTarget,
           idPlanilhaSource,
           modoImportacao: planilhaImportMode,
+          catalogDupPolicy: planilhaCatalogDupPolicy,
+          skipExistingLines: planilhaSkipExistingLines,
           rows: selected,
         }),
       });
@@ -557,11 +565,28 @@ export default function PlanilhaImportacoesPage() {
           <label className="space-y-1">
             <div className="text-xs text-slate-500">Modo</div>
             <select className="input bg-white w-full" value={csvMode} onChange={(e) => setCsvMode(e.target.value as any)} disabled={loading}>
-              <option value="APPEND">Complementar (padrão)</option>
+              <option value="APPEND">Complementar</option>
               <option value="REPLACE">Substituir (apaga e importa)</option>
             </select>
           </label>
-          <div className="md:col-span-2" />
+          <label className="space-y-1">
+            <div className="text-xs text-slate-500">Repetidos na Fonte</div>
+            <select
+              className="input bg-white w-full"
+              value={csvCatalogDupPolicy}
+              onChange={(e) => setCsvCatalogDupPolicy(e.target.value as any)}
+              disabled={loading}
+              title="Como agir quando um código já existe na Fonte de dados"
+            >
+              <option value="FILL">Completar campos vazios (padrão)</option>
+              <option value="KEEP">Manter como está</option>
+              <option value="OVERWRITE">Sobrescrever (somente dados informados)</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 mt-6 text-sm text-slate-700 select-none">
+            <input type="checkbox" checked={csvSkipExistingLines} onChange={(e) => setCsvSkipExistingLines(Boolean(e.target.checked))} disabled={loading} />
+            Ignorar linhas repetidas na planilha
+          </label>
         </div>
 
         {csvPreview.file ? (
@@ -612,6 +637,16 @@ export default function PlanilhaImportacoesPage() {
                 Colunas obrigatórias ausentes: {csvPreview.missingColumns.join(", ")}
               </div>
             ) : null}
+            <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">
+              <div className="font-semibold">Como o sistema trata repetidos</div>
+              <div>
+                - Fonte de dados (SERVICOS_FONTE): a regra depende de <span className="font-semibold">Repetidos na Fonte</span> (manter / completar / sobrescrever).
+              </div>
+              <div>
+                - Linhas na planilha (SERVICOS_LINHAS): por padrão pode repetir; marque <span className="font-semibold">Ignorar linhas repetidas</span> para não inserir duplicatas iguais.
+              </div>
+              <div>- Composições/insumos não são importados por esta tela; são tratados nas telas Serviços/SINAPI/Insumos.</div>
+            </div>
             <div className="overflow-auto rounded-lg border">
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 text-left text-slate-700">
@@ -685,7 +720,7 @@ export default function PlanilhaImportacoesPage() {
           <label className="space-y-1">
             <div className="text-xs text-slate-500">Modo</div>
             <select className="input bg-white w-full" value={planilhaImportMode} onChange={(e) => setPlanilhaImportMode(e.target.value as any)} disabled={loading}>
-              <option value="APPEND">Complementar (padrão)</option>
+              <option value="APPEND">Complementar</option>
               <option value="REPLACE">Substituir (apaga e importa)</option>
             </select>
           </label>
@@ -698,6 +733,33 @@ export default function PlanilhaImportacoesPage() {
             />
             De outra obra
           </label>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <label className="space-y-1">
+            <div className="text-xs text-slate-500">Repetidos na Fonte</div>
+            <select
+              className="input bg-white w-full"
+              value={planilhaCatalogDupPolicy}
+              onChange={(e) => setPlanilhaCatalogDupPolicy(e.target.value as any)}
+              disabled={loading}
+              title="Como agir quando um código já existe na Fonte de dados"
+            >
+              <option value="FILL">Completar campos vazios (padrão)</option>
+              <option value="KEEP">Manter como está</option>
+              <option value="OVERWRITE">Sobrescrever (somente dados informados)</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 mt-6 text-sm text-slate-700 select-none">
+            <input
+              type="checkbox"
+              checked={planilhaSkipExistingLines}
+              onChange={(e) => setPlanilhaSkipExistingLines(Boolean(e.target.checked))}
+              disabled={loading}
+            />
+            Ignorar linhas repetidas na planilha
+          </label>
+          <div />
         </div>
 
         <div className="flex items-center justify-between gap-2 flex-wrap">
