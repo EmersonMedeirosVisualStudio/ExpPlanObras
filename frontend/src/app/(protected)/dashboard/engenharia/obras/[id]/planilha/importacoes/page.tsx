@@ -194,6 +194,15 @@ export default function PlanilhaImportacoesPage() {
   const [sourcePlanilhaId, setSourcePlanilhaId] = useState<string>("");
   const [sourceRows, setSourceRows] = useState<Array<{ checked: boolean; r: LinhaServico }>>([]);
 
+  const catalogPolicyTooltip = useMemo(() => {
+    const map = {
+      FILL: "Completa campos que estiverem vazios na Fonte (ex.: descrição/UND). Não apaga nem troca dados já preenchidos.",
+      KEEP: "Se o código já existe na Fonte, mantém exatamente como está e ignora o que vier na importação para esse código.",
+      OVERWRITE: "Se o código já existe na Fonte, atualiza os campos informados na importação. Campos vazios na importação não substituem os atuais.",
+    } as const;
+    return (p: "FILL" | "KEEP" | "OVERWRITE") => map[p];
+  }, []);
+
   async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     let token: string | null = null;
     try {
@@ -598,7 +607,7 @@ export default function PlanilhaImportacoesPage() {
               value={csvCatalogDupPolicy}
               onChange={(e) => setCsvCatalogDupPolicy(e.target.value as any)}
               disabled={loading}
-              title="Como agir quando um código já existe na Fonte de dados"
+              title={catalogPolicyTooltip(csvCatalogDupPolicy)}
             >
               <option value="FILL">Completar campos vazios (padrão)</option>
               <option value="KEEP">Manter como está</option>
@@ -606,7 +615,13 @@ export default function PlanilhaImportacoesPage() {
             </select>
           </label>
           <label className="flex items-center gap-2 mt-6 text-sm text-slate-700 select-none">
-            <input type="checkbox" checked={csvSkipExistingLines} onChange={(e) => setCsvSkipExistingLines(Boolean(e.target.checked))} disabled={loading} />
+            <input
+              type="checkbox"
+              checked={csvSkipExistingLines}
+              onChange={(e) => setCsvSkipExistingLines(Boolean(e.target.checked))}
+              disabled={loading}
+              title='Quando marcado, o sistema não insere linhas iguais que já existam na planilha destino (mesmo Item/Código/Qtd/Valor).'
+            />
             Ignorar linhas repetidas na planilha
           </label>
         </div>
@@ -767,7 +782,7 @@ export default function PlanilhaImportacoesPage() {
               value={planilhaCatalogDupPolicy}
               onChange={(e) => setPlanilhaCatalogDupPolicy(e.target.value as any)}
               disabled={loading}
-              title="Como agir quando um código já existe na Fonte de dados"
+              title={catalogPolicyTooltip(planilhaCatalogDupPolicy)}
             >
               <option value="FILL">Completar campos vazios (padrão)</option>
               <option value="KEEP">Manter como está</option>
@@ -780,6 +795,7 @@ export default function PlanilhaImportacoesPage() {
               checked={planilhaSkipExistingLines}
               onChange={(e) => setPlanilhaSkipExistingLines(Boolean(e.target.checked))}
               disabled={loading}
+              title='Quando marcado, o sistema não insere linhas iguais que já existam na planilha destino (mesmo Item/Código/Qtd/Valor).'
             />
             Ignorar linhas repetidas na planilha
           </label>
