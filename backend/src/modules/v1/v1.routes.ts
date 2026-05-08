@@ -527,8 +527,9 @@ async function ensureFontesDadosTables(tx: any) {
   await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN data_base SET NOT NULL`).catch(() => null);
   await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN tipo_preco SET NOT NULL`).catch(() => null);
   await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN descricao SET NOT NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`DROP INDEX IF EXISTS obras_fontes_dados_uk`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_fontes_dados_uk ON obras_fontes_dados (tenant_id, tipo, uf, data_base, tipo_preco, descricao)`);
+  await tx
+    .$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_fontes_dados_uk ON obras_fontes_dados (tenant_id, tipo, uf, data_base, tipo_preco, descricao)`)
+    .catch(() => null);
   await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_fontes_dados_idx ON obras_fontes_dados (tenant_id, tipo)`);
 }
 

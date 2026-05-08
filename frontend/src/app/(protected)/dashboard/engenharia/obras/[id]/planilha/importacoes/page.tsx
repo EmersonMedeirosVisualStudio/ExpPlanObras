@@ -147,6 +147,7 @@ export default function PlanilhaImportacoesPage() {
   const idObra = Number(params?.id || 0);
   const planilhaIdFromQs = search.get("planilhaId");
   const returnTo = search.get("returnTo");
+  const targetLocked = Boolean(String(planilhaIdFromQs || "").trim());
 
   const safeReturnTo = useMemo(() => {
     const raw = String(returnTo || "").trim();
@@ -164,6 +165,12 @@ export default function PlanilhaImportacoesPage() {
   const [targetPlanilhaId, setTargetPlanilhaId] = useState<string>(planilhaIdFromQs ? String(planilhaIdFromQs) : "");
   const [planilhasOutrasObras, setPlanilhasOutrasObras] = useState<VersaoRow[]>([]);
   const [includeOutrasObras, setIncludeOutrasObras] = useState(false);
+
+  const selectedTarget = useMemo(() => {
+    const id = Number(String(targetPlanilhaId || "").trim() || 0);
+    if (!id) return null;
+    return versoes.find((v) => Number(v.idPlanilha) === id) || null;
+  }, [targetPlanilhaId, versoes]);
 
   const [importMode, setImportMode] = useState<"CSV" | "PLANILHA">("CSV");
   const [csvMode, setCsvMode] = useState<"APPEND" | "REPLACE">("APPEND");
@@ -510,6 +517,12 @@ export default function PlanilhaImportacoesPage() {
   }, [idObra]);
 
   useEffect(() => {
+    if (!targetLocked) return;
+    const id = String(planilhaIdFromQs || "").trim();
+    if (id) setTargetPlanilhaId(id);
+  }, [planilhaIdFromQs, targetLocked]);
+
+  useEffect(() => {
     if (!includeOutrasObras) return;
     if (planilhasOutrasObras.length) return;
     void carregarPlanilhasDeOutrasObras();
@@ -521,7 +534,8 @@ export default function PlanilhaImportacoesPage() {
         <div>
           <div className="text-xs text-slate-500">Engenharia → Obras → Planilha orçamentária → Importações</div>
           <h1 className="text-2xl font-semibold">Importações</h1>
-          <div className="text-sm text-slate-600">Importe linhas (SERVICOS_LINHAS) a partir de CSV ou de outra planilha.</div>
+          <div className="text-sm text-slate-600">Importe Itens, subitens e serviços a partir de CSV ou de outra planilha.</div>
+          {selectedTarget ? <div className="text-sm font-semibold text-slate-800">{`#${selectedTarget.idPlanilha} - ${selectedTarget.nome || "—"}`}</div> : null}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />
@@ -566,7 +580,7 @@ export default function PlanilhaImportacoesPage() {
               </button>
             </div>
           </div>
-          <select className="input bg-white w-full" value={targetPlanilhaId} onChange={(e) => setTargetPlanilhaId(e.target.value)} disabled={loading}>
+          <select className="input bg-white w-full" value={targetPlanilhaId} onChange={(e) => setTargetPlanilhaId(e.target.value)} disabled={loading || targetLocked}>
             <option value="">Selecione...</option>
             {versoes.map((v) => (
               <option key={v.idPlanilha} value={String(v.idPlanilha)}>
@@ -574,6 +588,7 @@ export default function PlanilhaImportacoesPage() {
               </option>
             ))}
           </select>
+          {targetLocked ? <div className="text-xs text-slate-500">Planilha destino fixada na planilha selecionada.</div> : null}
         </label>
       </section>
 

@@ -555,9 +555,19 @@ export default function PlanilhaObraClient({
   const [somenteItens, setSomenteItens] = useState(false);
   const [collapsedPrefixes, setCollapsedPrefixes] = useState<Set<string>>(new Set());
 
-  const [showParamsCard, setShowParamsCard] = useState(true);
+  const [showParamsCard, setShowParamsCard] = useState(false);
   const [showPlanilhaCard, setShowPlanilhaCard] = useState(true);
-  const [showAdicionarCard, setShowAdicionarCard] = useState(true);
+  const [showAdicionarCard, setShowAdicionarCard] = useState(false);
+
+  useEffect(() => {
+    if (!effectivePlanilhaId) return;
+    setShowParamsCard(false);
+    if (!editingLinhaId) setShowAdicionarCard(false);
+  }, [effectivePlanilhaId]);
+
+  useEffect(() => {
+    if (editingLinhaId && !showAdicionarCard) setShowAdicionarCard(true);
+  }, [editingLinhaId, showAdicionarCard]);
 
   const [fontes, setFontes] = useState<FonteDadosDTO[]>([]);
   const [parametrosCad, setParametrosCad] = useState<ParametroDTO[]>([]);
@@ -2360,8 +2370,8 @@ export default function PlanilhaObraClient({
                 qs.set("returnTo", selfHref);
                 router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos?${qs.toString()}`);
               }}
-              disabled={loading}
-              title="Abrir o catálogo de serviços da Fonte de dados vinculada à planilha selecionada"
+              disabled={loading || !effectivePlanilhaId || !planilha}
+              title={!effectivePlanilhaId || !planilha ? "Selecione uma versão da planilha para abrir o catálogo da Fonte" : "Abrir o catálogo de serviços da Fonte de dados vinculada à planilha selecionada"}
             >
               Serviços (catálogo da fonte)
             </button>
@@ -2374,8 +2384,8 @@ export default function PlanilhaObraClient({
                 qs.set("returnTo", selfHref);
                 router.push(`/dashboard/engenharia/obras/${idObra}/planilha/sinapi?${qs.toString()}`);
               }}
-              disabled={loading}
-              title="Importar composições do SINAPI (Excel)"
+              disabled={loading || !effectivePlanilhaId || !planilha}
+              title={!effectivePlanilhaId || !planilha ? "Selecione uma versão da planilha para abrir o SINAPI" : "Abrir a tela SINAPI para importar/aplicar serviços e composições"}
             >
               SINAPI
             </button>
@@ -2388,8 +2398,8 @@ export default function PlanilhaObraClient({
                 qs.set("returnTo", selfHref);
                 router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?${qs.toString()}`);
               }}
-              disabled={loading}
-              title="Abrir a tela de Insumos consolidados da planilha selecionada"
+              disabled={loading || !effectivePlanilhaId || !planilha}
+              title={!effectivePlanilhaId || !planilha ? "Selecione uma versão da planilha para abrir Insumos" : "Abrir a tela de Insumos consolidados da planilha selecionada"}
             >
               Insumos
             </button>
