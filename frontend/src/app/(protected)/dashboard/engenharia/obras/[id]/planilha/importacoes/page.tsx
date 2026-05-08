@@ -359,6 +359,14 @@ export default function PlanilhaImportacoesPage() {
     return csvPreview.rows.some((r) => r.checked && Object.keys(r.errors || {}).length > 0);
   }, [csvPreview]);
 
+  useEffect(() => {
+    if (csvMode === "REPLACE" && csvSkipExistingLines) setCsvSkipExistingLines(false);
+  }, [csvMode, csvSkipExistingLines]);
+
+  useEffect(() => {
+    if (planilhaImportMode === "REPLACE" && planilhaSkipExistingLines) setPlanilhaSkipExistingLines(false);
+  }, [planilhaImportMode, planilhaSkipExistingLines]);
+
   async function confirmarImportacaoCsv() {
     const idPlanilha = Number(String(targetPlanilhaId || "").trim() || 0);
     if (!idPlanilha) {
@@ -374,6 +382,14 @@ export default function PlanilhaImportacoesPage() {
       return;
     }
     try {
+      const warnings: string[] = [];
+      if (csvMode === "REPLACE") warnings.push("Você escolheu SUBSTITUIR: todas as linhas da planilha destino serão apagadas antes de importar.");
+      if (csvCatalogDupPolicy === "OVERWRITE")
+        warnings.push("Você escolheu SOBRESCREVER na Fonte: serviços com o mesmo código serão atualizados na Fonte de dados (cadastro compartilhado) e isso pode impactar outras planilhas.");
+      if (warnings.length) {
+        const ok = window.confirm(`${warnings.join("\n\n")}\n\nDeseja continuar?`);
+        if (!ok) return;
+      }
       setLoading(true);
       setErr(null);
       setOkMsg(null);
@@ -449,6 +465,14 @@ export default function PlanilhaImportacoesPage() {
       return;
     }
     try {
+      const warnings: string[] = [];
+      if (planilhaImportMode === "REPLACE") warnings.push("Você escolheu SUBSTITUIR: todas as linhas da planilha destino serão apagadas antes de importar.");
+      if (planilhaCatalogDupPolicy === "OVERWRITE")
+        warnings.push("Você escolheu SOBRESCREVER na Fonte: serviços com o mesmo código serão atualizados na Fonte de dados (cadastro compartilhado) e isso pode impactar outras planilhas.");
+      if (warnings.length) {
+        const ok = window.confirm(`${warnings.join("\n\n")}\n\nDeseja continuar?`);
+        if (!ok) return;
+      }
       setLoading(true);
       setErr(null);
       setOkMsg(null);
@@ -619,12 +643,25 @@ export default function PlanilhaImportacoesPage() {
               type="checkbox"
               checked={csvSkipExistingLines}
               onChange={(e) => setCsvSkipExistingLines(Boolean(e.target.checked))}
-              disabled={loading}
-              title='Quando marcado, o sistema não insere linhas iguais que já existam na planilha destino (mesmo Item/Código/Qtd/Valor).'
+              disabled={loading || csvMode === "REPLACE"}
+              title={
+                csvMode === "REPLACE"
+                  ? 'Indisponível no modo "Substituir": a planilha destino será apagada antes de importar.'
+                  : 'Quando marcado, o sistema não insere linhas iguais que já existam na planilha destino (mesmo Item/Código/Qtd/Valor).'
+              }
             />
             Ignorar linhas repetidas na planilha
           </label>
         </div>
+        {csvMode === "REPLACE" || csvCatalogDupPolicy === "OVERWRITE" ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="font-semibold">Atenção</div>
+            {csvMode === "REPLACE" ? <div>- Substituir apaga todas as linhas da planilha destino antes de importar.</div> : null}
+            {csvCatalogDupPolicy === "OVERWRITE" ? (
+              <div>- Sobrescrever altera a Fonte de dados (cadastro compartilhado) e pode impactar outras planilhas que usam a mesma Fonte.</div>
+            ) : null}
+          </div>
+        ) : null}
 
         {csvPreview.file ? (
           <div className="rounded-lg border p-3 space-y-2">
@@ -794,13 +831,26 @@ export default function PlanilhaImportacoesPage() {
               type="checkbox"
               checked={planilhaSkipExistingLines}
               onChange={(e) => setPlanilhaSkipExistingLines(Boolean(e.target.checked))}
-              disabled={loading}
-              title='Quando marcado, o sistema não insere linhas iguais que já existam na planilha destino (mesmo Item/Código/Qtd/Valor).'
+              disabled={loading || planilhaImportMode === "REPLACE"}
+              title={
+                planilhaImportMode === "REPLACE"
+                  ? 'Indisponível no modo "Substituir": a planilha destino será apagada antes de importar.'
+                  : 'Quando marcado, o sistema não insere linhas iguais que já existam na planilha destino (mesmo Item/Código/Qtd/Valor).'
+              }
             />
             Ignorar linhas repetidas na planilha
           </label>
           <div />
         </div>
+        {planilhaImportMode === "REPLACE" || planilhaCatalogDupPolicy === "OVERWRITE" ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="font-semibold">Atenção</div>
+            {planilhaImportMode === "REPLACE" ? <div>- Substituir apaga todas as linhas da planilha destino antes de importar.</div> : null}
+            {planilhaCatalogDupPolicy === "OVERWRITE" ? (
+              <div>- Sobrescrever altera a Fonte de dados (cadastro compartilhado) e pode impactar outras planilhas que usam a mesma Fonte.</div>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <button
