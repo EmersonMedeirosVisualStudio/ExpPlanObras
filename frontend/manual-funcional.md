@@ -1792,10 +1792,17 @@ Esta tela gera uma **planilha de adequação** (somente consulta) para comparar 
 - **Origem (Contratado)**: versão base (antes das alterações)
 - **Destino (Adequado)**: versão final (após as alterações)
 
-O sistema calcula, para cada serviço:
+Como o sistema calcula:
 
-- **Quantidades**: Aditado / Suprimido / Adequado
-- **Valores**: Aditado / Suprimido / Adequado
+- **CONTRATADO**: dados da **Origem**
+- **ADEQUADO**: dados do **Destino**
+- **ADITADO**: quando o **Adequado** é maior que o **Contratado** (diferença positiva)
+- **SUPRIMIDO**: quando o **Adequado** é menor que o **Contratado** (diferença positiva)
+
+Fórmulas (vale para Quantidades e Valores):
+
+- **Aditado = max(0, Adequado − Contratado)**
+- **Suprimido = max(0, Contratado − Adequado)**
 
 ETAPA 1 — Onde acessar
 - Acesse: Engenharia → Obras → (selecione a obra) → **Planilha orçamentária**
@@ -1813,9 +1820,11 @@ ETAPA 4 — O que esperar
 - A tela exibe o status **Carregando página… / Página carregada**
 - O card **Visual** permite ajustar: **Somente itens**, **Fonte**, **Fundo Item**, **Fundo Subitem** e **largura das colunas**
 - O card **Impressão — ajustes finos** permite imprimir em **paisagem** com o **cabeçalho padronizado da empresa** e controlar fonte/espaçamentos
+- Para **Itens/Subitens**, o sistema mostra subtotais apenas em **VALORES** (TOTAL, ADITADO, SUPRIMIDO, ADEQUADO)
 
 ETAPA 5 — Como validar
 - Use **Imprimir** ou **CSV** para conferir o relatório
+- Se o navegador bloquear a prévia, habilite pop-up para o domínio do sistema e clique em **Imprimir** novamente
 
 ##### Importar serviços de outra planilha (inclui Item/Subitem/Serviço)
 

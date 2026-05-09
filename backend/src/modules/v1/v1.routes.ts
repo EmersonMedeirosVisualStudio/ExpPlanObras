@@ -12812,7 +12812,8 @@ export default async function v1Routes(server: FastifyInstance) {
         const cPreco = src?.valorUnitario != null ? Number(src.valorUnitario) : 0;
         const cTotal = src?.valorParcial != null ? Number(src.valorParcial) : Number((cQty * cPreco).toFixed(6));
         const aQty = dst?.quantidade != null ? Number(dst.quantidade) : 0;
-        const aTotal = dst?.valorParcial != null ? Number(dst.valorParcial) : 0;
+        const aPreco = dst?.valorUnitario != null ? Number(dst.valorUnitario) : 0;
+        const aTotal = dst?.valorParcial != null ? Number(dst.valorParcial) : Number((aQty * aPreco).toFixed(6));
         rowOut.push({
           tipoLinha: 'SERVICO',
           item,

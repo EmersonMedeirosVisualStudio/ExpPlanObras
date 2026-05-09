@@ -142,6 +142,7 @@ export default function AdequacaoPlanilhaPage() {
   });
 
   const [rows, setRows] = useState<AdequacaoRow[]>([]);
+  const [dstParams, setDstParams] = useState<any>(null);
 
   async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     let token: string | null = null;
@@ -277,6 +278,25 @@ export default function AdequacaoPlanilhaPage() {
     }
   }
 
+  async function carregarDestinoParams(dstId: number) {
+    try {
+      if (!idObra || !dstId) return;
+      const resP = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${dstId}&includeCatalog=0`);
+      const jsonP = await resP.json().catch(() => null);
+      if (!resP.ok || !jsonP?.success) return;
+      setDstParams(jsonP.data?.planilha?.parametros || null);
+    } catch {}
+  }
+
+  useEffect(() => {
+    const dstId = Number(String(targetPlanilhaId || "").trim() || 0);
+    if (!dstId) {
+      setDstParams(null);
+      return;
+    }
+    void carregarDestinoParams(dstId);
+  }, [idObra, targetPlanilhaId]);
+
   const selectedTarget = useMemo(() => {
     const id = Number(String(targetPlanilhaId || "").trim() || 0);
     if (!id) return null;
@@ -399,7 +419,7 @@ export default function AdequacaoPlanilhaPage() {
     downloadCsv(`adequacao_planilha_obra_${idObra}_dest_${src || "x"}.csv`, `${header}\n${lines.join("\n")}\n`);
   }
 
-  async function imprimirAdequacao() {
+  function imprimirAdequacao() {
     if (!visibleRows.length) return;
     const w = window.open("", "_blank");
     if (!w) {
@@ -431,15 +451,6 @@ export default function AdequacaoPlanilhaPage() {
     const dst = selectedTarget;
     const dataHoje = new Date().toLocaleDateString("pt-BR");
     const contratoOut = contratoNumero ? contratoNumero : contratoId != null ? `#${contratoId}` : "";
-    let dstParams: any = null;
-    try {
-      const dstId = Number(dst?.idPlanilha || 0);
-      if (dstId) {
-        const resP = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${dstId}&includeCatalog=0`);
-        const jsonP = await resP.json().catch(() => null);
-        if (resP.ok && jsonP?.success) dstParams = jsonP.data?.planilha?.parametros || null;
-      }
-    } catch {}
     const fmtPercent = (n: unknown) => {
       const num = typeof n === "number" ? n : n == null ? null : Number(n);
       if (num == null || !Number.isFinite(num)) return "-";
@@ -595,10 +606,13 @@ export default function AdequacaoPlanilhaPage() {
       </table>
       ${rodapeEmpresaHtml}
     </div>
-    <script>window.focus(); window.print();</script>
   </body>
 </html>`);
     w.document.close();
+    try {
+      w.focus();
+      w.print();
+    } catch {}
   }
 
   return (
