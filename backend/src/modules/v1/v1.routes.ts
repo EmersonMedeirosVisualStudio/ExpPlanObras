@@ -12675,72 +12675,158 @@ export default async function v1Routes(server: FastifyInstance) {
         return 0;
       }
 
-      function keyOf(r: Linha) {
+      const srcHeaders = srcLinhas.filter((r) => String(r.tipoLinha || '').toUpperCase() !== 'SERVICO');
+      const dstHeaders = dstLinhas.filter((r) => String(r.tipoLinha || '').toUpperCase() !== 'SERVICO');
+      const srcServicos = srcLinhas.filter((r) => String(r.tipoLinha || '').toUpperCase() === 'SERVICO');
+      const dstServicos = dstLinhas.filter((r) => String(r.tipoLinha || '').toUpperCase() === 'SERVICO');
+
+      const headerLabelByKey = new Map<string, string>();
+      for (const r of [...srcHeaders, ...dstHeaders]) {
         const tipo = String(r.tipoLinha || '').trim().toUpperCase();
         const item = String(r.item || '').trim();
-        const codigo = String(r.codigo || '').trim().toUpperCase();
-        if (tipo === 'SERVICO') return `S|${item}|${codigo || ''}`;
-        return `N|${tipo}|${item}`;
+        const label = String(r.servicos || '').trim();
+        if (!tipo || !item || !label) continue;
+        const k = `${tipo}|${item}`;
+        if (!headerLabelByKey.has(k)) headerLabelByKey.set(k, label);
       }
 
-      const srcByKey = new Map<string, Linha>();
-      const dstByKey = new Map<string, Linha>();
-      for (const r of srcLinhas) srcByKey.set(keyOf(r), r);
-      for (const r of dstLinhas) dstByKey.set(keyOf(r), r);
+      function serviceKey(item: string, codigo: string) {
+        return `S|${String(item || '').trim()}|${String(codigo || '').trim().toUpperCase()}`;
+      }
+      const srcServiceByKey = new Map<string, Linha>();
+      const dstServiceByKey = new Map<string, Linha>();
+      for (const r of srcServicos) srcServiceByKey.set(serviceKey(r.item, r.codigo), r);
+      for (const r of dstServicos) dstServiceByKey.set(serviceKey(r.item, r.codigo), r);
 
-      const keys = new Set<string>([...srcByKey.keys(), ...dstByKey.keys()]);
-
-      const rows = Array.from(keys)
-        .map((k) => {
-          const src = srcByKey.get(k) || null;
-          const dst = dstByKey.get(k) || null;
-          const base = dst || src;
-          const tipoLinha = (base?.tipoLinha || 'ITEM') as any;
-          const item = String(base?.item || '').trim();
-          const servicos = String(base?.servicos || '').trim();
-          const und = String(base?.und || '').trim();
-
-          if (String(tipoLinha).toUpperCase() !== 'SERVICO') {
-            return {
-              tipoLinha,
-              item,
-              servicos,
-              und,
-              contratadoQuant: 0,
-              contratadoPreco: 0,
-              contratadoTotal: 0,
-              qAditado: 0,
-              qSuprimido: 0,
-              qAdequado: 0,
-              vAditado: 0,
-              vSuprimido: 0,
-              vAdequado: 0,
-            };
+      function collectHeadersFromServices(list: Linha[]) {
+        const out: Array<{ tipoLinha: 'ITEM' | 'SUBITEM'; item: string }> = [];
+        const seen = new Set<string>();
+        for (const r of list) {
+          const itemStr = String(r.item || '').trim();
+          const parts = itemStr.split('.').map((p) => p.trim()).filter(Boolean);
+          if (!parts.length) continue;
+          const item1 = parts[0];
+          const kItem = `ITEM|${item1}`;
+          if (!seen.has(kItem)) {
+            seen.add(kItem);
+            out.push({ tipoLinha: 'ITEM', item: item1 });
           }
+          if (parts.length >= 2) {
+            const sub = `${parts[0]}.${parts[1]}`;
+            const kSub = `SUBITEM|${sub}`;
+            if (!seen.has(kSub)) {
+              seen.add(kSub);
+              out.push({ tipoLinha: 'SUBITEM', item: sub });
+            }
+          }
+        }
+        return out;
+      }
 
-          const cQty = src?.quantidade != null ? Number(src.quantidade) : 0;
-          const cPreco = src?.valorUnitario != null ? Number(src.valorUnitario) : 0;
-          const cTotal = src?.valorParcial != null ? Number(src.valorParcial) : Number((cQty * cPreco).toFixed(6));
-          const aQty = dst?.quantidade != null ? Number(dst.quantidade) : 0;
-          const aTotal = dst?.valorParcial != null ? Number(dst.valorParcial) : 0;
+      const derivedHeaders = [...collectHeadersFromServices(srcServicos), ...collectHeadersFromServices(dstServicos)];
+      const explicitHeaders = [...srcHeaders, ...dstHeaders].map((h) => ({ tipoLinha: h.tipoLinha, item: h.item }));
+      const headerKeySet = new Set<string>();
+      const allHeaders: Array<{ tipoLinha: 'ITEM' | 'SUBITEM'; item: string }> = [];
+      for (const h of [...derivedHeaders, ...explicitHeaders]) {
+        const tipo = String(h.tipoLinha || '').trim().toUpperCase();
+        const item = String(h.item || '').trim();
+        if (tipo !== 'ITEM' && tipo !== 'SUBITEM') continue;
+        if (!item) continue;
+        const k = `${tipo}|${item}`;
+        if (headerKeySet.has(k)) continue;
+        headerKeySet.add(k);
+        allHeaders.push({ tipoLinha: tipo as any, item });
+      }
 
-          return {
-            tipoLinha,
-            item,
-            servicos,
-            und,
-            contratadoQuant: cQty,
-            contratadoPreco: cPreco,
-            contratadoTotal: cTotal,
-            qAditado: Math.max(0, aQty - cQty),
-            qSuprimido: Math.max(0, cQty - aQty),
-            qAdequado: aQty,
-            vAditado: Math.max(0, aTotal - cTotal),
-            vSuprimido: Math.max(0, cTotal - aTotal),
-            vAdequado: aTotal,
-          };
-        })
-        .sort((a, b) => compareItems(a.item, b.item));
+      function matchPrefix(serviceItem: string, prefix: string) {
+        const a = String(serviceItem || '').trim();
+        const p = String(prefix || '').trim();
+        if (!a || !p) return false;
+        return a === p || a.startsWith(`${p}.`);
+      }
+
+      function sumByPrefix(list: Linha[], prefix: string) {
+        let qty = 0;
+        let total = 0;
+        for (const r of list) {
+          if (!matchPrefix(r.item, prefix)) continue;
+          const q = r.quantidade != null ? Number(r.quantidade) : 0;
+          const t = r.valorParcial != null ? Number(r.valorParcial) : r.valorUnitario != null ? Number(r.valorUnitario) * q : 0;
+          qty += q;
+          total += t;
+        }
+        return { qty: Number(qty.toFixed(6)), total: Number(total.toFixed(6)) };
+      }
+
+      const rowOut: any[] = [];
+
+      for (const h of allHeaders) {
+        const prefix = String(h.item || '').trim();
+        const srcAgg = sumByPrefix(srcServicos, prefix);
+        const dstAgg = sumByPrefix(dstServicos, prefix);
+        const label = headerLabelByKey.get(`${h.tipoLinha}|${prefix}`) || '';
+        const cTotal = srcAgg.total;
+        const aTotal = dstAgg.total;
+        const cQty = srcAgg.qty;
+        const aQty = dstAgg.qty;
+        rowOut.push({
+          tipoLinha: h.tipoLinha,
+          item: prefix,
+          servicos: label,
+          und: '',
+          contratadoQuant: cQty,
+          contratadoPreco: 0,
+          contratadoTotal: cTotal,
+          qAditado: Math.max(0, aQty - cQty),
+          qSuprimido: Math.max(0, cQty - aQty),
+          qAdequado: aQty,
+          vAditado: Math.max(0, aTotal - cTotal),
+          vSuprimido: Math.max(0, cTotal - aTotal),
+          vAdequado: aTotal,
+        });
+      }
+
+      const serviceKeys = new Set<string>([...srcServiceByKey.keys(), ...dstServiceByKey.keys()]);
+      for (const k of serviceKeys) {
+        const src = srcServiceByKey.get(k) || null;
+        const dst = dstServiceByKey.get(k) || null;
+        const base = dst || src;
+        const item = String(base?.item || '').trim();
+        const servicos = String(base?.servicos || '').trim();
+        const und = String(base?.und || '').trim();
+        const cQty = src?.quantidade != null ? Number(src.quantidade) : 0;
+        const cPreco = src?.valorUnitario != null ? Number(src.valorUnitario) : 0;
+        const cTotal = src?.valorParcial != null ? Number(src.valorParcial) : Number((cQty * cPreco).toFixed(6));
+        const aQty = dst?.quantidade != null ? Number(dst.quantidade) : 0;
+        const aTotal = dst?.valorParcial != null ? Number(dst.valorParcial) : 0;
+        rowOut.push({
+          tipoLinha: 'SERVICO',
+          item,
+          servicos,
+          und,
+          contratadoQuant: cQty,
+          contratadoPreco: cPreco,
+          contratadoTotal: cTotal,
+          qAditado: Math.max(0, aQty - cQty),
+          qSuprimido: Math.max(0, cQty - aQty),
+          qAdequado: aQty,
+          vAditado: Math.max(0, aTotal - cTotal),
+          vSuprimido: Math.max(0, cTotal - aTotal),
+          vAdequado: aTotal,
+        });
+      }
+
+      const orderTipo = (t: string) => (t === 'ITEM' ? 0 : t === 'SUBITEM' ? 1 : 2);
+      const rows = rowOut.sort((a, b) => {
+        const c = compareItems(a.item, b.item);
+        if (c !== 0) return c;
+        const ta = orderTipo(String(a.tipoLinha || '').toUpperCase());
+        const tb = orderTipo(String(b.tipoLinha || '').toUpperCase());
+        if (ta !== tb) return ta - tb;
+        const ca = String(a.codigo || '');
+        const cb = String(b.codigo || '');
+        return ca.localeCompare(cb);
+      });
 
       return ok(reply, {
         obraId: idObra,

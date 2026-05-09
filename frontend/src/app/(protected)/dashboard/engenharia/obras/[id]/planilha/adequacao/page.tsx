@@ -611,7 +611,7 @@ export default function AdequacaoPlanilhaPage() {
               type="button"
               onClick={exportarCsv}
               disabled={loading || !visibleRows.length}
-              title="Exportar CSV"
+              title="Exportar a grade para CSV (separador ;)"
             >
               <FileSpreadsheet className="h-4 w-4" />
               CSV
@@ -622,7 +622,13 @@ export default function AdequacaoPlanilhaPage() {
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1">
             <div className="text-sm text-slate-600">Origem (Contratado)</div>
-            <select className="input bg-white w-full" value={sourcePlanilhaId} onChange={(e) => setSourcePlanilhaId(e.target.value)} disabled={loading}>
+            <select
+              className="input bg-white w-full"
+              value={sourcePlanilhaId}
+              onChange={(e) => setSourcePlanilhaId(e.target.value)}
+              disabled={loading}
+              title="Versão base (antes): usada como referência do Contratado"
+            >
               <option value="">(selecione)</option>
               {versoes.map((v) => (
                 <option key={v.idPlanilha} value={String(v.idPlanilha)}>
@@ -638,7 +644,11 @@ export default function AdequacaoPlanilhaPage() {
               value={targetPlanilhaId}
               onChange={(e) => setTargetPlanilhaId(e.target.value)}
               disabled={loading || Boolean(String(planilhaIdFromQs || "").trim())}
-              title={Boolean(String(planilhaIdFromQs || "").trim()) ? "Destino fixado na planilha selecionada" : "Escolher a versão destino"}
+              title={
+                Boolean(String(planilhaIdFromQs || "").trim())
+                  ? "Destino fixado na planilha selecionada (aberto a partir da Planilha)"
+                  : "Versão final (depois): usada como referência do Adequado"
+              }
             >
               <option value="">(selecione)</option>
               {versoes.map((v) => (
@@ -655,12 +665,22 @@ export default function AdequacaoPlanilhaPage() {
         <div className="text-sm font-semibold">Visual</div>
         <div className="flex items-center gap-3 flex-wrap">
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={somenteItens} onChange={(e) => setSomenteItens(Boolean(e.target.checked))} />
+            <input
+              type="checkbox"
+              checked={somenteItens}
+              onChange={(e) => setSomenteItens(Boolean(e.target.checked))}
+              title="Se marcado, mostra apenas Itens e Subitens (oculta linhas de Serviço)"
+            />
             <span className="text-slate-600">Somente itens</span>
           </label>
           <label className="flex items-center gap-2 text-sm">
             <span className="text-slate-600">Fonte</span>
-            <select className="input bg-white" value={String(uiPrefs.fontSizePx)} onChange={(e) => setUiPrefs((p) => ({ ...p, fontSizePx: Number(e.target.value || 14) }))}>
+            <select
+              className="input bg-white"
+              value={String(uiPrefs.fontSizePx)}
+              onChange={(e) => setUiPrefs((p) => ({ ...p, fontSizePx: Number(e.target.value || 14) }))}
+              title="Tamanho da fonte da tabela"
+            >
               <option value="12">12</option>
               <option value="14">14</option>
               <option value="16">16</option>
@@ -669,11 +689,21 @@ export default function AdequacaoPlanilhaPage() {
           </label>
           <label className="flex items-center gap-2 text-sm">
             <span className="text-slate-600">Fundo Item</span>
-            <input type="color" value={uiPrefs.itemBg} onChange={(e) => setUiPrefs((p) => ({ ...p, itemBg: e.target.value }))} />
+            <input
+              type="color"
+              value={uiPrefs.itemBg}
+              onChange={(e) => setUiPrefs((p) => ({ ...p, itemBg: e.target.value }))}
+              title="Cor de fundo das linhas do tipo Item"
+            />
           </label>
           <label className="flex items-center gap-2 text-sm">
             <span className="text-slate-600">Fundo Subitem</span>
-            <input type="color" value={uiPrefs.subitemBg} onChange={(e) => setUiPrefs((p) => ({ ...p, subitemBg: e.target.value }))} />
+            <input
+              type="color"
+              value={uiPrefs.subitemBg}
+              onChange={(e) => setUiPrefs((p) => ({ ...p, subitemBg: e.target.value }))}
+              title="Cor de fundo das linhas do tipo Subitem"
+            />
           </label>
           <div className="flex items-center gap-2 text-sm">
             <span className="text-slate-600">Colunas (px)</span>
@@ -686,6 +716,7 @@ export default function AdequacaoPlanilhaPage() {
                 max={200}
                 value={uiPrefs.wItemPx}
                 onChange={(e) => setUiPrefs((p) => ({ ...p, wItemPx: Math.max(56, Math.min(200, Number(e.target.value || p.wItemPx))) }))}
+                title="Largura da coluna ITEM (px)"
               />
             </label>
             <label className="flex items-center gap-2">
@@ -697,6 +728,7 @@ export default function AdequacaoPlanilhaPage() {
                 max={1200}
                 value={uiPrefs.wServicosPx}
                 onChange={(e) => setUiPrefs((p) => ({ ...p, wServicosPx: Math.max(260, Math.min(1200, Number(e.target.value || p.wServicosPx))) }))}
+                title="Largura da coluna SERVIÇOS (px)"
               />
             </label>
             <label className="flex items-center gap-2">
@@ -708,6 +740,7 @@ export default function AdequacaoPlanilhaPage() {
                 max={140}
                 value={uiPrefs.wUndPx}
                 onChange={(e) => setUiPrefs((p) => ({ ...p, wUndPx: Math.max(40, Math.min(140, Number(e.target.value || p.wUndPx))) }))}
+                title="Largura da coluna UND (px)"
               />
             </label>
             <label className="flex items-center gap-2">
@@ -719,6 +752,7 @@ export default function AdequacaoPlanilhaPage() {
                 max={200}
                 value={uiPrefs.wNumPx}
                 onChange={(e) => setUiPrefs((p) => ({ ...p, wNumPx: Math.max(70, Math.min(200, Number(e.target.value || p.wNumPx))) }))}
+                title="Largura das colunas numéricas (px)"
               />
             </label>
           </div>
@@ -968,16 +1002,16 @@ export default function AdequacaoPlanilhaPage() {
                   <tr key={`${r.tipoLinha}-${r.item}-${idx}`} style={bg ? { background: bg } : undefined}>
                     <td className={`px-3 py-2 border border-slate-300 ${isHeader ? "font-semibold" : ""}`}>{r.item || "—"}</td>
                     <td className={`px-3 py-2 border border-slate-300 ${isHeader ? "font-semibold" : ""}`}>{r.servicos || "—"}</td>
-                    <td className="px-3 py-2 border border-slate-300">{r.und || "—"}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "—" : fmtNumber(r.contratadoQuant, 2)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "—" : fmtNumber(r.contratadoPreco, 2)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "—" : fmtMoney(r.contratadoTotal)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "—" : fmtNumber(r.qAditado, 2)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "—" : fmtNumber(r.qSuprimido, 2)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "—" : fmtNumber(r.qAdequado, 2)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "—" : fmtMoney(r.vAditado)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "—" : fmtMoney(r.vSuprimido)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "—" : fmtMoney(r.vAdequado)}</td>
+                    <td className="px-3 py-2 border border-slate-300">{isHeader ? "" : r.und || ""}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{fmtNumber(r.contratadoQuant, 2)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{fmtNumber(r.contratadoPreco, 2)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{fmtMoney(r.contratadoTotal)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{fmtNumber(r.qAditado, 2)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{fmtNumber(r.qSuprimido, 2)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{fmtNumber(r.qAdequado, 2)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{fmtMoney(r.vAditado)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{fmtMoney(r.vSuprimido)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{fmtMoney(r.vAdequado)}</td>
                   </tr>
                 );
               })}

@@ -27,8 +27,8 @@ type VersaoRow = {
   idParametros: number | null;
   fonteNome: string;
   parametrosNome: string;
-  valorTotal: number;
-  totalServicos: number;
+  valorTotal: number | null;
+  totalServicos: number | null;
 };
 
 type PlanilhaLinha = {
@@ -591,6 +591,12 @@ export default function PlanilhaObraClient({
   const [clonarIncludeParametros, setClonarIncludeParametros] = useState(false);
   const [clonarIncludeFonte, setClonarIncludeFonte] = useState(false);
 
+  useEffect(() => {
+    if (!modalNovaPlanilhaOpen && !modalEditarPlanilhaOpen) return;
+    if (!fontes.length) void carregarFontes();
+    if (!parametrosCad.length) void carregarParametrosCad();
+  }, [modalNovaPlanilhaOpen, modalEditarPlanilhaOpen]);
+
   const paramsSectionRef = useRef<HTMLDivElement | null>(null);
   const planilhaSectionRef = useRef<HTMLDivElement | null>(null);
   const adicionarLinhaRef = useRef<HTMLDivElement | null>(null);
@@ -1066,11 +1072,12 @@ export default function PlanilhaObraClient({
     window.setTimeout(doPrint, 50);
   }
 
-  async function carregarVersoes() {
+  async function carregarVersoes(mode: "INFO" | "FULL" = "INFO") {
     try {
       setLoading(true);
       setErr(null);
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes`);
+      const view = mode === "FULL" ? "versoes" : "versoes-info";
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=${encodeURIComponent(view)}`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar versões");
       const data = json.data || {};
@@ -1086,10 +1093,19 @@ export default function PlanilhaObraClient({
         idParametros: v.idParametros == null ? null : Number(v.idParametros),
         fonteNome: String(v.fonteNome || "—"),
         parametrosNome: String(v.parametrosNome || "—"),
-        valorTotal: v.valorTotal == null ? 0 : Number(v.valorTotal),
-        totalServicos: Number(v.totalServicos || 0),
+        valorTotal: mode === "FULL" ? (v.valorTotal == null ? 0 : Number(v.valorTotal)) : null,
+        totalServicos: mode === "FULL" ? Number(v.totalServicos || 0) : null,
       }));
-      setVersoes(normalized);
+      setVersoes((prev) => {
+        if (mode === "FULL") return normalized;
+        const prevById = new Map<number, VersaoRow>();
+        for (const p of prev) prevById.set(Number(p.idPlanilha), p);
+        return normalized.map((v) => {
+          const p = prevById.get(Number(v.idPlanilha));
+          if (!p) return v;
+          return { ...v, valorTotal: p.valorTotal, totalServicos: p.totalServicos };
+        });
+      });
       setPlanilhaId((cur) => cur);
     } catch (e: any) {
       setErr(e?.message || "Erro ao carregar versões");
@@ -1225,7 +1241,7 @@ export default function PlanilhaObraClient({
     setBootDone(false);
     void (async () => {
       try {
-        await Promise.all([carregarVersoes(), carregarEmpresaDocumentosLayout(), carregarFontes(), carregarParametrosCad()]);
+        await Promise.all([carregarVersoes("INFO"), carregarEmpresaDocumentosLayout()]);
       } finally {
         if (!cancelled) {
           bootPendingRef.current = Math.max(0, bootPendingRef.current - 1);
@@ -2474,12 +2490,12 @@ export default function PlanilhaObraClient({
               className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
               type="button"
               onClick={() => {
-                carregarVersoes();
+                carregarVersoes("FULL");
                 carregarComposicaoStatus(planilhaId);
                 carregarComposicaoValidacao(planilhaId);
               }}
               disabled={loading}
-              title="Recarregar a lista de versões e os indicadores da planilha selecionada"
+              title="Atualiza dados sem recarregar a página (mantém a tela e seu estado). Também recalcula os indicadores."
             >
               Atualizar
             </button>
@@ -2534,8 +2550,8 @@ export default function PlanilhaObraClient({
                   <td className="px-3 py-2">{v.nome}</td>
                   <td className="px-3 py-2">{v.fonteNome || "—"}</td>
                   <td className="px-3 py-2">{v.idParametros ? `#${v.idParametros} - ${v.parametrosNome || "—"}` : "—"}</td>
-                  <td className="px-3 py-2 text-right">{v.totalServicos}</td>
-                  <td className="px-3 py-2 text-right">{moeda(Number(v.valorTotal || 0))}</td>
+                  <td className="px-3 py-2 text-right">{v.totalServicos == null ? "—" : v.totalServicos}</td>
+                  <td className="px-3 py-2 text-right">{v.valorTotal == null ? "—" : moeda(Number(v.valorTotal || 0))}</td>
                   <td className="px-3 py-2">
                     {v.atual ? (
                       <span className="inline-flex items-center gap-2 text-green-700">
