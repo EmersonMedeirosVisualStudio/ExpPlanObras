@@ -97,6 +97,8 @@ export default function AdequacaoPlanilhaPage() {
   const [obraNome, setObraNome] = useState<string>("");
   const [contratoNumero, setContratoNumero] = useState<string>("");
   const [contratoId, setContratoId] = useState<number | null>(null);
+  const [contratoObjeto, setContratoObjeto] = useState<string>("");
+  const [contratanteNome, setContratanteNome] = useState<string>("");
   const [versoes, setVersoes] = useState<VersaoRow[]>([]);
   const [sourcePlanilhaId, setSourcePlanilhaId] = useState<string>("");
   const [targetPlanilhaId, setTargetPlanilhaId] = useState<string>(planilhaIdFromQs ? String(planilhaIdFromQs) : "");
@@ -120,6 +122,7 @@ export default function AdequacaoPlanilhaPage() {
       headerToDadosPx: number;
       dadosToTabelaPx: number;
       includeEmpresaHeader: boolean;
+      repeatDadosEmTodasFolhas: boolean;
     };
   }>({
     fontSizePx: 14,
@@ -138,6 +141,7 @@ export default function AdequacaoPlanilhaPage() {
       headerToDadosPx: 6,
       dadosToTabelaPx: 10,
       includeEmpresaHeader: true,
+      repeatDadosEmTodasFolhas: true,
     },
   });
 
@@ -185,6 +189,7 @@ export default function AdequacaoPlanilhaPage() {
           headerToDadosPx: n(parsed?.print?.headerToDadosPx, 0, 80, cur.print.headerToDadosPx),
           dadosToTabelaPx: n(parsed?.print?.dadosToTabelaPx, 0, 120, cur.print.dadosToTabelaPx),
           includeEmpresaHeader: parsed?.print?.includeEmpresaHeader !== false,
+          repeatDadosEmTodasFolhas: parsed?.print?.repeatDadosEmTodasFolhas !== false,
         },
       }));
       setSomenteItens(Boolean(parsed?.somenteItens));
@@ -221,6 +226,21 @@ export default function AdequacaoPlanilhaPage() {
     } catch {
       setEmpresaDocumentosLayout(null);
     }
+  }
+
+  async function carregarContratoVinculado() {
+    try {
+      if (!idObra) return;
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/contrato`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) return;
+      const d = json.data || {};
+      setContratoNumero(String(d?.numeroContrato || "").trim());
+      setContratoId(d?.idContrato != null ? Number(d.idContrato) : null);
+      setContratoObjeto(String(d?.objeto || "").trim());
+      setContratanteNome(String(d?.contratante || "").trim());
+      if (String(d?.nomeObra || "").trim()) setObraNome(String(d.nomeObra || "").trim());
+    } catch {}
   }
 
   function applyEmpresaDocTokens(html: string, layout: EmpresaDocumentosLayout | null) {
@@ -365,7 +385,7 @@ export default function AdequacaoPlanilhaPage() {
     if (!idObra) return;
     setBootLoading(true);
     setBootDone(false);
-    void Promise.all([carregarVersoes(), carregarEmpresaDocumentosLayout()]).finally(() => {
+    void Promise.all([carregarVersoes(), carregarEmpresaDocumentosLayout(), carregarContratoVinculado()]).finally(() => {
       setBootLoading(false);
       setBootDone(true);
     });
@@ -428,6 +448,7 @@ export default function AdequacaoPlanilhaPage() {
     }
 
     const pp = uiPrefs.print;
+    const repeatDados = pp.repeatDadosEmTodasFolhas !== false;
     const headerFontWeight = pp.headerFontWeight === "bold" ? 700 : pp.headerFontWeight === "normal" ? 400 : 600;
     const topToHeaderPx = Math.max(0, Number(pp.topToHeaderPx || 0));
     const headerToDadosPx = Math.max(0, Number(pp.headerToDadosPx || 0));
@@ -451,37 +472,16 @@ export default function AdequacaoPlanilhaPage() {
           </div>`
         : "";
 
-    const src = versoes.find((v) => Number(v.idPlanilha) === Number(String(sourcePlanilhaId || "").trim() || 0)) || null;
-    const dst = selectedTarget;
-    const dataHoje = new Date().toLocaleDateString("pt-BR");
     const contratoOut = contratoNumero ? contratoNumero : contratoId != null ? `#${contratoId}` : "";
-    const fmtPercent = (n: unknown) => {
-      const num = typeof n === "number" ? n : n == null ? null : Number(n);
-      if (num == null || !Number.isFinite(num)) return "-";
-      return `${num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
-    };
+
+    const objetoOut = String(contratoObjeto || "").trim() || (obraNome ? obraNome : `Obra #${idObra}`);
+    const contratanteOut = String(contratanteNome || "").trim() || "-";
 
     const dadosHtml = `
       <div class="dados-bloco">
-        <div class="dados-left">
-          <div class="dl-row"><span class="dl-k">Objeto:</span><span class="dl-v">${escapeHtml(obraNome ? obraNome : `Obra #${idObra}`)}</span></div>
-          <div class="dl-row"><span class="dl-k">Contratante:</span><span class="dl-v">-</span></div>
-          <div class="dl-row"><span class="dl-k">Nº Contrato:</span><span class="dl-v">${escapeHtml(contratoOut || "-")}</span></div>
-          <div class="dl-row"><span class="dl-k">Data:</span><span class="dl-v">${escapeHtml(dataHoje)}</span></div>
-          <div class="dl-row"><span class="dl-k">Origem:</span><span class="dl-v">${src ? escapeHtml(`#${src.idPlanilha} - v${src.numeroVersao} ${src.nome || ""}`) : "-"}</span></div>
-          <div class="dl-row"><span class="dl-k">Destino:</span><span class="dl-v">${dst ? escapeHtml(`#${dst.idPlanilha} - v${dst.numeroVersao} ${dst.nome || ""}`) : "-"}</span></div>
-        </div>
-        <div class="dados-right">
-          <div class="dr-row"><span class="dr-k">Data base SINAPI:</span><span class="dr-v">${escapeHtml(dstParams?.dataBaseSinapi || "-")}</span></div>
-          <div class="dr-row"><span class="dr-k">BDI de serviços:</span><span class="dr-v">${escapeHtml(fmtPercent(dstParams?.bdiServicosSinapi))}</span></div>
-          <div class="dr-row"><span class="dr-k">BDI diferenciado:</span><span class="dr-v">${escapeHtml(fmtPercent(dstParams?.bdiDiferenciadoSinapi))}</span></div>
-          <div class="dr-row"><span class="dr-k">Desconto:</span><span class="dr-v">${escapeHtml(fmtPercent(dstParams?.descontoSinapi))}</span></div>
-          <div class="dr-row"><span class="dr-k">Encargos Sociais:</span><span class="dr-v">${escapeHtml(fmtPercent(dstParams?.encSociaisSemDesSinapi))}</span></div>
-          <div class="dr-row"><span class="dr-k">Parâmetros:</span><span class="dr-v">${
-            dst?.idParametros ? escapeHtml(`#${dst.idParametros} - ${dst.parametrosNome || "-"}`) : "-"
-          }</span></div>
-          <div class="dr-row"><span class="dr-k">Fonte de dados:</span><span class="dr-v">${dst?.idFonteDados ? escapeHtml(`#${dst.idFonteDados} - ${dst.fonteNome || "-"}`) : "-"}</span></div>
-        </div>
+        <div class="dl-row"><span class="dl-k">Objeto:</span><span class="dl-v">${escapeHtml(objetoOut)}</span></div>
+        <div class="dl-row"><span class="dl-k">Contratante:</span><span class="dl-v">${escapeHtml(contratanteOut)}</span></div>
+        <div class="dl-row"><span class="dl-k">Nº Contrato:</span><span class="dl-v">${escapeHtml(contratoOut || "-")}</span></div>
       </div>
     `;
 
@@ -561,13 +561,12 @@ export default function AdequacaoPlanilhaPage() {
       .t-center { text-align: center; }
       .t-right { text-align: right; }
       .dados-wrap { padding-top:${headerToDadosPx}px; background:#ffffff; }
-      .dados-bloco { display:grid; grid-template-columns: 1fr 420px; border: 2px solid #0f172a; }
-      .dados-left { padding: 6px 8px; }
-      .dados-right { border-left: 2px solid #0f172a; padding: 6px 8px; }
-      .dl-row, .dr-row { display:grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: baseline; font-size: ${Math.max(10, Math.min(16, Number(pp.headerFontSizePx || 11)))}px; }
-      .dl-row + .dl-row, .dr-row + .dr-row { margin-top: 4px; }
-      .dl-k, .dr-k { font-weight: ${headerFontWeight}; }
-      .dl-v, .dr-v { font-weight: 700; }
+      .dados-wrap, .dados-wrap * { text-align: left; }
+      .dados-bloco { border: 2px solid #0f172a; padding: 6px 8px; }
+      .dl-row { display:grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: baseline; font-size: ${Math.max(10, Math.min(16, Number(pp.headerFontSizePx || 11)))}px; }
+      .dl-row + .dl-row { margin-top: 4px; }
+      .dl-k { font-weight: ${headerFontWeight}; }
+      .dl-v { font-weight: 700; }
       .diff-add { color:#1d4ed8; }
       .diff-sub { color:#b91c1c; }
     </style>
@@ -575,15 +574,20 @@ export default function AdequacaoPlanilhaPage() {
   <body>
     ${pp.includeEmpresaHeader ? `<div class="print-header">${cabecalhoEmpresaHtml}</div>` : ""}
     <div class="print-content">
+      ${
+        repeatDados
+          ? ""
+          : `<div class="dados-wrap">${dadosHtml}</div><div style="height:${dadosToTabelaPx}px;background:#ffffff;"></div>`
+      }
       <table>
         ${colgroupHtml}
         <thead>
-          <tr>
-            <th colspan="12" class="dados-wrap">${dadosHtml}</th>
-          </tr>
-          <tr>
-            <th colspan="12" style="padding:0;border:0;height:${dadosToTabelaPx}px;background:#ffffff;"></th>
-          </tr>
+          ${
+            repeatDados
+              ? `<tr><th colspan="12" class="dados-wrap">${dadosHtml}</th></tr>
+                 <tr><th colspan="12" style="padding:0;border:0;height:${dadosToTabelaPx}px;background:#ffffff;"></th></tr>`
+              : ""
+          }
           <tr>
             <th rowspan="2">ITEM</th>
             <th rowspan="2">SERVIÇOS</th>
@@ -854,6 +858,17 @@ export default function AdequacaoPlanilhaPage() {
                 <span className="text-slate-700">Incluir cabeçalho padronizado da empresa na impressão</span>
               </label>
             </div>
+        <div className="md:col-span-12">
+          <label className="flex items-center gap-2 text-sm rounded border bg-white px-3 py-2">
+            <input
+              type="checkbox"
+              checked={uiPrefs.print.repeatDadosEmTodasFolhas}
+              onChange={(e) => setUiPrefs((p) => ({ ...p, print: { ...p.print, repeatDadosEmTodasFolhas: Boolean(e.target.checked) } }))}
+              title="Quando marcado, o quadro de dados é repetido em todas as páginas da impressão. Quando desmarcado, aparece apenas na primeira página."
+            />
+            <span className="text-slate-700">Repetir quadro de dados em todas as folhas</span>
+          </label>
+        </div>
 
             <div className="md:col-span-5 space-y-2">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Fonte do cabeçalho</div>

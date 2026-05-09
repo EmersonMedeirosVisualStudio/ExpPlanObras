@@ -32,6 +32,34 @@ async function detectContratoObjetoColumn() {
   }
 }
 
+async function detectContratoContratanteColumn() {
+  try {
+    const [rows]: any = await db.query(
+      `
+      SELECT COLUMN_NAME AS col
+      FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'contratos'
+        AND column_name IN (
+          'orgao_contratante',
+          'contratante',
+          'contratante_nome',
+          'nome_contratante',
+          'cliente',
+          'cliente_nome',
+          'tomador'
+        )
+      `,
+      []
+    );
+    const cols = new Set((rows as any[]).map((r: any) => String(r?.col || '').trim().toLowerCase()).filter(Boolean));
+    const order = ['orgao_contratante', 'contratante', 'contratante_nome', 'nome_contratante', 'cliente', 'cliente_nome', 'tomador'];
+    return order.find((c) => cols.has(c)) || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const current = await requireApiPermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
@@ -42,6 +70,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 
     const objetoCol = await detectContratoObjetoColumn();
     const objetoExpr = objetoCol ? `c.${objetoCol}` : 'NULL';
+    const contratanteCol = await detectContratoContratanteColumn();
+    const contratanteExpr = contratanteCol ? `c.${contratanteCol}` : 'NULL';
 
     const [[row]]: any = await db.query(
       `
@@ -50,7 +80,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         COALESCE(o.nome, '') AS nomeObra,
         o.id_contrato AS idContrato,
         COALESCE(c.numero_contrato, '') AS numeroContrato,
-        ${objetoExpr} AS objeto
+        ${objetoExpr} AS objeto,
+        ${contratanteExpr} AS contratante
       FROM obras o
       INNER JOIN contratos c ON c.id_contrato = o.id_contrato
       WHERE c.tenant_id = ?
@@ -67,6 +98,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       idContrato: Number(row.idContrato),
       numeroContrato: String(row.numeroContrato || ''),
       objeto: row.objeto == null ? null : String(row.objeto || ''),
+      contratante: row.contratante == null ? null : String(row.contratante || ''),
     });
   } catch (e) {
     return handleApiError(e);
