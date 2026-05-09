@@ -60,6 +60,71 @@ async function detectContratoContratanteColumn() {
   }
 }
 
+async function detectContratoValorConcedenteColumn() {
+  try {
+    const [rows]: any = await db.query(
+      `
+      SELECT COLUMN_NAME AS col
+      FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'contratos'
+        AND column_name IN (
+          'valor_concedente',
+          'valor_convenio',
+          'valor_repasse',
+          'valor_concedente_total',
+          'valor_convenio_total',
+          'valor_repasse_total'
+        )
+      `,
+      []
+    );
+    const cols = new Set((rows as any[]).map((r: any) => String(r?.col || '').trim().toLowerCase()).filter(Boolean));
+    const order = ['valor_concedente', 'valor_convenio', 'valor_repasse', 'valor_concedente_total', 'valor_convenio_total', 'valor_repasse_total'];
+    return order.find((c) => cols.has(c)) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function detectContratoValorRecursosProprioColumn() {
+  try {
+    const [rows]: any = await db.query(
+      `
+      SELECT COLUMN_NAME AS col
+      FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'contratos'
+        AND column_name IN (
+          'valor_recursos_proprios',
+          'valor_recursos_proprio',
+          'valor_recurso_proprio',
+          'valor_rp',
+          'valor_recursos_proprios_total',
+          'valor_recursos_proprio_total',
+          'valor_recurso_proprio_total',
+          'valor_rp_total'
+        )
+      `,
+      []
+    );
+    const cols = new Set((rows as any[]).map((r: any) => String(r?.col || '').trim().toLowerCase()).filter(Boolean));
+    const order = [
+      'valor_recursos_proprios',
+      'valor_recursos_proprio',
+      'valor_recurso_proprio',
+      'valor_rp',
+      'valor_recursos_proprios_total',
+      'valor_recursos_proprio_total',
+      'valor_recurso_proprio_total',
+      'valor_rp_total',
+    ];
+    return order.find((c) => cols.has(c)) || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const current = await requireApiPermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
@@ -72,6 +137,10 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const objetoExpr = objetoCol ? `c.${objetoCol}` : 'NULL';
     const contratanteCol = await detectContratoContratanteColumn();
     const contratanteExpr = contratanteCol ? `c.${contratanteCol}` : 'NULL';
+    const concedenteCol = await detectContratoValorConcedenteColumn();
+    const concedenteExpr = concedenteCol ? `c.${concedenteCol}` : 'NULL';
+    const rpCol = await detectContratoValorRecursosProprioColumn();
+    const rpExpr = rpCol ? `c.${rpCol}` : 'NULL';
 
     const [[row]]: any = await db.query(
       `
@@ -81,7 +150,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         o.id_contrato AS idContrato,
         COALESCE(c.numero_contrato, '') AS numeroContrato,
         ${objetoExpr} AS objeto,
-        ${contratanteExpr} AS contratante
+        ${contratanteExpr} AS contratante,
+        ${concedenteExpr} AS valorConcedente,
+        ${rpExpr} AS valorRecursosProprio
       FROM obras o
       INNER JOIN contratos c ON c.id_contrato = o.id_contrato
       WHERE c.tenant_id = ?
@@ -99,6 +170,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       numeroContrato: String(row.numeroContrato || ''),
       objeto: row.objeto == null ? null : String(row.objeto || ''),
       contratante: row.contratante == null ? null : String(row.contratante || ''),
+      valorConcedente: row.valorConcedente == null || row.valorConcedente === '' ? null : Number(row.valorConcedente),
+      valorRecursosProprio: row.valorRecursosProprio == null || row.valorRecursosProprio === '' ? null : Number(row.valorRecursosProprio),
     });
   } catch (e) {
     return handleApiError(e);

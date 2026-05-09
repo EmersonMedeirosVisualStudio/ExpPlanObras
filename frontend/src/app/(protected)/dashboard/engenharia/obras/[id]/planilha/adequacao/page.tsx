@@ -99,6 +99,8 @@ export default function AdequacaoPlanilhaPage() {
   const [contratoId, setContratoId] = useState<number | null>(null);
   const [contratoObjeto, setContratoObjeto] = useState<string>("");
   const [contratanteNome, setContratanteNome] = useState<string>("");
+  const [contratoValorConcedente, setContratoValorConcedente] = useState<number | null>(null);
+  const [contratoValorRecursosProprio, setContratoValorRecursosProprio] = useState<number | null>(null);
   const [versoes, setVersoes] = useState<VersaoRow[]>([]);
   const [sourcePlanilhaId, setSourcePlanilhaId] = useState<string>("");
   const [targetPlanilhaId, setTargetPlanilhaId] = useState<string>(planilhaIdFromQs ? String(planilhaIdFromQs) : "");
@@ -239,6 +241,8 @@ export default function AdequacaoPlanilhaPage() {
       setContratoId(d?.idContrato != null ? Number(d.idContrato) : null);
       setContratoObjeto(String(d?.objeto || "").trim());
       setContratanteNome(String(d?.contratante || "").trim());
+      setContratoValorConcedente(d?.valorConcedente == null || d?.valorConcedente === "" ? null : Number(d.valorConcedente));
+      setContratoValorRecursosProprio(d?.valorRecursosProprio == null || d?.valorRecursosProprio === "" ? null : Number(d.valorRecursosProprio));
       if (String(d?.nomeObra || "").trim()) setObraNome(String(d.nomeObra || "").trim());
     } catch {}
   }
@@ -472,16 +476,50 @@ export default function AdequacaoPlanilhaPage() {
           </div>`
         : "";
 
-    const contratoOut = contratoNumero ? contratoNumero : contratoId != null ? `#${contratoId}` : "";
-
-    const objetoOut = String(contratoObjeto || "").trim() || (obraNome ? obraNome : `Obra #${idObra}`);
+    const contratoOut = String(contratoNumero || "").trim() || (contratoId != null ? `#${contratoId}` : "");
+    const objetoOut = String(contratoObjeto || "").trim() || "-";
     const contratanteOut = String(contratanteNome || "").trim() || "-";
+
+    const fmtPercent = (n: unknown) => {
+      const num = typeof n === "number" ? n : n == null || n === "" ? null : Number(n);
+      if (num == null || !Number.isFinite(num)) return "-";
+      return `${num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+    };
+
+    const dataBaseSinapiOut = String(dstParams?.dataBaseSinapi || "").trim() || "-";
+    const descontoOut = fmtPercent(dstParams?.descontoSinapi);
+    const bdiServicosOut = fmtPercent(dstParams?.bdiServicosSinapi);
+    const bdiDiferenciadoOut = fmtPercent(dstParams?.bdiDiferenciadoSinapi);
+    const encargosOut =
+      dstParams?.encSociaisSemDesSinapi != null || dstParams?.encSociaisSemDesSbc != null ? "Não desonerado" : "-";
+
+    const concedente = contratoValorConcedente != null && Number.isFinite(contratoValorConcedente) ? Number(contratoValorConcedente) : null;
+    const rp = contratoValorRecursosProprio != null && Number.isFinite(contratoValorRecursosProprio) ? Number(contratoValorRecursosProprio) : null;
+    const fonteRecursoOut = (() => {
+      if (concedente == null && rp == null) return "-";
+      const c = concedente != null ? concedente : 0;
+      const r = rp != null ? rp : 0;
+      if (c <= 0 && r > 0) return "Recursos próprio";
+      if (r <= 0 && c > 0) return "Convênio";
+      if (c > 0 && r > 0) return "Convênio e RP";
+      return "-";
+    })();
 
     const dadosHtml = `
       <div class="dados-bloco">
-        <div class="dl-row"><span class="dl-k">Objeto:</span><span class="dl-v">${escapeHtml(objetoOut)}</span></div>
-        <div class="dl-row"><span class="dl-k">Contratante:</span><span class="dl-v">${escapeHtml(contratanteOut)}</span></div>
-        <div class="dl-row"><span class="dl-k">Nº Contrato:</span><span class="dl-v">${escapeHtml(contratoOut || "-")}</span></div>
+        <div class="dados-left">
+          <div class="dl-row"><span class="dl-k">Objeto:</span><span class="dl-v">${escapeHtml(objetoOut)}</span></div>
+          <div class="dl-row"><span class="dl-k">Contratante:</span><span class="dl-v">${escapeHtml(contratanteOut)}</span></div>
+          <div class="dl-row"><span class="dl-k">Nº Contrato:</span><span class="dl-v">${escapeHtml(contratoOut || "-")}</span></div>
+        </div>
+        <div class="dados-right">
+          <div class="dr-cell"><span class="dr-k">Data base SINAPI:</span><span class="dr-v">${escapeHtml(dataBaseSinapiOut)}</span></div>
+          <div class="dr-cell"><span class="dr-k">Desconto da Licitação:</span><span class="dr-v">${escapeHtml(descontoOut)}</span></div>
+          <div class="dr-cell"><span class="dr-k">BDI de serviços:</span><span class="dr-v">${escapeHtml(bdiServicosOut)}</span></div>
+          <div class="dr-cell"><span class="dr-k">Fonte de Recurso:</span><span class="dr-v">${escapeHtml(fonteRecursoOut)}</span></div>
+          <div class="dr-cell"><span class="dr-k">BDI diferenciado:</span><span class="dr-v">${escapeHtml(bdiDiferenciadoOut)}</span></div>
+          <div class="dr-cell"><span class="dr-k">Encargos Sociais:</span><span class="dr-v">${escapeHtml(encargosOut)}</span></div>
+        </div>
       </div>
     `;
 
@@ -562,11 +600,16 @@ export default function AdequacaoPlanilhaPage() {
       .t-right { text-align: right; }
       .dados-wrap { padding-top:${headerToDadosPx}px; background:#ffffff; }
       .dados-wrap, .dados-wrap * { text-align: left; }
-      .dados-bloco { border: 2px solid #0f172a; padding: 6px 8px; }
-      .dl-row { display:grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: baseline; font-size: ${Math.max(10, Math.min(16, Number(pp.headerFontSizePx || 11)))}px; }
+      .dados-bloco { border: 2px solid #0f172a; display:grid; grid-template-columns: 1.65fr 1fr; }
+      .dados-left { padding: 6px 8px; }
+      .dados-right { border-left: 2px solid #0f172a; padding: 6px 8px; display:grid; grid-template-columns: 1fr 1fr; gap: 6px 22px; align-content: start; }
+      .dl-row { display:grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: baseline; font-size: ${Math.max(10, Math.min(16, Number(pp.headerFontSizePx || 11)))}px; }
       .dl-row + .dl-row { margin-top: 4px; }
       .dl-k { font-weight: ${headerFontWeight}; }
       .dl-v { font-weight: 700; }
+      .dr-cell { display:flex; gap: 8px; align-items: baseline; font-size: ${Math.max(10, Math.min(16, Number(pp.headerFontSizePx || 11)))}px; }
+      .dr-k { font-weight: ${headerFontWeight}; }
+      .dr-v { font-weight: 700; }
       .diff-add { color:#1d4ed8; }
       .diff-sub { color:#b91c1c; }
     </style>
