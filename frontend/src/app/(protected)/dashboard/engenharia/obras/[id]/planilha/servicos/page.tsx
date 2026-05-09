@@ -92,6 +92,7 @@ export default function Page() {
     existsComposicaoTarget: boolean;
     diffs: Array<{ codigo: string; valorOrig: number; valorDest: number }>;
   } | null>(null);
+  const [showCopyCard, setShowCopyCard] = useState(false);
 
   async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     let token: string | null = null;
@@ -485,6 +486,15 @@ export default function Page() {
           Importar CSV (composições)
         </button>
         <button
+          className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+          type="button"
+          onClick={() => setShowCopyCard((v) => !v)}
+          disabled={loading}
+          title={showCopyCard ? "Ocultar card de cópia entre planilhas (versões)" : "Exibir card de cópia entre planilhas (versões)"}
+        >
+          Copiar
+        </button>
+        <button
           className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
           type="button"
           onClick={baixarModeloComposicoesCsv}
@@ -518,7 +528,8 @@ export default function Page() {
         </div>
       ) : null}
 
-      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+      {showCopyCard ? (
+        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div>
           <div className="text-lg font-semibold">Copiar serviço/composição entre planilhas (versões)</div>
           <div className="text-sm text-slate-600">Copia a linha do serviço (quando necessário) e os itens da composição. Bloqueia se houver insumo com descrição/unidade diferente no destino.</div>
@@ -679,6 +690,7 @@ export default function Page() {
           </div>
         ) : null}
       </section>
+      ) : null}
 
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">

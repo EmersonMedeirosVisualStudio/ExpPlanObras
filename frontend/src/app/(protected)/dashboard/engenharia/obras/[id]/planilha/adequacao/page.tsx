@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { FileSpreadsheet, Image, Printer } from "lucide-react";
+import { Eye, EyeOff, FileSpreadsheet, Image, Printer } from "lucide-react";
 import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type VersaoRow = {
@@ -122,6 +122,7 @@ export default function AdequacaoPlanilhaPage() {
 
   const [showPrintConfig, setShowPrintConfig] = useState(false);
   const [showPrintAdvanced, setShowPrintAdvanced] = useState(false);
+  const [showVisual, setShowVisual] = useState(false);
   const [somenteItens, setSomenteItens] = useState(false);
   const [uiPrefs, setUiPrefs] = useState<{
     fontSizePx: number;
@@ -227,14 +228,18 @@ export default function AdequacaoPlanilhaPage() {
       }));
       setSomenteItens(Boolean(parsed?.somenteItens));
       setShowPrintAdvanced(Boolean(parsed?.print?.showPrintAdvanced));
+      setShowVisual(Boolean(parsed?.showVisual));
     } catch {}
   }, []);
 
   useEffect(() => {
     try {
-      localStorage.setItem(`planilha_adequacao_ui_v2`, JSON.stringify({ ...uiPrefs, somenteItens, print: { ...uiPrefs.print, showPrintAdvanced } }));
+      localStorage.setItem(
+        `planilha_adequacao_ui_v2`,
+        JSON.stringify({ ...uiPrefs, somenteItens, showVisual, print: { ...uiPrefs.print, showPrintAdvanced } })
+      );
     } catch {}
-  }, [uiPrefs, somenteItens, showPrintAdvanced]);
+  }, [uiPrefs, somenteItens, showPrintAdvanced, showVisual]);
 
   async function carregarEmpresaDocumentosLayout() {
     try {
@@ -760,6 +765,15 @@ export default function AdequacaoPlanilhaPage() {
             <button
               className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60 inline-flex items-center gap-2"
               type="button"
+              onClick={() => setShowVisual((v) => !v)}
+              disabled={loading}
+              title={showVisual ? "Ocultar card Visual" : "Exibir card Visual"}
+            >
+              {showVisual ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60 inline-flex items-center gap-2"
+              type="button"
               onClick={imprimirAdequacao}
               disabled={loading || !visibleRows.length}
               title="Imprimir (cabeçalho padrão da empresa + tabela, em paisagem)"
@@ -831,7 +845,8 @@ export default function AdequacaoPlanilhaPage() {
         </div>
       </section>
 
-      <div className="rounded-lg border bg-white p-3 space-y-3">
+      {showVisual ? (
+        <div className="rounded-lg border bg-white p-3 space-y-3">
         <div className="text-sm font-semibold">Visual</div>
         <div className="flex items-center gap-3 flex-wrap">
           <label className="flex items-center gap-2 text-sm">
@@ -937,6 +952,7 @@ export default function AdequacaoPlanilhaPage() {
           </div>
         </div>
       </div>
+      ) : null}
 
       {showPrintConfig ? (
         <div className="rounded-lg border bg-white p-3 space-y-3">
