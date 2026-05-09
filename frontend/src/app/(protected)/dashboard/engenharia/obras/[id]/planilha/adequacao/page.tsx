@@ -509,8 +509,10 @@ export default function AdequacaoPlanilhaPage() {
       <div class="dados-bloco">
         <div class="dados-left">
           <div class="dl-row"><span class="dl-k">Objeto:</span><span class="dl-v">${escapeHtml(objetoOut)}</span></div>
-          <div class="dl-row"><span class="dl-k">Contratante:</span><span class="dl-v">${escapeHtml(contratanteOut)}</span></div>
-          <div class="dl-row"><span class="dl-k">Nº Contrato:</span><span class="dl-v">${escapeHtml(contratoOut || "-")}</span></div>
+          <div class="dl-row2">
+            <span class="dl-k">Nº Contrato:</span><span class="dl-v">${escapeHtml(contratoOut || "-")}</span>
+            <span class="dl-k">Contratante:</span><span class="dl-v">${escapeHtml(contratanteOut)}</span>
+          </div>
         </div>
         <div class="dados-right">
           <div class="dr-cell"><span class="dr-k">Data base SINAPI:</span><span class="dr-v">${escapeHtml(dataBaseSinapiOut)}</span></div>
@@ -598,13 +600,14 @@ export default function AdequacaoPlanilhaPage() {
       thead th { background: #f8fafc; }
       .t-center { text-align: center; }
       .t-right { text-align: right; }
-      .dados-wrap { padding-top:${headerToDadosPx}px; background:#ffffff; }
+      .dados-wrap { background:#ffffff; }
       .dados-wrap, .dados-wrap * { text-align: left; }
       .dados-bloco { border: 2px solid #0f172a; display:grid; grid-template-columns: 1.65fr 1fr; }
       .dados-left { padding: 6px 8px; }
       .dados-right { border-left: 2px solid #0f172a; padding: 6px 8px; display:grid; grid-template-columns: 1fr 1fr; gap: 6px 22px; align-content: start; }
       .dl-row { display:grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: baseline; font-size: ${Math.max(10, Math.min(16, Number(pp.headerFontSizePx || 11)))}px; }
       .dl-row + .dl-row { margin-top: 4px; }
+      .dl-row2 { display:grid; grid-template-columns: 92px minmax(120px, 180px) 92px 1fr; gap: 8px; align-items: baseline; font-size: ${Math.max(10, Math.min(16, Number(pp.headerFontSizePx || 11)))}px; margin-top: 4px; }
       .dl-k { font-weight: ${headerFontWeight}; }
       .dl-v { font-weight: 700; }
       .dr-cell { display:flex; gap: 8px; align-items: baseline; font-size: ${Math.max(10, Math.min(16, Number(pp.headerFontSizePx || 11)))}px; }
@@ -620,11 +623,12 @@ export default function AdequacaoPlanilhaPage() {
       ${
         repeatDados
           ? ""
-          : `<div class="dados-wrap">${dadosHtml}</div><div style="height:${dadosToTabelaPx}px;background:#ffffff;"></div>`
+          : `<div class="dados-wrap" style="padding-top:${headerToDadosPx}px;">${dadosHtml}</div><div style="height:${dadosToTabelaPx}px;background:#ffffff;"></div>`
       }
       <table>
         ${colgroupHtml}
         <thead>
+          ${repeatDados && headerToDadosPx > 0 ? `<tr><th colspan="12" style="padding:0;border:0;height:${headerToDadosPx}px;background:#ffffff;"></th></tr>` : ""}
           ${
             repeatDados
               ? `<tr><th colspan="12" class="dados-wrap">${dadosHtml}</th></tr>
@@ -933,35 +937,17 @@ export default function AdequacaoPlanilhaPage() {
 
                 <div className="space-y-1">
                   <div className="text-sm text-slate-600">Tamanho</div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-                      type="button"
-                      onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerFontSizePx: Math.max(8, p.print.headerFontSizePx - 1) } }))}
-                      title="Diminuir tamanho da fonte do cabeçalho"
-                    >
-                      ➖
-                    </button>
-                    <input
-                      className="input bg-white w-[110px]"
-                      type="number"
-                      min={8}
-                      max={16}
-                      value={uiPrefs.print.headerFontSizePx}
-                      onChange={(e) =>
-                        setUiPrefs((p) => ({ ...p, print: { ...p.print, headerFontSizePx: Math.max(8, Math.min(16, Number(e.target.value || 11))) } }))
-                      }
-                      title="Tamanho da fonte do cabeçalho (px)"
-                    />
-                    <button
-                      className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-                      type="button"
-                      onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerFontSizePx: Math.min(16, p.print.headerFontSizePx + 1) } }))}
-                      title="Aumentar tamanho da fonte do cabeçalho"
-                    >
-                      ➕
-                    </button>
-                  </div>
+              <input
+                className="input bg-white w-[110px]"
+                type="number"
+                min={8}
+                max={16}
+                value={uiPrefs.print.headerFontSizePx}
+                onChange={(e) =>
+                  setUiPrefs((p) => ({ ...p, print: { ...p.print, headerFontSizePx: Math.max(8, Math.min(16, Number(e.target.value || 11))) } }))
+                }
+                title="Tamanho da fonte do cabeçalho (px)"
+              />
                 </div>
 
                 <label className="space-y-1">
@@ -986,101 +972,47 @@ export default function AdequacaoPlanilhaPage() {
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <div className="space-y-1">
                   <div className="text-sm text-slate-600">Topo → cabeçalho</div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-                      type="button"
-                      onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, topToHeaderPx: Math.max(0, p.print.topToHeaderPx - 2) } }))}
-                      title="Diminuir espaço do topo até o cabeçalho"
-                    >
-                      ➖
-                    </button>
-                    <input
-                      className="input bg-white w-[110px]"
-                      type="number"
-                      min={0}
-                      max={80}
-                      value={uiPrefs.print.topToHeaderPx}
-                      onChange={(e) =>
-                        setUiPrefs((p) => ({ ...p, print: { ...p.print, topToHeaderPx: Math.max(0, Math.min(80, Number(e.target.value || 0))) } }))
-                      }
-                      title="Espaço do topo até o cabeçalho (px)"
-                    />
-                    <button
-                      className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-                      type="button"
-                      onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, topToHeaderPx: Math.min(80, p.print.topToHeaderPx + 2) } }))}
-                      title="Aumentar espaço do topo até o cabeçalho"
-                    >
-                      ➕
-                    </button>
-                  </div>
+                  <input
+                    className="input bg-white w-[110px]"
+                    type="number"
+                    min={0}
+                    max={80}
+                    value={uiPrefs.print.topToHeaderPx}
+                    onChange={(e) =>
+                      setUiPrefs((p) => ({ ...p, print: { ...p.print, topToHeaderPx: Math.max(0, Math.min(80, Number(e.target.value || 0))) } }))
+                    }
+                    title="Espaço do topo até o cabeçalho (px)"
+                  />
                 </div>
 
                 <div className="space-y-1">
                   <div className="text-sm text-slate-600">Cabeçalho → dados</div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-                      type="button"
-                      onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerToDadosPx: Math.max(0, p.print.headerToDadosPx - 2) } }))}
-                      title="Diminuir espaço entre o cabeçalho da empresa e os dados da obra (Contrato/Obra/Origem/Destino)"
-                    >
-                      ➖
-                    </button>
-                    <input
-                      className="input bg-white w-[110px]"
-                      type="number"
-                      min={0}
-                      max={80}
-                      value={uiPrefs.print.headerToDadosPx}
-                      onChange={(e) =>
-                        setUiPrefs((p) => ({ ...p, print: { ...p.print, headerToDadosPx: Math.max(0, Math.min(80, Number(e.target.value || 0))) } }))
-                      }
-                      title="Espaço entre o cabeçalho da empresa e os dados da obra (px)"
-                    />
-                    <button
-                      className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-                      type="button"
-                      onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerToDadosPx: Math.min(80, p.print.headerToDadosPx + 2) } }))}
-                      title="Aumentar espaço entre o cabeçalho da empresa e os dados da obra (Contrato/Obra/Origem/Destino)"
-                    >
-                      ➕
-                    </button>
-                  </div>
+                  <input
+                    className="input bg-white w-[110px]"
+                    type="number"
+                    min={0}
+                    max={80}
+                    value={uiPrefs.print.headerToDadosPx}
+                    onChange={(e) =>
+                      setUiPrefs((p) => ({ ...p, print: { ...p.print, headerToDadosPx: Math.max(0, Math.min(80, Number(e.target.value || 0))) } }))
+                    }
+                    title="Espaço entre o cabeçalho da empresa e os dados da obra (px)"
+                  />
                 </div>
 
                 <div className="space-y-1">
                   <div className="text-sm text-slate-600">Dados → tabela</div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-                      type="button"
-                      onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, dadosToTabelaPx: Math.max(0, p.print.dadosToTabelaPx - 4) } }))}
-                      title="Diminuir espaço entre os dados da obra e a tabela"
-                    >
-                      ➖
-                    </button>
-                    <input
-                      className="input bg-white w-[110px]"
-                      type="number"
-                      min={0}
-                      max={120}
-                      value={uiPrefs.print.dadosToTabelaPx}
-                      onChange={(e) =>
-                        setUiPrefs((p) => ({ ...p, print: { ...p.print, dadosToTabelaPx: Math.max(0, Math.min(120, Number(e.target.value || 0))) } }))
-                      }
-                      title="Espaço entre os dados da obra e a tabela (px)"
-                    />
-                    <button
-                      className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
-                      type="button"
-                      onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, dadosToTabelaPx: Math.min(120, p.print.dadosToTabelaPx + 4) } }))}
-                      title="Aumentar espaço entre os dados da obra e a tabela"
-                    >
-                      ➕
-                    </button>
-                  </div>
+                  <input
+                    className="input bg-white w-[110px]"
+                    type="number"
+                    min={0}
+                    max={120}
+                    value={uiPrefs.print.dadosToTabelaPx}
+                    onChange={(e) =>
+                      setUiPrefs((p) => ({ ...p, print: { ...p.print, dadosToTabelaPx: Math.max(0, Math.min(120, Number(e.target.value || 0))) } }))
+                    }
+                    title="Espaço entre os dados da obra e a tabela (px)"
+                  />
                 </div>
               </div>
             </div>

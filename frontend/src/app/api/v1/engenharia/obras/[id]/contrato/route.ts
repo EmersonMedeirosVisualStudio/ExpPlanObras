@@ -125,6 +125,69 @@ async function detectContratoValorRecursosProprioColumn() {
   }
 }
 
+async function detectContratoContraparteIdColumn() {
+  try {
+    const [rows]: any = await db.query(
+      `
+      SELECT COLUMN_NAME AS col
+      FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'contratos'
+        AND column_name IN (
+          'id_contraparte',
+          'id_contraparte_contratante',
+          'id_contratante',
+          'id_cliente',
+          'id_cliente_contratante'
+        )
+      `,
+      []
+    );
+    const cols = new Set((rows as any[]).map((r: any) => String(r?.col || '').trim().toLowerCase()).filter(Boolean));
+    const order = ['id_contraparte_contratante', 'id_contratante', 'id_contraparte', 'id_cliente_contratante', 'id_cliente'];
+    return order.find((c) => cols.has(c)) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function hasEngenhariaContrapartesTable() {
+  try {
+    const [[r]]: any = await db.query(
+      `
+      SELECT COUNT(*) AS cnt
+      FROM information_schema.tables
+      WHERE table_schema = DATABASE()
+        AND table_name = 'engenharia_contrapartes'
+      `,
+      []
+    );
+    return Number(r?.cnt || 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function detectEngenhariaContraparteNomeColumn() {
+  try {
+    const [rows]: any = await db.query(
+      `
+      SELECT COLUMN_NAME AS col
+      FROM information_schema.columns
+      WHERE table_schema = DATABASE()
+        AND table_name = 'engenharia_contrapartes'
+        AND column_name IN ('nome_razao', 'razao_social', 'nome')
+      `,
+      []
+    );
+    const cols = new Set((rows as any[]).map((r: any) => String(r?.col || '').trim().toLowerCase()).filter(Boolean));
+    const order = ['nome_razao', 'razao_social', 'nome'];
+    return order.find((c) => cols.has(c)) || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const current = await requireApiPermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
@@ -141,6 +204,11 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const concedenteExpr = concedenteCol ? `c.${concedenteCol}` : 'NULL';
     const rpCol = await detectContratoValorRecursosProprioColumn();
     const rpExpr = rpCol ? `c.${rpCol}` : 'NULL';
+    const contraparteIdCol = await detectContratoContraparteIdColumn();
+    const hasContrapartes = contraparteIdCol ? await hasEngenhariaContrapartesTable() : false;
+    const contraparteNomeCol = hasContrapartes ? await detectEngenhariaContraparteNomeColumn() : null;
+    const joinContraparte = hasContrapartes && contraparteIdCol ? `LEFT JOIN engenharia_contrapartes cp ON cp.tenant_id = c.tenant_id AND cp.id_contraparte = c.${contraparteIdCol}` : '';
+    const contraparteNomeExpr = hasContrapartes && contraparteNomeCol ? `cp.${contraparteNomeCol}` : 'NULL';
 
     const [[row]]: any = await db.query(
       `
@@ -151,10 +219,12 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         COALESCE(c.numero_contrato, '') AS numeroContrato,
         ${objetoExpr} AS objeto,
         ${contratanteExpr} AS contratante,
+        ${contraparteNomeExpr} AS contratanteContraparte,
         ${concedenteExpr} AS valorConcedente,
         ${rpExpr} AS valorRecursosProprio
       FROM obras o
       INNER JOIN contratos c ON c.id_contrato = o.id_contrato
+      ${joinContraparte}
       WHERE c.tenant_id = ?
         AND o.id_obra = ?
       LIMIT 1
@@ -169,7 +239,12 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       idContrato: Number(row.idContrato),
       numeroContrato: String(row.numeroContrato || ''),
       objeto: row.objeto == null ? null : String(row.objeto || ''),
-      contratante: row.contratante == null ? null : String(row.contratante || ''),
+      contratante:
+        row.contratanteContraparte != null && String(row.contratanteContraparte || '').trim()
+          ? String(row.contratanteContraparte || '').trim()
+          : row.contratante == null
+            ? null
+            : String(row.contratante || ''),
       valorConcedente: row.valorConcedente == null || row.valorConcedente === '' ? null : Number(row.valorConcedente),
       valorRecursosProprio: row.valorRecursosProprio == null || row.valorRecursosProprio === '' ? null : Number(row.valorRecursosProprio),
     });
