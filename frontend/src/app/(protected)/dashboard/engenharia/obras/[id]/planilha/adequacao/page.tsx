@@ -107,6 +107,7 @@ export default function AdequacaoPlanilhaPage() {
     fontSizePx: number;
     itemBg: string;
     subitemBg: string;
+    colorDiff: boolean;
     wItemPx: number;
     wServicosPx: number;
     wUndPx: number;
@@ -124,6 +125,7 @@ export default function AdequacaoPlanilhaPage() {
     fontSizePx: 14,
     itemBg: "#F8FAFC",
     subitemBg: "#FFFFFF",
+    colorDiff: false,
     wItemPx: 80,
     wServicosPx: 620,
     wUndPx: 52,
@@ -169,6 +171,7 @@ export default function AdequacaoPlanilhaPage() {
         fontSizePx: n(parsed?.fontSizePx, 10, 18, cur.fontSizePx),
         itemBg: typeof parsed?.itemBg === "string" && String(parsed.itemBg).startsWith("#") ? String(parsed.itemBg) : cur.itemBg,
         subitemBg: typeof parsed?.subitemBg === "string" && String(parsed.subitemBg).startsWith("#") ? String(parsed.subitemBg) : cur.subitemBg,
+        colorDiff: parsed?.colorDiff === true,
         wItemPx: n(parsed?.wItemPx, 56, 200, cur.wItemPx),
         wServicosPx: n(parsed?.wServicosPx, 260, 1200, cur.wServicosPx),
         wUndPx: n(parsed?.wUndPx, 40, 140, cur.wUndPx),
@@ -428,30 +431,45 @@ export default function AdequacaoPlanilhaPage() {
     const dst = selectedTarget;
     const dataHoje = new Date().toLocaleDateString("pt-BR");
     const contratoOut = contratoNumero ? contratoNumero : contratoId != null ? `#${contratoId}` : "";
+    const dstParams = (await (async () => {
+      try {
+        const dstId = Number(dst?.idPlanilha || 0);
+        if (!dstId) return null;
+        const resP = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${dstId}&includeCatalog=0`);
+        const jsonP = await resP.json().catch(() => null);
+        if (!resP.ok || !jsonP?.success) return null;
+        const p = jsonP.data?.planilha?.parametros || null;
+        return p ? (p as any) : null;
+      } catch {
+        return null;
+      }
+    })());
+    const fmtPercent = (n: unknown) => {
+      const num = typeof n === "number" ? n : n == null ? null : Number(n);
+      if (num == null || !Number.isFinite(num)) return "-";
+      return `${num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+    };
 
     const dadosHtml = `
-      <div class="dados" style="margin-top:${headerToDadosPx}px;">
-        <div class="dados-title">PLANILHA DE ADEQUAÇÃO DE SERVIÇOS</div>
-        <div class="dados-row">
-          <span class="lab">Contrato:</span><span class="val">${escapeHtml(contratoOut || "-")}</span>
-          <span class="sep">•</span>
-          <span class="lab">Obra:</span><span class="val">${escapeHtml(obraNome ? obraNome : `#${idObra}`)}</span>
-          <span class="sep">•</span>
-          <span class="lab">Data:</span><span class="val">${escapeHtml(dataHoje)}</span>
+      <div class="dados-bloco">
+        <div class="dados-left">
+          <div class="dl-row"><span class="dl-k">Objeto:</span><span class="dl-v">${escapeHtml(obraNome ? obraNome : `Obra #${idObra}`)}</span></div>
+          <div class="dl-row"><span class="dl-k">Contratante:</span><span class="dl-v">-</span></div>
+          <div class="dl-row"><span class="dl-k">Nº Contrato:</span><span class="dl-v">${escapeHtml(contratoOut || "-")}</span></div>
+          <div class="dl-row"><span class="dl-k">Data:</span><span class="dl-v">${escapeHtml(dataHoje)}</span></div>
+          <div class="dl-row"><span class="dl-k">Origem:</span><span class="dl-v">${src ? escapeHtml(`#${src.idPlanilha} - v${src.numeroVersao} ${src.nome || ""}`) : "-"}</span></div>
+          <div class="dl-row"><span class="dl-k">Destino:</span><span class="dl-v">${dst ? escapeHtml(`#${dst.idPlanilha} - v${dst.numeroVersao} ${dst.nome || ""}`) : "-"}</span></div>
         </div>
-        <div class="dados-row">
-          <span class="lab">Origem (Contratado):</span><span class="val">${src ? `#${src.idPlanilha} - v${src.numeroVersao} ${src.nome || ""}` : "-"}</span>
-        </div>
-        <div class="dados-row">
-          <span class="lab">Destino (Adequado):</span><span class="val">${dst ? `#${dst.idPlanilha} - v${dst.numeroVersao} ${dst.nome || ""}` : "-"}</span>
-        </div>
-        <div class="dados-row">
-          <span class="lab">Parâmetros (destino):</span><span class="val">${
+        <div class="dados-right">
+          <div class="dr-row"><span class="dr-k">Data base SINAPI:</span><span class="dr-v">${escapeHtml(dstParams?.dataBaseSinapi || "-")}</span></div>
+          <div class="dr-row"><span class="dr-k">BDI de serviços:</span><span class="dr-v">${escapeHtml(fmtPercent(dstParams?.bdiServicosSinapi))}</span></div>
+          <div class="dr-row"><span class="dr-k">BDI diferenciado:</span><span class="dr-v">${escapeHtml(fmtPercent(dstParams?.bdiDiferenciadoSinapi))}</span></div>
+          <div class="dr-row"><span class="dr-k">Desconto:</span><span class="dr-v">${escapeHtml(fmtPercent(dstParams?.descontoSinapi))}</span></div>
+          <div class="dr-row"><span class="dr-k">Encargos Sociais:</span><span class="dr-v">${escapeHtml(fmtPercent(dstParams?.encSociaisSemDesSinapi))}</span></div>
+          <div class="dr-row"><span class="dr-k">Parâmetros:</span><span class="dr-v">${
             dst?.idParametros ? escapeHtml(`#${dst.idParametros} - ${dst.parametrosNome || "-"}`) : "-"
-          }</span>
-        </div>
-        <div class="dados-row">
-          <span class="lab">Fonte (destino):</span><span class="val">${dst?.idFonteDados ? escapeHtml(`#${dst.idFonteDados} - ${dst.fonteNome || "-"}`) : "-"}</span>
+          }</span></div>
+          <div class="dr-row"><span class="dr-k">Fonte de dados:</span><span class="dr-v">${dst?.idFonteDados ? escapeHtml(`#${dst.idFonteDados} - ${dst.fonteNome || "-"}`) : "-"}</span></div>
         </div>
       </div>
     `;
@@ -484,19 +502,27 @@ export default function AdequacaoPlanilhaPage() {
         const show = (v: string) => escapeHtml(v || "—");
         const n2 = (v: number) => escapeHtml(fmtNumber(v, 2));
         const money = (v: number) => escapeHtml(fmtMoney(v));
+        const blue = uiPrefs.colorDiff && !isHeader && Number(r.qAditado || 0) > 0;
+        const red = uiPrefs.colorDiff && !isHeader && Number(r.qSuprimido || 0) > 0;
+        const blueV = uiPrefs.colorDiff && Number(r.vAditado || 0) > 0;
+        const redV = uiPrefs.colorDiff && Number(r.vSuprimido || 0) > 0;
+        const tdBlue = (content: string) => `<td class="t-right diff-add">${content}</td>`;
+        const tdRed = (content: string) => `<td class="t-right diff-sub">${content}</td>`;
+        const tdR = (content: string) => `<td class="t-right">${content}</td>`;
+        const tdRBlueIf = (cond: boolean, content: string) => (cond ? tdBlue(content) : tdR(content));
+        const tdRRedIf = (cond: boolean, content: string) => (cond ? tdRed(content) : tdR(content));
+
         return `<tr style="${style}">
           <td>${show(r.item)}</td>
           <td>${show(r.servicos)}</td>
           <td>${isHeader ? "" : show(r.und)}</td>
           <td style="text-align:right">${isHeader ? "" : n2(r.contratadoQuant)}</td>
           <td style="text-align:right">${isHeader ? "" : n2(r.contratadoPreco)}</td>
-          <td style="text-align:right">${money(r.contratadoTotal)}</td>
-          <td style="text-align:right">${isHeader ? "" : n2(r.qAditado)}</td>
-          <td style="text-align:right">${isHeader ? "" : n2(r.qSuprimido)}</td>
-          <td style="text-align:right">${isHeader ? "" : n2(r.qAdequado)}</td>
-          <td style="text-align:right">${money(r.vAditado)}</td>
-          <td style="text-align:right">${money(r.vSuprimido)}</td>
-          <td style="text-align:right">${money(r.vAdequado)}</td>
+          ${tdR(money(r.contratadoTotal))}
+          ${isHeader ? `<td></td><td></td><td></td>` : `${tdRBlueIf(blue, n2(r.qAditado))}${tdRRedIf(red, n2(r.qSuprimido))}${tdR(n2(r.qAdequado))}`}
+          ${tdRBlueIf(blueV, money(r.vAditado))}
+          ${tdRRedIf(redV, money(r.vSuprimido))}
+          ${tdR(money(r.vAdequado))}
         </tr>`;
       })
       .join("");
@@ -515,12 +541,7 @@ export default function AdequacaoPlanilhaPage() {
       .print-header { position: fixed; top: ${topToHeaderPx}px; left: 0; right: 0; background: #ffffff; padding: 6px 10px; font-family: ${escapeHtml(pp.headerFontFamily)}; font-size: ${Number(pp.headerFontSizePx || 11)}px; z-index: 20; }
       .print-header, .print-header * { line-height: 1.12; }
       .print-content { padding: 6px 10px; position: relative; z-index: 1; }
-      .dados { width: 100%; }
-      .dados-title { font-weight: 700; text-align: center; margin: 6px 0 10px 0; }
-      .dados-row { display: flex; flex-wrap: wrap; gap: 6px; font-size: ${Math.max(10, Math.min(16, Number(pp.headerFontSizePx || 11)))}px; }
-      .lab { font-weight: ${headerFontWeight}; }
-      .val { font-weight: 700; }
-      .sep { opacity: 0.6; }
+      thead { display: table-header-group; }
       .empresa-cabecalho { width: 100%; }
       .empresa-rodape { width: 100%; margin-top: 14px; }
       table { width: 100%; border-collapse: collapse; margin-top: ${dadosToTabelaPx}px; }
@@ -528,6 +549,16 @@ export default function AdequacaoPlanilhaPage() {
       thead th { background: #f8fafc; }
       .t-center { text-align: center; }
       .t-right { text-align: right; }
+      .dados-wrap { padding-top:${headerToDadosPx}px; background:#ffffff; }
+      .dados-bloco { display:grid; grid-template-columns: 1fr 420px; border: 2px solid #0f172a; }
+      .dados-left { padding: 6px 8px; }
+      .dados-right { border-left: 2px solid #0f172a; padding: 6px 8px; }
+      .dl-row, .dr-row { display:grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: baseline; font-size: ${Math.max(10, Math.min(16, Number(pp.headerFontSizePx || 11)))}px; }
+      .dl-row + .dl-row, .dr-row + .dr-row { margin-top: 4px; }
+      .dl-k, .dr-k { font-weight: ${headerFontWeight}; }
+      .dl-v, .dr-v { font-weight: 700; }
+      .diff-add { color:#1d4ed8; background:#eff6ff; }
+      .diff-sub { color:#b91c1c; background:#fef2f2; }
     </style>
   </head>
   <body>
@@ -536,10 +567,12 @@ export default function AdequacaoPlanilhaPage() {
     </div>
     <div class="print-content">
       <div style="height:${Math.max(0, topToHeaderPx)}px"></div>
-      ${dadosHtml}
       <table>
         ${colgroupHtml}
         <thead>
+          <tr>
+            <th colspan="12" class="dados-wrap">${dadosHtml}</th>
+          </tr>
           <tr>
             <th rowspan="2">ITEM</th>
             <th rowspan="2">SERVIÇOS</th>
@@ -727,6 +760,15 @@ export default function AdequacaoPlanilhaPage() {
               onChange={(e) => setUiPrefs((p) => ({ ...p, subitemBg: e.target.value }))}
               title="Cor de fundo das linhas do tipo Subitem"
             />
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={uiPrefs.colorDiff}
+              onChange={(e) => setUiPrefs((p) => ({ ...p, colorDiff: Boolean(e.target.checked) }))}
+              title="Se marcado, destaca ADITADO em azul e SUPRIMIDO em vermelho (quantidades e valores)"
+            />
+            <span className="text-slate-600">Cor aditado/suprimido</span>
           </label>
           <div className="flex items-center gap-2 text-sm">
             <span className="text-slate-600">Colunas (px)</span>
@@ -1044,11 +1086,35 @@ export default function AdequacaoPlanilhaPage() {
                     <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumber(r.contratadoQuant, 2)}</td>
                     <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumber(r.contratadoPreco, 2)}</td>
                     <td className="px-3 py-2 text-right border border-slate-300">{fmtMoney(r.contratadoTotal)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumber(r.qAditado, 2)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumber(r.qSuprimido, 2)}</td>
+                    <td
+                      className={`px-3 py-2 text-right border border-slate-300 ${
+                        uiPrefs.colorDiff && !isHeader && Number(r.qAditado || 0) > 0 ? "bg-blue-50 text-blue-700" : ""
+                      }`}
+                    >
+                      {isHeader ? "" : fmtNumber(r.qAditado, 2)}
+                    </td>
+                    <td
+                      className={`px-3 py-2 text-right border border-slate-300 ${
+                        uiPrefs.colorDiff && !isHeader && Number(r.qSuprimido || 0) > 0 ? "bg-red-50 text-red-700" : ""
+                      }`}
+                    >
+                      {isHeader ? "" : fmtNumber(r.qSuprimido, 2)}
+                    </td>
                     <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumber(r.qAdequado, 2)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{fmtMoney(r.vAditado)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{fmtMoney(r.vSuprimido)}</td>
+                    <td
+                      className={`px-3 py-2 text-right border border-slate-300 ${
+                        uiPrefs.colorDiff && Number(r.vAditado || 0) > 0 ? "bg-blue-50 text-blue-700" : ""
+                      }`}
+                    >
+                      {fmtMoney(r.vAditado)}
+                    </td>
+                    <td
+                      className={`px-3 py-2 text-right border border-slate-300 ${
+                        uiPrefs.colorDiff && Number(r.vSuprimido || 0) > 0 ? "bg-red-50 text-red-700" : ""
+                      }`}
+                    >
+                      {fmtMoney(r.vSuprimido)}
+                    </td>
                     <td className="px-3 py-2 text-right border border-slate-300">{fmtMoney(r.vAdequado)}</td>
                   </tr>
                 );

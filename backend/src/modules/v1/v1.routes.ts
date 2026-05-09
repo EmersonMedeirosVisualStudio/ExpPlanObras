@@ -12624,7 +12624,10 @@ export default async function v1Routes(server: FastifyInstance) {
             COALESCE(i.item,'') AS item,
             i.tipo_linha AS "tipoLinha",
             COALESCE(sf.codigo,'') AS codigo,
-            CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(sf.descricao,'') ELSE COALESCE(i.observacao,'') END AS servicos,
+            CASE
+              WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(NULLIF(sf.descricao,''), COALESCE(i.observacao,''), '')
+              ELSE COALESCE(i.observacao,'')
+            END AS servicos,
             COALESCE(sf.und,'') AS und,
             i.quantidade AS quantidade,
             i.valor_unitario AS "valorUnitario",
