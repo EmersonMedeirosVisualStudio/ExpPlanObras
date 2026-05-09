@@ -399,7 +399,7 @@ export default function AdequacaoPlanilhaPage() {
     downloadCsv(`adequacao_planilha_obra_${idObra}_dest_${src || "x"}.csv`, `${header}\n${lines.join("\n")}\n`);
   }
 
-  function imprimirAdequacao() {
+  async function imprimirAdequacao() {
     if (!visibleRows.length) return;
     const w = window.open("", "_blank");
     if (!w) {
@@ -431,19 +431,15 @@ export default function AdequacaoPlanilhaPage() {
     const dst = selectedTarget;
     const dataHoje = new Date().toLocaleDateString("pt-BR");
     const contratoOut = contratoNumero ? contratoNumero : contratoId != null ? `#${contratoId}` : "";
-    const dstParams = (await (async () => {
-      try {
-        const dstId = Number(dst?.idPlanilha || 0);
-        if (!dstId) return null;
+    let dstParams: any = null;
+    try {
+      const dstId = Number(dst?.idPlanilha || 0);
+      if (dstId) {
         const resP = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${dstId}&includeCatalog=0`);
         const jsonP = await resP.json().catch(() => null);
-        if (!resP.ok || !jsonP?.success) return null;
-        const p = jsonP.data?.planilha?.parametros || null;
-        return p ? (p as any) : null;
-      } catch {
-        return null;
+        if (resP.ok && jsonP?.success) dstParams = jsonP.data?.planilha?.parametros || null;
       }
-    })());
+    } catch {}
     const fmtPercent = (n: unknown) => {
       const num = typeof n === "number" ? n : n == null ? null : Number(n);
       if (num == null || !Number.isFinite(num)) return "-";

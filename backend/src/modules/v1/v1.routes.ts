@@ -12748,6 +12748,15 @@ export default async function v1Routes(server: FastifyInstance) {
         return a === p || a.startsWith(`${p}.`);
       }
 
+      function firstDescByPrefix(list: Linha[], prefix: string) {
+        for (const r of list) {
+          if (!matchPrefix(r.item, prefix)) continue;
+          const d = String(r.servicos || '').trim();
+          if (d) return d;
+        }
+        return '';
+      }
+
       function sumByPrefix(list: Linha[], prefix: string) {
         let qty = 0;
         let total = 0;
@@ -12767,7 +12776,11 @@ export default async function v1Routes(server: FastifyInstance) {
         const prefix = String(h.item || '').trim();
         const srcAgg = sumByPrefix(srcServicos, prefix);
         const dstAgg = sumByPrefix(dstServicos, prefix);
-        const label = headerLabelByKey.get(`${h.tipoLinha}|${prefix}`) || '';
+        const label =
+          headerLabelByKey.get(`${h.tipoLinha}|${prefix}`) ||
+          firstDescByPrefix(dstServicos, prefix) ||
+          firstDescByPrefix(srcServicos, prefix) ||
+          '';
         const cTotal = srcAgg.total;
         const aTotal = dstAgg.total;
         rowOut.push({
