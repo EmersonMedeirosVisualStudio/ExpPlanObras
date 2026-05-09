@@ -359,10 +359,15 @@ export default function AdequacaoPlanilhaPage() {
     return versoes.find((v) => Number(v.idPlanilha) === id) || null;
   }, [targetPlanilhaId, versoes]);
 
-  const breadcrumb = useMemo(() => {
-    const obra = obraNome ? `Obra ${obraNome}` : "Obra selecionada";
-    return `Engenharia → Obras → ${obra} → Planilha orçamentária → Adequação entre versões`;
-  }, [obraNome]);
+  const breadcrumbButtons = useMemo(() => {
+    const obraLabel = obraNome ? String(obraNome).trim() : "";
+    return [
+      { label: "Engenharia", href: "/dashboard/engenharia/painel" },
+      { label: "Obras", href: "/dashboard/engenharia/obras" },
+      { label: obraLabel ? obraLabel : "Obra", href: `/dashboard/engenharia/obras/${idObra}` },
+      { label: "Planilha", href: `/dashboard/engenharia/obras/${idObra}/planilha` },
+    ];
+  }, [idObra, obraNome]);
 
   const visibleRows = useMemo(() => {
     if (!rows.length) return [];
@@ -701,7 +706,24 @@ export default function AdequacaoPlanilhaPage() {
     <div className="p-4 md:p-6 space-y-4 max-w-7xl text-slate-900">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <div className="text-xs text-slate-500">{breadcrumb}</div>
+          <div className="text-xs text-slate-500 flex flex-wrap items-center gap-1">
+            {breadcrumbButtons.map((b, idx) => (
+              <span key={b.href} className="inline-flex items-center gap-1">
+                <button
+                  className="hover:underline"
+                  type="button"
+                  onClick={() => router.push(b.href)}
+                  disabled={loading}
+                  title={b.label}
+                >
+                  {b.label}
+                </button>
+                <span className="text-slate-400">{idx < breadcrumbButtons.length - 1 ? "→" : ""}</span>
+              </span>
+            ))}
+            <span className="text-slate-400">→</span>
+            <span>Adequação entre versões</span>
+          </div>
           <h1 className="text-2xl font-semibold">Adequação entre versões</h1>
           <div className="text-sm text-slate-600">Consulta de diferenças entre duas versões da planilha (origem x destino).</div>
           <div className="mt-1 text-sm text-slate-600">{bootLoading ? "Carregando página…" : bootDone ? "Página carregada" : ""}</div>

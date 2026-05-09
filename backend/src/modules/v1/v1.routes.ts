@@ -12714,7 +12714,7 @@ export default async function v1Routes(server: FastifyInstance) {
             seen.add(kItem);
             out.push({ tipoLinha: 'ITEM', item: item1 });
           }
-          if (parts.length >= 2) {
+          if (parts.length >= 3) {
             const sub = `${parts[0]}.${parts[1]}`;
             const kSub = `SUBITEM|${sub}`;
             if (!seen.has(kSub)) {
