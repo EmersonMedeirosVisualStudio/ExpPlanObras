@@ -121,6 +121,7 @@ export default function AdequacaoPlanilhaPage() {
   const [targetPlanilhaId, setTargetPlanilhaId] = useState<string>(planilhaIdFromQs ? String(planilhaIdFromQs) : "");
 
   const [showPrintConfig, setShowPrintConfig] = useState(false);
+  const [showPrintAdvanced, setShowPrintAdvanced] = useState(false);
   const [somenteItens, setSomenteItens] = useState(false);
   const [uiPrefs, setUiPrefs] = useState<{
     fontSizePx: number;
@@ -135,9 +136,9 @@ export default function AdequacaoPlanilhaPage() {
       headerFontFamily: string;
       headerFontSizePx: number;
       headerFontWeight: "normal" | "semibold" | "bold";
-      topToHeaderPx: number;
-      headerToDadosPx: number;
-      dadosToTabelaPx: number;
+      margemSuperiorAdicionalPx: number;
+      espacoAposCabecalhoPx: number;
+      espacoAposQuadroPx: number;
       includeEmpresaHeader: boolean;
       repeatDadosEmTodasFolhas: boolean;
     };
@@ -154,9 +155,9 @@ export default function AdequacaoPlanilhaPage() {
       headerFontFamily: "Arial",
       headerFontSizePx: 11,
       headerFontWeight: "semibold",
-      topToHeaderPx: 0,
-      headerToDadosPx: 6,
-      dadosToTabelaPx: 10,
+      margemSuperiorAdicionalPx: 0,
+      espacoAposCabecalhoPx: 8,
+      espacoAposQuadroPx: 8,
       includeEmpresaHeader: true,
       repeatDadosEmTodasFolhas: true,
     },
@@ -202,22 +203,38 @@ export default function AdequacaoPlanilhaPage() {
           headerFontFamily: typeof parsed?.print?.headerFontFamily === "string" && String(parsed.print.headerFontFamily).trim() ? String(parsed.print.headerFontFamily).trim() : cur.print.headerFontFamily,
           headerFontSizePx: n(parsed?.print?.headerFontSizePx, 8, 16, cur.print.headerFontSizePx),
           headerFontWeight: (["normal", "semibold", "bold"].includes(String(parsed?.print?.headerFontWeight)) ? parsed.print.headerFontWeight : cur.print.headerFontWeight) as any,
-          topToHeaderPx: n(parsed?.print?.topToHeaderPx, 0, 80, cur.print.topToHeaderPx),
-          headerToDadosPx: n(parsed?.print?.headerToDadosPx, 0, 80, cur.print.headerToDadosPx),
-          dadosToTabelaPx: n(parsed?.print?.dadosToTabelaPx, 0, 120, cur.print.dadosToTabelaPx),
+          margemSuperiorAdicionalPx: n(
+            parsed?.print?.margemSuperiorAdicionalPx ?? parsed?.print?.topToHeaderPx,
+            0,
+            80,
+            cur.print.margemSuperiorAdicionalPx
+          ),
+          espacoAposCabecalhoPx: n(
+            parsed?.print?.espacoAposCabecalhoPx ?? parsed?.print?.headerToDadosPx,
+            0,
+            80,
+            cur.print.espacoAposCabecalhoPx
+          ),
+          espacoAposQuadroPx: n(
+            parsed?.print?.espacoAposQuadroPx ?? parsed?.print?.dadosToTabelaPx,
+            0,
+            120,
+            cur.print.espacoAposQuadroPx
+          ),
           includeEmpresaHeader: parsed?.print?.includeEmpresaHeader !== false,
           repeatDadosEmTodasFolhas: parsed?.print?.repeatDadosEmTodasFolhas !== false,
         },
       }));
       setSomenteItens(Boolean(parsed?.somenteItens));
+      setShowPrintAdvanced(Boolean(parsed?.print?.showPrintAdvanced));
     } catch {}
   }, []);
 
   useEffect(() => {
     try {
-      localStorage.setItem(`planilha_adequacao_ui_v2`, JSON.stringify({ ...uiPrefs, somenteItens }));
+      localStorage.setItem(`planilha_adequacao_ui_v2`, JSON.stringify({ ...uiPrefs, somenteItens, print: { ...uiPrefs.print, showPrintAdvanced } }));
     } catch {}
-  }, [uiPrefs, somenteItens]);
+  }, [uiPrefs, somenteItens, showPrintAdvanced]);
 
   async function carregarEmpresaDocumentosLayout() {
     try {
@@ -474,13 +491,9 @@ export default function AdequacaoPlanilhaPage() {
     const pp = uiPrefs.print;
     const repeatDados = pp.repeatDadosEmTodasFolhas !== false;
     const headerFontWeight = pp.headerFontWeight === "bold" ? 700 : pp.headerFontWeight === "normal" ? 400 : 600;
-    const topToHeaderPx = Math.max(0, Number(pp.topToHeaderPx || 0));
-    const headerToDadosPx = Math.max(0, Number(pp.headerToDadosPx || 0));
-    const dadosToTabelaPx = Math.max(0, Number(pp.dadosToTabelaPx || 0));
-    const mmToPx = (mm: number) => Math.round(mm * 3.7795275591);
-    const cabecalhoMm = pp.includeEmpresaHeader ? Number(empresaDocumentosLayout?.cabecalhoAlturaMm || 0) : 0;
-    const headerHeightEstimatePx = pp.includeEmpresaHeader ? (cabecalhoMm > 0 ? mmToPx(cabecalhoMm) : 70) + 12 : 0;
-    const contentPadTopPx = pp.includeEmpresaHeader ? topToHeaderPx + headerHeightEstimatePx : topToHeaderPx;
+    const margemSuperiorAdicionalPx = Math.max(0, Number(pp.margemSuperiorAdicionalPx || 0));
+    const espacoAposCabecalhoPx = Math.max(0, Number(pp.espacoAposCabecalhoPx || 0));
+    const espacoAposQuadroPx = Math.max(0, Number(pp.espacoAposQuadroPx || 0));
 
     const cabecalhoEmpresaHtml =
       pp.includeEmpresaHeader && (empresaDocumentosLayout?.cabecalhoHtml || empresaDocumentosLayout?.logoDataUrl)
@@ -610,18 +623,19 @@ export default function AdequacaoPlanilhaPage() {
       @page { size: A4 landscape; margin: 10mm; }
       body { font-family: Arial, sans-serif; margin: 0; color: #0f172a; font-size: ${Number(uiPrefs.fontSizePx)}px; line-height: 1.12; }
       @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-      .print-header { position: fixed; top: ${topToHeaderPx}px; left: 0; right: 0; background: #ffffff; padding: 6px 10px; font-family: ${escapeHtml(pp.headerFontFamily)}; font-size: ${Number(pp.headerFontSizePx || 11)}px; z-index: 20; }
-      .print-header, .print-header * { line-height: 1.12; }
-      .print-content { padding: 6px 10px; padding-top: ${contentPadTopPx}px; position: relative; z-index: 1; }
+      .print-content { padding: 0; }
       thead { display: table-header-group; }
-      .empresa-cabecalho { width: 100%; }
+      .empresa-cabecalho { width: 100%; font-family: ${escapeHtml(pp.headerFontFamily)}; font-size: ${Number(pp.headerFontSizePx || 11)}px; }
+      .empresa-cabecalho, .empresa-cabecalho * { line-height: 1.12; }
       .empresa-rodape { width: 100%; margin-top: 14px; }
       table { width: 100%; border-collapse: collapse; margin-top: 0; }
       th, td { border: 1px solid #cbd5e1; padding: 4px 6px; vertical-align: top; }
       thead th { background: #f8fafc; }
       .t-center { text-align: center; }
       .t-right { text-align: right; }
-      .dados-wrap { background:#ffffff; }
+      .thead-noborder { border: 0 !important; padding: 0 !important; background: #ffffff !important; }
+      .spacer { border: 0 !important; padding: 0 !important; background: #ffffff !important; }
+      .dados-wrap { background:#ffffff; border:0; padding:0; }
       .dados-wrap, .dados-wrap * { text-align: left; }
       .dados-bloco { border: 2px solid #0f172a; display:grid; grid-template-columns: 1.65fr 1fr; }
       .dados-left { padding: 6px 8px; }
@@ -639,23 +653,15 @@ export default function AdequacaoPlanilhaPage() {
     </style>
   </head>
   <body>
-    ${pp.includeEmpresaHeader ? `<div class="print-header">${cabecalhoEmpresaHtml}</div>` : ""}
     <div class="print-content">
-      ${
-        repeatDados
-          ? ""
-          : `<div class="dados-wrap" style="padding-top:${headerToDadosPx}px;">${dadosHtml}</div><div style="height:${dadosToTabelaPx}px;background:#ffffff;"></div>`
-      }
       <table>
         ${colgroupHtml}
         <thead>
-          ${repeatDados && headerToDadosPx > 0 ? `<tr><th colspan="12" style="padding:0;border:0;height:${headerToDadosPx}px;background:#ffffff;"></th></tr>` : ""}
-          ${
-            repeatDados
-              ? `<tr><th colspan="12" class="dados-wrap">${dadosHtml}</th></tr>
-                 <tr><th colspan="12" style="padding:0;border:0;height:${dadosToTabelaPx}px;background:#ffffff;"></th></tr>`
-              : ""
-          }
+          ${margemSuperiorAdicionalPx > 0 ? `<tr><th colspan="12" class="spacer" style="height:${margemSuperiorAdicionalPx}px;"></th></tr>` : ""}
+          ${pp.includeEmpresaHeader ? `<tr><th colspan="12" class="thead-noborder">${cabecalhoEmpresaHtml}</th></tr>` : ""}
+          ${pp.includeEmpresaHeader && espacoAposCabecalhoPx > 0 ? `<tr><th colspan="12" class="spacer" style="height:${espacoAposCabecalhoPx}px;"></th></tr>` : ""}
+          ${repeatDados ? `<tr><th colspan="12" class="thead-noborder">${dadosHtml}</th></tr>` : ""}
+          ${repeatDados && espacoAposQuadroPx > 0 ? `<tr><th colspan="12" class="spacer" style="height:${espacoAposQuadroPx}px;"></th></tr>` : ""}
           <tr>
             <th rowspan="2">ITEM</th>
             <th rowspan="2">SERVIÇOS</th>
@@ -988,54 +994,74 @@ export default function AdequacaoPlanilhaPage() {
             </div>
 
             <div className="md:col-span-7 space-y-2">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Espaçamentos (px)</div>
+              <button
+                className="w-full rounded border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 text-left"
+                type="button"
+                onClick={() => setShowPrintAdvanced((v) => !v)}
+                title="Ajustes avançados (use apenas em casos excepcionais)"
+              >
+                Ajustes avançados
+              </button>
 
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <div className="space-y-1">
-                  <div className="text-sm text-slate-600">Topo → cabeçalho</div>
-                  <input
-                    className="input bg-white w-[110px]"
-                    type="number"
-                    min={0}
-                    max={80}
-                    value={uiPrefs.print.topToHeaderPx}
-                    onChange={(e) =>
-                      setUiPrefs((p) => ({ ...p, print: { ...p.print, topToHeaderPx: Math.max(0, Math.min(80, Number(e.target.value || 0))) } }))
-                    }
-                    title="Espaço do topo até o cabeçalho (px)"
-                  />
-                </div>
+              {showPrintAdvanced ? (
+                <div className="rounded border bg-slate-50 p-3">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <div className="space-y-1">
+                      <div className="text-sm text-slate-600">Margem superior adicional (px)</div>
+                      <input
+                        className="input bg-white w-[150px]"
+                        type="number"
+                        min={0}
+                        max={80}
+                        value={uiPrefs.print.margemSuperiorAdicionalPx}
+                        onChange={(e) =>
+                          setUiPrefs((p) => ({
+                            ...p,
+                            print: { ...p.print, margemSuperiorAdicionalPx: Math.max(0, Math.min(80, Number(e.target.value || 0))) },
+                          }))
+                        }
+                        title="Aplica um espaçamento extra antes do primeiro bloco da impressão"
+                      />
+                    </div>
 
-                <div className="space-y-1">
-                  <div className="text-sm text-slate-600">Cabeçalho → dados</div>
-                  <input
-                    className="input bg-white w-[110px]"
-                    type="number"
-                    min={0}
-                    max={80}
-                    value={uiPrefs.print.headerToDadosPx}
-                    onChange={(e) =>
-                      setUiPrefs((p) => ({ ...p, print: { ...p.print, headerToDadosPx: Math.max(0, Math.min(80, Number(e.target.value || 0))) } }))
-                    }
-                    title="Espaço entre o cabeçalho da empresa e os dados da obra (px)"
-                  />
-                </div>
+                    <div className="space-y-1">
+                      <div className="text-sm text-slate-600">Espaço após cabeçalho (px)</div>
+                      <input
+                        className="input bg-white w-[150px]"
+                        type="number"
+                        min={0}
+                        max={80}
+                        value={uiPrefs.print.espacoAposCabecalhoPx}
+                        onChange={(e) =>
+                          setUiPrefs((p) => ({
+                            ...p,
+                            print: { ...p.print, espacoAposCabecalhoPx: Math.max(0, Math.min(80, Number(e.target.value || 0))) },
+                          }))
+                        }
+                        title="Aplica um espaçamento entre o cabeçalho da empresa e o quadro de dados"
+                      />
+                    </div>
 
-                <div className="space-y-1">
-                  <div className="text-sm text-slate-600">Dados → tabela</div>
-                  <input
-                    className="input bg-white w-[110px]"
-                    type="number"
-                    min={0}
-                    max={120}
-                    value={uiPrefs.print.dadosToTabelaPx}
-                    onChange={(e) =>
-                      setUiPrefs((p) => ({ ...p, print: { ...p.print, dadosToTabelaPx: Math.max(0, Math.min(120, Number(e.target.value || 0))) } }))
-                    }
-                    title="Espaço entre os dados da obra e a tabela (px)"
-                  />
+                    <div className="space-y-1">
+                      <div className="text-sm text-slate-600">Espaço após quadro de dados (px)</div>
+                      <input
+                        className="input bg-white w-[150px]"
+                        type="number"
+                        min={0}
+                        max={120}
+                        value={uiPrefs.print.espacoAposQuadroPx}
+                        onChange={(e) =>
+                          setUiPrefs((p) => ({
+                            ...p,
+                            print: { ...p.print, espacoAposQuadroPx: Math.max(0, Math.min(120, Number(e.target.value || 0))) },
+                          }))
+                        }
+                        title="Aplica um espaçamento entre o quadro de dados e a tabela"
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </div>
           </div>
         </div>
