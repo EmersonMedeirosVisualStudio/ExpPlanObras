@@ -432,6 +432,10 @@ export default function AdequacaoPlanilhaPage() {
     const topToHeaderPx = Math.max(0, Number(pp.topToHeaderPx || 0));
     const headerToDadosPx = Math.max(0, Number(pp.headerToDadosPx || 0));
     const dadosToTabelaPx = Math.max(0, Number(pp.dadosToTabelaPx || 0));
+    const mmToPx = (mm: number) => Math.round(mm * 3.7795275591);
+    const cabecalhoMm = pp.includeEmpresaHeader ? Number(empresaDocumentosLayout?.cabecalhoAlturaMm || 0) : 0;
+    const headerHeightEstimatePx = pp.includeEmpresaHeader ? (cabecalhoMm > 0 ? mmToPx(cabecalhoMm) : 70) + 12 : 0;
+    const contentPadTopPx = pp.includeEmpresaHeader ? topToHeaderPx + headerHeightEstimatePx : topToHeaderPx;
 
     const cabecalhoEmpresaHtml =
       pp.includeEmpresaHeader && (empresaDocumentosLayout?.cabecalhoHtml || empresaDocumentosLayout?.logoDataUrl)
@@ -547,11 +551,11 @@ export default function AdequacaoPlanilhaPage() {
       @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
       .print-header { position: fixed; top: ${topToHeaderPx}px; left: 0; right: 0; background: #ffffff; padding: 6px 10px; font-family: ${escapeHtml(pp.headerFontFamily)}; font-size: ${Number(pp.headerFontSizePx || 11)}px; z-index: 20; }
       .print-header, .print-header * { line-height: 1.12; }
-      .print-content { padding: 6px 10px; position: relative; z-index: 1; }
+      .print-content { padding: 6px 10px; padding-top: ${contentPadTopPx}px; position: relative; z-index: 1; }
       thead { display: table-header-group; }
       .empresa-cabecalho { width: 100%; }
       .empresa-rodape { width: 100%; margin-top: 14px; }
-      table { width: 100%; border-collapse: collapse; margin-top: ${dadosToTabelaPx}px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 0; }
       th, td { border: 1px solid #cbd5e1; padding: 4px 6px; vertical-align: top; }
       thead th { background: #f8fafc; }
       .t-center { text-align: center; }
@@ -564,21 +568,21 @@ export default function AdequacaoPlanilhaPage() {
       .dl-row + .dl-row, .dr-row + .dr-row { margin-top: 4px; }
       .dl-k, .dr-k { font-weight: ${headerFontWeight}; }
       .dl-v, .dr-v { font-weight: 700; }
-      .diff-add { color:#1d4ed8; background:#eff6ff; }
-      .diff-sub { color:#b91c1c; background:#fef2f2; }
+      .diff-add { color:#1d4ed8; }
+      .diff-sub { color:#b91c1c; }
     </style>
   </head>
   <body>
-    <div class="print-header">
-      ${cabecalhoEmpresaHtml}
-    </div>
+    ${pp.includeEmpresaHeader ? `<div class="print-header">${cabecalhoEmpresaHtml}</div>` : ""}
     <div class="print-content">
-      <div style="height:${Math.max(0, topToHeaderPx)}px"></div>
       <table>
         ${colgroupHtml}
         <thead>
           <tr>
             <th colspan="12" class="dados-wrap">${dadosHtml}</th>
+          </tr>
+          <tr>
+            <th colspan="12" style="padding:0;border:0;height:${dadosToTabelaPx}px;background:#ffffff;"></th>
           </tr>
           <tr>
             <th rowspan="2">ITEM</th>
@@ -1098,14 +1102,14 @@ export default function AdequacaoPlanilhaPage() {
                     <td className="px-3 py-2 text-right border border-slate-300">{fmtMoney(r.contratadoTotal)}</td>
                     <td
                       className={`px-3 py-2 text-right border border-slate-300 ${
-                        uiPrefs.colorDiff && !isHeader && Number(r.qAditado || 0) > 0 ? "bg-blue-50 text-blue-700" : ""
+                        uiPrefs.colorDiff && !isHeader && Number(r.qAditado || 0) > 0 ? "text-blue-700" : ""
                       }`}
                     >
                       {isHeader ? "" : fmtNumber(r.qAditado, 2)}
                     </td>
                     <td
                       className={`px-3 py-2 text-right border border-slate-300 ${
-                        uiPrefs.colorDiff && !isHeader && Number(r.qSuprimido || 0) > 0 ? "bg-red-50 text-red-700" : ""
+                        uiPrefs.colorDiff && !isHeader && Number(r.qSuprimido || 0) > 0 ? "text-red-700" : ""
                       }`}
                     >
                       {isHeader ? "" : fmtNumber(r.qSuprimido, 2)}
@@ -1113,14 +1117,14 @@ export default function AdequacaoPlanilhaPage() {
                     <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumber(r.qAdequado, 2)}</td>
                     <td
                       className={`px-3 py-2 text-right border border-slate-300 ${
-                        uiPrefs.colorDiff && Number(r.vAditado || 0) > 0 ? "bg-blue-50 text-blue-700" : ""
+                        uiPrefs.colorDiff && Number(r.vAditado || 0) > 0 ? "text-blue-700" : ""
                       }`}
                     >
                       {fmtMoney(r.vAditado)}
                     </td>
                     <td
                       className={`px-3 py-2 text-right border border-slate-300 ${
-                        uiPrefs.colorDiff && Number(r.vSuprimido || 0) > 0 ? "bg-red-50 text-red-700" : ""
+                        uiPrefs.colorDiff && Number(r.vSuprimido || 0) > 0 ? "text-red-700" : ""
                       }`}
                     >
                       {fmtMoney(r.vSuprimido)}
