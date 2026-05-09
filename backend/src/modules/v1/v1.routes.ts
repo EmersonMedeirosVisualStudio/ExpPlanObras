@@ -12701,36 +12701,10 @@ export default async function v1Routes(server: FastifyInstance) {
       for (const r of srcServicos) srcServiceByKey.set(serviceKey(r.item, r.codigo), r);
       for (const r of dstServicos) dstServiceByKey.set(serviceKey(r.item, r.codigo), r);
 
-      function collectHeadersFromServices(list: Linha[]) {
-        const out: Array<{ tipoLinha: 'ITEM' | 'SUBITEM'; item: string }> = [];
-        const seen = new Set<string>();
-        for (const r of list) {
-          const itemStr = String(r.item || '').trim();
-          const parts = itemStr.split('.').map((p) => p.trim()).filter(Boolean);
-          if (!parts.length) continue;
-          const item1 = parts[0];
-          const kItem = `ITEM|${item1}`;
-          if (!seen.has(kItem)) {
-            seen.add(kItem);
-            out.push({ tipoLinha: 'ITEM', item: item1 });
-          }
-          if (parts.length >= 3) {
-            const sub = `${parts[0]}.${parts[1]}`;
-            const kSub = `SUBITEM|${sub}`;
-            if (!seen.has(kSub)) {
-              seen.add(kSub);
-              out.push({ tipoLinha: 'SUBITEM', item: sub });
-            }
-          }
-        }
-        return out;
-      }
-
       const explicitHeaders = [...srcHeaders, ...dstHeaders].map((h) => ({ tipoLinha: h.tipoLinha, item: h.item }));
-      const derivedHeaders = [...collectHeadersFromServices(srcServicos), ...collectHeadersFromServices(dstServicos)];
       const headerKeySet = new Set<string>();
       const allHeaders: Array<{ tipoLinha: 'ITEM' | 'SUBITEM'; item: string }> = [];
-      for (const h of [...explicitHeaders, ...derivedHeaders]) {
+      for (const h of explicitHeaders) {
         const tipo = String(h.tipoLinha || '').trim().toUpperCase();
         const item = String(h.item || '').trim();
         if (tipo !== 'ITEM' && tipo !== 'SUBITEM') continue;
