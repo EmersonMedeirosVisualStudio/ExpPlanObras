@@ -51,6 +51,21 @@ function fmtMoney(v: number) {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function isRoundedZero(v: number, decimals: number) {
+  const n = Number(v || 0);
+  if (!Number.isFinite(n)) return true;
+  const m = 10 ** Math.max(0, Math.min(6, Math.round(decimals)));
+  return Math.round(n * m) === 0;
+}
+
+function fmtNumberBlankZero(v: number, decimals: number) {
+  return isRoundedZero(v, decimals) ? "" : fmtNumber(v, decimals);
+}
+
+function fmtMoneyBlankZero(v: number) {
+  return isRoundedZero(v, 2) ? "" : fmtMoney(v);
+}
+
 function escapeHtml(s: unknown) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
@@ -338,6 +353,11 @@ export default function AdequacaoPlanilhaPage() {
     return rows.filter((r) => r.tipoLinha !== "SERVICO");
   }, [rows, somenteItens]);
 
+  const tituloPlanilha = useMemo(() => {
+    const nome = String(selectedTarget?.nome || "").trim();
+    return nome ? `PLANILHA DE ADEQUAÇÃO DE SERVIÇOS - ${nome}` : "PLANILHA DE ADEQUAÇÃO DE SERVIÇOS";
+  }, [selectedTarget?.nome]);
+
   async function carregarAdequacao() {
     const src = Number(String(sourcePlanilhaId || "").trim() || 0);
     const dst = Number(String(targetPlanilhaId || "").trim() || 0);
@@ -551,8 +571,9 @@ export default function AdequacaoPlanilhaPage() {
         const bg = isItem ? uiPrefs.itemBg : isSubitem ? uiPrefs.subitemBg : "";
         const style = `${isHeader ? "font-weight:700;" : ""}${bg ? `background:${escapeHtml(bg)};` : ""}`;
         const show = (v: string) => escapeHtml(v || "—");
-        const n2 = (v: number) => escapeHtml(fmtNumber(v, 2));
-        const money = (v: number) => escapeHtml(fmtMoney(v));
+        const isZero2 = (v: number) => isRoundedZero(v, 2);
+        const n2 = (v: number) => (isZero2(v) ? "" : escapeHtml(fmtNumber(v, 2)));
+        const money = (v: number) => (isZero2(v) ? "" : escapeHtml(fmtMoney(v)));
         const blue = uiPrefs.colorDiff && !isHeader && Number(r.qAditado || 0) > 0;
         const red = uiPrefs.colorDiff && !isHeader && Number(r.qSuprimido || 0) > 0;
         const blueV = uiPrefs.colorDiff && Number(r.vAditado || 0) > 0;
@@ -742,13 +763,13 @@ export default function AdequacaoPlanilhaPage() {
 
         <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1">
-            <div className="text-sm text-slate-600">Origem (Contratado)</div>
+            <div className="text-sm text-slate-600">Planilha anterior</div>
             <select
               className="input bg-white w-full"
               value={sourcePlanilhaId}
               onChange={(e) => setSourcePlanilhaId(e.target.value)}
               disabled={loading}
-              title="Versão base (antes): usada como referência do Contratado"
+              title="Versão anterior: usada como referência do Contratado"
             >
               <option value="">(selecione)</option>
               {versoes.map((v) => (
@@ -759,7 +780,7 @@ export default function AdequacaoPlanilhaPage() {
             </select>
           </label>
           <label className="space-y-1">
-            <div className="text-sm font-semibold text-slate-800">Destino (Adequado)</div>
+            <div className="text-sm font-semibold text-slate-800">Planilha Adequada</div>
             <select
               className="input bg-white w-full text-base font-semibold"
               value={targetPlanilhaId}
@@ -768,7 +789,7 @@ export default function AdequacaoPlanilhaPage() {
               title={
                 Boolean(String(planilhaIdFromQs || "").trim())
                   ? "Destino fixado na planilha selecionada (aberto a partir da Planilha)"
-                  : "Versão final (depois): usada como referência do Adequado"
+                  : "Versão adequada: usada como referência do Adequado"
               }
             >
               <option value="">(selecione)</option>
@@ -1023,8 +1044,7 @@ export default function AdequacaoPlanilhaPage() {
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <div className="text-lg font-semibold">PLANILHA DE ADEQUAÇÃO DE SERVIÇOS</div>
-            {selectedTarget ? <div className="text-sm text-slate-600">{`Destino: #${selectedTarget.idPlanilha} - ${selectedTarget.nome || "—"}`}</div> : null}
+            <div className="text-lg font-semibold">{tituloPlanilha}</div>
           </div>
           <div className="text-sm text-slate-600">
             Linhas: <span className="font-semibold text-slate-900">{rows.length}</span>
@@ -1044,7 +1064,7 @@ export default function AdequacaoPlanilhaPage() {
             <thead className="bg-slate-50 text-left text-slate-700">
               <tr className="border-b">
                 <th className="px-3 py-2 border border-slate-300" colSpan={12}>
-                  <div className="text-center font-semibold">PLANILHA DE ADEQUAÇÃO DE SERVIÇOS</div>
+                  <div className="text-center font-semibold">{tituloPlanilha}</div>
                 </th>
               </tr>
               <tr className="border-b">
@@ -1087,39 +1107,39 @@ export default function AdequacaoPlanilhaPage() {
                     <td className={`px-3 py-2 border border-slate-300 ${isHeader ? "font-semibold" : ""}`}>{r.item || "—"}</td>
                     <td className={`px-3 py-2 border border-slate-300 ${isHeader ? "font-semibold" : ""}`}>{r.servicos || "—"}</td>
                     <td className="px-3 py-2 border border-slate-300">{isHeader ? "" : r.und || ""}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumber(r.contratadoQuant, 2)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumber(r.contratadoPreco, 2)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{fmtMoney(r.contratadoTotal)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumberBlankZero(r.contratadoQuant, 2)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumberBlankZero(r.contratadoPreco, 2)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{fmtMoneyBlankZero(r.contratadoTotal)}</td>
                     <td
                       className={`px-3 py-2 text-right border border-slate-300 ${
                         uiPrefs.colorDiff && !isHeader && Number(r.qAditado || 0) > 0 ? "text-blue-700" : ""
                       }`}
                     >
-                      {isHeader ? "" : fmtNumber(r.qAditado, 2)}
+                      {isHeader ? "" : fmtNumberBlankZero(r.qAditado, 2)}
                     </td>
                     <td
                       className={`px-3 py-2 text-right border border-slate-300 ${
                         uiPrefs.colorDiff && !isHeader && Number(r.qSuprimido || 0) > 0 ? "text-red-700" : ""
                       }`}
                     >
-                      {isHeader ? "" : fmtNumber(r.qSuprimido, 2)}
+                      {isHeader ? "" : fmtNumberBlankZero(r.qSuprimido, 2)}
                     </td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumber(r.qAdequado, 2)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumberBlankZero(r.qAdequado, 2)}</td>
                     <td
                       className={`px-3 py-2 text-right border border-slate-300 ${
                         uiPrefs.colorDiff && Number(r.vAditado || 0) > 0 ? "text-blue-700" : ""
                       }`}
                     >
-                      {fmtMoney(r.vAditado)}
+                      {fmtMoneyBlankZero(r.vAditado)}
                     </td>
                     <td
                       className={`px-3 py-2 text-right border border-slate-300 ${
                         uiPrefs.colorDiff && Number(r.vSuprimido || 0) > 0 ? "text-red-700" : ""
                       }`}
                     >
-                      {fmtMoney(r.vSuprimido)}
+                      {fmtMoneyBlankZero(r.vSuprimido)}
                     </td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{fmtMoney(r.vAdequado)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{fmtMoneyBlankZero(r.vAdequado)}</td>
                   </tr>
                 );
               })}
