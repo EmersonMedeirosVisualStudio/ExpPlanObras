@@ -10,6 +10,10 @@ type VersaoRow = {
   numeroVersao: number;
   nome: string;
   atual: boolean;
+  idFonteDados?: number | null;
+  idParametros?: number | null;
+  fonteNome?: string;
+  parametrosNome?: string;
 };
 
 type AdequacaoRow = {
@@ -91,6 +95,8 @@ export default function AdequacaoPlanilhaPage() {
   const [err, setErr] = useState<string | null>(null);
 
   const [obraNome, setObraNome] = useState<string>("");
+  const [contratoNumero, setContratoNumero] = useState<string>("");
+  const [contratoId, setContratoId] = useState<number | null>(null);
   const [versoes, setVersoes] = useState<VersaoRow[]>([]);
   const [sourcePlanilhaId, setSourcePlanilhaId] = useState<string>("");
   const [targetPlanilhaId, setTargetPlanilhaId] = useState<string>(planilhaIdFromQs ? String(planilhaIdFromQs) : "");
@@ -227,12 +233,14 @@ export default function AdequacaoPlanilhaPage() {
     if (!idObra) return;
     try {
       setErr(null);
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes-min`);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes-info`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar versões");
 
       const obra = json.data?.obra || null;
       setObraNome(String(obra?.nome || "").trim());
+      setContratoNumero(String(obra?.contratoNumero || "").trim());
+      setContratoId(obra?.contratoId != null ? Number(obra.contratoId) : null);
 
       const list = Array.isArray(json.data?.versoes) ? (json.data.versoes as any[]) : [];
       const normalized: VersaoRow[] = list
@@ -241,6 +249,10 @@ export default function AdequacaoPlanilhaPage() {
           numeroVersao: Number(v.numeroVersao),
           nome: String(v.nome || ""),
           atual: Boolean(v.atual),
+          idFonteDados: v?.idFonteDados == null ? null : Number(v.idFonteDados),
+          idParametros: v?.idParametros == null ? null : Number(v.idParametros),
+          fonteNome: String(v?.fonteNome || ""),
+          parametrosNome: String(v?.parametrosNome || ""),
         }))
         .filter((v) => Number.isFinite(v.idPlanilha) && v.idPlanilha > 0);
       setVersoes(normalized);
@@ -415,11 +427,14 @@ export default function AdequacaoPlanilhaPage() {
     const src = versoes.find((v) => Number(v.idPlanilha) === Number(String(sourcePlanilhaId || "").trim() || 0)) || null;
     const dst = selectedTarget;
     const dataHoje = new Date().toLocaleDateString("pt-BR");
+    const contratoOut = contratoNumero ? contratoNumero : contratoId != null ? `#${contratoId}` : "";
 
     const dadosHtml = `
       <div class="dados" style="margin-top:${headerToDadosPx}px;">
         <div class="dados-title">PLANILHA DE ADEQUAÇÃO DE SERVIÇOS</div>
         <div class="dados-row">
+          <span class="lab">Contrato:</span><span class="val">${escapeHtml(contratoOut || "-")}</span>
+          <span class="sep">•</span>
           <span class="lab">Obra:</span><span class="val">${escapeHtml(obraNome ? obraNome : `#${idObra}`)}</span>
           <span class="sep">•</span>
           <span class="lab">Data:</span><span class="val">${escapeHtml(dataHoje)}</span>
@@ -429,6 +444,14 @@ export default function AdequacaoPlanilhaPage() {
         </div>
         <div class="dados-row">
           <span class="lab">Destino (Adequado):</span><span class="val">${dst ? `#${dst.idPlanilha} - v${dst.numeroVersao} ${dst.nome || ""}` : "-"}</span>
+        </div>
+        <div class="dados-row">
+          <span class="lab">Parâmetros (destino):</span><span class="val">${
+            dst?.idParametros ? escapeHtml(`#${dst.idParametros} - ${dst.parametrosNome || "-"}`) : "-"
+          }</span>
+        </div>
+        <div class="dados-row">
+          <span class="lab">Fonte (destino):</span><span class="val">${dst?.idFonteDados ? escapeHtml(`#${dst.idFonteDados} - ${dst.fonteNome || "-"}`) : "-"}</span>
         </div>
       </div>
     `;
@@ -464,16 +487,16 @@ export default function AdequacaoPlanilhaPage() {
         return `<tr style="${style}">
           <td>${show(r.item)}</td>
           <td>${show(r.servicos)}</td>
-          <td>${show(r.und)}</td>
-          <td style="text-align:right">${isHeader ? "—" : n2(r.contratadoQuant)}</td>
-          <td style="text-align:right">${isHeader ? "—" : n2(r.contratadoPreco)}</td>
-          <td style="text-align:right">${isHeader ? "—" : money(r.contratadoTotal)}</td>
-          <td style="text-align:right">${isHeader ? "—" : n2(r.qAditado)}</td>
-          <td style="text-align:right">${isHeader ? "—" : n2(r.qSuprimido)}</td>
-          <td style="text-align:right">${isHeader ? "—" : n2(r.qAdequado)}</td>
-          <td style="text-align:right">${isHeader ? "—" : money(r.vAditado)}</td>
-          <td style="text-align:right">${isHeader ? "—" : money(r.vSuprimido)}</td>
-          <td style="text-align:right">${isHeader ? "—" : money(r.vAdequado)}</td>
+          <td>${isHeader ? "" : show(r.und)}</td>
+          <td style="text-align:right">${isHeader ? "" : n2(r.contratadoQuant)}</td>
+          <td style="text-align:right">${isHeader ? "" : n2(r.contratadoPreco)}</td>
+          <td style="text-align:right">${money(r.contratadoTotal)}</td>
+          <td style="text-align:right">${isHeader ? "" : n2(r.qAditado)}</td>
+          <td style="text-align:right">${isHeader ? "" : n2(r.qSuprimido)}</td>
+          <td style="text-align:right">${isHeader ? "" : n2(r.qAdequado)}</td>
+          <td style="text-align:right">${money(r.vAditado)}</td>
+          <td style="text-align:right">${money(r.vSuprimido)}</td>
+          <td style="text-align:right">${money(r.vAdequado)}</td>
         </tr>`;
       })
       .join("");
@@ -770,6 +793,7 @@ export default function AdequacaoPlanilhaPage() {
                   type="checkbox"
                   checked={uiPrefs.print.includeEmpresaHeader}
                   onChange={(e) => setUiPrefs((p) => ({ ...p, print: { ...p.print, includeEmpresaHeader: Boolean(e.target.checked) } }))}
+                  title="Inclui o cabeçalho da empresa configurado em Configurações → Empresa → Documentos"
                 />
                 <span className="text-slate-700">Incluir cabeçalho padronizado da empresa na impressão</span>
               </label>
@@ -784,6 +808,7 @@ export default function AdequacaoPlanilhaPage() {
                     className="input bg-white"
                     value={uiPrefs.print.headerFontFamily}
                     onChange={(e) => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerFontFamily: e.target.value } }))}
+                    title="Fonte usada no cabeçalho"
                   >
                     <option value="Arial">Arial</option>
                     <option value="Calibri">Calibri</option>
@@ -799,6 +824,7 @@ export default function AdequacaoPlanilhaPage() {
                       className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
                       type="button"
                       onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerFontSizePx: Math.max(8, p.print.headerFontSizePx - 1) } }))}
+                      title="Diminuir tamanho da fonte do cabeçalho"
                     >
                       ➖
                     </button>
@@ -811,11 +837,13 @@ export default function AdequacaoPlanilhaPage() {
                       onChange={(e) =>
                         setUiPrefs((p) => ({ ...p, print: { ...p.print, headerFontSizePx: Math.max(8, Math.min(16, Number(e.target.value || 11))) } }))
                       }
+                      title="Tamanho da fonte do cabeçalho (px)"
                     />
                     <button
                       className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
                       type="button"
                       onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerFontSizePx: Math.min(16, p.print.headerFontSizePx + 1) } }))}
+                      title="Aumentar tamanho da fonte do cabeçalho"
                     >
                       ➕
                     </button>
@@ -828,6 +856,7 @@ export default function AdequacaoPlanilhaPage() {
                     className="input bg-white"
                     value={uiPrefs.print.headerFontWeight}
                     onChange={(e) => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerFontWeight: e.target.value as any } }))}
+                    title="Peso da fonte do cabeçalho"
                   >
                     <option value="normal">Normal</option>
                     <option value="semibold">Semibold</option>
@@ -848,6 +877,7 @@ export default function AdequacaoPlanilhaPage() {
                       className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
                       type="button"
                       onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, topToHeaderPx: Math.max(0, p.print.topToHeaderPx - 2) } }))}
+                      title="Diminuir espaço do topo até o cabeçalho"
                     >
                       ➖
                     </button>
@@ -860,11 +890,13 @@ export default function AdequacaoPlanilhaPage() {
                       onChange={(e) =>
                         setUiPrefs((p) => ({ ...p, print: { ...p.print, topToHeaderPx: Math.max(0, Math.min(80, Number(e.target.value || 0))) } }))
                       }
+                      title="Espaço do topo até o cabeçalho (px)"
                     />
                     <button
                       className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
                       type="button"
                       onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, topToHeaderPx: Math.min(80, p.print.topToHeaderPx + 2) } }))}
+                      title="Aumentar espaço do topo até o cabeçalho"
                     >
                       ➕
                     </button>
@@ -878,6 +910,7 @@ export default function AdequacaoPlanilhaPage() {
                       className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
                       type="button"
                       onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerToDadosPx: Math.max(0, p.print.headerToDadosPx - 2) } }))}
+                      title="Diminuir espaço entre o cabeçalho da empresa e os dados da obra (Contrato/Obra/Origem/Destino)"
                     >
                       ➖
                     </button>
@@ -890,11 +923,13 @@ export default function AdequacaoPlanilhaPage() {
                       onChange={(e) =>
                         setUiPrefs((p) => ({ ...p, print: { ...p.print, headerToDadosPx: Math.max(0, Math.min(80, Number(e.target.value || 0))) } }))
                       }
+                      title="Espaço entre o cabeçalho da empresa e os dados da obra (px)"
                     />
                     <button
                       className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
                       type="button"
                       onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, headerToDadosPx: Math.min(80, p.print.headerToDadosPx + 2) } }))}
+                      title="Aumentar espaço entre o cabeçalho da empresa e os dados da obra (Contrato/Obra/Origem/Destino)"
                     >
                       ➕
                     </button>
@@ -908,6 +943,7 @@ export default function AdequacaoPlanilhaPage() {
                       className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
                       type="button"
                       onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, dadosToTabelaPx: Math.max(0, p.print.dadosToTabelaPx - 4) } }))}
+                      title="Diminuir espaço entre os dados da obra e a tabela"
                     >
                       ➖
                     </button>
@@ -920,11 +956,13 @@ export default function AdequacaoPlanilhaPage() {
                       onChange={(e) =>
                         setUiPrefs((p) => ({ ...p, print: { ...p.print, dadosToTabelaPx: Math.max(0, Math.min(120, Number(e.target.value || 0))) } }))
                       }
+                      title="Espaço entre os dados da obra e a tabela (px)"
                     />
                     <button
                       className="rounded border bg-white px-3 py-2 text-sm hover:bg-slate-50"
                       type="button"
                       onClick={() => setUiPrefs((p) => ({ ...p, print: { ...p.print, dadosToTabelaPx: Math.min(120, p.print.dadosToTabelaPx + 4) } }))}
+                      title="Aumentar espaço entre os dados da obra e a tabela"
                     >
                       ➕
                     </button>
@@ -1003,12 +1041,12 @@ export default function AdequacaoPlanilhaPage() {
                     <td className={`px-3 py-2 border border-slate-300 ${isHeader ? "font-semibold" : ""}`}>{r.item || "—"}</td>
                     <td className={`px-3 py-2 border border-slate-300 ${isHeader ? "font-semibold" : ""}`}>{r.servicos || "—"}</td>
                     <td className="px-3 py-2 border border-slate-300">{isHeader ? "" : r.und || ""}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{fmtNumber(r.contratadoQuant, 2)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{fmtNumber(r.contratadoPreco, 2)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumber(r.contratadoQuant, 2)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumber(r.contratadoPreco, 2)}</td>
                     <td className="px-3 py-2 text-right border border-slate-300">{fmtMoney(r.contratadoTotal)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{fmtNumber(r.qAditado, 2)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{fmtNumber(r.qSuprimido, 2)}</td>
-                    <td className="px-3 py-2 text-right border border-slate-300">{fmtNumber(r.qAdequado, 2)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumber(r.qAditado, 2)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumber(r.qSuprimido, 2)}</td>
+                    <td className="px-3 py-2 text-right border border-slate-300">{isHeader ? "" : fmtNumber(r.qAdequado, 2)}</td>
                     <td className="px-3 py-2 text-right border border-slate-300">{fmtMoney(r.vAditado)}</td>
                     <td className="px-3 py-2 text-right border border-slate-300">{fmtMoney(r.vSuprimido)}</td>
                     <td className="px-3 py-2 text-right border border-slate-300">{fmtMoney(r.vAdequado)}</td>

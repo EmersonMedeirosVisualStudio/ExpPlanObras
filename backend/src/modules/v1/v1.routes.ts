@@ -12723,11 +12723,11 @@ export default async function v1Routes(server: FastifyInstance) {
         return out;
       }
 
-      const derivedHeaders = [...collectHeadersFromServices(srcServicos), ...collectHeadersFromServices(dstServicos)];
       const explicitHeaders = [...srcHeaders, ...dstHeaders].map((h) => ({ tipoLinha: h.tipoLinha, item: h.item }));
+      const derivedHeaders = [...collectHeadersFromServices(srcServicos), ...collectHeadersFromServices(dstServicos)];
       const headerKeySet = new Set<string>();
       const allHeaders: Array<{ tipoLinha: 'ITEM' | 'SUBITEM'; item: string }> = [];
-      for (const h of [...derivedHeaders, ...explicitHeaders]) {
+      for (const h of [...explicitHeaders, ...derivedHeaders]) {
         const tipo = String(h.tipoLinha || '').trim().toUpperCase();
         const item = String(h.item || '').trim();
         if (tipo !== 'ITEM' && tipo !== 'SUBITEM') continue;
@@ -12767,19 +12767,17 @@ export default async function v1Routes(server: FastifyInstance) {
         const label = headerLabelByKey.get(`${h.tipoLinha}|${prefix}`) || '';
         const cTotal = srcAgg.total;
         const aTotal = dstAgg.total;
-        const cQty = srcAgg.qty;
-        const aQty = dstAgg.qty;
         rowOut.push({
           tipoLinha: h.tipoLinha,
           item: prefix,
           servicos: label,
           und: '',
-          contratadoQuant: cQty,
+          contratadoQuant: 0,
           contratadoPreco: 0,
           contratadoTotal: cTotal,
-          qAditado: Math.max(0, aQty - cQty),
-          qSuprimido: Math.max(0, cQty - aQty),
-          qAdequado: aQty,
+          qAditado: 0,
+          qSuprimido: 0,
+          qAdequado: 0,
           vAditado: Math.max(0, aTotal - cTotal),
           vSuprimido: Math.max(0, cTotal - aTotal),
           vAdequado: aTotal,
