@@ -927,6 +927,7 @@ export default function PlanilhaImportacoesPage() {
             type="button"
             onClick={carregarServicosDaPlanilha}
             disabled={loading || !sourcePlanilhaId}
+            title="Carrega as linhas da planilha origem para você revisar e selecionar antes de importar"
           >
             Carregar prévia
           </button>
@@ -944,6 +945,7 @@ export default function PlanilhaImportacoesPage() {
                   type="button"
                   onClick={() => setSourceRows((prev) => prev.map((x) => ({ ...x, checked: true })))}
                   disabled={loading || !sourceRows.length}
+                  title="Selecionar todas as linhas da prévia"
                 >
                   Todos
                 </button>
@@ -952,6 +954,7 @@ export default function PlanilhaImportacoesPage() {
                   type="button"
                   onClick={() => setSourceRows((prev) => prev.map((x) => ({ ...x, checked: false })))}
                   disabled={loading || !sourceRows.length}
+                  title="Desmarcar todas as linhas da prévia"
                 >
                   Nenhum
                 </button>
@@ -960,6 +963,7 @@ export default function PlanilhaImportacoesPage() {
                   type="button"
                   onClick={() => setSourceRows([])}
                   disabled={loading}
+                  title="Fecha a prévia (não altera a planilha destino)"
                 >
                   Cancelar
                 </button>
@@ -968,6 +972,7 @@ export default function PlanilhaImportacoesPage() {
                   type="button"
                   onClick={confirmarImportacaoPlanilha}
                   disabled={loading || !targetPlanilhaId || !sourcePlanilhaId || !sourceRows.some((x) => x.checked)}
+                  title="Importa as linhas selecionadas para a planilha destino"
                 >
                   Importar
                 </button>
