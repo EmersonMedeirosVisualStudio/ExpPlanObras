@@ -455,18 +455,59 @@ export default function PlanilhaImportacoesPage() {
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar planilha origem");
       const linhas = Array.isArray(json.data?.planilha?.linhas) ? (json.data.planilha.linhas as any[]) : [];
+      const itemKey = (s: string) => String(s || "").trim();
+      const itemParts = (s: string) =>
+        itemKey(s)
+          .split(".")
+          .map((p) => p.trim())
+          .filter(Boolean)
+          .map((p) => {
+            const n = Number(p);
+            return Number.isFinite(n) ? n : p;
+          });
+      const tipoOrder = (t: string) => {
+        const tt = String(t || "").trim().toUpperCase();
+        if (tt === "ITEM") return 0;
+        if (tt === "SUBITEM") return 1;
+        return 2;
+      };
       const all = linhas
         .map((l) => ({
           tipoLinha: (String(l.tipoLinha || "").trim().toUpperCase() || "ITEM") as any,
           item: String(l.item || "").trim(),
           codigo: String(l.codigo || "").trim(),
           fonte: String(l.fonte || "").trim(),
-          servicos: String(l.servicos || l.servico || "").trim(),
+          servicos: String(l.servicos || l.servico || l.observacao || "").trim(),
           und: String(l.und || "").trim(),
           quant: String(l.quant || "").trim(),
           valorUnitario: String(l.valorUnitario || "").trim(),
         }))
         .filter((l) => l.item || l.codigo || l.servicos);
+      all.sort((a, b) => {
+        const ap = itemParts(a.item);
+        const bp = itemParts(b.item);
+        const len = Math.max(ap.length, bp.length);
+        for (let i = 0; i < len; i++) {
+          const av = ap[i];
+          const bv = bp[i];
+          if (av == null && bv == null) break;
+          if (av == null) return -1;
+          if (bv == null) return 1;
+          if (typeof av === "number" && typeof bv === "number") {
+            if (av !== bv) return av - bv;
+          } else {
+            const as = String(av);
+            const bs = String(bv);
+            if (as !== bs) return as.localeCompare(bs, "pt-BR");
+          }
+        }
+        const to = tipoOrder(a.tipoLinha) - tipoOrder(b.tipoLinha);
+        if (to) return to;
+        const ac = String(a.codigo || "");
+        const bc = String(b.codigo || "");
+        if (ac !== bc) return ac.localeCompare(bc, "pt-BR");
+        return 0;
+      });
       setSourceRows(all.map((r) => ({ checked: true, r })));
     } catch (e: any) {
       setErr(e?.message || "Erro ao carregar planilha origem");
