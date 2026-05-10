@@ -172,6 +172,18 @@ export default function PlanilhaImportacoesPage() {
     return versoes.find((v) => Number(v.idPlanilha) === id) || null;
   }, [targetPlanilhaId, versoes]);
 
+  const selectedSource = useMemo(() => {
+    const id = Number(String(sourcePlanilhaId || "").trim() || 0);
+    if (!id) return null;
+    return [...versoes, ...planilhasOutrasObras].find((v) => Number(v.idPlanilha) === id) || null;
+  }, [sourcePlanilhaId, versoes, planilhasOutrasObras]);
+
+  const planilhaSourceAndTargetShareFonte = useMemo(() => {
+    const a = selectedSource?.idFonteDados != null ? Number(selectedSource.idFonteDados) : 0;
+    const b = selectedTarget?.idFonteDados != null ? Number(selectedTarget.idFonteDados) : 0;
+    return Boolean(a && b && a === b);
+  }, [selectedSource, selectedTarget]);
+
   const [importMode, setImportMode] = useState<"CSV" | "PLANILHA">("CSV");
   const [csvMode, setCsvMode] = useState<"APPEND" | "REPLACE">("APPEND");
   const [csvCatalogDupPolicy, setCsvCatalogDupPolicy] = useState<"FILL" | "KEEP" | "OVERWRITE">("FILL");
@@ -215,7 +227,10 @@ export default function PlanilhaImportacoesPage() {
     try {
       if (typeof window !== "undefined") token = localStorage.getItem("token");
     } catch {}
-    return fetch(input, {
+    const apiOrigin = String(process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "");
+    const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input);
+    const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : apiOrigin ? `${apiOrigin}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}` : rawUrl;
+    return fetch(url, {
       ...init,
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -373,6 +388,12 @@ export default function PlanilhaImportacoesPage() {
   useEffect(() => {
     if (planilhaImportMode === "REPLACE" && planilhaSkipExistingLines) setPlanilhaSkipExistingLines(false);
   }, [planilhaImportMode, planilhaSkipExistingLines]);
+
+  useEffect(() => {
+    if (importMode !== "PLANILHA") return;
+    if (!planilhaSourceAndTargetShareFonte) return;
+    if (planilhaCatalogDupPolicy !== "KEEP") setPlanilhaCatalogDupPolicy("KEEP");
+  }, [importMode, planilhaSourceAndTargetShareFonte, planilhaCatalogDupPolicy]);
 
   async function confirmarImportacaoCsv() {
     const idPlanilha = Number(String(targetPlanilhaId || "").trim() || 0);
@@ -567,6 +588,7 @@ export default function PlanilhaImportacoesPage() {
                 className={`rounded-md px-3 py-1.5 text-xs ${importMode === "CSV" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"}`}
                 onClick={() => setImportMode("CSV")}
                 disabled={loading}
+                title="Importar linhas (Itens/Subitens/Serviços) a partir de um arquivo CSV"
               >
                 Importar CSV
               </button>
@@ -575,6 +597,7 @@ export default function PlanilhaImportacoesPage() {
                 className={`rounded-md px-3 py-1.5 text-xs ${importMode === "PLANILHA" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"}`}
                 onClick={() => setImportMode("PLANILHA")}
                 disabled={loading}
+                title="Importar linhas (Itens/Subitens/Serviços) copiando de outra planilha (versão)"
               >
                 Importar de outra planilha
               </button>
@@ -633,14 +656,24 @@ export default function PlanilhaImportacoesPage() {
 
         <div className="grid gap-3 md:grid-cols-3">
           <label className="space-y-1">
-            <div className="text-xs text-slate-500">Modo</div>
+            <div
+              className="text-xs text-slate-500"
+              title='Define como as LINHAS serão aplicadas na planilha destino. "Complementar" adiciona ao final; "Substituir" apaga tudo e recria a planilha com o CSV.'
+            >
+              Modo
+            </div>
             <select className="input bg-white w-full" value={csvMode} onChange={(e) => setCsvMode(e.target.value as any)} disabled={loading}>
               <option value="APPEND">Complementar</option>
               <option value="REPLACE">Substituir (apaga e importa)</option>
             </select>
           </label>
           <label className="space-y-1">
-            <div className="text-xs text-slate-500">Repetidos na Fonte</div>
+            <div
+              className="text-xs text-slate-500"
+              title="Define o que acontece com o CADASTRO da Fonte de dados (serviços/códigos). Isso pode impactar outras planilhas que usam a mesma Fonte."
+            >
+              Repetidos na Fonte
+            </div>
             <select
               className="input bg-white w-full"
               value={csvCatalogDupPolicy}
@@ -793,7 +826,12 @@ export default function PlanilhaImportacoesPage() {
 
         <div className="grid gap-3 md:grid-cols-3">
           <label className="space-y-1">
-            <div className="text-xs text-slate-500">Planilha origem</div>
+            <div
+              className="text-xs text-slate-500"
+              title="Seleciona a planilha que será lida para montar a prévia. Você pode escolher outra obra marcando 'De outra obra'."
+            >
+              Planilha origem
+            </div>
             <select className="input bg-white w-full" value={sourcePlanilhaId} onChange={(e) => setSourcePlanilhaId(e.target.value)} disabled={loading}>
               <option value="">Selecione...</option>
               {[...versoes, ...(includeOutrasObras ? planilhasOutrasObras.filter((v) => Number(v.idObra || 0) !== Number(idObra)) : [])]
@@ -809,7 +847,12 @@ export default function PlanilhaImportacoesPage() {
             </select>
           </label>
           <label className="space-y-1">
-            <div className="text-xs text-slate-500">Modo</div>
+            <div
+              className="text-xs text-slate-500"
+              title='Define como as LINHAS serão aplicadas na planilha destino. "Complementar" adiciona ao final; "Substituir" apaga tudo e recria com a seleção da prévia.'
+            >
+              Modo
+            </div>
             <select className="input bg-white w-full" value={planilhaImportMode} onChange={(e) => setPlanilhaImportMode(e.target.value as any)} disabled={loading}>
               <option value="APPEND">Complementar</option>
               <option value="REPLACE">Substituir (apaga e importa)</option>
@@ -817,9 +860,12 @@ export default function PlanilhaImportacoesPage() {
           </label>
           <label className="flex items-center gap-2 mt-6 text-sm text-slate-700 select-none">
             <input
+            title="Quando marcado, você pode escolher uma planilha de outra obra como origem. A importação sempre vai para a planilha destino atual."
               type="checkbox"
               checked={includeOutrasObras}
               onChange={(e) => setIncludeOutrasObras(Boolean(e.target.checked))}
+              disabled={loading}
+            />
               disabled={loading}
             />
             De outra obra
@@ -828,13 +874,26 @@ export default function PlanilhaImportacoesPage() {
 
         <div className="grid gap-3 md:grid-cols-3">
           <label className="space-y-1">
-            <div className="text-xs text-slate-500">Repetidos na Fonte</div>
+            <div
+              className="text-xs text-slate-500"
+              title={
+                planilhaSourceAndTargetShareFonte
+                  ? "As duas planilhas usam a mesma Fonte de dados. Nesta situação, não faz sentido atualizar o cadastro da Fonte pela importação; a opção fica travada em 'Manter como está'."
+                  : "Define o que acontece com o CADASTRO da Fonte de dados (serviços/códigos) da planilha destino. Isso pode impactar outras planilhas que usam a mesma Fonte."
+              }
+            >
+              Repetidos na Fonte
+            </div>
             <select
               className="input bg-white w-full"
               value={planilhaCatalogDupPolicy}
               onChange={(e) => setPlanilhaCatalogDupPolicy(e.target.value as any)}
-              disabled={loading}
-              title={catalogPolicyTooltip(planilhaCatalogDupPolicy)}
+              disabled={loading || planilhaSourceAndTargetShareFonte}
+              title={
+                planilhaSourceAndTargetShareFonte
+                  ? "Mesma Fonte de dados na origem e no destino: opção travada em 'Manter como está'."
+                  : catalogPolicyTooltip(planilhaCatalogDupPolicy)
+              }
             >
               <option value="FILL">Completar campos vazios (padrão)</option>
               <option value="KEEP">Manter como está</option>

@@ -3489,6 +3489,119 @@ Legenda:
 | 12 | Data-base primeiro no modal + override manual da data-base informada | Em uso | 81b7b19 |
 | 13 | Correção de navegação externa (evitar ROUTER_EXTERNAL_TARGET_ERROR em rotas externas) | Em uso | 2609b2f |
 
+#### 18.2.4 Planilha orçamentária — Importações (CSV e de outra planilha)
+
+**Problema identificado**
+
+- O usuário operava opções que pareciam “da planilha”, mas na prática afetavam também o **cadastro da Fonte de dados** (compartilhado por várias planilhas).
+- Os nomes das opções não deixavam claro o escopo real de cada escolha (planilha destino x fonte de dados), aumentando risco de divergência e impacto em outras planilhas.
+
+**Oportunidade de melhoria**
+
+- Explicar e tornar visível que a importação tem dois efeitos possíveis:
+  - **LINHAS da planilha** (itens/subitens/serviços na versão destino).
+  - **CADASTRO da Fonte de dados** (serviços/códigos compartilhados pelas planilhas que usam a mesma Fonte).
+
+**Solução sugerida (implementada)**
+
+- A tela **Importações** foi organizada com tooltips explicativos nos campos principais.
+- Na importação **de outra planilha**, quando **a Fonte de dados da origem é a mesma da Fonte do destino**, a opção **Repetidos na Fonte** é travada em **Manter como está** para evitar alteração desnecessária do cadastro compartilhado.
+
+**Definições (o que cada opção realmente controla)**
+
+1) Modo (Complementar / Substituir)
+- Controla apenas as **LINHAS** na planilha destino.
+- Complementar: adiciona as linhas importadas ao final.
+- Substituir: apaga todas as linhas da planilha destino e recria somente com o que está selecionado para importar.
+
+2) Repetidos na Fonte (Completar / Manter / Sobrescrever)
+- Controla o que acontece no **CADASTRO da Fonte de dados** para o mesmo **código** de serviço.
+- Completar campos vazios (padrão): preenche apenas o que estiver vazio no cadastro.
+- Manter como está: não altera o cadastro (somente usa o que já existe).
+- Sobrescrever (somente dados informados): atualiza no cadastro apenas os campos que vierem preenchidos na importação.
+
+3) Ignorar linhas repetidas na planilha
+- Controla apenas as **LINHAS** na planilha destino.
+- Quando marcado, o sistema evita inserir linhas “iguais” que já existam na planilha destino.
+- Fica desabilitado no modo Substituir, porque a planilha destino é apagada antes.
+
+**Importar CSV — combinações (com exemplos)**
+
+Exemplo base:
+- A planilha destino já tem o serviço `1.1` (código `COMP.UPA.155`, quant `100`, valor `3540,99`).
+- O CSV traz a mesma linha novamente.
+
+1) Modo: Complementar + Ignorar repetidas: desmarcado
+- Resultado na planilha destino: a linha será inserida novamente (pode existir duplicidade de linha).
+- Cadastro da Fonte: depende de Repetidos na Fonte.
+
+2) Modo: Complementar + Ignorar repetidas: marcado
+- Resultado na planilha destino: a linha NÃO é inserida novamente (evita duplicidade idêntica).
+- Cadastro da Fonte: depende de Repetidos na Fonte.
+
+3) Modo: Substituir
+- Resultado na planilha destino: apaga tudo e recria com o CSV (não existe “repetida” porque a planilha foi apagada).
+- Ignorar repetidas fica desabilitado.
+- Cadastro da Fonte: depende de Repetidos na Fonte.
+
+Repetidos na Fonte (CSV) — exemplo:
+- Já existe no cadastro da Fonte o serviço `COMP.UPA.155` com descrição “ADMINISTRAÇÃO TÉCNICA…” e UND `%`.
+- O CSV traz o mesmo código com descrição/UND preenchidas.
+
+- Completar campos vazios: só preenche se o cadastro estiver vazio nesses campos.
+- Manter como está: ignora o que veio no CSV para esse código.
+- Sobrescrever (somente dados informados): atualiza descrição/UND (e pode impactar outras planilhas que usam a mesma Fonte).
+
+**Importar serviços de outra planilha — combinações (com exemplos)**
+
+Exemplo base:
+- Origem: v1 (planilha anterior)
+- Destino: v2 (planilha adequada)
+
+1) Modo: Complementar
+- Resultado na planilha destino: adiciona as linhas selecionadas ao final.
+- Se “Ignorar repetidas” estiver marcado: evita inserir linhas idênticas que já existam na planilha destino.
+
+2) Modo: Substituir
+- Resultado na planilha destino: apaga tudo e recria com as linhas selecionadas da origem.
+- “Ignorar repetidas” fica desabilitado.
+
+3) Repetidos na Fonte (de outra planilha)
+- Regra geral: controla o cadastro da Fonte da planilha destino.
+- Caso especial (fonte da origem = fonte do destino): a opção é travada em “Manter como está”, porque o cadastro já é o mesmo e atualizar por importação não agrega valor e aumenta risco.
+
+**Como usar — Importações (CSV ou de outra planilha)**
+
+ETAPA 1 — Onde acessar
+- Acesse: Engenharia → Obras → (selecione a obra) → Planilha orçamentária → Importações.
+
+ETAPA 2 — O que clicar
+- Em “Planilha destino”, selecione a versão que receberá as linhas.
+- Escolha: “Importar CSV” ou “Importar de outra planilha”.
+
+ETAPA 3 — O que preencher (CSV)
+- Modo: Complementar ou Substituir.
+- Repetidos na Fonte: escolha conforme o impacto desejado no cadastro compartilhado.
+- (Opcional) Ignorar linhas repetidas na planilha.
+- Clique em “Selecionar CSV” → confira a prévia → clique em “Importar”.
+
+ETAPA 3 — O que preencher (de outra planilha)
+- Planilha origem: selecione a versão de onde copiar as linhas.
+- (Opcional) Marque “De outra obra” para selecionar uma planilha de outra obra.
+- Modo: Complementar ou Substituir.
+- Repetidos na Fonte: só use “Sobrescrever” quando você tiver certeza de que deseja alterar o cadastro da Fonte (impacto em outras planilhas).
+- Clique em “Carregar prévia” → selecione as linhas → clique em “Importar”.
+
+ETAPA 4 — O que esperar
+- O sistema exibe mensagem de conclusão ao finalizar a importação.
+- Se o modo for Substituir, todas as linhas anteriores da planilha destino são apagadas.
+
+ETAPA 5 — Como validar
+- Volte para Planilha orçamentária e confira se:
+  - os itens/subitens/serviços aparecem conforme esperado;
+  - não houve duplicidade indesejada (use “Ignorar linhas repetidas” quando necessário);
+  - se você alterou “Repetidos na Fonte”, confira se outras planilhas que usam a mesma Fonte não foram impactadas indevidamente.
+
 ### 18.3 Documentos e acervos
 
 O sistema também deve permitir:

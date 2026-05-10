@@ -6708,7 +6708,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
           const sourceOk = (await tx.$queryRawUnsafe(
             `
-            SELECT id_obra AS "idObra"
+            SELECT id_obra AS "idObra", id_fonte_dados AS "idFonteDados"
             FROM obras_planilhas_versoes
             WHERE tenant_id = $1 AND id_planilha = $2
             LIMIT 1
@@ -6721,6 +6721,8 @@ export default async function v1Routes(server: FastifyInstance) {
           const idObraSource = Number(src?.idObra || 0);
           if (!idObraSource) throw new Error('Planilha origem inválida');
           if (!canAccessObraId(idObraSource, scope)) throw new Error('Sem acesso à obra da planilha origem');
+          const idFonteDadosSource = src?.idFonteDados != null ? Number(src.idFonteDados) : 0;
+          const effectiveCatalogDupPolicy = idFonteDadosSource && idFonteDadosSource === idFonteDados ? ('KEEP' as const) : catalogDupPolicy;
 
           if (modoImportacao === 'REPLACE') {
             await tx.$executeRawUnsafe(`DELETE FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, Number(payload.idPlanilhaTarget));
@@ -6874,7 +6876,7 @@ export default async function v1Routes(server: FastifyInstance) {
                   return `(${placeholders})`;
                 })
                 .join(',');
-              if (catalogDupPolicy === 'KEEP') {
+              if (effectiveCatalogDupPolicy === 'KEEP') {
                 await tx.$executeRawUnsafe(
                   `
                   INSERT INTO obras_servicos_fonte
@@ -6886,7 +6888,7 @@ export default async function v1Routes(server: FastifyInstance) {
                   `,
                   ...params
                 );
-              } else if (catalogDupPolicy === 'OVERWRITE') {
+              } else if (effectiveCatalogDupPolicy === 'OVERWRITE') {
                 await tx.$executeRawUnsafe(
                   `
                   INSERT INTO obras_servicos_fonte
