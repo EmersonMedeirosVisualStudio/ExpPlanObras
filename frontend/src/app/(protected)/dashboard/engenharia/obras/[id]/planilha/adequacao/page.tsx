@@ -124,6 +124,14 @@ export default function AdequacaoPlanilhaPage() {
   const [showPrintAdvanced, setShowPrintAdvanced] = useState(false);
   const [showVisual, setShowVisual] = useState(false);
   const [somenteItens, setSomenteItens] = useState(false);
+  const [gridFilter, setGridFilter] = useState({
+    item: "",
+    servicos: "",
+    und: "",
+    contratadoQuant: "",
+    contratadoPreco: "",
+    contratadoTotal: "",
+  });
   const [uiPrefs, setUiPrefs] = useState<{
     fontSizePx: number;
     itemBg: string;
@@ -376,9 +384,36 @@ export default function AdequacaoPlanilhaPage() {
 
   const visibleRows = useMemo(() => {
     if (!rows.length) return [];
-    if (!somenteItens) return rows;
-    return rows.filter((r) => r.tipoLinha !== "SERVICO");
-  }, [rows, somenteItens]);
+    const base = somenteItens ? rows.filter((r) => r.tipoLinha !== "SERVICO") : rows;
+
+    const q = (v: any) => String(v ?? "").trim().toLowerCase();
+    const qNum = (v: any) => q(v).replace(/\s+/g, "").replace(/,/g, ".");
+    const f = {
+      item: q(gridFilter.item),
+      servicos: q(gridFilter.servicos),
+      und: q(gridFilter.und),
+      contratadoQuant: qNum(gridFilter.contratadoQuant),
+      contratadoPreco: qNum(gridFilter.contratadoPreco),
+      contratadoTotal: qNum(gridFilter.contratadoTotal),
+    };
+    if (!Object.values(f).some(Boolean)) return base;
+
+    return base.filter((r) => {
+      if (f.item && !q(r.item).includes(f.item)) return false;
+      if (f.servicos && !q(r.servicos).includes(f.servicos)) return false;
+      if (f.und && !q(r.und).includes(f.und)) return false;
+
+      const isHeader = r.tipoLinha !== "SERVICO";
+      const quant = isHeader ? "" : qNum(fmtNumberBlankZero(r.contratadoQuant, 2));
+      const preco = isHeader ? "" : qNum(fmtNumberBlankZero(r.contratadoPreco, 2));
+      const total = qNum(fmtMoneyBlankZero(r.contratadoTotal));
+
+      if (f.contratadoQuant && !quant.includes(f.contratadoQuant)) return false;
+      if (f.contratadoPreco && !preco.includes(f.contratadoPreco)) return false;
+      if (f.contratadoTotal && !total.includes(f.contratadoTotal)) return false;
+      return true;
+    });
+  }, [rows, somenteItens, gridFilter]);
 
   const tituloPlanilha = useMemo(() => {
     const nome = String(selectedTarget?.nome || "").trim();
@@ -1123,6 +1158,35 @@ export default function AdequacaoPlanilhaPage() {
           </div>
           <div className="text-sm text-slate-600">
             Linhas: <span className="font-semibold text-slate-900">{rows.length}</span>
+          </div>
+        </div>
+
+        <div className="rounded-lg border bg-slate-50 p-3">
+          <div className="grid gap-2 md:grid-cols-3">
+            <label className="space-y-1">
+              <div className="text-xs text-slate-600">ITEM</div>
+              <input className="input bg-white w-full" value={gridFilter.item} onChange={(e) => setGridFilter((p) => ({ ...p, item: e.target.value }))} />
+            </label>
+            <label className="space-y-1">
+              <div className="text-xs text-slate-600">SERVIÇOS</div>
+              <input className="input bg-white w-full" value={gridFilter.servicos} onChange={(e) => setGridFilter((p) => ({ ...p, servicos: e.target.value }))} />
+            </label>
+            <label className="space-y-1">
+              <div className="text-xs text-slate-600">UND</div>
+              <input className="input bg-white w-full" value={gridFilter.und} onChange={(e) => setGridFilter((p) => ({ ...p, und: e.target.value }))} />
+            </label>
+            <label className="space-y-1">
+              <div className="text-xs text-slate-600">QUANT. (contratado)</div>
+              <input className="input bg-white w-full" value={gridFilter.contratadoQuant} onChange={(e) => setGridFilter((p) => ({ ...p, contratadoQuant: e.target.value }))} inputMode="decimal" />
+            </label>
+            <label className="space-y-1">
+              <div className="text-xs text-slate-600">VALOR UNIT. (contratado)</div>
+              <input className="input bg-white w-full" value={gridFilter.contratadoPreco} onChange={(e) => setGridFilter((p) => ({ ...p, contratadoPreco: e.target.value }))} inputMode="decimal" />
+            </label>
+            <label className="space-y-1">
+              <div className="text-xs text-slate-600">VALOR PARCIAL (contratado)</div>
+              <input className="input bg-white w-full" value={gridFilter.contratadoTotal} onChange={(e) => setGridFilter((p) => ({ ...p, contratadoTotal: e.target.value }))} inputMode="decimal" />
+            </label>
           </div>
         </div>
 

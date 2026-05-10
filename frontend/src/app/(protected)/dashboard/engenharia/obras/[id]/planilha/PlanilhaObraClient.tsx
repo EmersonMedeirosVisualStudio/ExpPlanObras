@@ -533,6 +533,17 @@ export default function PlanilhaObraClient({
     },
   });
 
+  const [gridFilter, setGridFilter] = useState({
+    item: "",
+    codigo: "",
+    fonte: "",
+    servicos: "",
+    und: "",
+    quant: "",
+    valorUnitario: "",
+    valorParcial: "",
+  });
+
   const [novo, setNovo] = useState({
     tipoLinha: "SERVICO" as "ITEM" | "SUBITEM" | "SERVICO",
     item: "",
@@ -1383,6 +1394,7 @@ export default function PlanilhaObraClient({
     v = v.replace(/[^\d.]/g, "");
     v = v.replace(/\.{2,}/g, ".");
     v = v.replace(/^\./g, "");
+    v = v.replace(/\.+$/g, "");
     return v;
   }
 
@@ -2043,6 +2055,63 @@ export default function PlanilhaObraClient({
       return true;
     });
   }, [linhasOrdenadasPorItem, somenteItens, collapsedPrefixes]);
+
+  const linhasFiltradas = useMemo(() => {
+    const q = (v: any) => String(v ?? "").trim().toLowerCase();
+    const qNum = (v: any) => q(v).replace(/\s+/g, "").replace(/,/g, ".");
+    const f = {
+      item: q(gridFilter.item),
+      codigo: q(gridFilter.codigo),
+      fonte: q(gridFilter.fonte),
+      servicos: q(gridFilter.servicos),
+      und: q(gridFilter.und),
+      quant: qNum(gridFilter.quant),
+      valorUnitario: qNum(gridFilter.valorUnitario),
+      valorParcial: qNum(gridFilter.valorParcial),
+    };
+
+    if (!Object.values(f).some(Boolean)) return linhasVisiveis;
+
+    return linhasVisiveis.filter((l) => {
+      const item = q(l.item);
+      if (f.item && !item.includes(f.item)) return false;
+
+      const codigo = q(l.codigo);
+      if (f.codigo && !codigo.includes(f.codigo)) return false;
+
+      const fonte = q(l.fonte);
+      if (f.fonte && !fonte.includes(f.fonte)) return false;
+
+      const servicos = q(l.servicos);
+      if (f.servicos && !servicos.includes(f.servicos)) return false;
+
+      const und = q(l.und);
+      if (f.und && !und.includes(f.und)) return false;
+
+      const quant = qNum(l.quant);
+      if (f.quant && !quant.includes(f.quant)) return false;
+
+      const valorUnit = qNum(l.valorUnitario);
+      if (f.valorUnitario && !valorUnit.includes(f.valorUnitario)) return false;
+
+      const displayParcial =
+        l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM"
+          ? (() => {
+              const k = String(l.item || "").trim();
+              const info = k ? subtotalByItemKey.get(k) : null;
+              if (!info?.count) return "";
+              return moeda(Number(info.sum || 0));
+            })()
+          : (() => {
+              const n = parseNumberLoose(l.valorParcial);
+              return n == null ? "" : moeda(n);
+            })();
+      const parcial = qNum(displayParcial);
+      if (f.valorParcial && !parcial.includes(f.valorParcial)) return false;
+
+      return true;
+    });
+  }, [gridFilter, linhasVisiveis, subtotalByItemKey]);
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl text-slate-900">
@@ -3358,6 +3427,43 @@ export default function PlanilhaObraClient({
               ) : null}
             </div>
 
+            <div className="rounded-lg border bg-slate-50 p-3">
+              <div className="grid gap-2 md:grid-cols-4">
+                <label className="space-y-1">
+                  <div className="text-xs text-slate-600">ITEM</div>
+                  <input className="input bg-white w-full" value={gridFilter.item} onChange={(e) => setGridFilter((p) => ({ ...p, item: sanitizeItemPathInput(e.target.value) }))} />
+                </label>
+                <label className="space-y-1">
+                  <div className="text-xs text-slate-600">CÓDIGO</div>
+                  <input className="input bg-white w-full" value={gridFilter.codigo} onChange={(e) => setGridFilter((p) => ({ ...p, codigo: e.target.value }))} />
+                </label>
+                <label className="space-y-1">
+                  <div className="text-xs text-slate-600">FONTE</div>
+                  <input className="input bg-white w-full" value={gridFilter.fonte} onChange={(e) => setGridFilter((p) => ({ ...p, fonte: e.target.value }))} />
+                </label>
+                <label className="space-y-1">
+                  <div className="text-xs text-slate-600">SERVIÇOS</div>
+                  <input className="input bg-white w-full" value={gridFilter.servicos} onChange={(e) => setGridFilter((p) => ({ ...p, servicos: e.target.value }))} />
+                </label>
+                <label className="space-y-1">
+                  <div className="text-xs text-slate-600">UND</div>
+                  <input className="input bg-white w-full" value={gridFilter.und} onChange={(e) => setGridFilter((p) => ({ ...p, und: e.target.value }))} />
+                </label>
+                <label className="space-y-1">
+                  <div className="text-xs text-slate-600">QUANT.</div>
+                  <input className="input bg-white w-full" value={gridFilter.quant} onChange={(e) => setGridFilter((p) => ({ ...p, quant: e.target.value }))} inputMode="decimal" />
+                </label>
+                <label className="space-y-1">
+                  <div className="text-xs text-slate-600">VALOR UNIT.</div>
+                  <input className="input bg-white w-full" value={gridFilter.valorUnitario} onChange={(e) => setGridFilter((p) => ({ ...p, valorUnitario: e.target.value }))} inputMode="decimal" />
+                </label>
+                <label className="space-y-1">
+                  <div className="text-xs text-slate-600">VALOR PARCIAL</div>
+                  <input className="input bg-white w-full" value={gridFilter.valorParcial} onChange={(e) => setGridFilter((p) => ({ ...p, valorParcial: e.target.value }))} inputMode="decimal" />
+                </label>
+              </div>
+            </div>
+
             <div className="overflow-auto">
               <table className="min-w-[1100px] w-full" style={{ fontSize: `${uiPrefs.fontSizePx}px` }}>
                 <thead className="bg-slate-50 text-left text-slate-700">
@@ -3374,7 +3480,7 @@ export default function PlanilhaObraClient({
                   </tr>
                 </thead>
                 <tbody>
-                  {linhasVisiveis.map((l) => (
+                  {linhasFiltradas.map((l) => (
                     <tr
                       key={l.idLinha}
                       className={`border-t ${l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM" ? "font-bold" : ""}`}
@@ -3480,6 +3586,12 @@ export default function PlanilhaObraClient({
                     <tr>
                       <td colSpan={9} className="px-3 py-6 text-center text-slate-500">
                         Sem linhas na planilha.
+                      </td>
+                    </tr>
+                  ) : planilha.linhas.length && !linhasFiltradas.length ? (
+                    <tr>
+                      <td colSpan={9} className="px-3 py-6 text-center text-slate-500">
+                        Nenhuma linha encontrada com os filtros atuais.
                       </td>
                     </tr>
                   ) : null}
