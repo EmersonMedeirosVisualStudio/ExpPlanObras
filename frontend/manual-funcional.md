@@ -1747,7 +1747,10 @@ ETAPA 5 — Como validar
 - Lógica de criação de uma planilha (obra):
   - 1) Planilha: a planilha combina **Obra + Parâmetros + Fonte de dados**.
   - 2) Parâmetros: ao criar/clonar uma planilha, define-se o conjunto de **parâmetros** (UF, data-base, BDI, encargos e descontos). Eles determinam como os custos são calculados na planilha.
-  - 3) Serviços (FONTE) — catálogo técnico: toda importação/cópia/aplicação de serviço alimenta o **catálogo técnico da fonte** (código, banco, descrição, UND e preço base quando aplicável). A mesma fonte pode ser usada em várias planilhas.
+  - 3) Serviços (FONTE) — catálogo técnico: é a **união de todos os serviços usados** nas planilhas que apontam para esta Fonte. Ele é alimentado automaticamente quando:
+    - você cria um serviço na Planilha (Adicionar linha) com um CÓDIGO novo; ou
+    - você importa serviços (CSV / outra planilha).
+    Para criar um serviço novo no catálogo, a regra é: **crie na Planilha**.
   - 4) Planilha (itens): o usuário decide quais serviços do catálogo viram **itens** na planilha. Todo item de serviço referencia um serviço do catálogo da fonte.
   - 5) Composições: para cada serviço do catálogo da fonte, cadastra-se/importa-se sua **composição** (itens, subcomposições e insumos), sempre vinculada ao serviço (pai).
   - 5) Insumos consolidados: a lista de insumos é derivada das composições dos serviços e precisa ser recalculada sempre que uma composição muda.
@@ -1845,6 +1848,10 @@ ETAPA 3 — O que preencher
 ETAPA 4 — O que esperar
 - O sistema mostra a grade de conferência antes de permitir importar
 - Se nada estiver marcado, o sistema bloqueia a importação
+- Se a **Fonte da planilha origem** for diferente da **Fonte da planilha destino**, o sistema copia automaticamente para a **Fonte destino**:
+  - o serviço; e
+  - a composição do serviço (se existir na Fonte origem),
+  para que o mesmo código funcione no catálogo da Fonte destino.
 
 ETAPA 5 — Como validar
 - Clique em **Importar**
@@ -1868,7 +1875,9 @@ ETAPA 5 — Como validar
 - Serviços:
   - Importação e modelo de CSV de composições ficam na própria tela **Serviços**.
   - A tela marca serviços **sem composição** e **divergentes** comparando total da planilha x total calculado por composição.
-  - Existe ação para **copiar serviço entre versões** (origem → destino), com prévia. Esta ação copia apenas a **linha do serviço** (ITEM/QUANT.) na planilha destino. A composição não é copiada entre versões, porque ela é **da Fonte** (compartilhada).
+  - Existe ação para **copiar serviço entre versões** (origem → destino), com prévia.
+    - Se a **Fonte** for a mesma: copia apenas a **linha do serviço** (ITEM/QUANT.) na planilha destino, pois a composição já é compartilhada.
+    - Se a **Fonte** for diferente: além da linha, copia também o **serviço e sua composição** para a **Fonte destino** (quando existir na Fonte origem).
 - Análise de composição (editar itens):
   - em **Composições**, é permitido alterar apenas **Código** e **Qtd** (demais campos são preenchidos/calculados automaticamente);
   - em **Insumos**, é permitido alterar apenas **Código**, **Qtd** e **Valor Unit** (demais campos são preenchidos/calculados automaticamente);

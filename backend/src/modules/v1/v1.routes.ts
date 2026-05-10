@@ -6731,6 +6731,7 @@ export default async function v1Routes(server: FastifyInstance) {
           const idObraSource = Number(src?.idObra || 0);
           if (!idObraSource) throw new Error('Planilha origem inválida');
           if (!canAccessObraId(idObraSource, scope)) throw new Error('Sem acesso à obra da planilha origem');
+          const idFonteDadosSource = src.idFonteDados != null ? Number(src.idFonteDados) : 0;
           const effectiveCatalogDupPolicy = catalogDupPolicy;
 
           if (modoImportacao === 'REPLACE') {
@@ -6969,6 +6970,378 @@ export default async function v1Routes(server: FastifyInstance) {
                 }
               }
               if (missingCodes.length) throw new Error(`Serviços não encontrados na Fonte de dados (#${idFonteDados}): ${missingCodes.slice(0, 30).join(', ')}${missingCodes.length > 30 ? '…' : ''}`);
+            }
+          }
+
+          if (idFonteDadosSource && idFonteDadosSource !== idFonteDados && svcRows.length) {
+            const visited = new Set<string>();
+            const queue: string[] = svcRows.map((s) => String(s.codigo || '').trim().toUpperCase()).filter(Boolean);
+            const affectedServicoIds: number[] = [];
+
+            while (queue.length) {
+              const currentCode = String(queue.shift() || '').trim().toUpperCase();
+              if (!currentCode || visited.has(currentCode)) continue;
+              visited.add(currentCode);
+
+              const srcSvcRows = (await tx.$queryRawUnsafe(
+                `
+                SELECT
+                  id_servico AS "idServico",
+                  COALESCE(banco,'') AS banco,
+                  COALESCE(descricao,'') AS descricao,
+                  COALESCE(und,'') AS und,
+                  valor_unitario AS "valorUnitario"
+                FROM obras_servicos_fonte
+                WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
+                LIMIT 1
+                `,
+                ctx.tenantId,
+                idFonteDadosSource,
+                currentCode
+              )) as any[];
+              const srcSvc = srcSvcRows?.[0] || null;
+              const idServicoPaiSrc = srcSvc?.idServico ? Number(srcSvc.idServico) : 0;
+              if (!idServicoPaiSrc) continue;
+
+              const dstSvcRows = (await tx.$queryRawUnsafe(
+                `
+                INSERT INTO obras_servicos_fonte
+                  (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+                VALUES
+                  ($1,$2,'SERVICO',$3,$4,$5,$6,$7)
+                ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+                DO UPDATE SET
+                  banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
+                  descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
+                  und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
+                  valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
+                  atualizado_em = NOW()
+                RETURNING id_servico AS "idServico"
+                `,
+                ctx.tenantId,
+                idFonteDados,
+                currentCode,
+                String(srcSvc?.banco || '') || null,
+                String(srcSvc?.descricao || '') || null,
+                String(srcSvc?.und || '') || null,
+                srcSvc?.valorUnitario == null ? null : Number(srcSvc.valorUnitario)
+              )) as any[];
+              const idServicoPaiDst = dstSvcRows?.[0]?.idServico ? Number(dstSvcRows[0].idServico) : 0;
+              if (!idServicoPaiDst) continue;
+
+              const srcHas = (await tx.$queryRawUnsafe(
+                `
+                SELECT 1 AS ok
+                FROM obras_composicoes_itens_fonte
+                WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3
+                LIMIT 1
+                `,
+                ctx.tenantId,
+                idFonteDadosSource,
+                idServicoPaiSrc
+              )) as any[];
+              const srcHasComp = Boolean(srcHas?.[0]?.ok);
+              if (!srcHasComp) continue;
+
+              const dstHas = (await tx.$queryRawUnsafe(
+                `
+                SELECT 1 AS ok
+                FROM obras_composicoes_itens_fonte
+                WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3
+                LIMIT 1
+                `,
+                ctx.tenantId,
+                idFonteDados,
+                idServicoPaiDst
+              )) as any[];
+              const dstAlreadyHas = Boolean(dstHas?.[0]?.ok);
+
+              const items = (await tx.$queryRawUnsafe(
+                `
+                SELECT
+                  id_composicao_item AS "idComposicaoItem",
+                  COALESCE(tipo_item,'') AS "tipoItem",
+                  id_item AS "idItem",
+                  quantidade AS "quantidade",
+                  COALESCE(unidade,'') AS "unidade",
+                  ordem AS "ordem"
+                FROM obras_composicoes_itens_fonte
+                WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3
+                ORDER BY ordem ASC, id_composicao_item ASC
+                `,
+                ctx.tenantId,
+                idFonteDadosSource,
+                idServicoPaiSrc
+              )) as any[];
+
+              for (const it of items || []) {
+                const tipoItem = String(it?.tipoItem || '').trim().toUpperCase();
+                const idItemSrc = it?.idItem ? Number(it.idItem) : 0;
+                if (!idItemSrc) continue;
+                if (tipoItem === 'COMPOSICAO' || tipoItem === 'COMPOSICAO_AUXILIAR') {
+                  const childRows = (await tx.$queryRawUnsafe(
+                    `
+                    SELECT
+                      COALESCE(codigo,'') AS codigo,
+                      COALESCE(banco,'') AS banco,
+                      COALESCE(descricao,'') AS descricao,
+                      COALESCE(und,'') AS und,
+                      valor_unitario AS "valorUnitario"
+                    FROM obras_servicos_fonte
+                    WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico = $3
+                    LIMIT 1
+                    `,
+                    ctx.tenantId,
+                    idFonteDadosSource,
+                    idItemSrc
+                  )) as any[];
+                  const child = childRows?.[0] || null;
+                  const childCode = String(child?.codigo || '').trim().toUpperCase();
+                  if (childCode) queue.push(childCode);
+                  if (!childCode) continue;
+                  await tx.$queryRawUnsafe(
+                    `
+                    INSERT INTO obras_servicos_fonte
+                      (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+                    VALUES
+                      ($1,$2,NULL,$3,$4,$5,$6,$7)
+                    ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+                    DO UPDATE SET
+                      banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
+                      descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
+                      und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
+                      valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
+                      atualizado_em = NOW()
+                    `,
+                    ctx.tenantId,
+                    idFonteDados,
+                    childCode,
+                    String(child?.banco || '') || null,
+                    String(child?.descricao || '') || null,
+                    String(child?.und || '') || null,
+                    child?.valorUnitario == null ? null : Number(child.valorUnitario)
+                  );
+                } else {
+                  const insRows = (await tx.$queryRawUnsafe(
+                    `
+                    SELECT
+                      COALESCE(tipo,'') AS tipo,
+                      COALESCE(codigo,'') AS codigo,
+                      COALESCE(banco,'') AS banco,
+                      COALESCE(descricao,'') AS descricao,
+                      COALESCE(und,'') AS und,
+                      valor_unitario AS "valorUnitario"
+                    FROM obras_insumos_fonte
+                    WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_insumo = $3
+                    LIMIT 1
+                    `,
+                    ctx.tenantId,
+                    idFonteDadosSource,
+                    idItemSrc
+                  )) as any[];
+                  const ins = insRows?.[0] || null;
+                  const insCode = String(ins?.codigo || '').trim().toUpperCase();
+                  if (!insCode) continue;
+                  await tx.$queryRawUnsafe(
+                    `
+                    INSERT INTO obras_insumos_fonte
+                      (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+                    VALUES
+                      ($1,$2,$3,$4,$5,$6,$7,$8)
+                    ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+                    DO UPDATE SET
+                      tipo = COALESCE(NULLIF(EXCLUDED.tipo,''), obras_insumos_fonte.tipo),
+                      banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_insumos_fonte.banco),
+                      descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_insumos_fonte.descricao),
+                      und = COALESCE(NULLIF(EXCLUDED.und,''), obras_insumos_fonte.und),
+                      valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_insumos_fonte.valor_unitario),
+                      atualizado_em = NOW()
+                    `,
+                    ctx.tenantId,
+                    idFonteDados,
+                    String(ins?.tipo || '') || null,
+                    insCode,
+                    String(ins?.banco || '') || null,
+                    String(ins?.descricao || '') || null,
+                    String(ins?.und || '') || null,
+                    ins?.valorUnitario == null ? null : Number(ins.valorUnitario)
+                  );
+                }
+              }
+
+              if (!dstAlreadyHas) {
+                await tx.$executeRawUnsafe(
+                  `DELETE FROM obras_composicoes_itens_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3`,
+                  ctx.tenantId,
+                  idFonteDados,
+                  idServicoPaiDst
+                );
+                for (const it of items || []) {
+                  const tipoItem = String(it?.tipoItem || '').trim().toUpperCase();
+                  const idItemSrc = it?.idItem ? Number(it.idItem) : 0;
+                  if (!idItemSrc) continue;
+                  let idItemDst = 0;
+                  if (tipoItem === 'COMPOSICAO' || tipoItem === 'COMPOSICAO_AUXILIAR') {
+                    const childRows = (await tx.$queryRawUnsafe(
+                      `
+                      SELECT COALESCE(codigo,'') AS codigo
+                      FROM obras_servicos_fonte
+                      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico = $3
+                      LIMIT 1
+                      `,
+                      ctx.tenantId,
+                      idFonteDadosSource,
+                      idItemSrc
+                    )) as any[];
+                    const childCode = String(childRows?.[0]?.codigo || '').trim().toUpperCase();
+                    if (!childCode) continue;
+                    const idRows = (await tx.$queryRawUnsafe(
+                      `
+                      SELECT id_servico AS "id"
+                      FROM obras_servicos_fonte
+                      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
+                      LIMIT 1
+                      `,
+                      ctx.tenantId,
+                      idFonteDados,
+                      childCode
+                    )) as any[];
+                    idItemDst = idRows?.[0]?.id ? Number(idRows[0].id) : 0;
+                  } else {
+                    const insRows = (await tx.$queryRawUnsafe(
+                      `
+                      SELECT COALESCE(codigo,'') AS codigo
+                      FROM obras_insumos_fonte
+                      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_insumo = $3
+                      LIMIT 1
+                      `,
+                      ctx.tenantId,
+                      idFonteDadosSource,
+                      idItemSrc
+                    )) as any[];
+                    const insCode = String(insRows?.[0]?.codigo || '').trim().toUpperCase();
+                    if (!insCode) continue;
+                    const idRows = (await tx.$queryRawUnsafe(
+                      `
+                      SELECT id_insumo AS "id"
+                      FROM obras_insumos_fonte
+                      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
+                      LIMIT 1
+                      `,
+                      ctx.tenantId,
+                      idFonteDados,
+                      insCode
+                    )) as any[];
+                    idItemDst = idRows?.[0]?.id ? Number(idRows[0].id) : 0;
+                  }
+                  if (!idItemDst) continue;
+                  await tx.$executeRawUnsafe(
+                    `
+                    INSERT INTO obras_composicoes_itens_fonte
+                      (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item, quantidade, unidade, ordem)
+                    VALUES
+                      ($1,$2,$3,$4,$5,$6,$7,$8)
+                    ON CONFLICT (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item)
+                    DO UPDATE SET
+                      quantidade = EXCLUDED.quantidade,
+                      unidade = EXCLUDED.unidade,
+                      ordem = EXCLUDED.ordem,
+                      atualizado_em = NOW()
+                    `,
+                    ctx.tenantId,
+                    idFonteDados,
+                    idServicoPaiDst,
+                    tipoItem.slice(0, 24) || 'INSUMO',
+                    idItemDst,
+                    it?.quantidade == null ? null : toDec(it.quantidade),
+                    String(it?.unidade || '') || null,
+                    it?.ordem == null ? 0 : Number(it.ordem)
+                  );
+                }
+                affectedServicoIds.push(idServicoPaiDst);
+              }
+            }
+
+            const uniqIds = Array.from(new Set(affectedServicoIds)).filter((n) => Number.isFinite(n) && n > 0);
+            for (const idServicoPai of uniqIds) {
+              await tx.$executeRawUnsafe(
+                `
+                WITH base AS (
+                  SELECT
+                    COUNT(ci.id_composicao_item) AS qtd,
+                    COALESCE(SUM(
+                      COALESCE(ci.quantidade,0)
+                      * COALESCE(
+                        CASE
+                          WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
+                          ELSE inf.valor_unitario
+                        END,
+                        0
+                      )
+                    ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')), 0) AS total_base,
+                    COALESCE(SUM(
+                      COALESCE(ci.quantidade,0)
+                      * COALESCE(
+                        CASE
+                          WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
+                          ELSE inf.valor_unitario
+                        END,
+                        0
+                      )
+                    ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA'), 0) AS total_mao_base
+                  FROM obras_composicoes_itens_fonte ci
+                  LEFT JOIN obras_servicos_fonte sf
+                    ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
+                    AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+                  LEFT JOIN obras_insumos_fonte inf
+                    ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
+                    AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+                  WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $2 AND ci.id_servico_pai = $3
+                ),
+                plans AS (
+                  SELECT
+                    v.id_planilha AS id_planilha,
+                    COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
+                    COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
+                  FROM obras_planilhas_versoes v
+                  LEFT JOIN obras_planilhas_parametros p
+                    ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
+                  WHERE v.tenant_id = $1 AND v.id_fonte_dados = $2
+                ),
+                calc AS (
+                  SELECT
+                    id_planilha,
+                    CASE
+                      WHEN (SELECT qtd FROM base) > 0 THEN
+                        (
+                          (
+                            ((SELECT total_base FROM base) - (SELECT total_mao_base FROM base))
+                            + (SELECT total_mao_base FROM base) * (1 + (ls / 100.0))
+                          )
+                          * (1 + (bdi / 100.0))
+                        )
+                      ELSE 0
+                    END AS valor_unitario
+                  FROM plans
+                )
+                UPDATE obras_planilha_itens i
+                SET
+                  valor_unitario = ROUND(calc.valor_unitario::numeric, 6),
+                  valor_parcial = CASE
+                    WHEN i.quantidade IS NULL THEN i.valor_parcial
+                    ELSE ROUND((COALESCE(i.quantidade,0) * calc.valor_unitario)::numeric, 6)
+                  END,
+                  atualizado_em = NOW()
+                FROM calc
+                WHERE i.tenant_id = $1
+                  AND i.id_planilha = calc.id_planilha
+                  AND i.tipo_linha = 'SERVICO'
+                  AND i.id_servico = $3
+                `,
+                ctx.tenantId,
+                idFonteDados,
+                idServicoPai
+              );
             }
           }
 
@@ -7681,7 +8054,6 @@ export default async function v1Routes(server: FastifyInstance) {
         }
 
         if (tipoLinha === 'SERVICO' && codigo) {
-          await ensurePlanilhaComposicaoTables(prisma);
           const rows = (await prisma.$queryRawUnsafe(
             `
             WITH planilha_params AS (
@@ -7696,11 +8068,35 @@ export default async function v1Routes(server: FastifyInstance) {
             ),
             comp AS (
               SELECT
-                COUNT(*) AS qtd,
-                SUM(COALESCE(quantidade,0) * COALESCE(valor_unitario,0)) FILTER (WHERE COALESCE(tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
-                SUM(COALESCE(quantidade,0) * COALESCE(valor_unitario,0)) FILTER (WHERE COALESCE(tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
-              FROM obras_planilhas_composicoes_itens
-              WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
+                COUNT(ci.id_composicao_item) AS qtd,
+                SUM(
+                  COALESCE(ci.quantidade,0)
+                  * COALESCE(
+                    CASE
+                      WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
+                      ELSE inf.valor_unitario
+                    END,
+                    0
+                  )
+                ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
+                SUM(
+                  COALESCE(ci.quantidade,0)
+                  * COALESCE(
+                    CASE
+                      WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
+                      ELSE inf.valor_unitario
+                    END,
+                    0
+                  )
+                ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
+              FROM obras_composicoes_itens_fonte ci
+              LEFT JOIN obras_servicos_fonte sf
+                ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
+                AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+              LEFT JOIN obras_insumos_fonte inf
+                ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
+                AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+              WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $4 AND ci.id_servico_pai = $5
             )
             SELECT
               (SELECT bdi FROM planilha_params) AS bdi,
@@ -7712,14 +8108,14 @@ export default async function v1Routes(server: FastifyInstance) {
             ctx.tenantId,
             idObra,
             idPlanilha,
-            String(codigo || '').trim().toUpperCase()
+            idFonteDados,
+            idServico
           )) as any[];
 
           const row = rows?.[0] || null;
           const hasComposicao = Number(row?.qtd || 0) > 0;
-          if (!hasComposicao) {
-            valorUnitario = toDec(0);
-          } else {
+          if (!hasComposicao) valorUnitario = toDec(0);
+          else {
             const totalBase = row?.total_base == null ? 0 : Number(row.total_base);
             const totalMaoBase = row?.total_mao_base == null ? 0 : Number(row.total_mao_base);
             const lsPercent = row?.ls == null ? 0 : Number(row.ls);
@@ -8401,13 +8797,15 @@ export default async function v1Routes(server: FastifyInstance) {
     const idFonteDadosSrc = migSrc?.idFonteDados ? Number(migSrc.idFonteDados) : 0;
     const idFonteDadosDst = migDst?.idFonteDados ? Number(migDst.idFonteDados) : 0;
     if (!idFonteDadosSrc || !idFonteDadosDst) return fail(reply, 422, 'Fonte de dados não definida em uma das planilhas');
-    if (idFonteDadosSrc !== idFonteDadosDst) {
-      return fail(reply, 422, 'As planilhas selecionadas estão vinculadas a Fontes de dados diferentes. A composição é editada e compartilhada dentro da Fonte.');
-    }
 
-    const paiRows = (await prisma.$queryRawUnsafe(
+    const srcSvcRows = (await prisma.$queryRawUnsafe(
       `
-      SELECT id_servico AS "idServico"
+      SELECT
+        id_servico AS "idServico",
+        COALESCE(banco,'') AS banco,
+        COALESCE(descricao,'') AS descricao,
+        COALESCE(und,'') AS und,
+        valor_unitario AS "valorUnitario"
       FROM obras_servicos_fonte
       WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
       LIMIT 1
@@ -8416,10 +8814,37 @@ export default async function v1Routes(server: FastifyInstance) {
       idFonteDadosSrc,
       codigoServico
     )) as any[];
-    const idServico = paiRows?.[0]?.idServico ? Number(paiRows[0].idServico) : 0;
-    if (!idServico) return fail(reply, 422, 'Serviço não encontrado no catálogo da Fonte');
+    const srcSvc = srcSvcRows?.[0] || null;
+    const idServicoSrc = srcSvc?.idServico ? Number(srcSvc.idServico) : 0;
+    if (!idServicoSrc) return fail(reply, 422, 'Serviço não encontrado no catálogo da Fonte origem');
 
-    const existsComposicaoRows = (await prisma.$queryRawUnsafe(
+    const dstSvcRows = (await prisma.$queryRawUnsafe(
+      `
+      INSERT INTO obras_servicos_fonte
+        (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+      VALUES
+        ($1,$2,'SERVICO',$3,$4,$5,$6,$7)
+      ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+      DO UPDATE SET
+        banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
+        descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
+        und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
+        valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
+        atualizado_em = NOW()
+      RETURNING id_servico AS "idServico"
+      `,
+      ctx.tenantId,
+      idFonteDadosDst,
+      codigoServico,
+      String(srcSvc?.banco || '') || null,
+      String(srcSvc?.descricao || '') || null,
+      String(srcSvc?.und || '') || null,
+      srcSvc?.valorUnitario == null ? null : Number(srcSvc.valorUnitario)
+    )) as any[];
+    const idServicoDst = dstSvcRows?.[0]?.idServico ? Number(dstSvcRows[0].idServico) : 0;
+    if (!idServicoDst) return fail(reply, 422, 'Falha ao criar/obter serviço no catálogo da Fonte destino');
+
+    const srcHasCompRows = (await prisma.$queryRawUnsafe(
       `
       SELECT 1 AS ok
       FROM obras_composicoes_itens_fonte
@@ -8428,9 +8853,22 @@ export default async function v1Routes(server: FastifyInstance) {
       `,
       ctx.tenantId,
       idFonteDadosSrc,
-      idServico
+      idServicoSrc
     )) as any[];
-    const existsComposicaoTarget = Boolean(existsComposicaoRows?.[0]?.ok);
+    const srcHasComposicao = Boolean(srcHasCompRows?.[0]?.ok);
+
+    const dstHasCompRows = (await prisma.$queryRawUnsafe(
+      `
+      SELECT 1 AS ok
+      FROM obras_composicoes_itens_fonte
+      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3
+      LIMIT 1
+      `,
+      ctx.tenantId,
+      idFonteDadosDst,
+      idServicoDst
+    )) as any[];
+    const existsComposicaoTarget = Boolean(dstHasCompRows?.[0]?.ok);
 
     const srcLinha = (await prisma.$queryRawUnsafe(
       `
@@ -8447,7 +8885,7 @@ export default async function v1Routes(server: FastifyInstance) {
       `,
       ctx.tenantId,
       sourcePlanilhaId,
-      idServico
+      idServicoSrc
     )) as any[];
     const src = srcLinha?.[0] || null;
     if (!src) return fail(reply, 422, 'O serviço não existe como linha na planilha origem');
@@ -8463,7 +8901,7 @@ export default async function v1Routes(server: FastifyInstance) {
       `,
       ctx.tenantId,
       targetPlanilhaId,
-      idServico
+      idServicoDst
     )) as any[];
     const dst = dstLinha?.[0] || null;
 
@@ -8483,6 +8921,365 @@ export default async function v1Routes(server: FastifyInstance) {
     }
 
     await prismaTx(async (tx: any) => {
+      if (idFonteDadosSrc !== idFonteDadosDst && srcHasComposicao && !existsComposicaoTarget) {
+        const visited = new Set<string>();
+        const queue: string[] = [codigoServico];
+        const affectedServicoIds: number[] = [];
+
+        while (queue.length) {
+          const currentCode = String(queue.shift() || '').trim().toUpperCase();
+          if (!currentCode || visited.has(currentCode)) continue;
+          visited.add(currentCode);
+
+          const srcSvcRows = (await tx.$queryRawUnsafe(
+            `
+            SELECT
+              id_servico AS "idServico",
+              COALESCE(banco,'') AS banco,
+              COALESCE(descricao,'') AS descricao,
+              COALESCE(und,'') AS und,
+              valor_unitario AS "valorUnitario"
+            FROM obras_servicos_fonte
+            WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
+            LIMIT 1
+            `,
+            ctx.tenantId,
+            idFonteDadosSrc,
+            currentCode
+          )) as any[];
+          const srcSvc = srcSvcRows?.[0] || null;
+          const idServicoPaiSrc = srcSvc?.idServico ? Number(srcSvc.idServico) : 0;
+          if (!idServicoPaiSrc) continue;
+
+          const dstSvcRows = (await tx.$queryRawUnsafe(
+            `
+            INSERT INTO obras_servicos_fonte
+              (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+            VALUES
+              ($1,$2,'SERVICO',$3,$4,$5,$6,$7)
+            ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+            DO UPDATE SET
+              banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
+              descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
+              und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
+              valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
+              atualizado_em = NOW()
+            RETURNING id_servico AS "idServico"
+            `,
+            ctx.tenantId,
+            idFonteDadosDst,
+            currentCode,
+            String(srcSvc?.banco || '') || null,
+            String(srcSvc?.descricao || '') || null,
+            String(srcSvc?.und || '') || null,
+            srcSvc?.valorUnitario == null ? null : Number(srcSvc.valorUnitario)
+          )) as any[];
+          const idServicoPaiDst = dstSvcRows?.[0]?.idServico ? Number(dstSvcRows[0].idServico) : 0;
+          if (!idServicoPaiDst) continue;
+
+          const dstHas = (await tx.$queryRawUnsafe(
+            `
+            SELECT 1 AS ok
+            FROM obras_composicoes_itens_fonte
+            WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3
+            LIMIT 1
+            `,
+            ctx.tenantId,
+            idFonteDadosDst,
+            idServicoPaiDst
+          )) as any[];
+          const dstAlreadyHas = Boolean(dstHas?.[0]?.ok);
+
+          const items = (await tx.$queryRawUnsafe(
+            `
+            SELECT
+              id_composicao_item AS "idComposicaoItem",
+              COALESCE(tipo_item,'') AS "tipoItem",
+              id_item AS "idItem",
+              quantidade AS "quantidade",
+              COALESCE(unidade,'') AS "unidade",
+              ordem AS "ordem"
+            FROM obras_composicoes_itens_fonte
+            WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3
+            ORDER BY ordem ASC, id_composicao_item ASC
+            `,
+            ctx.tenantId,
+            idFonteDadosSrc,
+            idServicoPaiSrc
+          )) as any[];
+
+          for (const it of items || []) {
+            const tipoItem = String(it?.tipoItem || '').trim().toUpperCase();
+            const idItemSrc = it?.idItem ? Number(it.idItem) : 0;
+            if (!idItemSrc) continue;
+            if (tipoItem === 'COMPOSICAO' || tipoItem === 'COMPOSICAO_AUXILIAR') {
+              const childRows = (await tx.$queryRawUnsafe(
+                `
+                SELECT
+                  COALESCE(codigo,'') AS codigo,
+                  COALESCE(banco,'') AS banco,
+                  COALESCE(descricao,'') AS descricao,
+                  COALESCE(und,'') AS und,
+                  valor_unitario AS "valorUnitario"
+                FROM obras_servicos_fonte
+                WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico = $3
+                LIMIT 1
+                `,
+                ctx.tenantId,
+                idFonteDadosSrc,
+                idItemSrc
+              )) as any[];
+              const child = childRows?.[0] || null;
+              const childCode = String(child?.codigo || '').trim().toUpperCase();
+              if (childCode) queue.push(childCode);
+
+              await tx.$queryRawUnsafe(
+                `
+                INSERT INTO obras_servicos_fonte
+                  (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+                VALUES
+                  ($1,$2,NULL,$3,$4,$5,$6,$7)
+                ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+                DO UPDATE SET
+                  banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
+                  descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
+                  und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
+                  valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
+                  atualizado_em = NOW()
+                `,
+                ctx.tenantId,
+                idFonteDadosDst,
+                childCode,
+                String(child?.banco || '') || null,
+                String(child?.descricao || '') || null,
+                String(child?.und || '') || null,
+                child?.valorUnitario == null ? null : Number(child.valorUnitario)
+              );
+            } else {
+              const insRows = (await tx.$queryRawUnsafe(
+                `
+                SELECT
+                  COALESCE(tipo,'') AS tipo,
+                  COALESCE(codigo,'') AS codigo,
+                  COALESCE(banco,'') AS banco,
+                  COALESCE(descricao,'') AS descricao,
+                  COALESCE(und,'') AS und,
+                  valor_unitario AS "valorUnitario"
+                FROM obras_insumos_fonte
+                WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_insumo = $3
+                LIMIT 1
+                `,
+                ctx.tenantId,
+                idFonteDadosSrc,
+                idItemSrc
+              )) as any[];
+              const ins = insRows?.[0] || null;
+              const insCode = String(ins?.codigo || '').trim().toUpperCase();
+              if (!insCode) continue;
+              await tx.$queryRawUnsafe(
+                `
+                INSERT INTO obras_insumos_fonte
+                  (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+                VALUES
+                  ($1,$2,$3,$4,$5,$6,$7,$8)
+                ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+                DO UPDATE SET
+                  tipo = COALESCE(NULLIF(EXCLUDED.tipo,''), obras_insumos_fonte.tipo),
+                  banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_insumos_fonte.banco),
+                  descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_insumos_fonte.descricao),
+                  und = COALESCE(NULLIF(EXCLUDED.und,''), obras_insumos_fonte.und),
+                  valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_insumos_fonte.valor_unitario),
+                  atualizado_em = NOW()
+                `,
+                ctx.tenantId,
+                idFonteDadosDst,
+                String(ins?.tipo || '') || null,
+                insCode,
+                String(ins?.banco || '') || null,
+                String(ins?.descricao || '') || null,
+                String(ins?.und || '') || null,
+                ins?.valorUnitario == null ? null : Number(ins.valorUnitario)
+              );
+            }
+          }
+
+          if (!dstAlreadyHas) {
+            await tx.$executeRawUnsafe(
+              `DELETE FROM obras_composicoes_itens_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3`,
+              ctx.tenantId,
+              idFonteDadosDst,
+              idServicoPaiDst
+            );
+            for (const it of items || []) {
+              const tipoItem = String(it?.tipoItem || '').trim().toUpperCase();
+              const idItemSrc = it?.idItem ? Number(it.idItem) : 0;
+              if (!idItemSrc) continue;
+              let idItemDst = 0;
+              if (tipoItem === 'COMPOSICAO' || tipoItem === 'COMPOSICAO_AUXILIAR') {
+                const childRows = (await tx.$queryRawUnsafe(
+                  `
+                  SELECT COALESCE(codigo,'') AS codigo
+                  FROM obras_servicos_fonte
+                  WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico = $3
+                  LIMIT 1
+                  `,
+                  ctx.tenantId,
+                  idFonteDadosSrc,
+                  idItemSrc
+                )) as any[];
+                const childCode = String(childRows?.[0]?.codigo || '').trim().toUpperCase();
+                if (!childCode) continue;
+                const idRows = (await tx.$queryRawUnsafe(
+                  `
+                  SELECT id_servico AS "id"
+                  FROM obras_servicos_fonte
+                  WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
+                  LIMIT 1
+                  `,
+                  ctx.tenantId,
+                  idFonteDadosDst,
+                  childCode
+                )) as any[];
+                idItemDst = idRows?.[0]?.id ? Number(idRows[0].id) : 0;
+              } else {
+                const insRows = (await tx.$queryRawUnsafe(
+                  `
+                  SELECT COALESCE(codigo,'') AS codigo
+                  FROM obras_insumos_fonte
+                  WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_insumo = $3
+                  LIMIT 1
+                  `,
+                  ctx.tenantId,
+                  idFonteDadosSrc,
+                  idItemSrc
+                )) as any[];
+                const insCode = String(insRows?.[0]?.codigo || '').trim().toUpperCase();
+                if (!insCode) continue;
+                const idRows = (await tx.$queryRawUnsafe(
+                  `
+                  SELECT id_insumo AS "id"
+                  FROM obras_insumos_fonte
+                  WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
+                  LIMIT 1
+                  `,
+                  ctx.tenantId,
+                  idFonteDadosDst,
+                  insCode
+                )) as any[];
+                idItemDst = idRows?.[0]?.id ? Number(idRows[0].id) : 0;
+              }
+
+              if (!idItemDst) continue;
+              await tx.$executeRawUnsafe(
+                `
+                INSERT INTO obras_composicoes_itens_fonte
+                  (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item, quantidade, unidade, ordem)
+                VALUES
+                  ($1,$2,$3,$4,$5,$6,$7,$8)
+                ON CONFLICT (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item)
+                DO UPDATE SET
+                  quantidade = EXCLUDED.quantidade,
+                  unidade = EXCLUDED.unidade,
+                  ordem = EXCLUDED.ordem,
+                  atualizado_em = NOW()
+                `,
+                ctx.tenantId,
+                idFonteDadosDst,
+                idServicoPaiDst,
+                tipoItem.slice(0, 24) || 'INSUMO',
+                idItemDst,
+                it?.quantidade == null ? null : toDec(it.quantidade),
+                String(it?.unidade || '') || null,
+                it?.ordem == null ? 0 : Number(it.ordem)
+              );
+            }
+            affectedServicoIds.push(idServicoPaiDst);
+          }
+        }
+
+        const uniqIds = Array.from(new Set(affectedServicoIds)).filter((n) => Number.isFinite(n) && n > 0);
+        for (const idServicoPai of uniqIds) {
+          await tx.$executeRawUnsafe(
+            `
+            WITH base AS (
+              SELECT
+                COUNT(ci.id_composicao_item) AS qtd,
+                COALESCE(SUM(
+                  COALESCE(ci.quantidade,0)
+                  * COALESCE(
+                    CASE
+                      WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
+                      ELSE inf.valor_unitario
+                    END,
+                    0
+                  )
+                ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')), 0) AS total_base,
+                COALESCE(SUM(
+                  COALESCE(ci.quantidade,0)
+                  * COALESCE(
+                    CASE
+                      WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
+                      ELSE inf.valor_unitario
+                    END,
+                    0
+                  )
+                ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA'), 0) AS total_mao_base
+              FROM obras_composicoes_itens_fonte ci
+              LEFT JOIN obras_servicos_fonte sf
+                ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
+                AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+              LEFT JOIN obras_insumos_fonte inf
+                ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
+                AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+              WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $2 AND ci.id_servico_pai = $3
+            ),
+            plans AS (
+              SELECT
+                v.id_planilha AS id_planilha,
+                COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
+                COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
+              FROM obras_planilhas_versoes v
+              LEFT JOIN obras_planilhas_parametros p
+                ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
+              WHERE v.tenant_id = $1 AND v.id_fonte_dados = $2
+            ),
+            calc AS (
+              SELECT
+                id_planilha,
+                CASE
+                  WHEN (SELECT qtd FROM base) > 0 THEN
+                    (
+                      (
+                        ((SELECT total_base FROM base) - (SELECT total_mao_base FROM base))
+                        + (SELECT total_mao_base FROM base) * (1 + (ls / 100.0))
+                      )
+                      * (1 + (bdi / 100.0))
+                    )
+                  ELSE 0
+                END AS valor_unitario
+              FROM plans
+            )
+            UPDATE obras_planilha_itens i
+            SET
+              valor_unitario = ROUND(calc.valor_unitario::numeric, 6),
+              valor_parcial = CASE
+                WHEN i.quantidade IS NULL THEN i.valor_parcial
+                ELSE ROUND((COALESCE(i.quantidade,0) * calc.valor_unitario)::numeric, 6)
+              END,
+              atualizado_em = NOW()
+            FROM calc
+            WHERE i.tenant_id = $1
+              AND i.id_planilha = calc.id_planilha
+              AND i.tipo_linha = 'SERVICO'
+              AND i.id_servico = $3
+            `,
+            ctx.tenantId,
+            idFonteDadosDst,
+            idServicoPai
+          );
+        }
+      }
+
       if (!dst?.idLinha) {
         const maxOrd = (await tx.$queryRawUnsafe(
           `SELECT COALESCE(MAX(ordem),0)::int AS "maxOrd" FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`,
@@ -8501,7 +9298,7 @@ export default async function v1Routes(server: FastifyInstance) {
           targetPlanilhaId,
           ordem,
           src.item,
-          idServico,
+          idServicoDst,
           src.quantidade,
           Number(src.nivel || 0)
         );
@@ -8590,11 +9387,14 @@ export default async function v1Routes(server: FastifyInstance) {
         WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND i.id_servico = $4
         `,
         ctx.tenantId,
-        targetPlanilhaId,
+          AND i.id_servico = $4
         idFonteDadosSrc,
         idServico
       );
-    });
+        idFonteDadosDst,
+        idServicoDst
+    return ok(reply, { codigoServico, sourcePlanilhaId, targetPlanilhaId }, { message: 'Serviço copiado' });
+  });
 
     return ok(reply, { codigoServico, sourcePlanilhaId, targetPlanilhaId }, { message: 'Serviço copiado' });
   });

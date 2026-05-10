@@ -348,6 +348,7 @@ export default function Page() {
     }
     try {
       const warnings: string[] = [];
+      warnings.push("Se a Fonte do destino for diferente, a cópia também cria/atualiza o serviço e a composição na Fonte destino (impacta todas as planilhas que usam essa Fonte).");
       if (copyForm.replaceServico) warnings.push("Substituir serviço no destino irá sobrescrever ITEM/QUANT. do serviço na planilha destino (versão).");
       if (warnings.length) {
         const ok = window.confirm(`${warnings.join("\n\n")}\n\nDeseja continuar?`);
@@ -506,6 +507,7 @@ export default function Page() {
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
         Atenção: alterações aqui são compartilhadas. Se você alterar Serviço/Insumo/Composição da Fonte, muda em TODAS as planilhas que usam essa Fonte. Se você alterar um
         Parâmetro, muda em TODAS as planilhas que usam esse Parâmetro.
+        <div className="mt-1">Para criar um serviço novo no catálogo da Fonte, crie o serviço na Planilha (Adicionar linha) informando o CÓDIGO/descrição/UND.</div>
       </div>
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
@@ -526,7 +528,9 @@ export default function Page() {
         <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div>
           <div className="text-lg font-semibold">Copiar serviço/composição entre planilhas (versões)</div>
-          <div className="text-sm text-slate-600">Copia a linha do serviço (ITEM/QUANT.) entre versões. A composição é sempre a da Fonte (compartilhada).</div>
+          <div className="text-sm text-slate-600">
+            Copia a linha do serviço (ITEM/QUANT.) entre versões. Se a Fonte do destino for diferente, o sistema também copia o serviço e a composição para a Fonte destino.
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
@@ -679,8 +683,11 @@ export default function Page() {
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <div className="text-lg font-semibold">Serviços da planilha (verificação)</div>
-            <div className="text-sm text-slate-600">Marca serviços sem composição e serviços com total divergente da planilha.</div>
+            <div className="text-lg font-semibold">Serviços usados na planilha (verificação)</div>
+            <div className="text-sm text-slate-600">
+              Marca serviços sem composição e serviços com total divergente da planilha. O catálogo da Fonte contém, no mínimo, todos os serviços usados por planilhas que usam esta
+              Fonte.
+            </div>
           </div>
           <div className="text-sm text-slate-600">Planilha: {planilhaId ? `#${planilhaId}` : "—"}</div>
         </div>
