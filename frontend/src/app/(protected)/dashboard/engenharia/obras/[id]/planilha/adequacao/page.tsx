@@ -637,7 +637,7 @@ export default function AdequacaoPlanilhaPage() {
         thead { display: table-header-group !important; }
         tfoot { display: table-footer-group !important; }
         table { page-break-inside: auto; }
-        tr { break-inside: avoid; page-break-inside: avoid; }
+        tbody tr { break-inside: avoid; page-break-inside: avoid; }
       }
       .print-content { padding: 0; }
       thead { display: table-header-group; }
@@ -647,6 +647,8 @@ export default function AdequacaoPlanilhaPage() {
       table { width: 100%; border-collapse: collapse; margin-top: 0; }
       th, td { border: 1px solid #cbd5e1; padding: 4px 6px; vertical-align: top; }
       thead th { background: #f8fafc; }
+      .thead-rowspan-top { border-bottom: 0; }
+      .thead-rowspan-bottom { border-top: 0; background: #f8fafc; }
       .t-center { text-align: center; }
       .t-right { text-align: right; }
       .thead-noborder { border: 0 !important; padding: 0 !important; background: #ffffff !important; }
@@ -679,14 +681,17 @@ export default function AdequacaoPlanilhaPage() {
           ${repeatDados ? `<tr><th colspan="12" class="thead-noborder">${dadosHtml}</th></tr>` : ""}
           ${repeatDados && espacoAposQuadroPx > 0 ? `<tr><th colspan="12" class="spacer" style="height:${espacoAposQuadroPx}px;"></th></tr>` : ""}
           <tr>
-            <th rowspan="2">ITEM</th>
-            <th rowspan="2">SERVIÇOS</th>
-            <th rowspan="2">UND</th>
+            <th class="thead-rowspan-top">ITEM</th>
+            <th class="thead-rowspan-top">SERVIÇOS</th>
+            <th class="thead-rowspan-top">UND</th>
             <th class="t-center" colspan="3">CONTRATADO</th>
             <th class="t-center" colspan="3">QUANTIDADES</th>
             <th class="t-center" colspan="3">VALORES</th>
           </tr>
           <tr>
+            <th class="thead-rowspan-bottom"></th>
+            <th class="thead-rowspan-bottom"></th>
+            <th class="thead-rowspan-bottom"></th>
             <th class="t-right">QUANT.</th>
             <th class="t-right">PREÇO</th>
             <th class="t-right">TOTAL</th>
