@@ -9387,14 +9387,11 @@ export default async function v1Routes(server: FastifyInstance) {
         WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND i.id_servico = $4
         `,
         ctx.tenantId,
-          AND i.id_servico = $4
-        idFonteDadosSrc,
-        idServico
-      );
+        targetPlanilhaId,
         idFonteDadosDst,
         idServicoDst
-    return ok(reply, { codigoServico, sourcePlanilhaId, targetPlanilhaId }, { message: 'Serviço copiado' });
-  });
+      );
+    });
 
     return ok(reply, { codigoServico, sourcePlanilhaId, targetPlanilhaId }, { message: 'Serviço copiado' });
   });
