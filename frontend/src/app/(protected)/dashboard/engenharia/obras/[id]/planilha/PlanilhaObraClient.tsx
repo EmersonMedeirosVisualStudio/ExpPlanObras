@@ -31,6 +31,18 @@ type VersaoRow = {
   totalServicos: number | null;
 };
 
+type AuditoriaVersaoRow = {
+  idPlanilha: number;
+  numeroVersao: number;
+  nome: string;
+  atual: boolean;
+  totalServicos: number;
+  valorTotalDb: number;
+  valorTotalRound2: number;
+  valorTotalSomatorioLinhasRound2: number;
+  diffArredondamento: number;
+};
+
 type PlanilhaLinha = {
   idLinha: number;
   ordem: number;
@@ -55,6 +67,8 @@ type Planilha = {
   idParametros: number | null;
   fonteNome: string;
   parametrosNome: string;
+  valorTotal?: number | null;
+  totalServicos?: number | null;
   parametros: {
     nome: string | null;
     dataBaseSbc: string | null;
@@ -678,6 +692,11 @@ export default function PlanilhaObraClient({
   const [clonarIncludeParametros, setClonarIncludeParametros] = useState(false);
   const [clonarIncludeFonte, setClonarIncludeFonte] = useState(false);
 
+  const [modalAuditoriaTotaisOpen, setModalAuditoriaTotaisOpen] = useState(false);
+  const [auditoriaTotaisLoading, setAuditoriaTotaisLoading] = useState(false);
+  const [auditoriaTotaisErr, setAuditoriaTotaisErr] = useState<string | null>(null);
+  const [auditoriaTotaisRows, setAuditoriaTotaisRows] = useState<AuditoriaVersaoRow[]>([]);
+
   useEffect(() => {
     if (!modalNovaPlanilhaOpen && !modalEditarPlanilhaOpen) return;
     if (!fontes.length) void carregarFontes();
@@ -744,7 +763,7 @@ export default function PlanilhaObraClient({
           colWidth: {
             item: Number.isFinite(Number(colWidthRaw?.item)) ? Math.max(60, Math.min(420, Math.round(Number(colWidthRaw.item)))) : p.grid.colWidth.item,
             comp: Number.isFinite(Number(colWidthRaw?.comp)) ? Math.max(36, Math.min(90, Math.round(Number(colWidthRaw.comp)))) : p.grid.colWidth.comp,
-            codigo: Number.isFinite(Number(colWidthRaw?.codigo)) ? Math.max(70, Math.min(240, Math.round(Number(colWidthRaw.codigo)))) : p.grid.colWidth.codigo,
+            codigo: Number.isFinite(Number(colWidthRaw?.codigo)) ? Math.max(40, Math.min(240, Math.round(Number(colWidthRaw.codigo)))) : p.grid.colWidth.codigo,
             fonte: Number.isFinite(Number(colWidthRaw?.fonte)) ? Math.max(60, Math.min(220, Math.round(Number(colWidthRaw.fonte)))) : p.grid.colWidth.fonte,
             servicos: Number.isFinite(Number(colWidthRaw?.servicos)) ? Math.max(220, Math.min(900, Math.round(Number(colWidthRaw.servicos)))) : p.grid.colWidth.servicos,
             und: Number.isFinite(Number(colWidthRaw?.und)) ? Math.max(50, Math.min(120, Math.round(Number(colWidthRaw.und)))) : p.grid.colWidth.und,
@@ -1240,6 +1259,40 @@ export default function PlanilhaObraClient({
       setPlanilha(null);
     } finally {
       if (!opts?.silent) setLoading(false);
+    }
+  }
+
+  async function abrirAuditoriaTotais() {
+    if (!idObra) return;
+    try {
+      setModalAuditoriaTotaisOpen(true);
+      setAuditoriaTotaisLoading(true);
+      setAuditoriaTotaisErr(null);
+      setAuditoriaTotaisRows([]);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes-auditoria`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao auditar totais");
+      const list = Array.isArray(json.data?.versoes) ? (json.data.versoes as any[]) : [];
+      setAuditoriaTotaisRows(
+        list
+          .map((r: any) => ({
+            idPlanilha: Number(r.idPlanilha || 0),
+            numeroVersao: Number(r.numeroVersao || 0),
+            nome: String(r.nome || ""),
+            atual: Boolean(r.atual),
+            totalServicos: Number(r.totalServicos || 0),
+            valorTotalDb: Number(r.valorTotalDb || 0),
+            valorTotalRound2: Number(r.valorTotalRound2 || 0),
+            valorTotalSomatorioLinhasRound2: Number(r.valorTotalSomatorioLinhasRound2 || 0),
+            diffArredondamento: Number(r.diffArredondamento || 0),
+          }))
+          .filter((r: AuditoriaVersaoRow) => Number.isFinite(r.idPlanilha) && r.idPlanilha > 0)
+      );
+    } catch (e: any) {
+      setAuditoriaTotaisErr(e?.message || "Erro ao auditar totais");
+      setAuditoriaTotaisRows([]);
+    } finally {
+      setAuditoriaTotaisLoading(false);
     }
   }
 
@@ -1973,6 +2026,9 @@ export default function PlanilhaObraClient({
   }, [importPreview]);
 
   const valorTotalPlanilha = useMemo(() => {
+    const fromApi = (planilha as any)?.valorTotal;
+    const nApi = fromApi == null || fromApi === "" ? null : Number(fromApi);
+    if (nApi != null && Number.isFinite(nApi)) return Number(nApi.toFixed(2));
     const rows = planilha?.linhas || [];
     let total = 0;
     for (const l of rows) {
@@ -2423,6 +2479,78 @@ export default function PlanilhaObraClient({
         </div>
       ) : null}
 
+      {modalAuditoriaTotaisOpen ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-auto">
+          <div className="w-full max-w-5xl rounded-xl border bg-white shadow-lg">
+            <div className="flex items-center justify-between gap-3 border-b p-4">
+              <div className="text-lg font-semibold">Auditoria de totais</div>
+              <button
+                className="rounded-lg border bg-white px-2 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                type="button"
+                onClick={() => setModalAuditoriaTotaisOpen(false)}
+                disabled={auditoriaTotaisLoading}
+                title="Fechar"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800">
+                Esta varredura ajuda a identificar divergências por arredondamento: somar os valores já arredondados por linha pode dar um total diferente de arredondar o total no fim.
+              </div>
+
+              {auditoriaTotaisErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{auditoriaTotaisErr}</div> : null}
+
+              {auditoriaTotaisLoading ? (
+                <div className="text-sm text-slate-600">Carregando…</div>
+              ) : (
+                <div className="overflow-auto rounded-lg border">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-700">
+                      <tr>
+                        <th className="px-3 py-2">Versão</th>
+                        <th className="px-3 py-2">Nome</th>
+                        <th className="px-3 py-2 text-right">Serviços</th>
+                        <th className="px-3 py-2 text-right">Total (DB)</th>
+                        <th className="px-3 py-2 text-right">Total (arred. 2)</th>
+                        <th className="px-3 py-2 text-right">Total (somatório linhas 2)</th>
+                        <th className="px-3 py-2 text-right">Dif. (arred.)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auditoriaTotaisRows.map((r) => {
+                        const diff = Number(r.diffArredondamento || 0);
+                        const hasDiff = Math.abs(diff) >= 0.01;
+                        return (
+                          <tr key={r.idPlanilha} className={`border-t ${hasDiff ? "bg-amber-50" : ""}`}>
+                            <td className="px-3 py-2 font-semibold">{`v${r.numeroVersao}`}</td>
+                            <td className="px-3 py-2">{r.nome || "—"}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">{r.totalServicos}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">{moeda(Number(r.valorTotalDb || 0))}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">{moeda(Number(r.valorTotalRound2 || 0))}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">{moeda(Number(r.valorTotalSomatorioLinhasRound2 || 0))}</td>
+                            <td className={`px-3 py-2 text-right tabular-nums ${hasDiff ? "font-semibold text-amber-800" : "text-slate-700"}`}>
+                              {moeda(diff)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {!auditoriaTotaisRows.length ? (
+                        <tr>
+                          <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
+                            Nenhum dado.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {modalEditarPlanilhaOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-2xl rounded-xl border bg-white shadow-lg">
@@ -2696,6 +2824,15 @@ export default function PlanilhaObraClient({
               title="Atualiza dados sem recarregar a página (mantém a tela e seu estado). Também recalcula os indicadores."
             >
               Atualizar
+            </button>
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+              type="button"
+              onClick={abrirAuditoriaTotais}
+              disabled={loading}
+              title="Varre todas as versões e mostra possíveis diferenças de arredondamento nos totais"
+            >
+              Auditoria de totais
             </button>
             <button
               className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
@@ -3076,7 +3213,7 @@ export default function PlanilhaObraClient({
                         [
                           { key: "item", label: "ITEM", min: 60, max: 420 },
                           { key: "comp", label: "COMP.", min: 36, max: 90 },
-                          { key: "codigo", label: "CÓDIGO", min: 70, max: 240 },
+                          { key: "codigo", label: "CÓDIGO", min: 40, max: 240 },
                           { key: "fonte", label: "FONTE", min: 60, max: 220 },
                           { key: "servicos", label: "SERVIÇOS", min: 220, max: 900 },
                           { key: "und", label: "UND", min: 50, max: 120 },
@@ -3103,25 +3240,9 @@ export default function PlanilhaObraClient({
                               </label>
                               <div className="text-xs text-slate-600">{w}px</div>
                             </div>
-                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_110px]">
+                            <div>
                               <input
-                                type="range"
-                                min={c.min}
-                                max={c.max}
-                                step={2}
-                                value={w}
-                                onChange={(e) =>
-                                  setUiPrefs((p) => ({
-                                    ...p,
-                                    grid: {
-                                      ...p.grid,
-                                      colWidth: { ...p.grid.colWidth, [c.key]: Math.max(c.min, Math.min(c.max, Number(e.target.value || w))) },
-                                    },
-                                  }))
-                                }
-                              />
-                              <input
-                                className="input bg-white"
+                                className="input bg-white w-full"
                                 type="number"
                                 min={c.min}
                                 max={c.max}

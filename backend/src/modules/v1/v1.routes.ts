@@ -5924,6 +5924,53 @@ export default async function v1Routes(server: FastifyInstance) {
         });
       }
 
+      if (view === 'versoes-auditoria' || view === 'versoes_auditoria') {
+        const rows = (await prisma.$queryRawUnsafe(
+          `
+          SELECT
+            v.id_planilha AS "idPlanilha",
+            v.numero_versao AS "numeroVersao",
+            v.nome AS "nome",
+            v.atual AS "atual",
+            SUM(CASE WHEN i.tipo_linha = 'SERVICO' THEN 1 ELSE 0 END)::int AS "totalServicos",
+            COALESCE(SUM(CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(i.valor_parcial, 0) ELSE 0 END), 0) AS "valorTotalDb",
+            COALESCE(ROUND(SUM(CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(i.valor_parcial, 0) ELSE 0 END)::numeric, 2), 0) AS "valorTotalRound2",
+            COALESCE(SUM(CASE WHEN i.tipo_linha = 'SERVICO' THEN ROUND(COALESCE(i.valor_parcial, 0)::numeric, 2) ELSE 0 END), 0) AS "valorTotalSomatorioLinhasRound2"
+          FROM obras_planilhas_versoes v
+          LEFT JOIN obras_planilha_itens i
+            ON i.tenant_id = v.tenant_id AND i.id_planilha = v.id_planilha
+          WHERE v.tenant_id = $1 AND v.id_obra = $2
+          GROUP BY v.id_planilha, v.numero_versao, v.nome, v.atual
+          ORDER BY v.numero_versao DESC, v.id_planilha DESC
+          `,
+          ctx.tenantId,
+          idObra
+        )) as any[];
+
+        return ok(reply, {
+          idObra,
+          obraStatus,
+          obra: obraResumo,
+          versoes: (rows || []).map((r: any) => {
+            const valorTotalDb = r.valorTotalDb == null ? 0 : Number(r.valorTotalDb);
+            const valorTotalRound2 = r.valorTotalRound2 == null ? 0 : Number(r.valorTotalRound2);
+            const valorTotalSomatorioLinhasRound2 = r.valorTotalSomatorioLinhasRound2 == null ? 0 : Number(r.valorTotalSomatorioLinhasRound2);
+            const diffArredondamento = Number((valorTotalRound2 - valorTotalSomatorioLinhasRound2).toFixed(2));
+            return {
+              idPlanilha: Number(r.idPlanilha),
+              numeroVersao: Number(r.numeroVersao),
+              nome: String(r.nome || ''),
+              atual: Boolean(r.atual),
+              totalServicos: Number(r.totalServicos || 0),
+              valorTotalDb,
+              valorTotalRound2,
+              valorTotalSomatorioLinhasRound2,
+              diffArredondamento,
+            };
+          }),
+        });
+      }
+
       if (view === 'versoes') {
         const ids = (await prisma.$queryRawUnsafe(
           `
@@ -6127,6 +6174,21 @@ export default async function v1Routes(server: FastifyInstance) {
         idPlanilha
       )) as any[];
 
+      const totalsRows = (await prisma.$queryRawUnsafe(
+        `
+        SELECT
+          COALESCE(SUM(CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(i.valor_parcial, 0) ELSE 0 END), 0) AS "valorTotal",
+          SUM(CASE WHEN i.tipo_linha = 'SERVICO' THEN 1 ELSE 0 END)::int AS "totalServicos"
+        FROM obras_planilha_itens i
+        WHERE i.tenant_id = $1 AND i.id_planilha = $2
+        `,
+        ctx.tenantId,
+        idPlanilha
+      )) as any[];
+      const totals = totalsRows?.[0] || {};
+      const valorTotal = totals?.valorTotal == null ? 0 : Number(totals.valorTotal);
+      const totalServicos = totals?.totalServicos == null ? 0 : Number(totals.totalServicos);
+
       const servicosPlanilha = includeCatalog && idFonteDados
         ? ((await prisma.$queryRawUnsafe(
         `
@@ -6155,6 +6217,8 @@ export default async function v1Routes(server: FastifyInstance) {
           atual: Boolean(v.atual),
           origem: String(v.origem || 'MANUAL'),
           criadoEm: v.criadoEm ? new Date(v.criadoEm).toISOString() : '',
+          valorTotal,
+          totalServicos,
           parametros: {
             dataBaseSbc: pRow?.dataBaseSbc ? String(pRow.dataBaseSbc) : null,
             dataBaseSinapi: pRow?.dataBaseSinapi ? String(pRow.dataBaseSinapi) : null,
