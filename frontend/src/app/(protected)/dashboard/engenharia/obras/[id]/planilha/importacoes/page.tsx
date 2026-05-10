@@ -118,6 +118,12 @@ function parseCsvTextAuto(text: string) {
   return { headers, rows };
 }
 
+function isValidItemPath(item: string) {
+  const v = String(item || "").trim();
+  if (!v) return false;
+  return /^\d+(?:\.\d+)*$/.test(v);
+}
+
 function detectTipoLinha(item: string, codigo: string, und: string, quant: string, valorUnit: string) {
   const hasServ = !!(String(codigo || "").trim() || String(und || "").trim() || String(quant || "").trim() || String(valorUnit || "").trim());
   if (hasServ) return { tipo: "SERVICO" as const, nivel: item.trim() ? Math.max(0, item.split(".").filter(Boolean).length) : 0 };
@@ -218,14 +224,26 @@ export default function PlanilhaImportacoesPage() {
     const apiOrigin = String(process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "");
     const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input);
     const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : apiOrigin ? `${apiOrigin}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}` : rawUrl;
-    return fetch(url, {
-      ...init,
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(init?.headers || {}),
-      },
-      cache: "no-store",
-    });
+    try {
+      return await fetch(url, {
+        ...init,
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(init?.headers || {}),
+        },
+        cache: "no-store",
+      });
+    } catch (e: any) {
+      const msg = String(e?.message || e || "");
+      if (msg.toLowerCase().includes("failed to fetch")) {
+        throw new Error(
+          apiOrigin
+            ? `Falha ao conectar no backend (${apiOrigin}). Verifique se NEXT_PUBLIC_API_URL está correto e se o backend (Render) está online.`
+            : "Falha ao conectar. NEXT_PUBLIC_API_URL não configurada e a rota /api/v1/... não respondeu."
+        );
+      }
+      throw e;
+    }
   }
 
   async function carregarVersoes() {
@@ -339,6 +357,7 @@ export default function PlanilhaImportacoesPage() {
 
         const errors: any = {};
         if (!item.trim()) errors.item = "Obrigatório";
+        else if (!isValidItemPath(item)) errors.item = 'Formato inválido (use "1", "1.1", "2.15.3")';
         if (tipoLinhaNorm && !tipoLinhaFromCsv) errors.tipoLinha = "tipo_linha inválido";
         if (det.tipo === "SERVICO") {
           if (!servicos.trim()) errors.servicos = "Obrigatório (serviço)";
@@ -513,6 +532,17 @@ export default function PlanilhaImportacoesPage() {
     const selected = sourceRows.filter((x) => x.checked).map((x) => x.r);
     if (!selected.length) {
       setErr("Selecione ao menos 1 linha para importar.");
+      return;
+    }
+    const invalid = selected
+      .map((r, idx) => ({ idx, item: String(r.item || "").trim() }))
+      .filter((x) => !isValidItemPath(x.item));
+    if (invalid.length) {
+      const sample = invalid
+        .slice(0, 10)
+        .map((x) => `"${x.item || "—"}"`)
+        .join(", ");
+      setErr(`Há itens com formato inválido (use "1", "1.1", "2.15.3"). Exemplos: ${sample}${invalid.length > 10 ? "…" : ""}`);
       return;
     }
     try {

@@ -417,6 +417,12 @@ function detectTipoLinha(item: string, codigo: string, und: string, quant: strin
   return { tipo: 'SUBITEM' as const, nivel: parts.length };
 }
 
+function isValidItemPath(item: string) {
+  const v = String(item || '').trim();
+  if (!v) return false;
+  return /^\d+(?:\.\d+)*$/.test(v);
+}
+
 async function ensurePlanilhaOrcamentariaTables(tx: any) {
   await tx.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS obras_planilhas_versoes (
@@ -6311,6 +6317,10 @@ export default async function v1Routes(server: FastifyInstance) {
             prepared.push({ ok: false as const, rowIndex: i, message: 'Campo "item" é obrigatório', field: 'item' as const });
             continue;
           }
+          if (!isValidItemPath(item)) {
+            prepared.push({ ok: false as const, rowIndex: i, message: 'Campo "item" inválido (use 1, 1.1, 2.15.3)', field: 'item' as const });
+            continue;
+          }
           if (!servicos.trim()) {
             prepared.push({ ok: false as const, rowIndex: i, message: 'Campo "servicos" é obrigatório', field: 'servicos' as const });
             continue;
@@ -6752,6 +6762,7 @@ export default async function v1Routes(server: FastifyInstance) {
               : detectTipoLinha(item, codigo, und, quantRaw, valorUnitRaw);
 
             if (!item.trim()) throw new Error(`Linha ${i + 1}: "item" é obrigatório`);
+            if (!isValidItemPath(item)) throw new Error(`Linha ${i + 1}: "item" inválido (use 1, 1.1, 2.15.3)`);
 
             if (det.tipo === 'SERVICO') {
               if (!descricao.trim()) throw new Error(`Linha ${i + 1}: "servicos" é obrigatório para serviço`);
