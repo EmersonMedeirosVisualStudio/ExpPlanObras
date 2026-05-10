@@ -172,18 +172,6 @@ export default function PlanilhaImportacoesPage() {
     return versoes.find((v) => Number(v.idPlanilha) === id) || null;
   }, [targetPlanilhaId, versoes]);
 
-  const selectedSource = useMemo(() => {
-    const id = Number(String(sourcePlanilhaId || "").trim() || 0);
-    if (!id) return null;
-    return [...versoes, ...planilhasOutrasObras].find((v) => Number(v.idPlanilha) === id) || null;
-  }, [sourcePlanilhaId, versoes, planilhasOutrasObras]);
-
-  const planilhaSourceAndTargetShareFonte = useMemo(() => {
-    const a = selectedSource?.idFonteDados != null ? Number(selectedSource.idFonteDados) : 0;
-    const b = selectedTarget?.idFonteDados != null ? Number(selectedTarget.idFonteDados) : 0;
-    return Boolean(a && b && a === b);
-  }, [selectedSource, selectedTarget]);
-
   const [importMode, setImportMode] = useState<"CSV" | "PLANILHA">("CSV");
   const [csvMode, setCsvMode] = useState<"APPEND" | "REPLACE">("APPEND");
   const [csvCatalogDupPolicy, setCsvCatalogDupPolicy] = useState<"FILL" | "KEEP" | "OVERWRITE">("FILL");
@@ -212,6 +200,18 @@ export default function PlanilhaImportacoesPage() {
   const [planilhaSkipExistingLines, setPlanilhaSkipExistingLines] = useState(false);
   const [sourcePlanilhaId, setSourcePlanilhaId] = useState<string>("");
   const [sourceRows, setSourceRows] = useState<Array<{ checked: boolean; r: LinhaServico }>>([]);
+
+  const selectedSource = useMemo(() => {
+    const id = Number(String(sourcePlanilhaId || "").trim() || 0);
+    if (!id) return null;
+    return [...versoes, ...planilhasOutrasObras].find((v) => Number(v.idPlanilha) === id) || null;
+  }, [sourcePlanilhaId, versoes, planilhasOutrasObras]);
+
+  const planilhaSourceAndTargetShareFonte = useMemo(() => {
+    const a = selectedSource?.idFonteDados != null ? Number(selectedSource.idFonteDados) : 0;
+    const b = selectedTarget?.idFonteDados != null ? Number(selectedTarget.idFonteDados) : 0;
+    return Boolean(a && b && a === b);
+  }, [selectedSource, selectedTarget]);
 
   const catalogPolicyTooltip = useMemo(() => {
     const map = {
