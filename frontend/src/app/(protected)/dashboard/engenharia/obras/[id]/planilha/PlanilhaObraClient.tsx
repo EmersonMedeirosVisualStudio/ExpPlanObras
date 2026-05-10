@@ -1072,9 +1072,9 @@ export default function PlanilhaObraClient({
     window.setTimeout(doPrint, 50);
   }
 
-  async function carregarVersoes(mode: "INFO" | "FULL" = "INFO") {
+  async function carregarVersoes(mode: "INFO" | "FULL" = "INFO", opts?: { silent?: boolean }) {
     try {
-      setLoading(true);
+      if (!opts?.silent) setLoading(true);
       setErr(null);
       const view = mode === "FULL" ? "versoes" : "versoes-info";
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=${encodeURIComponent(view)}`);
@@ -1093,8 +1093,8 @@ export default function PlanilhaObraClient({
         idParametros: v.idParametros == null ? null : Number(v.idParametros),
         fonteNome: String(v.fonteNome || "—"),
         parametrosNome: String(v.parametrosNome || "—"),
-        valorTotal: mode === "FULL" ? (v.valorTotal == null ? 0 : Number(v.valorTotal)) : null,
-        totalServicos: mode === "FULL" ? Number(v.totalServicos || 0) : null,
+        valorTotal: v.valorTotal == null ? (mode === "FULL" ? 0 : null) : Number(v.valorTotal),
+        totalServicos: v.totalServicos == null ? (mode === "FULL" ? 0 : null) : Number(v.totalServicos || 0),
       }));
       setVersoes((prev) => {
         if (mode === "FULL") return normalized;
@@ -1113,7 +1113,7 @@ export default function PlanilhaObraClient({
       setPlanilhaId(null);
       setPlanilha(null);
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }
 
@@ -1242,6 +1242,7 @@ export default function PlanilhaObraClient({
     void (async () => {
       try {
         await Promise.all([carregarVersoes("INFO"), carregarEmpresaDocumentosLayout()]);
+        void carregarVersoes("FULL", { silent: true });
       } finally {
         if (!cancelled) {
           bootPendingRef.current = Math.max(0, bootPendingRef.current - 1);
@@ -1377,11 +1378,26 @@ export default function PlanilhaObraClient({
     return { ...next, valorParcial: calc ?? "" };
   }
 
+  function sanitizeItemPathInput(raw: string) {
+    let v = String(raw ?? "");
+    v = v.replace(/[^\d.]/g, "");
+    v = v.replace(/\.{2,}/g, ".");
+    v = v.replace(/^\./g, "");
+    return v;
+  }
+
+  function isValidItemPath(item: string) {
+    const v = String(item || "").trim();
+    if (!v) return false;
+    return /^\d+(?:\.\d+)*$/.test(v);
+  }
+
   function validateLinha(next: typeof novo) {
     const errors: Partial<Record<keyof typeof novo, string>> = {};
     if (!String(next.item || "").trim()) errors.item = "Obrigatório";
     if (!String(next.servicos || "").trim()) errors.servicos = "Obrigatório";
     const itemNorm = String(next.item || "").trim();
+    if (itemNorm && !isValidItemPath(itemNorm)) errors.item = 'Formato inválido (use "1", "1.1", "2.15.3")';
     if (planilha && itemNorm) {
       const dup = (planilha.linhas || []).some((l) => {
         if (editingLinhaId && Number(l.idLinha) === Number(editingLinhaId)) return false;
@@ -3056,7 +3072,7 @@ export default function PlanilhaObraClient({
                           className={`input bg-white ${linhaErrors.item ? "border-red-300 bg-red-50" : ""}`}
                           value={novo.item}
                           onChange={(e) => {
-                            const v = e.target.value;
+                            const v = sanitizeItemPathInput(e.target.value);
                             setLinhaFormErr(null);
                             setNovo((p) => ({ ...p, item: v }));
                             setLinhaErrors((p) => {
@@ -3067,6 +3083,7 @@ export default function PlanilhaObraClient({
                           }}
                           disabled={!podeEditar}
                           placeholder="1.1"
+                          title='Use somente números e ponto: "1", "1.1", "2.15.3"'
                         />
                       </div>
                       <div>
