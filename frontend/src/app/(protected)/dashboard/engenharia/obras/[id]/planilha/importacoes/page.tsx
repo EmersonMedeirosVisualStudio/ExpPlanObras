@@ -196,22 +196,10 @@ export default function PlanilhaImportacoesPage() {
   }>({ file: null, rows: [], missingColumns: [] });
 
   const [planilhaImportMode, setPlanilhaImportMode] = useState<"APPEND" | "REPLACE">("APPEND");
-  const [planilhaCatalogDupPolicy, setPlanilhaCatalogDupPolicy] = useState<"FILL" | "KEEP" | "OVERWRITE">("FILL");
   const [planilhaSkipExistingLines, setPlanilhaSkipExistingLines] = useState(false);
   const [sourcePlanilhaId, setSourcePlanilhaId] = useState<string>("");
   const [sourceRows, setSourceRows] = useState<Array<{ checked: boolean; r: LinhaServico }>>([]);
-
-  const selectedSource = useMemo(() => {
-    const id = Number(String(sourcePlanilhaId || "").trim() || 0);
-    if (!id) return null;
-    return [...versoes, ...planilhasOutrasObras].find((v) => Number(v.idPlanilha) === id) || null;
-  }, [sourcePlanilhaId, versoes, planilhasOutrasObras]);
-
-  const planilhaSourceAndTargetShareFonte = useMemo(() => {
-    const a = selectedSource?.idFonteDados != null ? Number(selectedSource.idFonteDados) : 0;
-    const b = selectedTarget?.idFonteDados != null ? Number(selectedTarget.idFonteDados) : 0;
-    return Boolean(a && b && a === b);
-  }, [selectedSource, selectedTarget]);
+  const planilhaCatalogDupPolicy: "KEEP" = "KEEP";
 
   const catalogPolicyTooltip = useMemo(() => {
     const map = {
@@ -389,12 +377,6 @@ export default function PlanilhaImportacoesPage() {
     if (planilhaImportMode === "REPLACE" && planilhaSkipExistingLines) setPlanilhaSkipExistingLines(false);
   }, [planilhaImportMode, planilhaSkipExistingLines]);
 
-  useEffect(() => {
-    if (importMode !== "PLANILHA") return;
-    if (!planilhaSourceAndTargetShareFonte) return;
-    if (planilhaCatalogDupPolicy !== "KEEP") setPlanilhaCatalogDupPolicy("KEEP");
-  }, [importMode, planilhaSourceAndTargetShareFonte, planilhaCatalogDupPolicy]);
-
   async function confirmarImportacaoCsv() {
     const idPlanilha = Number(String(targetPlanilhaId || "").trim() || 0);
     if (!idPlanilha) {
@@ -536,8 +518,6 @@ export default function PlanilhaImportacoesPage() {
     try {
       const warnings: string[] = [];
       if (planilhaImportMode === "REPLACE") warnings.push("Você escolheu SUBSTITUIR: todas as linhas da planilha destino serão apagadas antes de importar.");
-      if (planilhaCatalogDupPolicy === "OVERWRITE")
-        warnings.push("Você escolheu SOBRESCREVER na Fonte: serviços com o mesmo código serão atualizados na Fonte de dados (cadastro compartilhado) e isso pode impactar outras planilhas.");
       if (warnings.length) {
         const ok = window.confirm(`${warnings.join("\n\n")}\n\nDeseja continuar?`);
         if (!ok) return;
@@ -865,7 +845,7 @@ export default function PlanilhaImportacoesPage() {
         <div className="text-lg font-semibold">Importar serviços de outra planilha</div>
         <div className="text-sm text-slate-600">Importa linhas (Itens, subitens e serviços) de uma planilha existente para a planilha destino.</div>
 
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2">
           <label className="space-y-1">
             <div
               className="text-xs text-slate-500"
@@ -886,6 +866,13 @@ export default function PlanilhaImportacoesPage() {
                   );
                 })}
             </select>
+            <label
+              className="flex items-center gap-2 text-sm text-slate-700 select-none pt-2"
+              title="Quando marcado, você pode escolher uma planilha de outra obra como origem. A importação sempre vai para a planilha destino atual."
+            >
+              <input type="checkbox" checked={includeOutrasObras} onChange={(e) => setIncludeOutrasObras(Boolean(e.target.checked))} disabled={loading} />
+              De outra obra
+            </label>
           </label>
           <label className="space-y-1">
             <div
@@ -894,71 +881,33 @@ export default function PlanilhaImportacoesPage() {
             >
               Modo
             </div>
-            <select className="input bg-white w-full" value={planilhaImportMode} onChange={(e) => setPlanilhaImportMode(e.target.value as any)} disabled={loading}>
+          <div className="flex items-start gap-3 flex-wrap">
+            <select className="input bg-white min-w-[220px] flex-1" value={planilhaImportMode} onChange={(e) => setPlanilhaImportMode(e.target.value as any)} disabled={loading}>
               <option value="APPEND">Complementar</option>
               <option value="REPLACE">Substituir (apaga e importa)</option>
             </select>
-          </label>
-          <label
-            className="flex items-center gap-2 mt-6 text-sm text-slate-700 select-none"
-            title="Quando marcado, você pode escolher uma planilha de outra obra como origem. A importação sempre vai para a planilha destino atual."
-          >
-            <input type="checkbox" checked={includeOutrasObras} onChange={(e) => setIncludeOutrasObras(Boolean(e.target.checked))} disabled={loading} />
-            De outra obra
+            <label className="flex items-center gap-2 text-sm text-slate-700 select-none pt-2">
+              <input
+                type="checkbox"
+                checked={planilhaSkipExistingLines}
+                onChange={(e) => setPlanilhaSkipExistingLines(Boolean(e.target.checked))}
+                disabled={loading || planilhaImportMode === "REPLACE"}
+                title={
+                  planilhaImportMode === "REPLACE"
+                    ? 'Indisponível no modo "Substituir": a planilha destino será apagada antes de importar.'
+                    : 'Quando marcado, o sistema não insere linhas iguais que já existam na planilha destino (mesmo Item/Código/Qtd/Valor).'
+                }
+              />
+              Ignorar linhas repetidas
+            </label>
+          </div>
           </label>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-3">
-          <label className="space-y-1">
-            <div
-              className="text-xs text-slate-500"
-              title={
-                planilhaSourceAndTargetShareFonte
-                  ? "As duas planilhas usam a mesma Fonte de dados. Nesta situação, não faz sentido atualizar o cadastro da Fonte pela importação; a opção fica travada em 'Manter como está'."
-                  : "Define o que acontece com o CADASTRO da Fonte de dados (serviços/códigos) da planilha destino. Isso pode impactar outras planilhas que usam a mesma Fonte."
-              }
-            >
-              Repetidos na Fonte
-            </div>
-            <select
-              className="input bg-white w-full"
-              value={planilhaCatalogDupPolicy}
-              onChange={(e) => setPlanilhaCatalogDupPolicy(e.target.value as any)}
-              disabled={loading || planilhaSourceAndTargetShareFonte}
-              title={
-                planilhaSourceAndTargetShareFonte
-                  ? "Mesma Fonte de dados na origem e no destino: opção travada em 'Manter como está'."
-                  : catalogPolicyTooltip(planilhaCatalogDupPolicy)
-              }
-            >
-              <option value="FILL">Completar campos vazios (padrão)</option>
-              <option value="KEEP">Manter como está</option>
-              <option value="OVERWRITE">Sobrescrever (somente dados informados)</option>
-            </select>
-          </label>
-          <label className="flex items-center gap-2 mt-6 text-sm text-slate-700 select-none">
-            <input
-              type="checkbox"
-              checked={planilhaSkipExistingLines}
-              onChange={(e) => setPlanilhaSkipExistingLines(Boolean(e.target.checked))}
-              disabled={loading || planilhaImportMode === "REPLACE"}
-              title={
-                planilhaImportMode === "REPLACE"
-                  ? 'Indisponível no modo "Substituir": a planilha destino será apagada antes de importar.'
-                  : 'Quando marcado, o sistema não insere linhas iguais que já existam na planilha destino (mesmo Item/Código/Qtd/Valor).'
-              }
-            />
-            Ignorar linhas repetidas na planilha
-          </label>
-          <div />
-        </div>
-        {planilhaImportMode === "REPLACE" || planilhaCatalogDupPolicy === "OVERWRITE" ? (
+        {planilhaImportMode === "REPLACE" ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
             <div className="font-semibold">Atenção</div>
             {planilhaImportMode === "REPLACE" ? <div>- Substituir apaga todas as linhas da planilha destino antes de importar.</div> : null}
-            {planilhaCatalogDupPolicy === "OVERWRITE" ? (
-              <div>- Sobrescrever altera a Fonte de dados (cadastro compartilhado) e pode impactar outras planilhas que usam a mesma Fonte.</div>
-            ) : null}
           </div>
         ) : null}
 

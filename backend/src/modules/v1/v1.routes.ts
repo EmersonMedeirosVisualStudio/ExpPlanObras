@@ -6683,7 +6683,7 @@ export default async function v1Routes(server: FastifyInstance) {
           .parse(body || {});
 
         const modoImportacao = payload.modoImportacao === 'REPLACE' ? 'REPLACE' : 'APPEND';
-        const catalogDupPolicy = payload.catalogDupPolicy === 'KEEP' || payload.catalogDupPolicy === 'OVERWRITE' ? payload.catalogDupPolicy : ('FILL' as const);
+        const catalogDupPolicy = 'KEEP' as const;
         const skipExistingLines = Boolean(payload.skipExistingLines);
         const cadastrarServicosFaltantes = true;
 
@@ -6721,8 +6721,7 @@ export default async function v1Routes(server: FastifyInstance) {
           const idObraSource = Number(src?.idObra || 0);
           if (!idObraSource) throw new Error('Planilha origem inválida');
           if (!canAccessObraId(idObraSource, scope)) throw new Error('Sem acesso à obra da planilha origem');
-          const idFonteDadosSource = src?.idFonteDados != null ? Number(src.idFonteDados) : 0;
-          const effectiveCatalogDupPolicy = idFonteDadosSource && idFonteDadosSource === idFonteDados ? ('KEEP' as const) : catalogDupPolicy;
+          const effectiveCatalogDupPolicy = catalogDupPolicy;
 
           if (modoImportacao === 'REPLACE') {
             await tx.$executeRawUnsafe(`DELETE FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, Number(payload.idPlanilhaTarget));
