@@ -858,16 +858,11 @@ export default function PlanilhaImportacoesPage() {
               <option value="REPLACE">Substituir (apaga e importa)</option>
             </select>
           </label>
-          <label className="flex items-center gap-2 mt-6 text-sm text-slate-700 select-none">
-            <input
+          <label
+            className="flex items-center gap-2 mt-6 text-sm text-slate-700 select-none"
             title="Quando marcado, você pode escolher uma planilha de outra obra como origem. A importação sempre vai para a planilha destino atual."
-              type="checkbox"
-              checked={includeOutrasObras}
-              onChange={(e) => setIncludeOutrasObras(Boolean(e.target.checked))}
-              disabled={loading}
-            />
-              disabled={loading}
-            />
+          >
+            <input type="checkbox" checked={includeOutrasObras} onChange={(e) => setIncludeOutrasObras(Boolean(e.target.checked))} disabled={loading} />
             De outra obra
           </label>
         </div>
