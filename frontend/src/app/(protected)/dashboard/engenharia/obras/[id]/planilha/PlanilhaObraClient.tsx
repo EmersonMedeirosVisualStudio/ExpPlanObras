@@ -133,6 +133,38 @@ function parseNumberLoose(v: unknown) {
   return Number.isFinite(n) ? n : null;
 }
 
+function formatNumberPtBR(n: number, decimals: number) {
+  return n.toLocaleString("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
+function sanitizeDecimalInput(raw: string) {
+  const s = String(raw ?? "").replace(/[^\d.,]/g, "");
+  const lastDot = s.lastIndexOf(".");
+  const lastComma = s.lastIndexOf(",");
+  const lastSep = Math.max(lastDot, lastComma);
+  if (lastSep < 0) return s.replace(/[.,]/g, "");
+  const sep = s[lastSep];
+  const left = s.slice(0, lastSep).replace(/[.,]/g, "");
+  const right = s.slice(lastSep + 1).replace(/[.,]/g, "");
+  return `${left}${sep}${right}`;
+}
+
+function formatDecimalOnBlur(raw: string, decimals: number) {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+  const n = parseNumberLoose(s);
+  if (n == null) return s;
+  return formatNumberPtBR(n, decimals);
+}
+
+function fmtCellNumber(raw: unknown, decimals: number) {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+  const n = parseNumberLoose(s);
+  if (n == null) return s;
+  return formatNumberPtBR(n, decimals);
+}
+
 function escapeHtml(v: unknown) {
   return String(v ?? "")
     .replace(/&/g, "&amp;")
@@ -1385,7 +1417,7 @@ export default function PlanilhaObraClient({
     if (!(q > 0) || !(v >= 0)) return null;
     const parcial = Number((q * v).toFixed(2));
     if (!Number.isFinite(parcial)) return null;
-    return parcial.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return formatNumberPtBR(parcial, 2);
   }
 
   function applyValorParcialAuto(next: typeof novo) {
@@ -1450,7 +1482,7 @@ export default function PlanilhaObraClient({
       if (normalized.tipoLinha === "SERVICO") {
         const info = await obterPrecoUnitarioServico(normalized.codigo, planilha.idPlanilha);
         const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
-        normalized = applyValorParcialAuto({ ...normalized, valorUnitario: String(vu) });
+        normalized = applyValorParcialAuto({ ...normalized, valorUnitario: formatNumberPtBR(Number(vu || 0), 2) });
       }
       const nextErrors = validateLinha(normalized);
       setLinhaErrors(nextErrors);
@@ -1527,9 +1559,9 @@ export default function PlanilhaObraClient({
       fonte: String(l.fonte || ""),
       servicos: String(l.servicos || ""),
       und: String(l.und || ""),
-      quant: String(l.quant || ""),
-      valorUnitario: String(l.valorUnitario || ""),
-      valorParcial: String(l.valorParcial || ""),
+      quant: formatDecimalOnBlur(String(l.quant || ""), 3),
+      valorUnitario: formatDecimalOnBlur(String(l.valorUnitario || ""), 2),
+      valorParcial: formatDecimalOnBlur(String(l.valorParcial || ""), 2),
     };
     setEditingLinhaId(Number(l.idLinha));
     setNovo(next);
@@ -3191,14 +3223,14 @@ export default function PlanilhaObraClient({
                               setNovo((p) => {
                                 if (p.tipoLinha !== "SERVICO") return p;
                                 if (String(p.codigo || "").trim().toUpperCase() !== codigo.toUpperCase()) return p;
-                                return applyValorParcialAuto({ ...p, valorUnitario: String(vu) });
+                                return applyValorParcialAuto({ ...p, valorUnitario: formatNumberPtBR(Number(vu || 0), 2) });
                               });
                             })();
                           }}
                           onBlur={async () => {
                             const info = await obterPrecoUnitarioServico(novo.codigo, planilha?.idPlanilha ?? null);
                             const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
-                            setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: String(vu) }) : p));
+                            setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: formatNumberPtBR(Number(vu || 0), 2) }) : p));
                           }}
                           disabled={!podeEditar}
                           placeholder="SER-0001"
@@ -3263,7 +3295,7 @@ export default function PlanilhaObraClient({
                                 setNovo((p) => {
                                   if (p.tipoLinha !== "SERVICO") return p;
                                   if (String(p.codigo || "").trim().toUpperCase() !== codigo.toUpperCase()) return p;
-                                  return applyValorParcialAuto({ ...p, valorUnitario: String(vu) });
+                                  return applyValorParcialAuto({ ...p, valorUnitario: formatNumberPtBR(Number(vu || 0), 2) });
                                 });
                               })();
                             }}
@@ -3271,7 +3303,7 @@ export default function PlanilhaObraClient({
                               if (!String(novo.codigo || "").trim()) return;
                               const info = await obterPrecoUnitarioServico(novo.codigo, planilha?.idPlanilha ?? null);
                               const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
-                              setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: String(vu) }) : p));
+                              setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: formatNumberPtBR(Number(vu || 0), 2) }) : p));
                             }}
                             disabled={!podeEditar || servicoCamposTravadosPorCatalogo}
                           />
@@ -3303,7 +3335,7 @@ export default function PlanilhaObraClient({
                           className={`input bg-white ${linhaErrors.quant ? "border-red-300 bg-red-50" : ""}`}
                           value={novo.quant}
                           onChange={(e) => {
-                            const v = e.target.value;
+                            const v = sanitizeDecimalInput(e.target.value);
                             setLinhaFormErr(null);
                             setNovo((p) => applyValorParcialAuto({ ...p, quant: v }));
                             setLinhaErrors((p) => {
@@ -3312,8 +3344,15 @@ export default function PlanilhaObraClient({
                               return rest;
                             });
                           }}
-                          onBlur={() => setNovo((p) => applyValorParcialAuto({ ...p }))}
+                          onBlur={() =>
+                            setNovo((p) => {
+                              if (p.tipoLinha !== "SERVICO") return p;
+                              const next = { ...p, quant: formatDecimalOnBlur(p.quant, 3) };
+                              return applyValorParcialAuto(next);
+                            })
+                          }
                           disabled={!podeEditar}
+                          inputMode="decimal"
                         />
                       </div>
                       <div>
@@ -3575,19 +3614,19 @@ export default function PlanilhaObraClient({
                       <td className="px-3 py-2 border-r border-slate-200">{l.fonte || ""}</td>
                       <td className="px-3 py-2 min-w-[374px] border-r border-slate-200">{l.servicos || ""}</td>
                       <td className="px-3 py-2 border-r border-slate-200">{l.und || ""}</td>
-                      <td className="px-3 py-2 text-right border-r border-slate-200">{l.quant || ""}</td>
-                      <td className="px-3 py-2 text-right border-r border-slate-200">{l.valorUnitario || ""}</td>
+                      <td className="px-3 py-2 text-right border-r border-slate-200">{fmtCellNumber(l.quant, 3)}</td>
+                      <td className="px-3 py-2 text-right border-r border-slate-200">{fmtCellNumber(l.valorUnitario, 2)}</td>
                       <td className="px-3 py-2 text-right border-r border-slate-200">
                         {l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM"
                           ? (() => {
                               const k = String(l.item || "").trim();
                               const info = k ? subtotalByItemKey.get(k) : null;
                               if (!info?.count) return "";
-                              return moeda(Number(info.sum || 0));
+                              return formatNumberPtBR(Number(info.sum || 0), 2);
                             })()
                           : (() => {
                               const n = parseNumberLoose(l.valorParcial);
-                              return n == null ? "" : moeda(n);
+                              return n == null ? "" : formatNumberPtBR(n, 2);
                             })()}
                       </td>
                       <td className="px-3 py-2">
