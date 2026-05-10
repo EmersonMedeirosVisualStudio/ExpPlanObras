@@ -3589,16 +3589,31 @@ export default function PlanilhaObraClient({
                           const code = String(l.codigo || "").trim().toUpperCase();
                           if (!code) return null;
                           const v = composicaoValidacaoByCodigo[code];
-                          if (!v) return composicaoServicoCodes.has(code) ? <Check className="h-4 w-4 text-green-600" title="Composição definida" /> : null;
-                          if (v.status === "SEM_COMPOSICAO") return <XCircle className="h-4 w-4 text-red-600" title="Sem composição" />;
+                          if (!v)
+                            return composicaoServicoCodes.has(code) ? (
+                              <span title="Composição definida">
+                                <Check className="h-4 w-4 text-green-600" />
+                              </span>
+                            ) : null;
+                          if (v.status === "SEM_COMPOSICAO")
+                            return (
+                              <span title="Sem composição">
+                                <XCircle className="h-4 w-4 text-red-600" />
+                              </span>
+                            );
                           if (v.status === "DIVERGENTE")
                             return (
-                              <TriangleAlert
-                                className="h-4 w-4 text-amber-700"
+                              <span
                                 title={`Planilha: ${moeda(Number(v.totalPlanilha || 0))} | Composição: ${moeda(Number(v.totalComposicao || 0))} | Dif.: ${moeda(Number(v.diff || 0))}`}
-                              />
+                              >
+                                <TriangleAlert className="h-4 w-4 text-amber-700" />
+                              </span>
                             );
-                          return <Check className="h-4 w-4 text-green-600" title="OK" />;
+                          return (
+                            <span title="OK">
+                              <Check className="h-4 w-4 text-green-600" />
+                            </span>
+                          );
                         })()}
                       </td>
                       <td className="px-3 py-2 w-[118px] max-w-[118px] whitespace-nowrap overflow-hidden text-ellipsis border-r border-slate-200">
