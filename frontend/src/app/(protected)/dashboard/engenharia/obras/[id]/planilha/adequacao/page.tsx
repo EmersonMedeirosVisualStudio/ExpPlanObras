@@ -632,7 +632,13 @@ export default function AdequacaoPlanilhaPage() {
     <style>
       @page { size: A4 landscape; margin: 10mm; }
       body { font-family: Arial, sans-serif; margin: 0; color: #0f172a; font-size: ${Number(uiPrefs.fontSizePx)}px; line-height: 1.12; }
-      @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+      @media print {
+        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        thead { display: table-header-group !important; }
+        tfoot { display: table-footer-group !important; }
+        table { page-break-inside: auto; }
+        tr { break-inside: avoid; page-break-inside: avoid; }
+      }
       .print-content { padding: 0; }
       thead { display: table-header-group; }
       .empresa-cabecalho { width: 100%; font-family: ${escapeHtml(pp.headerFontFamily)}; font-size: ${Number(pp.headerFontSizePx || 11)}px; }
