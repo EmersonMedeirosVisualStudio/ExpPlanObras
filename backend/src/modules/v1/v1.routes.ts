@@ -10824,6 +10824,13 @@ export default async function v1Routes(server: FastifyInstance) {
     const importAllParsed = String(fields.importAllParsed || fields.importAll || '').toLowerCase() === 'true' || fields.importAllParsed === true || fields.importAll === true;
     const dryRun = String(fields.dryRun || '').toLowerCase() === 'true' || fields.dryRun === true;
     const onlyCodigoServico = fields.codigoServico ? String(fields.codigoServico).trim().toUpperCase() : '';
+    const codigoServicosRaw = fields.codigoServicos ?? fields.codigosServico ?? fields.codigosServicos ?? fields.codigos ?? '';
+    const codigoServicos = String(codigoServicosRaw || '')
+      .split(/[\s,;]+/g)
+      .map((x) => String(x || '').trim().toUpperCase())
+      .filter(Boolean);
+    const descricaoContemRaw = fields.descricaoContem ?? fields.descricaoServicoContem ?? fields.contem ?? '';
+    const descricaoContemKey = descricaoContemRaw ? normalizeHeader(String(descricaoContemRaw || '')) : '';
     if (!uf) return fail(reply, 422, 'UF é obrigatória');
 
     if (!fileBuffer) {
@@ -11211,10 +11218,28 @@ export default async function v1Routes(server: FastifyInstance) {
       : null;
 
     let targetCodes = new Set<string>(parsedCodes);
+    let descricaoMatches: Array<{ codigo: string; descricao: string | null; und: string | null }> = [];
     if (onlyCodigoServico) {
       const code = String(onlyCodigoServico).trim().toUpperCase();
       if (!comps.has(code)) return fail(reply, 422, `O serviço ${code} não é cadastrado no SINAPI, na base informada (Data-base: ${sinapiDataBaseKey || '—'}, UF: ${uf || '—'}, ${insumosModo}).`);
       targetCodes = new Set([code]);
+    } else if (codigoServicos.length) {
+      const filtered = codigoServicos.filter((c) => comps.has(c));
+      if (!filtered.length) return fail(reply, 422, 'Nenhum dos códigos informados foi encontrado na aba Analítico.');
+      targetCodes = new Set(filtered);
+    } else if (descricaoContemKey) {
+      const list = parsedCodes
+        .map((c) => {
+          const entry = comps.get(c);
+          const descricao = entry?.descricao ? String(entry.descricao || '').trim() : '';
+          const und = entry?.und ? String(entry.und || '').trim() : '';
+          return { codigo: c, descricao: descricao || null, und: und || null };
+        })
+        .filter((x) => normalizeHeader(String(x.descricao || '')).includes(descricaoContemKey))
+        .sort((a, b) => a.codigo.localeCompare(b.codigo));
+      if (!list.length) return fail(reply, 422, 'Nenhum serviço encontrado contendo o texto informado.');
+      descricaoMatches = list;
+      targetCodes = new Set(list.map((x) => x.codigo));
     } else if (!importAllParsed) {
       const serv = (await prisma.$queryRawUnsafe(
         `
@@ -11262,18 +11287,36 @@ export default async function v1Routes(server: FastifyInstance) {
     }
 
     const totalItens = toImport.reduce((acc, code) => acc + (comps.get(code)?.itens.length || 0), 0);
-    const sample = toImport.slice(0, 5).map((c) => {
-      const entry = comps.get(c);
-      const all = entry?.itens || [];
-      const valorSemBdi = all.reduce((acc: number, it: any) => {
-        const q = it?.quantidade == null ? 0 : Number(it.quantidade);
-        const vu = it?.valorUnitario == null ? 0 : Number(it.valorUnitario);
-        if (!Number.isFinite(q) || !Number.isFinite(vu)) return acc;
-        return acc + q * vu;
-      }, 0);
-      const itens = onlyCodigoServico || targetCodes.size === 1 ? all : all.slice(0, 3);
-      return { codigo: c, descricao: entry?.descricao ?? null, und: entry?.und ?? null, valorSemBdi: Number.isFinite(valorSemBdi) ? valorSemBdi : null, itens };
-    });
+    const sample = descricaoContemKey
+      ? descricaoMatches.slice(0, 80).map((s) => ({ codigo: s.codigo, descricao: s.descricao, und: s.und, valorSemBdi: null, itens: [] }))
+      : codigoServicos.length
+        ? Array.from(targetCodes)
+            .sort((a, b) => a.localeCompare(b))
+            .slice(0, 80)
+            .map((c) => {
+              const entry = comps.get(c);
+              const all = entry?.itens || [];
+              const valorSemBdi = all.reduce((acc: number, it: any) => {
+                const q = it?.quantidade == null ? 0 : Number(it.quantidade);
+                const vu = it?.valorUnitario == null ? 0 : Number(it.valorUnitario);
+                if (!Number.isFinite(q) || !Number.isFinite(vu)) return acc;
+                return acc + q * vu;
+              }, 0);
+              const itens = onlyCodigoServico || targetCodes.size === 1 ? all : all.slice(0, 3);
+              return { codigo: c, descricao: entry?.descricao ?? null, und: entry?.und ?? null, valorSemBdi: Number.isFinite(valorSemBdi) ? valorSemBdi : null, itens };
+            })
+        : toImport.slice(0, 5).map((c) => {
+            const entry = comps.get(c);
+            const all = entry?.itens || [];
+            const valorSemBdi = all.reduce((acc: number, it: any) => {
+              const q = it?.quantidade == null ? 0 : Number(it.quantidade);
+              const vu = it?.valorUnitario == null ? 0 : Number(it.valorUnitario);
+              if (!Number.isFinite(q) || !Number.isFinite(vu)) return acc;
+              return acc + q * vu;
+            }, 0);
+            const itens = onlyCodigoServico || targetCodes.size === 1 ? all : all.slice(0, 3);
+            return { codigo: c, descricao: entry?.descricao ?? null, und: entry?.und ?? null, valorSemBdi: Number.isFinite(valorSemBdi) ? valorSemBdi : null, itens };
+          });
 
     if (dryRun) {
       return ok(

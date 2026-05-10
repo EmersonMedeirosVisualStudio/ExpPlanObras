@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Trash2, XCircle } from "lucide-react";
-import * as XLSX from "xlsx";
 
 type PreviewResult = {
   sheetName: string;
@@ -169,52 +168,6 @@ function makeImportadoKey(row: { codigo: string; dataBase: string; uf: string; i
   )
     .trim()
     .toUpperCase()}`;
-}
-
-function normalizeLooseText(input: string) {
-  return String(input || "")
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
-function pickInsumosSheetNameByMode(args: { sheetNames: string[]; insumosModo: "ISD" | "ICD" | "ISE" }) {
-  const all = (args.sheetNames || []).map((n) => ({ name: n, key: normalizeHeader(n) }));
-  const isPreco = (k: string) => (k.includes("preco") || k.includes("precos")) && (k.includes("insumo") || k.includes("insumos"));
-  const hasToken = (k: string, token: string) => k === token || k.startsWith(`${token}_`) || k.endsWith(`_${token}`) || k.includes(`_${token}_`);
-  const pickByExactToken = (token: string) => all.find((s) => String(s.key || "") === token)?.name || "";
-  if (args.insumosModo === "ISD") {
-    const exact = pickByExactToken("isd");
-    if (exact) return exact;
-    const hit =
-      all.find((s) => isPreco(s.key) && hasToken(s.key, "isd")) ||
-      all.find((s) => isPreco(s.key) && s.key.includes("sem_desoneracao")) ||
-      all.find((s) => isPreco(s.key) && s.key.includes("encargos_sociais") && s.key.includes("sem_desoneracao")) ||
-      all.find((s) => isPreco(s.key) && s.key.includes("sem_deson")) ||
-      all.find((s) => isPreco(s.key) && s.key.includes("sem") && s.key.includes("desoneracao")) ||
-      all.find((s) => isPreco(s.key) && s.key.includes("encargos") && s.key.includes("sem") && s.key.includes("desoner"));
-    return hit?.name || "";
-  }
-  if (args.insumosModo === "ICD") {
-    const exact = pickByExactToken("icd");
-    if (exact) return exact;
-    const hit =
-      all.find((s) => isPreco(s.key) && hasToken(s.key, "icd")) ||
-      all.find((s) => isPreco(s.key) && s.key.includes("com_desoneracao")) ||
-      all.find((s) => isPreco(s.key) && s.key.includes("encargos_sociais") && s.key.includes("com_desoneracao")) ||
-      all.find((s) => isPreco(s.key) && s.key.includes("com") && s.key.includes("desoneracao")) ||
-      all.find((s) => isPreco(s.key) && s.key.includes("encargos") && s.key.includes("com") && s.key.includes("desoner"));
-    return hit?.name || "";
-  }
-  const exact = pickByExactToken("ise");
-  if (exact) return exact;
-  const hit =
-    all.find((s) => isPreco(s.key) && hasToken(s.key, "ise")) ||
-    all.find((s) => isPreco(s.key) && s.key.includes("sem_encargos")) ||
-    all.find((s) => isPreco(s.key) && s.key.includes("sem_encargos_sociais")) ||
-    all.find((s) => isPreco(s.key) && s.key.includes("sem") && s.key.includes("encargos"));
-  return hit?.name || "";
 }
 
 export default function SinapiImportPage() {
@@ -932,7 +885,7 @@ export default function SinapiImportPage() {
 
   async function doRequest(
     dryRun: boolean,
-    override?: { codigoServico?: string },
+    override?: { codigoServico?: string; codigosServico?: string[] },
     opts?: { commitToState?: boolean; manageBusy?: boolean }
   ): Promise<PreviewResult | ImportResult | null> {
     const commitToState = opts?.commitToState !== false;
@@ -962,263 +915,16 @@ export default function SinapiImportPage() {
       const computedMode: "MISSING_ONLY" | "UPSERT" = opcao === "SUBSTITUIR" || opcao === "SERVICO" ? "UPSERT" : "MISSING_ONLY";
       const computedImportAllParsed = opcao === "ARQUIVO";
       const overrideCodigoServico = String(override?.codigoServico || "").trim().toUpperCase();
+      const overrideCodigosServicos = Array.isArray(override?.codigosServico)
+        ? override!.codigosServico.map((x) => String(x || "").trim().toUpperCase()).filter(Boolean)
+        : [];
       const computedCodigoServico = overrideCodigoServico || (opcao === "SERVICO" ? codigoServico.trim().toUpperCase() : "");
-      if (opcao === "SERVICO" && !computedCodigoServico) {
-        if (commitToState) {
-          setErr("Informe o código do serviço.");
-          return null;
-        }
-        throw new Error("Informe o código do serviço.");
+      if (opcao === "SERVICO" && !overrideCodigosServicos.length) {
+        if (servicoBuscaModo === "CODIGO" && !computedCodigoServico) throw new Error("Informe o código do serviço.");
+        if (servicoBuscaModo === "CONTEM" && !String(descricaoServicoContem || "").trim()) throw new Error("Informe a descrição (contém).");
       }
-
-      const shouldUseParsed =
-        Boolean(computedCodigoServico) &&
-        file.size >= 4 * 1024 * 1024;
-
-      if (shouldUseParsed) {
-        const buffer = await file.arrayBuffer();
-        const wb = XLSX.read(buffer, { type: "array", cellDates: false });
-
-        const analiticoSheet = wb.Sheets[sheetName] || wb.Sheets[String(sheetName || "").trim()] || null;
-        if (!analiticoSheet) {
-          const names = (wb.SheetNames || []).slice(0, 30).join(", ");
-          throw new Error(`Aba não encontrada: "${sheetName}". Abas disponíveis: ${names || "—"}`);
-        }
-
-        const insumosSheetNameFinal = String(insumosSheetName || "").trim() || pickInsumosSheetNameByMode({ sheetNames: wb.SheetNames || [], insumosModo });
-        const insumosSheet = insumosSheetNameFinal ? wb.Sheets[insumosSheetNameFinal] : null;
-        if (!insumosSheet) {
-          const names = (wb.SheetNames || []).slice(0, 30).join(", ");
-          throw new Error(
-            insumosSheetNameFinal
-              ? `Aba de insumos não encontrada: "${insumosSheetNameFinal}". Abas disponíveis: ${names || "—"}`
-              : `Não foi possível localizar a aba de preços de insumos para ${insumosModo}. Abas disponíveis: ${names || "—"}.`
-          );
-        }
-
-        const parseInsumos = () => {
-          const m = XLSX.utils.sheet_to_json(insumosSheet, { header: 1, defval: "" }) as any[][];
-          const map = new Map<string, { classificacao: string; descricao: string; und: string; preco: number | null }>();
-          if (!Array.isArray(m) || m.length < 2) return map;
-          const ufLower = String(uf || "").trim().toLowerCase();
-          let headerIdx = -1;
-          let rawHeader: any[] = [];
-          for (let i = 0; i < Math.min(120, m.length); i++) {
-            const r = Array.isArray(m[i]) ? m[i] : [];
-            const keys = r.map((c) => normalizeHeader(String(c || ""))).filter(Boolean);
-            if (keys.length < 4) continue;
-            const hasCodigo = keys.some((k) => k.includes("codigo") && (k.includes("insumo") || k.includes("item") || k === "codigo"));
-            const hasDesc = keys.some((k) => k.includes("descricao"));
-            const hasUnd = keys.some((k) => k === "unidade" || k === "und" || k.startsWith("unid"));
-            if (hasCodigo && hasDesc && hasUnd) {
-              headerIdx = i;
-              rawHeader = r;
-              break;
-            }
-          }
-          if (headerIdx < 0) return map;
-          const headersNorm = rawHeader.map((h) => normalizeHeader(String(h || "")));
-          const findCol = (cands: string[]) => {
-            for (const c of cands) {
-              const idx = headersNorm.findIndex((h) => h === c);
-              if (idx >= 0) return idx;
-            }
-            for (const c of cands) {
-              const idx = headersNorm.findIndex((h) => h.includes(c));
-              if (idx >= 0) return idx;
-            }
-            return -1;
-          };
-          const iClass = findCol(["classificacao"]);
-          const iCod = findCol(["codigo_item", "codigo"]);
-          const iDesc = findCol(["descricao_item", "descricao", "insumo"]);
-          const iUnd = findCol(["und", "unid", "unidade"]);
-          let iPreco = headersNorm.findIndex((h) => h === ufLower);
-          if (iPreco < 0) iPreco = headersNorm.findIndex((h) => h.includes(ufLower));
-          for (let i = headerIdx + 1; i < m.length; i++) {
-            const r = Array.isArray(m[i]) ? m[i] : [];
-            const cod = iCod >= 0 ? String(r[iCod] || "").trim().toUpperCase() : "";
-            if (!cod) continue;
-            const classificacao = iClass >= 0 ? String(r[iClass] || "").trim() : "";
-            const descricao = iDesc >= 0 ? String(r[iDesc] || "").trim() : "";
-            const und = iUnd >= 0 ? String(r[iUnd] || "").trim() : "";
-            const preco = iPreco >= 0 ? parseNumberLoose(r[iPreco]) : null;
-            map.set(cod, { classificacao, descricao, und, preco });
-          }
-          return map;
-        };
-
-        const insumosMap = parseInsumos();
-        if (!insumosMap.size) throw new Error(`Não foi possível ler os preços do UF ${String(uf || "").trim().toUpperCase()} na aba de insumos (${insumosSheetNameFinal}).`);
-
-        const parseAnaliticoServico = () => {
-          const m = XLSX.utils.sheet_to_json(analiticoSheet, { header: 1, defval: "" }) as any[][];
-          if (!Array.isArray(m) || m.length < 2) return { composicao: null as any, itens: [] as any[] };
-          let headerIdx = -1;
-          let rawHeader: any[] = [];
-          for (let i = 0; i < Math.min(160, m.length); i++) {
-            const r = Array.isArray(m[i]) ? m[i] : [];
-            const keys = r.map((c) => normalizeHeader(String(c || ""))).filter(Boolean);
-            if (keys.length < 6) continue;
-            const hasComp = keys.some((k) => k.includes("codigo") && k.includes("compos"));
-            const hasCodItem = keys.some((k) => k.includes("codigo") && k.includes("item"));
-            const hasCoef = keys.some((k) => k.includes("coef"));
-            if (hasComp && hasCodItem && hasCoef) {
-              headerIdx = i;
-              rawHeader = r;
-              break;
-            }
-          }
-          if (headerIdx < 0) return { composicao: null as any, itens: [] as any[] };
-          const headersNorm = rawHeader.map((h) => normalizeHeader(String(h || "")));
-          const findCol = (cands: string[]) => {
-            for (const c of cands) {
-              const idx = headersNorm.findIndex((h) => h === c);
-              if (idx >= 0) return idx;
-            }
-            for (const c of cands) {
-              const idx = headersNorm.findIndex((h) => h.includes(c));
-              if (idx >= 0) return idx;
-            }
-            return -1;
-          };
-          const iCodigoComp = findCol(["codigo_composicao", "codigo_da_composicao", "codigo_composicao_sinapi"]);
-          const iTipo = findCol(["tipo_item", "tipo"]);
-          const iCodigoItem = findCol(["codigo_item", "codigo_do_item", "codigo"]);
-          const iDescItem = findCol(["descricao_item", "descricao_do_item", "descricao"]);
-          const iUndItem = findCol(["unidade", "und", "unid"]);
-          const iCoef = findCol(["coeficiente", "coef"]);
-          const iDescComp = findCol(["descricao_da_composicao", "descricao_composicao", "desc_composicao", "descricao_compos"]);
-          const iUndComp = findCol(["unidade_da_composicao", "unidade_composicao", "und_composicao", "unidade_compos", "und_compos"]);
-
-          let compDescricao = "";
-          let compUnd = "";
-          const out: any[] = [];
-          for (let i = headerIdx + 1; i < m.length; i++) {
-            const r = Array.isArray(m[i]) ? m[i] : [];
-            const comp = iCodigoComp >= 0 ? String(r[iCodigoComp] || "").trim().toUpperCase() : "";
-            if (!comp) continue;
-            if (comp !== computedCodigoServico) continue;
-            const codigoItem = iCodigoItem >= 0 ? String(r[iCodigoItem] || "").trim().toUpperCase() : "";
-            const coef = iCoef >= 0 ? parseNumberLoose(r[iCoef]) : null;
-            const tipoRaw = iTipo >= 0 ? String(r[iTipo] || "").trim() : "";
-            if (!compDescricao && iDescComp >= 0) compDescricao = String(r[iDescComp] || "").trim();
-            if (!compUnd && iUndComp >= 0) compUnd = String(r[iUndComp] || "").trim();
-            if (!codigoItem && coef == null && !tipoRaw) {
-              if (!compDescricao) {
-                if (iDescComp >= 0) compDescricao = String(r[iDescComp] || "").trim();
-                else if (iDescItem >= 0) compDescricao = String(r[iDescItem] || "").trim();
-              }
-              if (!compUnd) {
-                if (iUndComp >= 0) compUnd = String(r[iUndComp] || "").trim();
-                else if (iUndItem >= 0) compUnd = String(r[iUndItem] || "").trim();
-              }
-              continue;
-            }
-            if (!codigoItem) continue;
-            if (coef == null) continue;
-            const tipoKey = normalizeHeader(tipoRaw);
-            const tipoItem = tipoKey.includes("insumo") ? "INSUMO" : "COMPOSICAO";
-            const desc = iDescItem >= 0 ? String(r[iDescItem] || "").trim() : "";
-            const und = iUndItem >= 0 ? String(r[iUndItem] || "").trim() : "";
-            const ins = insumosMap.get(codigoItem) || null;
-            const insumoPu = ins?.preco ?? null;
-            const expTipo = tipoItem === "INSUMO" ? String(ins?.classificacao || "INSUMO").trim() || "INSUMO" : "COMPOSICAO";
-            out.push({
-              codigoItem,
-              coeficiente: coef,
-              tipoItemSinapi: tipoItem,
-              descricaoSinapi: desc || null,
-              undSinapi: und || null,
-              insumoClassificacao: ins?.classificacao || null,
-              insumoDescricao: ins?.descricao || null,
-              insumoUnd: ins?.und || null,
-              insumoPu: insumoPu,
-              expTipo,
-              expCodigo: codigoItem,
-              expDescricao: desc || ins?.descricao || null,
-              expUnd: und || ins?.und || null,
-              expValorUnitario: tipoItem === "INSUMO" ? insumoPu : null,
-            });
-          }
-          return { composicao: { codigo: computedCodigoServico, descricao: compDescricao || null, und: compUnd || null }, itens: out };
-        };
-
-        const parsedLocal = parseAnaliticoServico();
-        if (!parsedLocal.itens.length) throw new Error(`Serviço ${computedCodigoServico} não encontrado na aba "${sheetName}".`);
-
-        if (commitToState) {
-          setPreviewItensLocal(
-            parsedLocal.itens.map((it: any) => ({
-              tipoItemSinapi: String(it.tipoItemSinapi || "").trim() || "—",
-              tipoSistema: computeTipoExpert({ tipoItemSinapi: it.tipoItemSinapi, classificacaoSinapi: it.insumoClassificacao }) || "—",
-              classificacao: it.insumoClassificacao ?? null,
-              codigoItem: String(it.expCodigo || it.codigoItem || "").trim(),
-              descricao: it.expDescricao ?? it.insumoDescricao ?? it.descricaoSinapi ?? null,
-              und: it.expUnd ?? it.insumoUnd ?? it.undSinapi ?? null,
-              coeficiente: Number(it.coeficiente),
-              valorUnitario: it.expValorUnitario ?? it.insumoPu ?? null,
-            }))
-          );
-          setPreviewCompLocal({
-            codigo: parsedLocal.composicao?.codigo ? String(parsedLocal.composicao.codigo).trim().toUpperCase() : computedCodigoServico,
-            descricao: parsedLocal.composicao?.descricao ?? null,
-            und: parsedLocal.composicao?.und ?? null,
-            valorSemBdi: (() => {
-              const total = parsedLocal.itens.reduce((acc: number, it: any) => acc + Number(it.coeficiente || 0) * Number(it.expValorUnitario ?? it.insumoPu ?? 0), 0);
-              return Number.isFinite(total) ? total : null;
-            })(),
-          });
-          setPreviewSelectedCodigo(computedCodigoServico);
-        }
-
-        const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/sinapi/import-analitico-parsed`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            uf: String(uf || "").trim().toUpperCase(),
-            insumosModo,
-            codigoServico: computedCodigoServico,
-            planilhaId: planilhaIdCaller ? planilhaIdCaller : undefined,
-            sinapiDataBase: String(dataBaseImport || "").trim() || undefined,
-            banco: "SINAPI",
-            targetObraId: Number.isFinite(targetObraId) && targetObraId > 0 ? targetObraId : undefined,
-            mode: computedMode,
-            dryRun,
-            forceDataBaseMismatch,
-            composicao: parsedLocal.composicao,
-            itens: parsedLocal.itens,
-          }),
-        });
-        const json = await res.json().catch(() => null);
-        if (!res.ok || !json?.success) throw new Error(json?.message || "Falha ao processar importação SINAPI");
-
-        if (dryRun) {
-          if (commitToState) {
-            setPreview(json.data as PreviewResult);
-            setOkMsg("");
-            setErr("");
-            setPageOkMsg("Prévia gerada.");
-            setImportOpen(false);
-            setPreviewOpen(true);
-          }
-          return json.data as PreviewResult;
-        } else {
-          if (commitToState) {
-            setImported(json.data as ImportResult);
-            setOkMsg("Importação concluída.");
-            setPageOkMsg("Importação realizada com sucesso. Lista de serviços importados atualizada.");
-            await persistPlanilhaUfSinapiIfMissing(String(uf || "").trim().toUpperCase());
-            setImportadosReloadTick((n) => n + 1);
-            setImportOpen(false);
-            setPreviewOpen(false);
-            setPreview(null);
-            setPreviewItensLocal([]);
-            setPreviewCompLocal(null);
-            setPreviewSelectedCodigo("");
-          }
-          return json.data as ImportResult;
-        }
+      if (file.size >= 4 * 1024 * 1024 && !apiOrigin) {
+        throw new Error("Arquivo grande. Configure NEXT_PUBLIC_API_URL para enviar o XLSX diretamente ao backend (Render).");
       }
 
       const fd = new FormData();
@@ -1230,7 +936,9 @@ export default function SinapiImportPage() {
       fd.append("insumosModo", insumosModo);
       if (insumosSheetName.trim()) fd.append("insumosSheetName", insumosSheetName.trim());
       if (Number.isFinite(targetObraId) && targetObraId > 0) fd.append("targetObraId", String(targetObraId));
-      if (computedCodigoServico) fd.append("codigoServico", computedCodigoServico);
+      if (overrideCodigosServicos.length) fd.append("codigoServicos", overrideCodigosServicos.join(","));
+      else if (computedCodigoServico) fd.append("codigoServico", computedCodigoServico);
+      else if (opcao === "SERVICO" && servicoBuscaModo === "CONTEM") fd.append("descricaoContem", String(descricaoServicoContem || "").trim());
       fd.append("mode", computedMode);
       fd.append("importAllParsed", String(computedImportAllParsed));
       fd.append("dryRun", String(dryRun));
@@ -1342,62 +1050,9 @@ export default function SinapiImportPage() {
       setPreviewItensLoadingCodigo("");
       setBusy(true);
       try {
-        const mergedSample: PreviewResult["sample"] = [];
-        let planilhaParams: PreviewResult["planilhaParams"] = null;
-        let planilhaId: number | null = null;
-        let ufOut: string | null = null;
-        let sheetNameOut = String(sheetName || "").trim() || "Analítico";
-        let sinapiDetected: PreviewResult["sinapiDetected"] = { dataBase: null };
-        let paramsMatch: boolean | null = null;
-        let paramsStatus: PreviewResult["paramsStatus"] = "UNKNOWN";
-        let insumosModoOut: string | null = insumosModo;
-        let parsedComposicoes = 0;
-        let targetComposicoes = 0;
-        let toImportComposicoes = 0;
-        let toImportItens = 0;
-        let skippedExisting = 0;
-        let skippedNotInPlanilha = 0;
-
-        for (const code of codes) {
-          const data = (await doRequest(true, { codigoServico: code }, { commitToState: false, manageBusy: false })) as PreviewResult | null;
-          if (!data) continue;
-          sheetNameOut = String(data.sheetName || sheetNameOut);
-          ufOut = data.uf || ufOut;
-          planilhaId = data.planilhaId ?? planilhaId;
-          planilhaParams = data.planilhaParams ?? planilhaParams;
-          sinapiDetected = data.sinapiDetected ?? sinapiDetected;
-          paramsMatch = data.paramsMatch ?? paramsMatch;
-          paramsStatus = data.paramsStatus ?? paramsStatus;
-          insumosModoOut = data.insumosModo ?? insumosModoOut;
-          parsedComposicoes += Number(data.parsedComposicoes || 0);
-          targetComposicoes += Number(data.targetComposicoes || 0);
-          toImportComposicoes += Number(data.toImportComposicoes || 0);
-          toImportItens += Number(data.toImportItens || 0);
-          skippedExisting += Number(data.skippedExisting || 0);
-          skippedNotInPlanilha += Number(data.skippedNotInPlanilha || 0);
-          const sample = Array.isArray(data.sample) ? data.sample : [];
-          for (const s of sample) mergedSample.push(s);
-        }
-
-        const merged: PreviewResult = {
-          sheetName: sheetNameOut,
-          uf: ufOut,
-          planilhaId,
-          planilhaParams,
-          sinapiDetected,
-          paramsMatch,
-          paramsStatus,
-          insumosModo: insumosModoOut,
-          parsedComposicoes,
-          targetComposicoes,
-          toImportComposicoes,
-          toImportItens,
-          skippedExisting,
-          skippedNotInPlanilha,
-          sample: mergedSample,
-        };
-
-        setPreview(merged);
+        const data = (await doRequest(true, { codigosServico: codes }, { commitToState: false, manageBusy: false })) as PreviewResult | null;
+        if (!data) throw new Error("Não foi possível gerar a prévia.");
+        setPreview(data);
         setPreviewItensLocal([]);
         setPreviewCompLocal(null);
         setPreviewSelectedCodigo(codes[0]);
@@ -1413,16 +1068,6 @@ export default function SinapiImportPage() {
       return;
     }
 
-    const termo = String(descricaoServicoContem || "").trim();
-    if (!termo) {
-      setErr("Informe a descrição (contém).");
-      return;
-    }
-    if (!file) {
-      setErr("Selecione o arquivo XLSX do SINAPI para importar.");
-      return;
-    }
-
     setErr("");
     setOkMsg("");
     setImported(null);
@@ -1435,117 +1080,28 @@ export default function SinapiImportPage() {
     setPreviewItensLoadingCodigo("");
     setBusy(true);
     try {
-      const buffer = await file.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: "array", cellDates: false });
-      const analiticoSheet = wb.Sheets[sheetName] || wb.Sheets[String(sheetName || "").trim()] || null;
-      if (!analiticoSheet) {
-        const names = (wb.SheetNames || []).slice(0, 30).join(", ");
-        throw new Error(`Aba não encontrada: "${sheetName}". Abas disponíveis: ${names || "—"}`);
-      }
-      const m = XLSX.utils.sheet_to_json(analiticoSheet, { header: 1, defval: "" }) as any[][];
-      if (!Array.isArray(m) || m.length < 2) throw new Error("Aba do Analítico vazia.");
+      const data = (await doRequest(true, undefined, { commitToState: false, manageBusy: false })) as PreviewResult | null;
+      if (!data) throw new Error("Não foi possível gerar a prévia.");
 
-      let headerIdx = -1;
-      let rawHeader: any[] = [];
-      for (let i = 0; i < Math.min(160, m.length); i++) {
-        const r = Array.isArray(m[i]) ? m[i] : [];
-        const keys = r.map((c) => normalizeHeader(String(c || ""))).filter(Boolean);
-        if (keys.length < 6) continue;
-        const hasComp = keys.some((k) => k.includes("codigo") && k.includes("compos"));
-        const hasCodItem = keys.some((k) => k.includes("codigo") && k.includes("item"));
-        const hasCoef = keys.some((k) => k.includes("coef"));
-        if (hasComp && hasCodItem && hasCoef) {
-          headerIdx = i;
-          rawHeader = r;
-          break;
-        }
-      }
-      if (headerIdx < 0) throw new Error("Não foi possível localizar o cabeçalho da aba Analítico.");
-      const headersNorm = rawHeader.map((h) => normalizeHeader(String(h || "")));
-      const findCol = (cands: string[]) => {
-        for (const c of cands) {
-          const idx = headersNorm.findIndex((h) => h === c);
-          if (idx >= 0) return idx;
-        }
-        for (const c of cands) {
-          const idx = headersNorm.findIndex((h) => h.includes(c));
-          if (idx >= 0) return idx;
-        }
-        return -1;
-      };
-      const iCodigoComp = findCol(["codigo_composicao", "codigo_da_composicao", "codigo_composicao_sinapi"]);
-      const iTipo = findCol(["tipo_item", "tipo"]);
-      const iCodigoItem = findCol(["codigo_item", "codigo_do_item", "codigo"]);
-      const iDescItem = findCol(["descricao_item", "descricao_do_item", "descricao"]);
-      const iUndItem = findCol(["unidade", "und", "unid"]);
-      const iCoef = findCol(["coeficiente", "coef"]);
-      const iDescComp = findCol(["descricao_da_composicao", "descricao_composicao", "desc_composicao", "descricao_compos"]);
-      const iUndComp = findCol(["unidade_da_composicao", "unidade_composicao", "und_composicao", "unidade_compos", "und_compos"]);
+      const sampleCodes = Array.isArray(data.sample)
+        ? data.sample.map((x: any) => String(x?.codigo || "").trim().toUpperCase()).filter(Boolean)
+        : [];
+      if (!sampleCodes.length) throw new Error("Nenhum serviço encontrado.");
 
-      const termoNorm = normalizeLooseText(termo);
-      const map = new Map<string, { codigo: string; descricao: string; und: string }>();
-      for (let i = headerIdx + 1; i < m.length; i++) {
-        const r = Array.isArray(m[i]) ? m[i] : [];
-        const comp = iCodigoComp >= 0 ? String(r[iCodigoComp] || "").trim().toUpperCase() : "";
-        if (!comp) continue;
-        const codigoItem = iCodigoItem >= 0 ? String(r[iCodigoItem] || "").trim().toUpperCase() : "";
-        const coef = iCoef >= 0 ? parseNumberLoose(r[iCoef]) : null;
-        const tipoRaw = iTipo >= 0 ? String(r[iTipo] || "").trim() : "";
-        const isHeaderRow = !codigoItem && coef == null && !tipoRaw;
-        const desc = (iDescComp >= 0 ? String(r[iDescComp] || "").trim() : "") || (iDescItem >= 0 ? String(r[iDescItem] || "").trim() : "");
-        const und = (iUndComp >= 0 ? String(r[iUndComp] || "").trim() : "") || (iUndItem >= 0 ? String(r[iUndItem] || "").trim() : "");
-        const prev = map.get(comp);
-        if (!prev) {
-          map.set(comp, { codigo: comp, descricao: desc || "", und: und || "" });
-          continue;
-        }
-        if (isHeaderRow) {
-          map.set(comp, { codigo: comp, descricao: desc || prev.descricao, und: und || prev.und });
-        }
-      }
-
-      const matches = Array.from(map.values())
-        .filter((s) => s.codigo && normalizeLooseText(s.descricao).includes(termoNorm))
-        .sort((a, b) => a.codigo.localeCompare(b.codigo));
-
-      if (!matches.length) throw new Error(`Nenhum serviço encontrado contendo: "${termo}".`);
-
-      const limit = 80;
-      const limited = matches.slice(0, limit);
-
-      const planDb = String(planilhaDataBaseSinapi || "").trim();
-      const importDb = String(dataBaseImport || "").trim();
-      const paramsMatch = planDb && importDb ? planDb === importDb : null;
-      const paramsStatus: PreviewResult["paramsStatus"] = paramsMatch === true ? "MATCH" : paramsMatch === false ? "MISMATCH" : "UNKNOWN";
-
-      const fakePreview: PreviewResult = {
-        sheetName: String(sheetName || "").trim() || "Analítico",
-        uf: String(uf || "").trim().toUpperCase() || null,
-        planilhaId: planilhaCallerInfo?.idPlanilha != null ? Number(planilhaCallerInfo.idPlanilha) : null,
-        planilhaParams: null,
-        sinapiDetected: { dataBase: importDb || null },
-        paramsMatch,
-        paramsStatus,
-        insumosModo,
-        parsedComposicoes: limited.length,
-        targetComposicoes: 0,
-        toImportComposicoes: 0,
-        toImportItens: 0,
-        skippedExisting: 0,
-        skippedNotInPlanilha: 0,
-        sample: limited.map((s) => ({ codigo: s.codigo, descricao: s.descricao || null, und: s.und || null, valorSemBdi: null, itens: [] })),
-      };
-
-      setPreview(fakePreview);
+      setPreview(data);
       setPreviewGeradaPorContem(true);
-      setPreviewSelectedCodigo(limited[0].codigo);
-      setPreviewSelectedCodigos(limited.map((s) => s.codigo));
+      setPreviewSelectedCodigo(sampleCodes[0]);
+      setPreviewSelectedCodigos(sampleCodes);
       setImportOpen(false);
       setPreviewOpen(true);
+
+      const termo = String(descricaoServicoContem || "").trim();
+      const limit = 80;
+      const total = Number(data.targetComposicoes || 0);
       setPageOkMsg(
-        matches.length > limit
-          ? `Prévia gerada: ${matches.length} serviços encontrados contendo "${termo}" (mostrando os primeiros ${limit}).`
-          : `Prévia gerada: ${matches.length} serviços encontrados contendo "${termo}".`
+        total > limit
+          ? `Prévia gerada: ${total} serviços encontrados contendo "${termo}" (mostrando os primeiros ${limit}).`
+          : `Prévia gerada: ${total} serviços encontrados contendo "${termo}".`
       );
     } catch (e: any) {
       setErr(String(e?.message || "Erro ao gerar prévia"));
@@ -1601,19 +1157,10 @@ export default function SinapiImportPage() {
     setImported(null);
     setAppliedBase(null);
     try {
-      let importedComposicoes = 0;
-      let importedItens = 0;
-      let skippedExisting = 0;
-      let skippedNotInPlanilha = 0;
-
-      for (const code of unique) {
-        const data = (await doRequest(false, { codigoServico: code }, { commitToState: false, manageBusy: false })) as ImportResult | null;
-        if (!data) continue;
-        importedComposicoes += Number(data.importedComposicoes || 0);
-        importedItens += Number(data.importedItens || 0);
-        skippedExisting += Number(data.skippedExisting || 0);
-        skippedNotInPlanilha += Number(data.skippedNotInPlanilha || 0);
-      }
+      const data = (await doRequest(false, { codigosServico: unique }, { commitToState: false, manageBusy: false })) as ImportResult | null;
+      if (!data) throw new Error("Falha ao importar os serviços selecionados.");
+      const importedComposicoes = Number(data.importedComposicoes || 0);
+      const importedItens = Number(data.importedItens || 0);
 
       setPageOkMsg(`Importação concluída: ${unique.length} serviços • ${importedComposicoes} composições • ${importedItens} itens.`);
       setOkMsg("Importação concluída.");
