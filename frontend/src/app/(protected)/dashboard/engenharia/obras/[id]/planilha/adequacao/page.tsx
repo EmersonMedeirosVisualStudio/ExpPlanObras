@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Eye, EyeOff, FileSpreadsheet, Image, Printer } from "lucide-react";
+import { Eye, EyeOff, FileSpreadsheet, Filter, Image, Printer } from "lucide-react";
 import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type VersaoRow = {
@@ -132,6 +132,11 @@ export default function AdequacaoPlanilhaPage() {
     contratadoPreco: "",
     contratadoTotal: "",
   });
+  const [showFilters, setShowFilters] = useState(false);
+
+  const hasActiveGridFilter = useMemo(() => {
+    return Object.values(gridFilter).some((v) => String(v ?? "").trim());
+  }, [gridFilter]);
   const [uiPrefs, setUiPrefs] = useState<{
     fontSizePx: number;
     itemBg: string;
@@ -1156,39 +1161,53 @@ export default function AdequacaoPlanilhaPage() {
           <div>
             <div className="text-lg font-semibold">{tituloPlanilha}</div>
           </div>
-          <div className="text-sm text-slate-600">
-            Linhas: <span className="font-semibold text-slate-900">{rows.length}</span>
+          <div className="flex items-center gap-2">
+            <div className="text-sm text-slate-600">
+              Linhas: <span className="font-semibold text-slate-900">{rows.length}</span>
+            </div>
+            <button
+              className={`rounded-lg border bg-white p-2 hover:bg-slate-50 disabled:opacity-60 ${hasActiveGridFilter ? "border-blue-200 bg-blue-50 text-blue-700" : "text-slate-800"}`}
+              type="button"
+              onClick={() => setShowFilters((v) => !v)}
+              disabled={loading}
+              title={showFilters ? "Ocultar filtros" : "Exibir filtros"}
+              aria-label="Filtros"
+            >
+              <Filter className="h-4 w-4" />
+            </button>
           </div>
         </div>
 
-        <div className="rounded-lg border bg-slate-50 p-3">
-          <div className="grid gap-2 md:grid-cols-3">
-            <label className="space-y-1">
-              <div className="text-xs text-slate-600">ITEM</div>
-              <input className="input bg-white w-full" value={gridFilter.item} onChange={(e) => setGridFilter((p) => ({ ...p, item: e.target.value }))} />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-600">SERVIÇOS</div>
-              <input className="input bg-white w-full" value={gridFilter.servicos} onChange={(e) => setGridFilter((p) => ({ ...p, servicos: e.target.value }))} />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-600">UND</div>
-              <input className="input bg-white w-full" value={gridFilter.und} onChange={(e) => setGridFilter((p) => ({ ...p, und: e.target.value }))} />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-600">QUANT. (contratado)</div>
-              <input className="input bg-white w-full" value={gridFilter.contratadoQuant} onChange={(e) => setGridFilter((p) => ({ ...p, contratadoQuant: e.target.value }))} inputMode="decimal" />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-600">VALOR UNIT. (contratado)</div>
-              <input className="input bg-white w-full" value={gridFilter.contratadoPreco} onChange={(e) => setGridFilter((p) => ({ ...p, contratadoPreco: e.target.value }))} inputMode="decimal" />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-600">VALOR PARCIAL (contratado)</div>
-              <input className="input bg-white w-full" value={gridFilter.contratadoTotal} onChange={(e) => setGridFilter((p) => ({ ...p, contratadoTotal: e.target.value }))} inputMode="decimal" />
-            </label>
+        {showFilters ? (
+          <div className="rounded-lg border bg-slate-50 p-3">
+            <div className="grid gap-2 md:grid-cols-3">
+              <label className="space-y-1">
+                <div className="text-xs text-slate-600">ITEM</div>
+                <input className="input bg-white w-full" value={gridFilter.item} onChange={(e) => setGridFilter((p) => ({ ...p, item: e.target.value }))} />
+              </label>
+              <label className="space-y-1">
+                <div className="text-xs text-slate-600">SERVIÇOS</div>
+                <input className="input bg-white w-full" value={gridFilter.servicos} onChange={(e) => setGridFilter((p) => ({ ...p, servicos: e.target.value }))} />
+              </label>
+              <label className="space-y-1">
+                <div className="text-xs text-slate-600">UND</div>
+                <input className="input bg-white w-full" value={gridFilter.und} onChange={(e) => setGridFilter((p) => ({ ...p, und: e.target.value }))} />
+              </label>
+              <label className="space-y-1">
+                <div className="text-xs text-slate-600">QUANT. (contratado)</div>
+                <input className="input bg-white w-full" value={gridFilter.contratadoQuant} onChange={(e) => setGridFilter((p) => ({ ...p, contratadoQuant: e.target.value }))} inputMode="decimal" />
+              </label>
+              <label className="space-y-1">
+                <div className="text-xs text-slate-600">VALOR UNIT. (contratado)</div>
+                <input className="input bg-white w-full" value={gridFilter.contratadoPreco} onChange={(e) => setGridFilter((p) => ({ ...p, contratadoPreco: e.target.value }))} inputMode="decimal" />
+              </label>
+              <label className="space-y-1">
+                <div className="text-xs text-slate-600">VALOR PARCIAL (contratado)</div>
+                <input className="input bg-white w-full" value={gridFilter.contratadoTotal} onChange={(e) => setGridFilter((p) => ({ ...p, contratadoTotal: e.target.value }))} inputMode="decimal" />
+              </label>
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <div className="overflow-auto rounded-lg border" style={{ fontSize: `${uiPrefs.fontSizePx}px` }}>
           <table className="min-w-[1200px] w-full border-collapse">

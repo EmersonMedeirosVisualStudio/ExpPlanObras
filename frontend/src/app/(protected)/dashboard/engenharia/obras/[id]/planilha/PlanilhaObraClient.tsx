@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Check, Printer, FileSpreadsheet, Pencil, Trash2, XCircle, TriangleAlert, Image } from "lucide-react";
+import { Download, Check, Printer, FileSpreadsheet, Pencil, Trash2, XCircle, TriangleAlert, Image, Filter } from "lucide-react";
 import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type ComposicaoItem = {
@@ -543,6 +543,11 @@ export default function PlanilhaObraClient({
     valorUnitario: "",
     valorParcial: "",
   });
+  const [showFilters, setShowFilters] = useState(false);
+
+  const hasActiveGridFilter = useMemo(() => {
+    return Object.values(gridFilter).some((v) => String(v ?? "").trim());
+  }, [gridFilter]);
 
   const [novo, setNovo] = useState({
     tipoLinha: "SERVICO" as "ITEM" | "SUBITEM" | "SERVICO",
@@ -3427,42 +3432,57 @@ export default function PlanilhaObraClient({
               ) : null}
             </div>
 
-            <div className="rounded-lg border bg-slate-50 p-3">
-              <div className="grid gap-2 md:grid-cols-4">
-                <label className="space-y-1">
-                  <div className="text-xs text-slate-600">ITEM</div>
-                  <input className="input bg-white w-full" value={gridFilter.item} onChange={(e) => setGridFilter((p) => ({ ...p, item: sanitizeItemPathInput(e.target.value) }))} />
-                </label>
-                <label className="space-y-1">
-                  <div className="text-xs text-slate-600">CÓDIGO</div>
-                  <input className="input bg-white w-full" value={gridFilter.codigo} onChange={(e) => setGridFilter((p) => ({ ...p, codigo: e.target.value }))} />
-                </label>
-                <label className="space-y-1">
-                  <div className="text-xs text-slate-600">FONTE</div>
-                  <input className="input bg-white w-full" value={gridFilter.fonte} onChange={(e) => setGridFilter((p) => ({ ...p, fonte: e.target.value }))} />
-                </label>
-                <label className="space-y-1">
-                  <div className="text-xs text-slate-600">SERVIÇOS</div>
-                  <input className="input bg-white w-full" value={gridFilter.servicos} onChange={(e) => setGridFilter((p) => ({ ...p, servicos: e.target.value }))} />
-                </label>
-                <label className="space-y-1">
-                  <div className="text-xs text-slate-600">UND</div>
-                  <input className="input bg-white w-full" value={gridFilter.und} onChange={(e) => setGridFilter((p) => ({ ...p, und: e.target.value }))} />
-                </label>
-                <label className="space-y-1">
-                  <div className="text-xs text-slate-600">QUANT.</div>
-                  <input className="input bg-white w-full" value={gridFilter.quant} onChange={(e) => setGridFilter((p) => ({ ...p, quant: e.target.value }))} inputMode="decimal" />
-                </label>
-                <label className="space-y-1">
-                  <div className="text-xs text-slate-600">VALOR UNIT.</div>
-                  <input className="input bg-white w-full" value={gridFilter.valorUnitario} onChange={(e) => setGridFilter((p) => ({ ...p, valorUnitario: e.target.value }))} inputMode="decimal" />
-                </label>
-                <label className="space-y-1">
-                  <div className="text-xs text-slate-600">VALOR PARCIAL</div>
-                  <input className="input bg-white w-full" value={gridFilter.valorParcial} onChange={(e) => setGridFilter((p) => ({ ...p, valorParcial: e.target.value }))} inputMode="decimal" />
-                </label>
-              </div>
+            <div className="flex items-center justify-end">
+              <button
+                className={`rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60 ${hasActiveGridFilter ? "border-blue-200 bg-blue-50 text-blue-700" : "text-slate-800"}`}
+                type="button"
+                onClick={() => setShowFilters((v) => !v)}
+                disabled={loading}
+                title={showFilters ? "Ocultar filtros" : "Exibir filtros"}
+                aria-label="Filtros"
+              >
+                <Filter className="h-4 w-4" />
+              </button>
             </div>
+
+            {showFilters ? (
+              <div className="rounded-lg border bg-slate-50 p-3">
+                <div className="grid gap-2 md:grid-cols-4">
+                  <label className="space-y-1">
+                    <div className="text-xs text-slate-600">ITEM</div>
+                    <input className="input bg-white w-full" value={gridFilter.item} onChange={(e) => setGridFilter((p) => ({ ...p, item: sanitizeItemPathInput(e.target.value) }))} />
+                  </label>
+                  <label className="space-y-1">
+                    <div className="text-xs text-slate-600">CÓDIGO</div>
+                    <input className="input bg-white w-full" value={gridFilter.codigo} onChange={(e) => setGridFilter((p) => ({ ...p, codigo: e.target.value }))} />
+                  </label>
+                  <label className="space-y-1">
+                    <div className="text-xs text-slate-600">FONTE</div>
+                    <input className="input bg-white w-full" value={gridFilter.fonte} onChange={(e) => setGridFilter((p) => ({ ...p, fonte: e.target.value }))} />
+                  </label>
+                  <label className="space-y-1">
+                    <div className="text-xs text-slate-600">SERVIÇOS</div>
+                    <input className="input bg-white w-full" value={gridFilter.servicos} onChange={(e) => setGridFilter((p) => ({ ...p, servicos: e.target.value }))} />
+                  </label>
+                  <label className="space-y-1">
+                    <div className="text-xs text-slate-600">UND</div>
+                    <input className="input bg-white w-full" value={gridFilter.und} onChange={(e) => setGridFilter((p) => ({ ...p, und: e.target.value }))} />
+                  </label>
+                  <label className="space-y-1">
+                    <div className="text-xs text-slate-600">QUANT.</div>
+                    <input className="input bg-white w-full" value={gridFilter.quant} onChange={(e) => setGridFilter((p) => ({ ...p, quant: e.target.value }))} inputMode="decimal" />
+                  </label>
+                  <label className="space-y-1">
+                    <div className="text-xs text-slate-600">VALOR UNIT.</div>
+                    <input className="input bg-white w-full" value={gridFilter.valorUnitario} onChange={(e) => setGridFilter((p) => ({ ...p, valorUnitario: e.target.value }))} inputMode="decimal" />
+                  </label>
+                  <label className="space-y-1">
+                    <div className="text-xs text-slate-600">VALOR PARCIAL</div>
+                    <input className="input bg-white w-full" value={gridFilter.valorParcial} onChange={(e) => setGridFilter((p) => ({ ...p, valorParcial: e.target.value }))} inputMode="decimal" />
+                  </label>
+                </div>
+              </div>
+            ) : null}
 
             <div className="overflow-auto">
               <table className="min-w-[1100px] w-full" style={{ fontSize: `${uiPrefs.fontSizePx}px` }}>
