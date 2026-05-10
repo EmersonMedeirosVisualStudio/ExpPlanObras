@@ -8174,51 +8174,10 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
     const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
-    await ensurePlanilhaOrcamentariaTables(prisma);
-    await ensurePlanilhaServicosTables(prisma);
-    await ensurePlanilhaComposicaoTables(prisma);
+    await ensurePlanilhaModeloFonteTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
-    await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, idPlanilha);
-    await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, idObra, idPlanilha);
-
-    const rows = (await prisma.$queryRawUnsafe(
-      `
-      WITH comp AS (
-        SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS codigo
-        FROM obras_planilhas_composicoes_itens
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND COALESCE(codigo_servico,'') <> ''
-      )
-      SELECT c.codigo AS "codigoServico"
-      FROM comp c
-      LEFT JOIN obras_planilhas_servicos s
-        ON s.tenant_id = $1
-        AND s.id_obra = $2
-        AND s.id_planilha = $3
-        AND UPPER(COALESCE(s.codigo,'')) = c.codigo
-      WHERE s.id_servico IS NULL
-      ORDER BY c.codigo
-      LIMIT 2000
-      `,
-      ctx.tenantId,
-      idObra,
-      idPlanilha
-    )) as any[];
-
-    const blank = (await prisma.$queryRawUnsafe(
-      `
-      SELECT COUNT(*)::int AS "count"
-      FROM obras_planilhas_composicoes_itens
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
-        AND COALESCE(NULLIF(trim(codigo_servico),''), '') = ''
-      `,
-      ctx.tenantId,
-      idObra,
-      idPlanilha
-    )) as any[];
-
-    const codes = (rows || []).map((r: any) => String(r.codigoServico || '').trim()).filter(Boolean);
-    const blankCount = Number(blank?.[0]?.count || 0);
-    return ok(reply, { planilhaId: idPlanilha, total: codes.length, codes, blankCount });
+    await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
+    return ok(reply, { planilhaId: idPlanilha, total: 0, codes: [], blankCount: 0 });
   });
 
   server.get('/engenharia/obras/:id/planilha/composicoes/referencias', async (request, reply) => {
@@ -8231,28 +8190,31 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
     const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
-    await ensurePlanilhaOrcamentariaTables(prisma);
-    await ensurePlanilhaServicosTables(prisma);
-    await ensurePlanilhaComposicaoTables(prisma);
+    await ensurePlanilhaModeloFonteTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
+    const mig = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
+    const idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : 0;
+    if (!idFonteDados) return ok(reply, { referencias: [] });
     const rows = (await prisma.$queryRawUnsafe(
       `
       WITH refs AS (
-        SELECT
-          UPPER(COALESCE(codigo_item,'')) AS codigo,
-          MAX(tipo_item) AS tipo
-        FROM obras_planilhas_composicoes_itens
-        WHERE tenant_id = $1
-          AND id_obra = $2
-          AND id_planilha = $3
-          AND COALESCE(tipo_item,'') IN ('COMPOSICAO', 'COMPOSICAO_AUXILIAR')
-          AND COALESCE(codigo_item,'') <> ''
-        GROUP BY UPPER(COALESCE(codigo_item,''))
+        SELECT DISTINCT
+          UPPER(COALESCE(sf.codigo,'')) AS codigo,
+          MAX(ci.tipo_item) AS tipo
+        FROM obras_composicoes_itens_fonte ci
+        JOIN obras_servicos_fonte sf
+          ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
+        WHERE ci.tenant_id = $1
+          AND ci.id_fonte_dados = $2
+          AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+        GROUP BY UPPER(COALESCE(sf.codigo,''))
       ),
       defs AS (
-        SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS codigo
-        FROM obras_planilhas_composicoes_itens
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND COALESCE(codigo_servico,'') <> ''
+        SELECT DISTINCT UPPER(COALESCE(sp.codigo,'')) AS codigo
+        FROM obras_composicoes_itens_fonte ci
+        JOIN obras_servicos_fonte sp
+          ON sp.tenant_id = ci.tenant_id AND sp.id_fonte_dados = ci.id_fonte_dados AND sp.id_servico = ci.id_servico_pai
+        WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $2
       )
       SELECT
         r.codigo AS "codigo",
@@ -8263,10 +8225,8 @@ export default async function v1Routes(server: FastifyInstance) {
       ORDER BY r.codigo
       `,
       ctx.tenantId,
-      idObra,
-      idPlanilha
+      idFonteDados
     )) as any[];
-
     return ok(reply, {
       referencias: (rows || []).map((r: any) => ({
         codigo: String(r.codigo || '').trim(),
@@ -8435,478 +8395,208 @@ export default async function v1Routes(server: FastifyInstance) {
     if (sourcePlanilhaId === targetPlanilhaId) return fail(reply, 422, 'Planilha origem e destino não podem ser iguais');
     if (insumosPrecoMode !== 'MANTER' && insumosPrecoMode !== 'SUBSTITUIR') return fail(reply, 422, 'insumosPrecoMode inválido');
 
-    await ensurePlanilhaOrcamentariaTables(prisma);
-    await ensurePlanilhaServicosTables(prisma);
-    await ensurePlanilhaComposicaoTables(prisma);
-    await ensureInsumosPrecosTables(prisma);
-
-    try {
-      await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, sourcePlanilhaId);
-      await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, targetPlanilhaId);
-      await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, idObra, sourcePlanilhaId);
-      await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, idObra, targetPlanilhaId);
-      await assertServicoExisteECompleto(prisma, ctx.tenantId, idObra, sourcePlanilhaId, codigoServico);
-      await assertPlanilhaServicosCompletos(prisma, ctx.tenantId, idObra, targetPlanilhaId);
-    } catch (e: any) {
-      return fail(reply, 422, e?.message || 'Validação falhou');
+    await ensurePlanilhaModeloFonteTables(prisma);
+    const migSrc = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, sourcePlanilhaId);
+    const migDst = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, targetPlanilhaId);
+    const idFonteDadosSrc = migSrc?.idFonteDados ? Number(migSrc.idFonteDados) : 0;
+    const idFonteDadosDst = migDst?.idFonteDados ? Number(migDst.idFonteDados) : 0;
+    if (!idFonteDadosSrc || !idFonteDadosDst) return fail(reply, 422, 'Fonte de dados não definida em uma das planilhas');
+    if (idFonteDadosSrc !== idFonteDadosDst) {
+      return fail(reply, 422, 'As planilhas selecionadas estão vinculadas a Fontes de dados diferentes. A composição é editada e compartilhada dentro da Fonte.');
     }
 
-    const srcServico = (await prisma.$queryRawUnsafe(
+    const paiRows = (await prisma.$queryRawUnsafe(
       `
-      SELECT
-        COALESCE(fonte,'') AS fonte,
-        COALESCE(servico,'') AS servico,
-        COALESCE(und,'') AS und
-      FROM obras_planilhas_servicos
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4
-      ORDER BY id_servico ASC
+      SELECT id_servico AS "idServico"
+      FROM obras_servicos_fonte
+      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
       LIMIT 1
       `,
       ctx.tenantId,
-      idObra,
-      sourcePlanilhaId,
+      idFonteDadosSrc,
       codigoServico
     )) as any[];
-    const src = srcServico?.[0] || null;
-    if (!src) return fail(reply, 422, 'Serviço origem não encontrado');
+    const idServico = paiRows?.[0]?.idServico ? Number(paiRows[0].idServico) : 0;
+    if (!idServico) return fail(reply, 422, 'Serviço não encontrado no catálogo da Fonte');
 
-    const dstServico = (await prisma.$queryRawUnsafe(
-      `
-      SELECT
-        id_servico AS "idServico",
-        COALESCE(fonte,'') AS fonte,
-        COALESCE(servico,'') AS servico,
-        COALESCE(und,'') AS und
-      FROM obras_planilhas_servicos
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4
-      ORDER BY id_servico ASC
-      LIMIT 1
-      `,
-      ctx.tenantId,
-      idObra,
-      targetPlanilhaId,
-      codigoServico
-    )) as any[];
-    const dst = dstServico?.[0] || null;
-
-    const dstHasComposicao = (await prisma.$queryRawUnsafe(
+    const existsComposicaoRows = (await prisma.$queryRawUnsafe(
       `
       SELECT 1 AS ok
-      FROM obras_planilhas_composicoes_itens
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
+      FROM obras_composicoes_itens_fonte
+      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3
       LIMIT 1
       `,
       ctx.tenantId,
-      idObra,
+      idFonteDadosSrc,
+      idServico
+    )) as any[];
+    const existsComposicaoTarget = Boolean(existsComposicaoRows?.[0]?.ok);
+
+    const srcLinha = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        id_planilha_item AS "idLinha",
+        ordem,
+        item,
+        quantidade,
+        nivel
+      FROM obras_planilha_itens
+      WHERE tenant_id = $1 AND id_planilha = $2 AND tipo_linha = 'SERVICO' AND id_servico = $3
+      ORDER BY id_planilha_item ASC
+      LIMIT 1
+      `,
+      ctx.tenantId,
+      sourcePlanilhaId,
+      idServico
+    )) as any[];
+    const src = srcLinha?.[0] || null;
+    if (!src) return fail(reply, 422, 'O serviço não existe como linha na planilha origem');
+
+    const dstLinha = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        id_planilha_item AS "idLinha"
+      FROM obras_planilha_itens
+      WHERE tenant_id = $1 AND id_planilha = $2 AND tipo_linha = 'SERVICO' AND id_servico = $3
+      ORDER BY id_planilha_item ASC
+      LIMIT 1
+      `,
+      ctx.tenantId,
       targetPlanilhaId,
-      codigoServico
+      idServico
     )) as any[];
-    const existsComposicaoTarget = Boolean(dstHasComposicao?.[0]?.ok);
-
-    await prisma.$executeRawUnsafe(
-      `
-      WITH refs AS (
-        SELECT DISTINCT UPPER(COALESCE(codigo_item,'')) AS codigo
-        FROM obras_planilhas_composicoes_itens
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
-          AND UPPER(COALESCE(tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-          AND COALESCE(codigo_item,'') <> ''
-      ),
-      meta_from_itens AS (
-        SELECT
-          UPPER(COALESCE(codigo_item,'')) AS codigo,
-          MAX(COALESCE(NULLIF(trim(banco),''),'')) AS fonte,
-          MAX(COALESCE(NULLIF(trim(descricao),''),'')) AS servico,
-          MAX(COALESCE(NULLIF(trim(und),''),'')) AS und
-        FROM obras_planilhas_composicoes_itens
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
-          AND UPPER(COALESCE(tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-          AND COALESCE(codigo_item,'') <> ''
-        GROUP BY UPPER(COALESCE(codigo_item,''))
-      ),
-      src_catalog AS (
-        SELECT
-          UPPER(COALESCE(codigo,'')) AS codigo,
-          COALESCE(NULLIF(trim(fonte),''),'') AS fonte,
-          COALESCE(NULLIF(trim(servico),''),'') AS servico,
-          COALESCE(NULLIF(trim(und),''),'') AS und
-        FROM obras_planilhas_servicos
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
-      )
-      INSERT INTO obras_planilhas_servicos
-        (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
-      SELECT
-        $1 AS tenant_id,
-        $2 AS id_obra,
-        $5 AS id_planilha,
-        r.codigo,
-        COALESCE(NULLIF(sc.fonte,''), NULLIF(mi.fonte,''), '') AS fonte,
-        COALESCE(NULLIF(sc.servico,''), NULLIF(mi.servico,''), '') AS servico,
-        COALESCE(NULLIF(sc.und,''), NULLIF(mi.und,''), '') AS und
-      FROM refs r
-      LEFT JOIN src_catalog sc ON sc.codigo = r.codigo
-      LEFT JOIN meta_from_itens mi ON mi.codigo = r.codigo
-      ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
-      DO UPDATE SET
-        fonte = CASE
-          WHEN COALESCE(NULLIF(obras_planilhas_servicos.fonte,''), '') <> '' THEN obras_planilhas_servicos.fonte
-          ELSE NULLIF(EXCLUDED.fonte,'')
-        END,
-        servico = CASE
-          WHEN COALESCE(NULLIF(obras_planilhas_servicos.servico,''), '') <> '' THEN obras_planilhas_servicos.servico
-          ELSE NULLIF(EXCLUDED.servico,'')
-        END,
-        und = CASE
-          WHEN COALESCE(NULLIF(obras_planilhas_servicos.und,''), '') <> '' THEN obras_planilhas_servicos.und
-          ELSE NULLIF(EXCLUDED.und,'')
-        END,
-        atualizado_em = NOW()
-      `,
-      ctx.tenantId,
-      idObra,
-      sourcePlanilhaId,
-      codigoServico,
-      targetPlanilhaId
-    );
-
-    const missingRef = (await prisma.$queryRawUnsafe(
-      `
-      WITH refs AS (
-        SELECT DISTINCT UPPER(COALESCE(codigo_item,'')) AS codigo
-        FROM obras_planilhas_composicoes_itens
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
-          AND UPPER(COALESCE(tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-          AND COALESCE(codigo_item,'') <> ''
-      )
-      SELECT r.codigo
-      FROM refs r
-      LEFT JOIN obras_planilhas_servicos s
-        ON s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $5 AND UPPER(COALESCE(s.codigo,'')) = r.codigo
-      WHERE s.id_servico IS NULL
-      ORDER BY r.codigo
-      LIMIT 1
-      `,
-      ctx.tenantId,
-      idObra,
-      sourcePlanilhaId,
-      codigoServico,
-      targetPlanilhaId
-    )) as any[];
-    const missingCode = String(missingRef?.[0]?.codigo || '').trim().toUpperCase();
-    if (missingCode) {
-      return fail(reply, 422, `A composição do serviço ${codigoServico} referencia a composição ${missingCode}, mas ela não existe como Serviço na planilha destino. Copie/cadastre esse serviço primeiro.`);
-    }
-
-    const incompleteRef = (await prisma.$queryRawUnsafe(
-      `
-      WITH refs AS (
-        SELECT DISTINCT UPPER(COALESCE(codigo_item,'')) AS codigo
-        FROM obras_planilhas_composicoes_itens
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
-          AND UPPER(COALESCE(tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-          AND COALESCE(codigo_item,'') <> ''
-      )
-      SELECT r.codigo
-      FROM refs r
-      JOIN obras_planilhas_servicos s
-        ON s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $5 AND UPPER(COALESCE(s.codigo,'')) = r.codigo
-      WHERE COALESCE(NULLIF(trim(s.servico),''),'') = '' OR COALESCE(NULLIF(trim(s.und),''),'') = ''
-      ORDER BY r.codigo
-      LIMIT 1
-      `,
-      ctx.tenantId,
-      idObra,
-      sourcePlanilhaId,
-      codigoServico,
-      targetPlanilhaId
-    )) as any[];
-    const incompleteCode = String(incompleteRef?.[0]?.codigo || '').trim().toUpperCase();
-    if (incompleteCode) {
-      return fail(reply, 422, `A composição do serviço ${codigoServico} referencia a composição ${incompleteCode}, mas ela ficou sem descrição e/ou unidade no catálogo da planilha destino. Cadastre o serviço (descrição e UND) no catálogo e tente novamente.`);
-    }
-
-    const mismatch = (await prisma.$queryRawUnsafe(
-      `
-      WITH src AS (
-        SELECT
-          UPPER(COALESCE(codigo_item,'')) AS codigo_item,
-          MAX(COALESCE(descricao,'')) AS descricao,
-          MAX(COALESCE(und,'')) AS und
-        FROM obras_planilhas_composicoes_itens
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
-          AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-          AND COALESCE(codigo_item,'') <> ''
-        GROUP BY UPPER(COALESCE(codigo_item,''))
-      ),
-      dst AS (
-        SELECT
-          UPPER(COALESCE(codigo_item,'')) AS codigo_item,
-          COALESCE(NULLIF(trim(descricao),''),'') AS descricao,
-          COALESCE(NULLIF(trim(und),''),'') AS und
-        FROM obras_planilhas_composicoes_itens
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $5
-          AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-          AND COALESCE(codigo_item,'') <> ''
-      )
-      SELECT
-        s.codigo_item AS codigo,
-        s.descricao AS "descricaoOrig",
-        s.und AS "undOrig",
-        d.descricao AS "descricaoDest",
-        d.und AS "undDest"
-      FROM src s
-      JOIN dst d ON d.codigo_item = s.codigo_item
-      WHERE (d.descricao <> '' AND s.descricao <> '' AND d.descricao <> s.descricao)
-         OR (d.und <> '' AND s.und <> '' AND d.und <> s.und)
-      ORDER BY s.codigo_item
-      LIMIT 1
-      `,
-      ctx.tenantId,
-      idObra,
-      sourcePlanilhaId,
-      codigoServico,
-      targetPlanilhaId
-    )) as any[];
-    const mm = mismatch?.[0] || null;
-    if (mm) {
-      return fail(
-        reply,
-        422,
-        `Importação cancelada: insumo ${String(mm.codigo || '').trim()} tem descrição/unidade diferente na planilha destino.`
-      );
-    }
-
-    const diffs = (await prisma.$queryRawUnsafe(
-      `
-      WITH src AS (
-        SELECT
-          UPPER(COALESCE(codigo_item,'')) AS codigo_item,
-          MAX(COALESCE(valor_unitario, 0)) AS valor_unitario
-        FROM obras_planilhas_composicoes_itens
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
-          AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-          AND COALESCE(codigo_item,'') <> ''
-        GROUP BY UPPER(COALESCE(codigo_item,''))
-      )
-      SELECT
-        s.codigo_item AS codigo,
-        s.valor_unitario AS "valorOrig",
-        p.valor_unitario AS "valorDest"
-      FROM src s
-      JOIN obras_insumos_precos p
-        ON p.tenant_id = $1 AND p.id_obra = $2 AND p.id_planilha = $5 AND UPPER(COALESCE(p.codigo_item,'')) = s.codigo_item
-      WHERE ABS(COALESCE(p.valor_unitario,0) - COALESCE(s.valor_unitario,0)) > 0.000001
-      ORDER BY s.codigo_item
-      LIMIT 50
-      `,
-      ctx.tenantId,
-      idObra,
-      sourcePlanilhaId,
-      codigoServico,
-      targetPlanilhaId
-    )) as any[];
+    const dst = dstLinha?.[0] || null;
 
     if (dryRun) {
       return ok(reply, {
         codigoServico,
         sourcePlanilhaId,
         targetPlanilhaId,
-        existsServicoTarget: Boolean(dst?.idServico),
+        existsServicoTarget: Boolean(dst?.idLinha),
         existsComposicaoTarget,
-        diffs: (diffs || []).map((r: any) => ({
-          codigo: String(r.codigo || '').trim(),
-          valorOrig: r.valorOrig == null ? 0 : Number(r.valorOrig),
-          valorDest: r.valorDest == null ? 0 : Number(r.valorDest),
-        })),
+        diffs: [],
       });
     }
 
-    if (dst?.idServico && !replaceServico) {
+    if (dst?.idLinha && !replaceServico) {
       return fail(reply, 409, `Serviço ${codigoServico} já existe na planilha destino. Marque "Substituir serviço" para continuar.`);
-    }
-    if (existsComposicaoTarget && !replaceComposicao) {
-      return fail(reply, 409, `Composição do serviço ${codigoServico} já existe na planilha destino. Marque "Substituir composição" para continuar.`);
     }
 
     await prismaTx(async (tx: any) => {
-      if (!dst?.idServico) {
-        await tx.$executeRawUnsafe(
-          `
-          INSERT INTO obras_planilhas_servicos
-            (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
-          VALUES
-            ($1, $2, $3, $4, $5, $6, $7)
-          `,
+      if (!dst?.idLinha) {
+        const maxOrd = (await tx.$queryRawUnsafe(
+          `SELECT COALESCE(MAX(ordem),0)::int AS "maxOrd" FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`,
           ctx.tenantId,
-          idObra,
-          targetPlanilhaId,
-          codigoServico,
-          String(src.fonte || ''),
-          String(src.servico || ''),
-          String(src.und || '')
-        );
-      } else if (replaceServico) {
-        await tx.$executeRawUnsafe(
-          `
-          UPDATE obras_planilhas_servicos
-          SET fonte = $5, servico = $6, und = $7, atualizado_em = NOW()
-          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND id_servico = $4
-          `,
-          ctx.tenantId,
-          idObra,
-          targetPlanilhaId,
-          Number(dst.idServico),
-          String(src.fonte || ''),
-          String(src.servico || ''),
-          String(src.und || '')
-        );
-      }
-
-      if (existsComposicaoTarget && replaceComposicao) {
-        await tx.$executeRawUnsafe(
-          `
-          DELETE FROM obras_planilhas_composicoes_primitivas
-          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
-          `,
-          ctx.tenantId,
-          idObra,
-          targetPlanilhaId,
-          codigoServico
-        );
-        await tx.$executeRawUnsafe(
-          `
-          DELETE FROM obras_planilhas_composicoes_itens
-          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
-          `,
-          ctx.tenantId,
-          idObra,
-          targetPlanilhaId,
-          codigoServico
-        );
-      }
-
-      await tx.$executeRawUnsafe(
-        `
-        INSERT INTO obras_planilhas_composicoes_itens
-          (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo, criado_em, atualizado_em)
-        SELECT
-          $1 AS tenant_id,
-          $2 AS id_obra,
-          $3 AS id_planilha,
-          UPPER(COALESCE(ci.codigo_servico,'')) AS codigo_servico,
-          ci.etapa,
-          ci.tipo_item,
-          ci.codigo_item,
-          ci.banco,
-          ci.descricao,
-          ci.und,
-          ci.quantidade,
-          CASE
-            WHEN UPPER(COALESCE(ci.tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN ci.valor_unitario
-            ELSE COALESCE(p.valor_unitario, ci.valor_unitario)
-          END AS valor_unitario,
-          ci.perda_percentual,
-          ci.codigo_centro_custo,
-          NOW(),
-          NOW()
-        FROM obras_planilhas_composicoes_itens ci
-        LEFT JOIN obras_insumos_precos p
-          ON p.tenant_id = $1 AND p.id_obra = $2 AND p.id_planilha = $3
-          AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(ci.codigo_item,''))
-        WHERE ci.tenant_id = $1
-          AND ci.id_obra = $2
-          AND ci.id_planilha = $4
-          AND UPPER(COALESCE(ci.codigo_servico,'')) = $5
-        `,
-        ctx.tenantId,
-        idObra,
-        targetPlanilhaId,
-        sourcePlanilhaId,
-        codigoServico
-      );
-
-      if (insumosPrecoMode === 'SUBSTITUIR') {
-        await tx.$executeRawUnsafe(
-          `
-          WITH src AS (
-            SELECT
-              UPPER(COALESCE(codigo_item,'')) AS codigo_item,
-              MAX(COALESCE(valor_unitario, 0)) AS valor_unitario
-            FROM obras_planilhas_composicoes_itens
-            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
-              AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-              AND COALESCE(codigo_item,'') <> ''
-            GROUP BY UPPER(COALESCE(codigo_item,''))
-          )
-          INSERT INTO obras_insumos_precos
-            (tenant_id, id_obra, id_planilha, codigo_item, valor_unitario)
-          SELECT $1, $2, $5, s.codigo_item, s.valor_unitario
-          FROM src s
-          ON CONFLICT (tenant_id, id_obra, id_planilha, codigo_item)
-          DO UPDATE SET valor_unitario = EXCLUDED.valor_unitario, atualizado_em = NOW()
-          `,
-          ctx.tenantId,
-          idObra,
-          sourcePlanilhaId,
-          codigoServico,
           targetPlanilhaId
+        )) as any[];
+        const ordem = Number(maxOrd?.[0]?.maxOrd || 0) + 1;
+        await tx.$executeRawUnsafe(
+          `
+          INSERT INTO obras_planilha_itens
+            (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
+          VALUES
+            ($1,$2,$3,$4,$5,$6,NULL,NULL,$7,'SERVICO',NULL)
+          `,
+          ctx.tenantId,
+          targetPlanilhaId,
+          ordem,
+          src.item,
+          idServico,
+          src.quantidade,
+          Number(src.nivel || 0)
         );
       } else {
         await tx.$executeRawUnsafe(
           `
-          WITH src AS (
-            SELECT
-              UPPER(COALESCE(codigo_item,'')) AS codigo_item,
-              MAX(COALESCE(valor_unitario, 0)) AS valor_unitario
-            FROM obras_planilhas_composicoes_itens
-            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
-              AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-              AND COALESCE(codigo_item,'') <> ''
-            GROUP BY UPPER(COALESCE(codigo_item,''))
-          )
-          INSERT INTO obras_insumos_precos
-            (tenant_id, id_obra, id_planilha, codigo_item, valor_unitario)
-          SELECT $1, $2, $5, s.codigo_item, s.valor_unitario
-          FROM src s
-          LEFT JOIN obras_insumos_precos p
-            ON p.tenant_id = $1 AND p.id_obra = $2 AND p.id_planilha = $5 AND UPPER(COALESCE(p.codigo_item,'')) = s.codigo_item
-          WHERE p.codigo_item IS NULL
-          ON CONFLICT DO NOTHING
+          UPDATE obras_planilha_itens
+          SET item = $4, quantidade = $5, nivel = $6, atualizado_em = NOW()
+          WHERE tenant_id = $1 AND id_planilha = $2 AND id_planilha_item = $3
           `,
           ctx.tenantId,
-          idObra,
-          sourcePlanilhaId,
-          codigoServico,
-          targetPlanilhaId
+          targetPlanilhaId,
+          Number(dst.idLinha),
+          src.item,
+          src.quantidade,
+          Number(src.nivel || 0)
         );
       }
 
       await tx.$executeRawUnsafe(
         `
-        UPDATE obras_planilhas_composicoes_itens i
-        SET valor_unitario = p.valor_unitario, atualizado_em = NOW()
-        FROM obras_insumos_precos p
-        WHERE i.tenant_id = $1
-          AND i.id_obra = $2
-          AND i.id_planilha = $3
-          AND p.tenant_id = i.tenant_id
-          AND p.id_obra = i.id_obra
-          AND p.id_planilha = i.id_planilha
-          AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(i.codigo_item,''))
-          AND UPPER(COALESCE(i.tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+        WITH planilha_params AS (
+          SELECT
+            COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
+            COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
+          FROM obras_planilhas_versoes v
+          LEFT JOIN obras_planilhas_parametros p
+            ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
+          WHERE v.tenant_id = $1 AND v.id_planilha = $2
+          LIMIT 1
+        ),
+        base AS (
+          SELECT
+            COUNT(ci.id_composicao_item) AS qtd,
+            COALESCE(SUM(
+              COALESCE(ci.quantidade,0)
+              * COALESCE(
+                CASE
+                  WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
+                  ELSE inf.valor_unitario
+                END,
+                0
+              )
+            ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')), 0) AS total_base,
+            COALESCE(SUM(
+              COALESCE(ci.quantidade,0)
+              * COALESCE(
+                CASE
+                  WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
+                  ELSE inf.valor_unitario
+                END,
+                0
+              )
+            ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA'), 0) AS total_mao_base
+          FROM obras_composicoes_itens_fonte ci
+          LEFT JOIN obras_servicos_fonte sf
+            ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
+            AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+          LEFT JOIN obras_insumos_fonte inf
+            ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
+            AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+          WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $3 AND ci.id_servico_pai = $4
+        ),
+        calc AS (
+          SELECT
+            CASE
+              WHEN (SELECT qtd FROM base) > 0 THEN
+                (
+                  (
+                    ((SELECT total_base FROM base) - (SELECT total_mao_base FROM base))
+                    + (SELECT total_mao_base FROM base) * (1 + ((SELECT ls FROM planilha_params) / 100.0))
+                  )
+                  * (1 + ((SELECT bdi FROM planilha_params) / 100.0))
+                )
+              ELSE 0
+            END AS valor_unitario
+        )
+        UPDATE obras_planilha_itens i
+        SET
+          valor_unitario = ROUND((SELECT valor_unitario FROM calc)::numeric, 6),
+          valor_parcial = CASE
+            WHEN i.quantidade IS NULL THEN i.valor_parcial
+            ELSE ROUND((COALESCE(i.quantidade,0) * (SELECT valor_unitario FROM calc))::numeric, 6)
+          END,
+          atualizado_em = NOW()
+        WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND i.id_servico = $4
         `,
         ctx.tenantId,
-        idObra,
-        targetPlanilhaId
+        targetPlanilhaId,
+        idFonteDadosSrc,
+        idServico
       );
-
-      const cascata = await coletarCodigosCascata(tx, ctx.tenantId, idObra, targetPlanilhaId, [codigoServico]);
-      await recalcularFixacaoCascata(tx, ctx.tenantId, idObra, targetPlanilhaId, cascata);
-      await atualizarServicosPlanilhaPorCodigos(tx, ctx.tenantId, idObra, targetPlanilhaId, cascata);
-      await ensurePlanilhaMigratedToModeloFonte(tx, ctx.tenantId, idObra, targetPlanilhaId);
     });
 
-    return ok(reply, { codigoServico, sourcePlanilhaId, targetPlanilhaId }, { message: 'Serviço/composição copiados' });
+    return ok(reply, { codigoServico, sourcePlanilhaId, targetPlanilhaId }, { message: 'Serviço copiado' });
   });
 
   server.post('/engenharia/obras/:id/planilha/composicoes/importar-csv', async (request, reply) => {
@@ -8919,12 +8609,11 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaOrcamentariaTables(prisma);
-    await ensurePlanilhaServicosTables(prisma);
-    await ensurePlanilhaComposicaoTables(prisma);
+    await ensurePlanilhaModeloFonteTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
-    await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, idPlanilha);
-    await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, idObra, idPlanilha);
+    const mig = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
+    const idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : 0;
+    if (!idFonteDados) return fail(reply, 422, 'Fonte de dados da planilha não definida');
     const isMultipart = typeof (request as any).isMultipart === 'function' ? (request as any).isMultipart() : false;
     if (!isMultipart) return fail(reply, 422, 'Envie multipart/form-data com arquivo no campo "file"');
 
@@ -9011,92 +8700,242 @@ export default async function v1Routes(server: FastifyInstance) {
           SELECT DISTINCT UPPER(c) AS codigo
           FROM unnest($3::text[]) AS t(c)
         )
-        SELECT
-          c.codigo AS "codigo",
-          COALESCE(s.servico,'') AS "servico",
-          COALESCE(s.und,'') AS "und",
-          s.id_servico AS "idServico"
+        SELECT c.codigo AS "codigo"
         FROM codes c
-        LEFT JOIN LATERAL (
-          SELECT id_servico, servico, und
-          FROM obras_planilhas_servicos
-          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4 AND UPPER(COALESCE(codigo,'')) = c.codigo
-          ORDER BY id_servico ASC
-          LIMIT 1
-        ) s ON TRUE
-        WHERE s.id_servico IS NULL
-          OR COALESCE(NULLIF(trim(s.servico),''), '') = ''
-          OR COALESCE(NULLIF(trim(s.und),''), '') = ''
+        LEFT JOIN obras_servicos_fonte sf
+          ON sf.tenant_id = $1 AND sf.id_fonte_dados = $4 AND UPPER(COALESCE(sf.codigo,'')) = c.codigo
+        WHERE sf.id_servico IS NULL
         ORDER BY c.codigo
         LIMIT 1
         `,
         ctx.tenantId,
         idObra,
         codigos,
-        idPlanilha
+        idFonteDados
       )) as any[];
       const r = bad?.[0] || null;
-      if (r) {
-        const codigo = String(r.codigo || '').trim().toUpperCase();
-        return fail(reply, 422, `Não é permitido importar composição para serviço inexistente ou sem nome/unidade na planilha. Serviço: ${codigo}`);
-      }
+      if (r) return fail(reply, 422, `Não é permitido importar composição para serviço inexistente na Fonte. Serviço: ${String(r.codigo || '').trim().toUpperCase()}`);
     }
 
-    const chunkSize = 500;
-    let upserted = 0;
+    const grouped = new Map<string, typeof preparedOk>();
+    for (const row of preparedOk) {
+      const code = String(row.codigoServico || '').trim().toUpperCase();
+      if (!grouped.has(code)) grouped.set(code, []);
+      grouped.get(code)!.push(row);
+    }
+
+    const affectedServicoIds: number[] = [];
     await prismaTx(async (tx: any) => {
-      for (let start = 0; start < preparedOk.length; start += chunkSize) {
-        const chunk = preparedOk.slice(start, start + chunkSize);
-        const params: any[] = [];
-        let p = 1;
-        const values = chunk
-          .map((r) => {
-            const base = [
+      for (const [codigo, itens] of grouped.entries()) {
+        const paiRows = (await tx.$queryRawUnsafe(
+          `
+          SELECT id_servico AS "idServico"
+          FROM obras_servicos_fonte
+          WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
+          LIMIT 1
+          `,
+          ctx.tenantId,
+          idFonteDados,
+          codigo
+        )) as any[];
+        const idServicoPai = paiRows?.[0]?.idServico ? Number(paiRows[0].idServico) : 0;
+        if (!idServicoPai) throw new Error(`Serviço não encontrado na Fonte: ${codigo}`);
+        affectedServicoIds.push(idServicoPai);
+
+        await tx.$executeRawUnsafe(
+          `DELETE FROM obras_composicoes_itens_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3`,
+          ctx.tenantId,
+          idFonteDados,
+          idServicoPai
+        );
+
+        for (let idx = 0; idx < itens.length; idx++) {
+          const r = itens[idx];
+          const tipoItemRaw = String(r.tipoItem || '').trim().toUpperCase();
+          const tipoKey = normalizeHeader(tipoItemRaw);
+          const isComp = tipoKey === 'composicao' || tipoKey === 'composicao_auxiliar';
+          const codigoItem = String(r.codigoItem || '').trim().toUpperCase();
+          if (!codigoItem) continue;
+
+          let idItem = 0;
+          if (isComp) {
+            const rows = (await tx.$queryRawUnsafe(
+              `
+              INSERT INTO obras_servicos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+              VALUES ($1,$2,NULL,$3,$4,$5,$6,NULL)
+              ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+              DO UPDATE SET
+                banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
+                descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
+                und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
+                atualizado_em = NOW()
+              RETURNING id_servico AS "idItem"
+              `,
               ctx.tenantId,
-              idObra,
-              idPlanilha,
-              r.codigoServico,
-              r.etapa ?? '',
-              r.tipoItem,
-              r.codigoItem,
+              idFonteDados,
+              codigoItem,
+              r.banco,
+              r.descricao,
+              r.und
+            )) as any[];
+            idItem = rows?.[0]?.idItem ? Number(rows[0].idItem) : 0;
+          } else {
+            const rows = (await tx.$queryRawUnsafe(
+              `
+              INSERT INTO obras_insumos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+              VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+              ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+              DO UPDATE SET
+                tipo = COALESCE(NULLIF(EXCLUDED.tipo,''), obras_insumos_fonte.tipo),
+                banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_insumos_fonte.banco),
+                descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_insumos_fonte.descricao),
+                und = COALESCE(NULLIF(EXCLUDED.und,''), obras_insumos_fonte.und),
+                valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_insumos_fonte.valor_unitario),
+                atualizado_em = NOW()
+              RETURNING id_insumo AS "idItem"
+              `,
+              ctx.tenantId,
+              idFonteDados,
+              tipoItemRaw.slice(0, 24) || null,
+              codigoItem,
               r.banco,
               r.descricao,
               r.und,
-              r.quantidade,
-              r.valorUnitario,
-              r.perda,
-              r.codigoCentroCusto,
-            ];
-            for (const v of base) params.push(v);
-            const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
-            return `(${placeholders})`;
-          })
-          .join(',');
+              r.valorUnitario
+            )) as any[];
+            idItem = rows?.[0]?.idItem ? Number(rows[0].idItem) : 0;
+          }
 
+          if (!idItem) continue;
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO obras_composicoes_itens_fonte
+              (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item, quantidade, unidade, ordem)
+            VALUES
+              ($1,$2,$3,$4,$5,$6,$7,$8)
+            ON CONFLICT (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item)
+            DO UPDATE SET
+              quantidade = EXCLUDED.quantidade,
+              unidade = EXCLUDED.unidade,
+              ordem = EXCLUDED.ordem,
+              atualizado_em = NOW()
+            `,
+            ctx.tenantId,
+            idFonteDados,
+            idServicoPai,
+            tipoItemRaw.slice(0, 24) || 'INSUMO',
+            idItem,
+            r.quantidade,
+            r.und,
+            idx
+          );
+        }
+      }
+
+      const uniqIds = Array.from(new Set(affectedServicoIds)).filter((n) => Number.isFinite(n) && n > 0);
+      for (const idServicoPai of uniqIds) {
         await tx.$executeRawUnsafe(
           `
-          INSERT INTO obras_planilhas_composicoes_itens
-            (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo)
-          VALUES
-            ${values}
-          ON CONFLICT (tenant_id, id_obra, id_planilha, codigo_servico, (COALESCE(etapa,'')), tipo_item, codigo_item)
-          DO UPDATE SET
-            banco = EXCLUDED.banco,
-            descricao = EXCLUDED.descricao,
-            und = EXCLUDED.und,
-            quantidade = EXCLUDED.quantidade,
-            valor_unitario = EXCLUDED.valor_unitario,
-            perda_percentual = EXCLUDED.perda_percentual,
-            codigo_centro_custo = EXCLUDED.codigo_centro_custo,
+          WITH base AS (
+            SELECT
+              COUNT(ci.id_composicao_item) AS qtd,
+              COALESCE(SUM(
+                COALESCE(ci.quantidade,0)
+                * COALESCE(
+                  CASE
+                    WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
+                    ELSE inf.valor_unitario
+                  END,
+                  0
+                )
+              ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')), 0) AS total_base,
+              COALESCE(SUM(
+                COALESCE(ci.quantidade,0)
+                * COALESCE(
+                  CASE
+                    WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
+                    ELSE inf.valor_unitario
+                  END,
+                  0
+                )
+              ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA'), 0) AS total_mao_base
+            FROM obras_composicoes_itens_fonte ci
+            LEFT JOIN obras_servicos_fonte sf
+              ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
+              AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+            LEFT JOIN obras_insumos_fonte inf
+              ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
+              AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+            WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $2 AND ci.id_servico_pai = $3
+          ),
+          plans AS (
+            SELECT
+              v.id_planilha AS id_planilha,
+              COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
+              COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
+            FROM obras_planilhas_versoes v
+            LEFT JOIN obras_planilhas_parametros p
+              ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
+            WHERE v.tenant_id = $1 AND v.id_fonte_dados = $2
+          ),
+          calc AS (
+            SELECT
+              id_planilha,
+              CASE
+                WHEN (SELECT qtd FROM base) > 0 THEN
+                  (
+                    (
+                      ((SELECT total_base FROM base) - (SELECT total_mao_base FROM base))
+                      + (SELECT total_mao_base FROM base) * (1 + (ls / 100.0))
+                    )
+                    * (1 + (bdi / 100.0))
+                  )
+                ELSE 0
+              END AS valor_unitario
+            FROM plans
+          )
+          UPDATE obras_planilha_itens i
+          SET
+            valor_unitario = ROUND(calc.valor_unitario::numeric, 6),
+            valor_parcial = CASE
+              WHEN i.quantidade IS NULL THEN i.valor_parcial
+              ELSE ROUND((COALESCE(i.quantidade,0) * calc.valor_unitario)::numeric, 6)
+            END,
             atualizado_em = NOW()
+          FROM calc
+          WHERE i.tenant_id = $1
+            AND i.id_planilha = calc.id_planilha
+            AND i.tipo_linha = 'SERVICO'
+            AND i.id_servico = $3
           `,
-          ...params
+          ctx.tenantId,
+          idFonteDados,
+          idServicoPai
         );
-        upserted += chunk.length;
+      }
+
+      const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
+      const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
+      if (hasPrimitivaTable && codigos.length) {
+        await tx.$executeRawUnsafe(
+          `
+          DELETE FROM obras_planilhas_composicoes_primitivas p
+          USING obras_planilhas_versoes v
+          WHERE p.tenant_id = $1
+            AND v.tenant_id = p.tenant_id
+            AND v.id_obra = p.id_obra
+            AND v.id_planilha = p.id_planilha
+            AND v.id_fonte_dados = $2
+            AND UPPER(COALESCE(p.codigo_servico,'')) = ANY($3::text[])
+          `,
+          ctx.tenantId,
+          idFonteDados,
+          codigos
+        );
       }
     });
 
-    return ok(reply, { upserted }, { message: 'Composições importadas' });
+    return ok(reply, { upserted: preparedOk.length }, { message: 'Composições importadas (Fonte)' });
   });
 
   async function carregarItensComposicaoObra(tx: any, tenantId: number, idObra: number, idPlanilha: number, codigoServico: string) {

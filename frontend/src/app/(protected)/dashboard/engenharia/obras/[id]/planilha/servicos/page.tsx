@@ -236,9 +236,8 @@ export default function Page() {
   }, [planilhaId, versoes]);
 
   useEffect(() => {
-    if (!copyForm.replaceComposicao && copyForm.insumosPrecoMode === "SUBSTITUIR") {
-      setCopyForm((p) => ({ ...p, insumosPrecoMode: "MANTER" }));
-    }
+    if (copyForm.insumosPrecoMode !== "MANTER") setCopyForm((p) => ({ ...p, insumosPrecoMode: "MANTER" }));
+    if (copyForm.replaceComposicao) setCopyForm((p) => ({ ...p, replaceComposicao: false }));
   }, [copyForm.insumosPrecoMode, copyForm.replaceComposicao]);
 
   useEffect(() => {
@@ -349,9 +348,7 @@ export default function Page() {
     }
     try {
       const warnings: string[] = [];
-      if (copyForm.replaceServico) warnings.push("Substituir serviço no destino pode alterar dados compartilhados da Fonte do destino (impacta outras planilhas que usam a mesma Fonte).");
-      if (copyForm.replaceComposicao) warnings.push("Substituir composição no destino pode alterar dados compartilhados da Fonte do destino (impacta outras planilhas que usam a mesma Fonte).");
-      if (copyForm.insumosPrecoMode === "SUBSTITUIR") warnings.push("Substituir preço de insumos altera os preços na planilha destino (versão).");
+      if (copyForm.replaceServico) warnings.push("Substituir serviço no destino irá sobrescrever ITEM/QUANT. do serviço na planilha destino (versão).");
       if (warnings.length) {
         const ok = window.confirm(`${warnings.join("\n\n")}\n\nDeseja continuar?`);
         if (!ok) return;
@@ -367,14 +364,14 @@ export default function Page() {
           targetPlanilhaId: copyForm.targetPlanilhaId,
           codigoServico: copyForm.codigoServico,
           replaceServico: copyForm.replaceServico,
-          replaceComposicao: copyForm.replaceComposicao,
-          insumosPrecoMode: copyForm.insumosPrecoMode,
+          replaceComposicao: false,
+          insumosPrecoMode: "MANTER",
           dryRun: false,
         }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao copiar serviço/composição");
-      setOkMsg("Serviço/composição copiados com sucesso.");
+      setOkMsg("Serviço copiado com sucesso.");
       setCopyPreview(null);
       await carregarTudo();
     } catch (e: any) {
@@ -515,10 +512,7 @@ export default function Page() {
       {composicoesSemServico && (composicoesSemServico.total > 0 || composicoesSemServico.blankCount > 0) ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           <div className="font-semibold">Composições sem serviço no catálogo</div>
-          <div className="mt-1">
-            {composicoesSemServico.total} código(s) de composição existem em Composições (itens), mas não existem em Serviços (PLANILHA catálogo).
-            {composicoesSemServico.blankCount > 0 ? ` Há ${composicoesSemServico.blankCount} item(ns) com serviço vazio.` : ""}
-          </div>
+          <div className="mt-1">{composicoesSemServico.total} código(s) de composição existem em Composições, mas não existem em Serviços (catálogo da fonte).</div>
           {composicoesSemServico.total > 0 ? (
             <div className="mt-2 break-words">
               Códigos: {composicoesSemServico.codes.slice(0, 60).join(", ")}
@@ -532,7 +526,7 @@ export default function Page() {
         <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div>
           <div className="text-lg font-semibold">Copiar serviço/composição entre planilhas (versões)</div>
-          <div className="text-sm text-slate-600">Copia a linha do serviço (quando necessário) e os itens da composição. Bloqueia se houver insumo com descrição/unidade diferente no destino.</div>
+          <div className="text-sm text-slate-600">Copia a linha do serviço (ITEM/QUANT.) entre versões. A composição é sempre a da Fonte (compartilhada).</div>
         </div>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
@@ -589,53 +583,43 @@ export default function Page() {
                 checked={copyForm.replaceServico}
                 onChange={(e) => setCopyForm((p) => ({ ...p, replaceServico: Boolean(e.target.checked) }))}
                 disabled={loading}
-                title="Se marcado, atualiza o serviço no destino quando o código já existir. Isso altera a Fonte do destino (cadastro compartilhado)."
+                title="Se marcado, sobrescreve ITEM/QUANT. do serviço na planilha destino quando já existir."
               />
               <span>Substituir serviço no destino</span>
             </label>
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
-                checked={copyForm.replaceComposicao}
-                onChange={(e) => setCopyForm((p) => ({ ...p, replaceComposicao: Boolean(e.target.checked) }))}
-                disabled={loading}
-                title="Se marcado, substitui os itens da composição no destino quando já existir. Isso altera a Fonte do destino (cadastro compartilhado)."
+                checked={false}
+                onChange={() => null}
+                disabled
+                title="A composição é da Fonte e não é copiada entre versões. Para alterar composição, edite na Fonte."
               />
-              <span>Substituir composição no destino</span>
+              <span className="text-slate-500">Substituir composição no destino</span>
             </label>
             <label className="flex items-center gap-2">
               <input
                 type="radio"
                 name="insumosPrecoMode"
-                checked={copyForm.insumosPrecoMode === "MANTER"}
-                onChange={() => setCopyForm((p) => ({ ...p, insumosPrecoMode: "MANTER" }))}
-                disabled={loading}
-                title="Mantém os preços dos insumos já cadastrados na planilha destino (recomendado)"
+                checked
+                onChange={() => null}
+                disabled
+                title="Preços/itens de composição são geridos na Fonte."
               />
-              <span>Manter preço de insumos do destino (padrão)</span>
+              <span className="text-slate-500">Manter preço de insumos do destino (padrão)</span>
             </label>
             <label className="flex items-center gap-2">
               <input
                 type="radio"
                 name="insumosPrecoMode"
-                checked={copyForm.insumosPrecoMode === "SUBSTITUIR"}
-                onChange={() => setCopyForm((p) => ({ ...p, insumosPrecoMode: "SUBSTITUIR" }))}
-                disabled={loading || !copyForm.replaceComposicao}
-                title={
-                  !copyForm.replaceComposicao
-                    ? "Disponível somente quando você marcar 'Substituir composição no destino'."
-                    : "Substitui os preços de insumos da planilha destino pelos preços da origem."
-                }
+                checked={false}
+                onChange={() => null}
+                disabled
+                title="Preços/itens de composição são geridos na Fonte."
               />
-              <span>Substituir preço de insumos pelo da origem</span>
+              <span className="text-slate-500">Substituir preço de insumos pelo da origem</span>
             </label>
           </div>
-          {copyForm.replaceServico || copyForm.replaceComposicao ? (
-            <div className="md:col-span-12 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              <div className="font-semibold">Atenção</div>
-              <div>- Substituir serviço/composição altera a Fonte de dados do destino (cadastro compartilhado) e pode impactar outras planilhas que usam a mesma Fonte.</div>
-            </div>
-          ) : null}
 
           <div className="md:col-span-12 flex items-center justify-end gap-2 flex-wrap">
             <button
@@ -664,7 +648,7 @@ export default function Page() {
             <div>
               Destino já tem serviço: {copyPreview.existsServicoTarget ? "Sim" : "Não"} • Destino já tem composição: {copyPreview.existsComposicaoTarget ? "Sim" : "Não"}
             </div>
-            <div>Conflitos de preço (amostra): {copyPreview.diffs.length ? `${copyPreview.diffs.length} item(ns)` : "nenhum"}</div>
+            <div>Observação: a composição é compartilhada pela Fonte.</div>
             {copyPreview.diffs.length ? (
               <div className="overflow-auto">
                 <table className="min-w-[600px] w-full text-xs">
@@ -786,7 +770,7 @@ export default function Page() {
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div>
           <div className="text-lg font-semibold">Composições auxiliares / composições referenciadas</div>
-          <div className="text-sm text-slate-600">Quando um item é “Composição Auxiliar” ou “Composição”, esta lista mostra se o código já foi definido na obra.</div>
+          <div className="text-sm text-slate-600">Quando um item é “Composição Auxiliar” ou “Composição”, esta lista mostra se o código já foi definido na Fonte.</div>
         </div>
 
         <div className="overflow-auto">

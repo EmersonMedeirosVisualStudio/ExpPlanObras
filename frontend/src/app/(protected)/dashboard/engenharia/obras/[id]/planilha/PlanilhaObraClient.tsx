@@ -2870,7 +2870,7 @@ export default function PlanilhaObraClient({
                   >
                     {showPlanilhaCard ? "⯆" : "⯈"}
                   </button>
-                  <div className="text-lg font-semibold">Planilha orçamentária</div>
+                  <div className="text-lg font-semibold">{planilha?.nome ? `Planilha orçamentária - ${planilha.nome}` : "Planilha orçamentária"}</div>
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
                   <div className="flex items-center gap-3 flex-wrap text-sm text-slate-600">
@@ -3528,6 +3528,7 @@ export default function PlanilhaObraClient({
                 <thead className="bg-slate-50 text-left text-slate-700">
                   <tr>
                     <th className="px-3 py-2 w-[36px] border-r border-slate-200">ITEM</th>
+                    <th className="px-3 py-2 w-[44px] border-r border-slate-200" title="Condição da composição">COMP.</th>
                     <th className="px-3 py-2 w-[118px] border-r border-slate-200">CÓDIGO</th>
                     <th className="px-3 py-2 border-r border-slate-200">FONTE</th>
                     <th className="px-3 py-2 min-w-[374px] border-r border-slate-200">SERVIÇOS</th>
@@ -3582,34 +3583,26 @@ export default function PlanilhaObraClient({
                           <span>{l.item || ""}</span>
                         </span>
                       </td>
+                      <td className="px-3 py-2 w-[44px] border-r border-slate-200">
+                        {(() => {
+                          if (l.tipoLinha !== "SERVICO") return null;
+                          const code = String(l.codigo || "").trim().toUpperCase();
+                          if (!code) return null;
+                          const v = composicaoValidacaoByCodigo[code];
+                          if (!v) return composicaoServicoCodes.has(code) ? <Check className="h-4 w-4 text-green-600" title="Composição definida" /> : null;
+                          if (v.status === "SEM_COMPOSICAO") return <XCircle className="h-4 w-4 text-red-600" title="Sem composição" />;
+                          if (v.status === "DIVERGENTE")
+                            return (
+                              <TriangleAlert
+                                className="h-4 w-4 text-amber-700"
+                                title={`Planilha: ${moeda(Number(v.totalPlanilha || 0))} | Composição: ${moeda(Number(v.totalComposicao || 0))} | Dif.: ${moeda(Number(v.diff || 0))}`}
+                              />
+                            );
+                          return <Check className="h-4 w-4 text-green-600" title="OK" />;
+                        })()}
+                      </td>
                       <td className="px-3 py-2 w-[118px] max-w-[118px] whitespace-nowrap overflow-hidden text-ellipsis border-r border-slate-200">
-                        <span className="inline-flex items-center gap-2">
-                          <span className="text-[11px]">{l.codigo || ""}</span>
-                          {(() => {
-                            if (l.tipoLinha !== "SERVICO") return null;
-                            const code = String(l.codigo || "").trim().toUpperCase();
-                            if (!code) return null;
-                            const v = composicaoValidacaoByCodigo[code];
-                            if (!v) return composicaoServicoCodes.has(code) ? <Check className="h-4 w-4 text-green-600" /> : null;
-                            if (v.status === "SEM_COMPOSICAO")
-                              return (
-                                <span title="Sem composição">
-                                  <XCircle className="h-4 w-4 text-red-600" />
-                                </span>
-                              );
-                            if (v.status === "DIVERGENTE")
-                              return (
-                                <span
-                                  className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800"
-                                  title={`Planilha: ${moeda(Number(v.totalPlanilha || 0))} | Composição: ${moeda(Number(v.totalComposicao || 0))} | Dif.: ${moeda(Number(v.diff || 0))}`}
-                                >
-                                  <TriangleAlert className="h-3.5 w-3.5" />
-                                  Diverg.
-                                </span>
-                              );
-                            return <Check className="h-4 w-4 text-green-600" />;
-                          })()}
-                        </span>
+                        <span className="text-[11px]">{l.codigo || ""}</span>
                       </td>
                       <td className="px-3 py-2 border-r border-slate-200">{l.fonte || ""}</td>
                       <td className="px-3 py-2 min-w-[374px] border-r border-slate-200">{l.servicos || ""}</td>
@@ -3643,13 +3636,13 @@ export default function PlanilhaObraClient({
                   ))}
                   {!planilha.linhas.length ? (
                     <tr>
-                      <td colSpan={9} className="px-3 py-6 text-center text-slate-500">
+                      <td colSpan={10} className="px-3 py-6 text-center text-slate-500">
                         Sem linhas na planilha.
                       </td>
                     </tr>
                   ) : planilha.linhas.length && !linhasFiltradas.length ? (
                     <tr>
-                      <td colSpan={9} className="px-3 py-6 text-center text-slate-500">
+                      <td colSpan={10} className="px-3 py-6 text-center text-slate-500">
                         Nenhuma linha encontrada com os filtros atuais.
                       </td>
                     </tr>

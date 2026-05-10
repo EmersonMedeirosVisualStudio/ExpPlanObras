@@ -1699,6 +1699,7 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 - Clonagem (com dependências): no card **Versões cadastradas**, a ação **Clonar** cria uma nova versão copiando:
   - itens da planilha (itens, subitens e serviços utilizados na planilha);
   - preços de insumos da planilha.
+  - Importante: **não clona composição**. A composição é cadastrada na **Fonte de dados** (compartilhada) e é a mesma para todas as planilhas que usam a mesma Fonte.
   - Importante: a clonagem **não clona** a Fonte nem os Parâmetros; ela apenas copia os **ids** (reuso). Alterações na Fonte/Parâmetros afetam todas as planilhas que usam o mesmo id.
 
 #### Nova planilha x Clonar (Duplicar versão)
@@ -1867,8 +1868,7 @@ ETAPA 5 — Como validar
 - Serviços:
   - Importação e modelo de CSV de composições ficam na própria tela **Serviços**.
   - A tela marca serviços **sem composição** e **divergentes** comparando total da planilha x total calculado por composição.
-  - A tela pode exibir um aviso **“Composições sem serviço no catálogo da fonte”** com a lista de códigos que existem em Composições (itens), mas ainda não existem no catálogo (Serviços (FONTE)).
-  - Existe ação para **copiar serviço/composição entre versões** (origem → destino), com prévia e regras de consistência. A cópia alimenta o catálogo (Serviços (FONTE)) e a composição na fonte destino; o serviço só vira item quando o usuário inserir o serviço em Planilha (itens).
+  - Existe ação para **copiar serviço entre versões** (origem → destino), com prévia. Esta ação copia apenas a **linha do serviço** (ITEM/QUANT.) na planilha destino. A composição não é copiada entre versões, porque ela é **da Fonte** (compartilhada).
 - Análise de composição (editar itens):
   - em **Composições**, é permitido alterar apenas **Código** e **Qtd** (demais campos são preenchidos/calculados automaticamente);
   - em **Insumos**, é permitido alterar apenas **Código**, **Qtd** e **Valor Unit** (demais campos são preenchidos/calculados automaticamente);
@@ -1876,11 +1876,8 @@ ETAPA 5 — Como validar
   - a tecla **Esc** cancela a edição e restaura o último estado salvo.
   - Indicador de carregamento: a tela exibe “Carregando página…” e “Página carregada” para deixar claro quando o carregamento inicial terminou.
 - Insumos consolidados:
-  - A lista é derivada das **composições** da planilha selecionada (versão) e soma a **Quantidade total** por **código de insumo**.
-  - O **preço do insumo é único por código** na planilha (versão) e pode ser ajustado:
-    - na tela **Insumos consolidados**; ou
-    - diretamente na composição (itens do tipo insumo).
-    Ao salvar em um lugar, o valor é propagado para o outro e recalcula serviços/composições afetados.
+  - A lista é derivada das **composições da Fonte** aplicadas aos **serviços existentes na planilha selecionada**.
+  - O preço base do insumo vem da **Fonte de dados**. Quando um preço é alterado na Fonte (via composição/importação), isso recalcula automaticamente os serviços em todas as planilhas que usam a mesma Fonte.
 
 #### Validação
 
@@ -3263,20 +3260,19 @@ ETAPA 5 — Como validar
 - Menor retrabalho operacional para montar composições auxiliares.
 - Maior estabilidade para produção (valor unitário persistido e rastreável no backend).
 
-**Como uma composição fica “cadastrada” na planilha (no sistema)**
+**Como uma composição fica cadastrada na Fonte (no sistema)**
 
 Regras (consistência)
-- Uma **composição sempre** está vinculada a um **serviço válido** da planilha selecionada:
-  - o serviço precisa existir em `SERVIÇOS (linhas)` na versão da planilha
-  - o serviço precisa ter **nome** e **unidade**
+- Uma **composição sempre** está vinculada a um **serviço válido** do **catálogo da Fonte**:
+  - o serviço precisa existir em `Serviços (catálogo da fonte)` e ter **nome** e **unidade**
 - Não permite:
-  - composição sem serviço válido
-  - serviço sem nome/unidade
-  - clonar/copy/importar com dados inconsistentes (o backend bloqueia e a UI alerta)
+  - composição sem serviço válido na Fonte
+  - serviço sem nome/unidade na Fonte
+  - importações com dados inconsistentes (o backend bloqueia e a UI alerta)
 
 Escopo (persistência)
-- As composições e preços de insumos são salvos no escopo: `obra + planilha(versão)`.
-- SINAPI é uma fonte externa: ao aplicar/importar, os itens passam a fazer parte da planilha (versão) e seguem as regras acima.
+- As composições e insumos são salvos no escopo: `tenant + fonte de dados`.
+- A planilha (versão) armazena apenas as **linhas** (item/subitem/serviço) e referencia o serviço pelo **código do serviço** (via catálogo da Fonte).
 
 Benefício da mudança
 - Evita planilhas com serviços incompletos e composições “soltas”.
@@ -3725,10 +3721,28 @@ Princípio:
 
 Observação importante:
 
-- Algumas APIs legadas ainda podem rodar como **API do Next** (server runtime) enquanto o módulo não for migrado para o backend. Isso mantém o sistema funcionando sem “quebrar produção” e permite migração por etapas.
-- No estado atual do código, essas APIs do Next usam um banco **MySQL** (variáveis `MYSQL_URL` ou `DB_HOST/DB_USER/DB_PASSWORD/DB_NAME`) e rodam na **Vercel**.
-- O módulo de **Contratos** (regras de negócio) roda no **Backend (Render)** e persiste no **Neon/Postgres** (via Prisma).
-- O módulo de **Documentos (Obra/Contrato)** roda no **Backend (Render)** e persiste no **Neon/Postgres** (via Prisma), com upload/download via API.
+- O padrão do sistema é: o **Frontend** chama `/api/v1/...` e o **Next.js (Vercel)** faz **proxy** para o **Backend (Render)**, que aplica as regras e grava no **Neon/Postgres**.
+- O modo **API do Next** existe apenas para exceções/legado. Em produção, a recomendação é manter tudo que é regra de negócio crítica no **Backend (Render)**.
+
+Configuração mínima (produção)
+
+ETAPA 1 — Onde acessar (Vercel)
+- Acesse o painel da **Vercel** → clique no projeto do Frontend → **Settings**
+
+ETAPA 2 — O que clicar (Vercel)
+- Clique em **Environment Variables**
+
+ETAPA 3 — O que preencher (Vercel)
+- Nome: `NEXT_PUBLIC_API_URL`
+  Valor: `https://SEU-BACKEND-RENDER.onrender.com` (URL do backend)
+- Nome: `NEXT_PUBLIC_API_MODE`
+  Valor: `proxy`
+
+ETAPA 4 — O que esperar (Vercel)
+- Após salvar, clique em **Redeploy** (para aplicar as variáveis)
+
+ETAPA 5 — Como validar (Vercel)
+- Abra o sistema e navegue em **Engenharia → Obras → Planilha orçamentária** e confirme que carrega sem erros.
 
 Implementação SINAPI (Planilha da Obra):
 
