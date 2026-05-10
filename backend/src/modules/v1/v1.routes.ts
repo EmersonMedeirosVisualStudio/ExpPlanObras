@@ -7033,6 +7033,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
           await ensurePlanilhaModeloFonteTables(tx);
           await ensureInsumosPrecosTables(tx);
+          await ensurePlanilhaComposicaoTables(tx);
           const migSrc = await ensurePlanilhaMigratedToModeloFonte(tx, ctx.tenantId, idObra, sourcePlanilhaId);
           if (!migSrc?.idFonteDados) throw new Error('Fonte de dados da planilha origem não definida');
 
@@ -7094,6 +7095,36 @@ export default async function v1Routes(server: FastifyInstance) {
             SELECT
               tenant_id, id_obra, $3 AS id_planilha, codigo_item, valor_unitario
             FROM obras_insumos_precos
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
+            `,
+            ctx.tenantId,
+            idObra,
+            idPlanilha,
+            sourcePlanilhaId
+          );
+
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO obras_planilhas_composicoes_itens
+              (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo, criado_em, atualizado_em)
+            SELECT
+              tenant_id,
+              id_obra,
+              $3 AS id_planilha,
+              codigo_servico,
+              etapa,
+              tipo_item,
+              codigo_item,
+              banco,
+              descricao,
+              und,
+              quantidade,
+              valor_unitario,
+              perda_percentual,
+              codigo_centro_custo,
+              criado_em,
+              atualizado_em
+            FROM obras_planilhas_composicoes_itens
             WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
             `,
             ctx.tenantId,
@@ -7194,6 +7225,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
           if (copyFrom && Number.isFinite(copyFrom) && copyFrom > 0) {
             await ensureInsumosPrecosTables(tx);
+            await ensurePlanilhaComposicaoTables(tx);
             await tx.$executeRawUnsafe(
               `
               INSERT INTO obras_planilha_itens
@@ -7225,6 +7257,55 @@ export default async function v1Routes(server: FastifyInstance) {
               idPlanilha,
               copyFrom
             );
+
+            await tx.$executeRawUnsafe(
+              `
+              INSERT INTO obras_planilhas_composicoes_itens
+                (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo, criado_em, atualizado_em)
+              SELECT
+                tenant_id,
+                id_obra,
+                $3 AS id_planilha,
+                codigo_servico,
+                etapa,
+                tipo_item,
+                codigo_item,
+                banco,
+                descricao,
+                und,
+                quantidade,
+                valor_unitario,
+                perda_percentual,
+                codigo_centro_custo,
+                criado_em,
+                atualizado_em
+              FROM obras_planilhas_composicoes_itens
+              WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
+              `,
+              ctx.tenantId,
+              idObra,
+              idPlanilha,
+              copyFrom
+            );
+
+            const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
+            const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
+            if (hasPrimitivaTable) {
+              await tx.$executeRawUnsafe(
+                `
+                INSERT INTO obras_planilhas_composicoes_primitivas
+                  (tenant_id, id_obra, id_planilha, codigo_servico, descricao_servico, und_servico, itens_json, atualizado_em)
+                SELECT
+                  tenant_id, id_obra, $3 AS id_planilha, codigo_servico, descricao_servico, und_servico, itens_json, atualizado_em
+                FROM obras_planilhas_composicoes_primitivas
+                WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
+                `,
+                ctx.tenantId,
+                idObra,
+                idPlanilha,
+                copyFrom
+              );
+            }
           }
 
           return { idPlanilha, numeroVersao: nextVersao };
