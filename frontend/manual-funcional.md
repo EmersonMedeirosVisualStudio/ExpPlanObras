@@ -1737,7 +1737,7 @@ ETAPA 3 — O que preencher (Parâmetros)
 ETAPA 4 — O que esperar
 - Ao salvar, a lista passa a exibir o registro como **#id - nome**.
 - Ao editar um registro, você escolhe a linha na lista e clica em **Editar**, ajusta os campos e clica em **Salvar**.
-- Aviso importante: Fonte e Parâmetros são **compartilhados**. Alterações nestes cadastros impactam todas as planilhas que usam o mesmo id.
+- Aviso importante: Fonte e Parâmetros são **compartilhados**. Alterações nestes cadastros impactam todas as planilhas que usam o mesmo id e disparam **recálculo automático** dos valores vinculados.
 
 ETAPA 5 — Como validar
 - Volte no card **Versões cadastradas** e:
@@ -1754,7 +1754,8 @@ ETAPA 5 — Como validar
   - 4) Planilha (itens): o usuário decide quais serviços do catálogo viram **itens** na planilha. Todo item de serviço referencia um serviço do catálogo da fonte.
   - 5) Composições: para cada serviço do catálogo da fonte, cadastra-se/importa-se sua **composição** (itens, subcomposições e insumos), sempre vinculada ao serviço (pai).
   - 5) Insumos consolidados: a lista de insumos é derivada das composições dos serviços e precisa ser recalculada sempre que uma composição muda.
-  - Regra: ao salvar/importar uma composição (ou importar um serviço que traga composição), o sistema refaz o consolidado de insumos e atualiza os valores do serviço na planilha (efeito cascata).
+- Regra: ao salvar/importar uma composição (ou importar um serviço que traga composição), o sistema refaz o consolidado de insumos e atualiza os valores do serviço em todas as planilhas vinculadas (efeito cascata).
+- Regra: ao alterar Parâmetros (BDI/LS/Descontos/Data-base/UF), o sistema recalcula automaticamente os valores unitários e parciais dos serviços em todas as planilhas que usam esses parâmetros (isso alimenta também telas derivadas como Adequação e, no futuro, Medição).
 - Importação CSV (planilha) com **prévia**: antes de gravar, o sistema mostra uma grade de conferência e destaca campos inválidos.
   - Colunas importadas (CSV): `item`, `codigo`, `fonte`, `servicos`, `und`, `quant`, `valor_unitario` (o **valor parcial** é calculado automaticamente).
   - Observação de compatibilidade: leitura “smart” de encoding (UTF-8 / Windows-1252) para reduzir erros de acentuação no texto importado.
@@ -1822,7 +1823,7 @@ ETAPA 3 — O que preencher
 ETAPA 4 — O que esperar
 - A tela mostra a grade no formato “PLANILHA DE ADEQUAÇÃO DE SERVIÇOS”
 - A tela exibe o status **Carregando página… / Página carregada**
-- O card **Visual** permite ajustar: **Somente itens**, **Fonte**, **Fundo Item**, **Fundo Subitem** e **largura das colunas**
+- O card **Visual** permite ajustar: **Somente itens**, **tamanho da fonte**, **fonte dos dados**, **fonte do cabeçalho**, **negrito do cabeçalho**, **Fundo Item**, **Fundo Subitem**, além de **exibir/ocultar colunas** e controlar a **largura** de cada coluna
 - O card **Impressão — ajustes finos** permite imprimir em **paisagem** com o **cabeçalho padronizado da empresa** e controlar fonte/espaçamentos
 - Para **Itens/Subitens**, o sistema mostra subtotais apenas em **VALORES** (TOTAL, ADITADO, SUPRIMIDO, ADEQUADO)
 
@@ -1857,7 +1858,7 @@ ETAPA 5 — Como validar
 - Clique em **Importar**
 - Volte para a tela **Planilha orçamentária** e confira se as linhas foram inseridas na versão selecionada
 - Após selecionar uma versão, o sistema exibe o card **Visualizando** e, em seguida, o card **Navegação** (visível apenas com planilha selecionada) para abrir/fechar e rolar até: **Parâmetros**, **Planilha** e **Adicionar linha**.
-- Planilha (visual): linhas do tipo **Item** e **Subitem** são exibidas em negrito; o usuário pode definir **tamanho da fonte** e **cor de fundo** (Item/Subitem) e essas preferências ficam salvas para o usuário.
+- Planilha (visual): a grade tem **rolagem vertical** com **cabeçalho fixo** (também na tela de **Adequação**). Linhas do tipo **Item** e **Subitem** são exibidas em negrito; o usuário pode definir **tamanho da fonte**, **fontes (dados/cabeçalho)**, **negrito do cabeçalho**, **cor de fundo** (Item/Subitem), além de **mostrar/ocultar colunas** e ajustar **larguras**. Essas preferências ficam salvas para o usuário.
 - Ordem/organização das linhas: o campo **Ordem** foi removido da edição. A visualização segue a ordem do **ITEM** (ordenação numérica/hierárquica, por exemplo: `1.2` vem antes de `1.10`).
 - Navegação ativa: quando o usuário está na tela **Planilha orçamentária**, o botão **Planilha** fica destacado no topo para indicar a tela atual.
 - Edição de serviço (regra de preço):

@@ -103,7 +103,8 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 - Campos com erro ficam destacados (ex.: item vazio, serviço sem código, quant inválida)
 - O sistema calcula o **valor parcial** automaticamente (quant × valor_unitario)
 - Itens e subitens ficam em **negrito** para facilitar leitura
-- Você pode ajustar o **tamanho da fonte** e as **cores de fundo** de Item/Subitem (essas preferências ficam salvas no seu usuário)
+- A grade tem **rolagem vertical** com **cabeçalho fixo** para facilitar leitura
+- Você pode ajustar o **tamanho da fonte**, **fontes (dados/cabeçalho)**, **negrito do cabeçalho**, **cores de fundo** de Item/Subitem, além de **exibir/ocultar colunas** e ajustar **larguras** (essas preferências ficam salvas no seu usuário)
 - A tela mostra o **Valor total** da planilha
 - A tela mostra o **valor parcial consolidado** de cada **Item** e **Subitem**
 - Na **prévia**, o sistema mostra o **total consolidado** antes de confirmar a importação
@@ -133,7 +134,7 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 ### ETAPA 4 — O que esperar
 - O sistema mostra um aviso de compartilhamento:
   - Alterar Serviço/Insumo/Composição da Fonte afeta todas as planilhas que usam essa Fonte
-  - Alterar um Parâmetro afeta todas as planilhas que usam esse Parâmetro
+  - Alterar um Parâmetro afeta todas as planilhas que usam esse Parâmetro (e o sistema recalcula automaticamente os valores unitários/parciais vinculados)
 
 ### ETAPA 5 — Como validar
 - Volte em **Versões cadastradas** e confirme que as colunas **Fonte** e **Parâmetros** aparecem preenchidas na versão criada/editada

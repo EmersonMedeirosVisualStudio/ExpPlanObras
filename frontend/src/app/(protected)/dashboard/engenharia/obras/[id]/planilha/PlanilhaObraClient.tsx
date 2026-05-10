@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { Download, Check, Printer, FileSpreadsheet, Pencil, Trash2, XCircle, TriangleAlert, Image, Filter } from "lucide-react";
 import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
@@ -82,6 +82,8 @@ type ComposicaoValidacaoRow = {
   status: "SEM_COMPOSICAO" | "DIVERGENTE" | "OK";
   qtdItens: number;
 };
+
+type PlanilhaGridColKey = "item" | "comp" | "codigo" | "fonte" | "servicos" | "und" | "quant" | "valorUnitario" | "valorParcial" | "acoes";
 
 type FonteDadosDTO = {
   idFonteDados: number;
@@ -491,6 +493,7 @@ export default function PlanilhaObraClient({
   const [planilha, setPlanilha] = useState<Planilha | null>(null);
   const [planilhaId, setPlanilhaId] = useState<number | null>(initialPlanilhaId);
   const [showPrintConfig, setShowPrintConfig] = useState(false);
+  const [showColumnsConfig, setShowColumnsConfig] = useState(false);
   const [linhaFormErr, setLinhaFormErr] = useState<string | null>(null);
 
   const safeReturnTo = useMemo(() => {
@@ -541,6 +544,13 @@ export default function PlanilhaObraClient({
     fontSizePx: number;
     itemBg: string;
     subitemBg: string;
+    grid: {
+      dataFontFamily: string;
+      headerFontFamily: string;
+      headerBold: boolean;
+      colWidth: Record<PlanilhaGridColKey, number>;
+      colVisible: Record<PlanilhaGridColKey, boolean>;
+    };
     print: {
       headerFontFamily: string;
       headerFontSizePx: number;
@@ -554,6 +564,35 @@ export default function PlanilhaObraClient({
     fontSizePx: 12,
     itemBg: "#F8FAFC",
     subitemBg: "#FFFFFF",
+    grid: {
+      dataFontFamily: "inherit",
+      headerFontFamily: "inherit",
+      headerBold: true,
+      colWidth: {
+        item: 140,
+        comp: 44,
+        codigo: 118,
+        fonte: 96,
+        servicos: 420,
+        und: 64,
+        quant: 110,
+        valorUnitario: 130,
+        valorParcial: 140,
+        acoes: 96,
+      },
+      colVisible: {
+        item: true,
+        comp: true,
+        codigo: true,
+        fonte: true,
+        servicos: true,
+        und: true,
+        quant: true,
+        valorUnitario: true,
+        valorParcial: true,
+        acoes: true,
+      },
+    },
     print: {
       headerFontFamily: "Arial",
       headerFontSizePx: 11,
@@ -679,6 +718,12 @@ export default function PlanilhaObraClient({
       const fontSizePx = parsed?.fontSizePx != null ? Number(parsed.fontSizePx) : NaN;
       const itemBg = typeof parsed?.itemBg === "string" ? String(parsed.itemBg) : "";
       const subitemBg = typeof parsed?.subitemBg === "string" ? String(parsed.subitemBg) : "";
+      const g = parsed?.grid || {};
+      const dataFontFamily = typeof g?.dataFontFamily === "string" ? String(g.dataFontFamily || "").trim() : "";
+      const headerFontFamilyUi = typeof g?.headerFontFamily === "string" ? String(g.headerFontFamily || "").trim() : "";
+      const headerBold = typeof g?.headerBold === "boolean" ? Boolean(g.headerBold) : null;
+      const colWidthRaw = g?.colWidth || {};
+      const colVisibleRaw = g?.colVisible || {};
       const pf = parsed?.print || {};
       const headerFontFamily = typeof pf?.headerFontFamily === "string" && String(pf.headerFontFamily).trim() ? String(pf.headerFontFamily).trim() : "";
       const headerFontSizePx = pf?.headerFontSizePx != null ? Number(pf.headerFontSizePx) : NaN;
@@ -692,6 +737,39 @@ export default function PlanilhaObraClient({
         fontSizePx: Number.isFinite(fontSizePx) && fontSizePx >= 10 && fontSizePx <= 22 ? fontSizePx : p.fontSizePx,
         itemBg: itemBg && itemBg.startsWith("#") ? itemBg : p.itemBg,
         subitemBg: subitemBg && subitemBg.startsWith("#") ? subitemBg : p.subitemBg,
+        grid: {
+          dataFontFamily: dataFontFamily || p.grid.dataFontFamily,
+          headerFontFamily: headerFontFamilyUi || p.grid.headerFontFamily,
+          headerBold: headerBold == null ? p.grid.headerBold : headerBold,
+          colWidth: {
+            item: Number.isFinite(Number(colWidthRaw?.item)) ? Math.max(60, Math.min(420, Math.round(Number(colWidthRaw.item)))) : p.grid.colWidth.item,
+            comp: Number.isFinite(Number(colWidthRaw?.comp)) ? Math.max(36, Math.min(90, Math.round(Number(colWidthRaw.comp)))) : p.grid.colWidth.comp,
+            codigo: Number.isFinite(Number(colWidthRaw?.codigo)) ? Math.max(70, Math.min(240, Math.round(Number(colWidthRaw.codigo)))) : p.grid.colWidth.codigo,
+            fonte: Number.isFinite(Number(colWidthRaw?.fonte)) ? Math.max(60, Math.min(220, Math.round(Number(colWidthRaw.fonte)))) : p.grid.colWidth.fonte,
+            servicos: Number.isFinite(Number(colWidthRaw?.servicos)) ? Math.max(220, Math.min(900, Math.round(Number(colWidthRaw.servicos)))) : p.grid.colWidth.servicos,
+            und: Number.isFinite(Number(colWidthRaw?.und)) ? Math.max(50, Math.min(120, Math.round(Number(colWidthRaw.und)))) : p.grid.colWidth.und,
+            quant: Number.isFinite(Number(colWidthRaw?.quant)) ? Math.max(80, Math.min(220, Math.round(Number(colWidthRaw.quant)))) : p.grid.colWidth.quant,
+            valorUnitario: Number.isFinite(Number(colWidthRaw?.valorUnitario))
+              ? Math.max(90, Math.min(260, Math.round(Number(colWidthRaw.valorUnitario))))
+              : p.grid.colWidth.valorUnitario,
+            valorParcial: Number.isFinite(Number(colWidthRaw?.valorParcial))
+              ? Math.max(90, Math.min(280, Math.round(Number(colWidthRaw.valorParcial))))
+              : p.grid.colWidth.valorParcial,
+            acoes: Number.isFinite(Number(colWidthRaw?.acoes)) ? Math.max(70, Math.min(180, Math.round(Number(colWidthRaw.acoes)))) : p.grid.colWidth.acoes,
+          },
+          colVisible: {
+            item: typeof colVisibleRaw?.item === "boolean" ? Boolean(colVisibleRaw.item) : p.grid.colVisible.item,
+            comp: typeof colVisibleRaw?.comp === "boolean" ? Boolean(colVisibleRaw.comp) : p.grid.colVisible.comp,
+            codigo: typeof colVisibleRaw?.codigo === "boolean" ? Boolean(colVisibleRaw.codigo) : p.grid.colVisible.codigo,
+            fonte: typeof colVisibleRaw?.fonte === "boolean" ? Boolean(colVisibleRaw.fonte) : p.grid.colVisible.fonte,
+            servicos: typeof colVisibleRaw?.servicos === "boolean" ? Boolean(colVisibleRaw.servicos) : p.grid.colVisible.servicos,
+            und: typeof colVisibleRaw?.und === "boolean" ? Boolean(colVisibleRaw.und) : p.grid.colVisible.und,
+            quant: typeof colVisibleRaw?.quant === "boolean" ? Boolean(colVisibleRaw.quant) : p.grid.colVisible.quant,
+            valorUnitario: typeof colVisibleRaw?.valorUnitario === "boolean" ? Boolean(colVisibleRaw.valorUnitario) : p.grid.colVisible.valorUnitario,
+            valorParcial: typeof colVisibleRaw?.valorParcial === "boolean" ? Boolean(colVisibleRaw.valorParcial) : p.grid.colVisible.valorParcial,
+            acoes: typeof colVisibleRaw?.acoes === "boolean" ? Boolean(colVisibleRaw.acoes) : p.grid.colVisible.acoes,
+          },
+        },
         print: {
           headerFontFamily: headerFontFamily || p.print.headerFontFamily,
           headerFontSizePx: Number.isFinite(headerFontSizePx) && headerFontSizePx >= 8 && headerFontSizePx <= 16 ? headerFontSizePx : p.print.headerFontSizePx,
@@ -1517,8 +1595,7 @@ export default function PlanilhaObraClient({
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao salvar linha");
       resetLinhaForm();
-      await carregarPlanilha(planilha.idPlanilha);
-      await carregarVersoes();
+      await Promise.all([carregarPlanilha(planilha.idPlanilha), carregarVersoes(), carregarComposicaoStatus(planilha.idPlanilha), carregarComposicaoValidacao(planilha.idPlanilha)]);
       setOkMsg(editingLinhaId ? "Serviço atualizado com sucesso." : "Linha salva com sucesso.");
     } catch (e: any) {
       setErr(e?.message || "Erro ao salvar linha");
@@ -1541,8 +1618,7 @@ export default function PlanilhaObraClient({
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao excluir linha");
       setEditingLinhaId((cur) => (cur === idLinha ? null : cur));
-      await carregarPlanilha(planilha.idPlanilha);
-      await carregarVersoes();
+      await Promise.all([carregarPlanilha(planilha.idPlanilha), carregarVersoes(), carregarComposicaoStatus(planilha.idPlanilha), carregarComposicaoValidacao(planilha.idPlanilha)]);
     } catch (e: any) {
       setErr(e?.message || "Erro ao excluir linha");
     } finally {
@@ -2937,6 +3013,44 @@ export default function PlanilhaObraClient({
                   </select>
                 </label>
                 <label className="flex items-center gap-2 text-sm">
+                  <span className="text-slate-600">Fonte dados</span>
+                  <select
+                    className="input bg-white"
+                    value={uiPrefs.grid.dataFontFamily}
+                    onChange={(e) => setUiPrefs((p) => ({ ...p, grid: { ...p.grid, dataFontFamily: e.target.value } }))}
+                  >
+                    <option value="inherit">Padrão</option>
+                    <option value="Arial">Arial</option>
+                    <option value="Calibri">Calibri</option>
+                    <option value="Verdana">Verdana</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                    <option value="Courier New">Courier New</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-slate-600">Fonte cabeçalho</span>
+                  <select
+                    className="input bg-white"
+                    value={uiPrefs.grid.headerFontFamily}
+                    onChange={(e) => setUiPrefs((p) => ({ ...p, grid: { ...p.grid, headerFontFamily: e.target.value } }))}
+                  >
+                    <option value="inherit">Padrão</option>
+                    <option value="Arial">Arial</option>
+                    <option value="Calibri">Calibri</option>
+                    <option value="Verdana">Verdana</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                    <option value="Courier New">Courier New</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={uiPrefs.grid.headerBold}
+                    onChange={(e) => setUiPrefs((p) => ({ ...p, grid: { ...p.grid, headerBold: Boolean(e.target.checked) } }))}
+                  />
+                  <span className="text-slate-600">Cabeçalho em negrito</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm">
                   <span className="text-slate-600">Fundo Item</span>
                   <input type="color" value={uiPrefs.itemBg} onChange={(e) => setUiPrefs((p) => ({ ...p, itemBg: e.target.value }))} />
                 </label>
@@ -2944,8 +3058,91 @@ export default function PlanilhaObraClient({
                   <span className="text-slate-600">Fundo Subitem</span>
                   <input type="color" value={uiPrefs.subitemBg} onChange={(e) => setUiPrefs((p) => ({ ...p, subitemBg: e.target.value }))} />
                 </label>
+                <button
+                  className={`rounded border px-3 py-2 text-sm hover:bg-slate-50 ${showColumnsConfig ? "bg-blue-50 border-blue-200 text-blue-800" : "bg-white"}`}
+                  type="button"
+                  onClick={() => setShowColumnsConfig((v) => !v)}
+                >
+                  Colunas
+                </button>
                   </div>
                 </div>
+
+                {showColumnsConfig ? (
+                  <div className="rounded-lg border bg-white p-3 space-y-3">
+                    <div className="text-sm font-semibold">Colunas — largura e visibilidade</div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {(
+                        [
+                          { key: "item", label: "ITEM", min: 60, max: 420 },
+                          { key: "comp", label: "COMP.", min: 36, max: 90 },
+                          { key: "codigo", label: "CÓDIGO", min: 70, max: 240 },
+                          { key: "fonte", label: "FONTE", min: 60, max: 220 },
+                          { key: "servicos", label: "SERVIÇOS", min: 220, max: 900 },
+                          { key: "und", label: "UND", min: 50, max: 120 },
+                          { key: "quant", label: "QUANT.", min: 80, max: 220 },
+                          { key: "valorUnitario", label: "VALOR UNIT.", min: 90, max: 260 },
+                          { key: "valorParcial", label: "VALOR PARCIAL", min: 90, max: 280 },
+                          { key: "acoes", label: "Ações", min: 70, max: 180 },
+                        ] as Array<{ key: PlanilhaGridColKey; label: string; min: number; max: number }>
+                      ).map((c) => {
+                        const w = uiPrefs.grid.colWidth[c.key];
+                        const vis = uiPrefs.grid.colVisible[c.key];
+                        return (
+                          <div key={c.key} className="rounded border bg-slate-50 p-3 space-y-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <label className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={vis}
+                                  onChange={(e) =>
+                                    setUiPrefs((p) => ({ ...p, grid: { ...p.grid, colVisible: { ...p.grid.colVisible, [c.key]: Boolean(e.target.checked) } } }))
+                                  }
+                                />
+                                <span className="font-semibold text-slate-800">{c.label}</span>
+                              </label>
+                              <div className="text-xs text-slate-600">{w}px</div>
+                            </div>
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_110px]">
+                              <input
+                                type="range"
+                                min={c.min}
+                                max={c.max}
+                                step={2}
+                                value={w}
+                                onChange={(e) =>
+                                  setUiPrefs((p) => ({
+                                    ...p,
+                                    grid: {
+                                      ...p.grid,
+                                      colWidth: { ...p.grid.colWidth, [c.key]: Math.max(c.min, Math.min(c.max, Number(e.target.value || w))) },
+                                    },
+                                  }))
+                                }
+                              />
+                              <input
+                                className="input bg-white"
+                                type="number"
+                                min={c.min}
+                                max={c.max}
+                                value={w}
+                                onChange={(e) =>
+                                  setUiPrefs((p) => ({
+                                    ...p,
+                                    grid: {
+                                      ...p.grid,
+                                      colWidth: { ...p.grid.colWidth, [c.key]: Math.max(c.min, Math.min(c.max, Number(e.target.value || w))) },
+                                    },
+                                  }))
+                                }
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
 
                 {showPrintConfig ? <div className="rounded-lg border bg-white p-3 space-y-3">
                   <div className="text-sm font-semibold">Impressão — ajustes finos</div>
@@ -3523,148 +3720,228 @@ export default function PlanilhaObraClient({
               </div>
             ) : null}
 
-            <div className="overflow-auto">
-              <table className="min-w-[1100px] w-full" style={{ fontSize: `${uiPrefs.fontSizePx}px` }}>
-                <thead className="bg-slate-50 text-left text-slate-700">
-                  <tr>
-                    <th className="px-3 py-2 w-[36px] border-r border-slate-200">ITEM</th>
-                    <th className="px-3 py-2 w-[44px] border-r border-slate-200" title="Condição da composição">COMP.</th>
-                    <th className="px-3 py-2 w-[118px] border-r border-slate-200">CÓDIGO</th>
-                    <th className="px-3 py-2 border-r border-slate-200">FONTE</th>
-                    <th className="px-3 py-2 min-w-[374px] border-r border-slate-200">SERVIÇOS</th>
-                    <th className="px-3 py-2 border-r border-slate-200">UND</th>
-                    <th className="px-3 py-2 text-right border-r border-slate-200">QUANT.</th>
-                    <th className="px-3 py-2 text-right border-r border-slate-200">VALOR UNIT.</th>
-                    <th className="px-3 py-2 text-right border-r border-slate-200">VALOR PARCIAL</th>
-                    <th className="px-3 py-2">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {linhasFiltradas.map((l) => (
-                    <tr
-                      key={l.idLinha}
-                      className={`border-t ${l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM" ? "font-bold" : ""}`}
-                      style={{
-                        backgroundColor: l.tipoLinha === "ITEM" ? uiPrefs.itemBg : l.tipoLinha === "SUBITEM" ? uiPrefs.subitemBg : undefined,
-                      }}
-                      onDoubleClick={() => {
-                        if (l.tipoLinha !== "SERVICO") return;
-                        const code = String(l.codigo || "").trim();
-                        if (!code) return;
-                        const qs = new URLSearchParams();
-                        if (effectivePlanilhaId) qs.set("planilhaId", String(effectivePlanilhaId));
-                        qs.set("returnTo", selfHref);
-                        router.push(
-                          `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}?${qs.toString()}`
-                        );
-                      }}
-                    >
-                      <td className="px-3 py-2 w-[36px] border-r border-slate-200">
-                        <span className="inline-flex items-center gap-2">
-                          {l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM" ? (
-                            expandablePrefixes.has(String(l.item || "").trim()) ? (
-                              <button
-                                className="rounded border bg-white px-2 py-0.5 text-xs hover:bg-slate-50"
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  toggleCollapsedPrefix(String(l.item || "").trim());
-                                }}
-                              >
-                                {collapsedPrefixes.has(String(l.item || "").trim()) ? "⯈" : "⯆"}
-                              </button>
-                            ) : (
-                              <span className="inline-block w-[30px]" />
-                            )
-                          ) : (
-                            <span className="inline-block w-[30px]" />
-                          )}
-                          <span>{l.item || ""}</span>
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 w-[44px] border-r border-slate-200">
-                        {(() => {
-                          if (l.tipoLinha !== "SERVICO") return null;
-                          const code = String(l.codigo || "").trim().toUpperCase();
-                          if (!code) return null;
-                          const v = composicaoValidacaoByCodigo[code];
-                          if (!v)
-                            return composicaoServicoCodes.has(code) ? (
-                              <span title="Composição definida">
-                                <Check className="h-4 w-4 text-green-600" />
+            {(() => {
+              const order: PlanilhaGridColKey[] = ["item", "comp", "codigo", "fonte", "servicos", "und", "quant", "valorUnitario", "valorParcial", "acoes"];
+              const visible = order.filter((k) => uiPrefs.grid.colVisible[k]);
+              const thStyle: CSSProperties = {
+                fontFamily: uiPrefs.grid.headerFontFamily === "inherit" ? undefined : uiPrefs.grid.headerFontFamily,
+                fontWeight: uiPrefs.grid.headerBold ? 700 : 400,
+              };
+              const tableStyle: CSSProperties = {
+                fontSize: `${uiPrefs.fontSizePx}px`,
+                fontFamily: uiPrefs.grid.dataFontFamily === "inherit" ? undefined : uiPrefs.grid.dataFontFamily,
+              };
+
+              return (
+                <div className="overflow-auto max-h-[70vh]">
+                  <table className="min-w-[1100px] w-full" style={tableStyle}>
+                    <colgroup>
+                      {visible.map((k) => (
+                        <col key={k} style={{ width: `${uiPrefs.grid.colWidth[k]}px` }} />
+                      ))}
+                    </colgroup>
+                    <thead className="bg-slate-50 text-left text-slate-700 sticky top-0 z-10">
+                      <tr>
+                        {visible.includes("item") ? (
+                          <th className="px-3 py-2 border-r border-slate-200" style={thStyle}>
+                            ITEM
+                          </th>
+                        ) : null}
+                        {visible.includes("comp") ? (
+                          <th className="px-3 py-2 border-r border-slate-200" title="Condição da composição" aria-label="Condição da composição" style={thStyle} />
+                        ) : null}
+                        {visible.includes("codigo") ? (
+                          <th className="px-3 py-2 border-r border-slate-200" style={thStyle}>
+                            CÓDIGO
+                          </th>
+                        ) : null}
+                        {visible.includes("fonte") ? (
+                          <th className="px-3 py-2 border-r border-slate-200" style={thStyle}>
+                            FONTE
+                          </th>
+                        ) : null}
+                        {visible.includes("servicos") ? (
+                          <th className="px-3 py-2 border-r border-slate-200" style={thStyle}>
+                            SERVIÇOS
+                          </th>
+                        ) : null}
+                        {visible.includes("und") ? (
+                          <th className="px-3 py-2 border-r border-slate-200" style={thStyle}>
+                            UND
+                          </th>
+                        ) : null}
+                        {visible.includes("quant") ? (
+                          <th className="px-3 py-2 text-right border-r border-slate-200" style={thStyle}>
+                            QUANT.
+                          </th>
+                        ) : null}
+                        {visible.includes("valorUnitario") ? (
+                          <th className="px-3 py-2 text-right border-r border-slate-200" style={thStyle}>
+                            VALOR UNIT.
+                          </th>
+                        ) : null}
+                        {visible.includes("valorParcial") ? (
+                          <th className="px-3 py-2 text-right border-r border-slate-200" style={thStyle}>
+                            VALOR PARCIAL
+                          </th>
+                        ) : null}
+                        {visible.includes("acoes") ? (
+                          <th className="px-3 py-2" style={thStyle}>
+                            Ações
+                          </th>
+                        ) : null}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {linhasFiltradas.map((l) => (
+                        <tr
+                          key={l.idLinha}
+                          className={`border-t ${l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM" ? "font-bold" : ""}`}
+                          style={{
+                            backgroundColor: l.tipoLinha === "ITEM" ? uiPrefs.itemBg : l.tipoLinha === "SUBITEM" ? uiPrefs.subitemBg : undefined,
+                          }}
+                          onDoubleClick={() => {
+                            if (l.tipoLinha !== "SERVICO") return;
+                            const code = String(l.codigo || "").trim();
+                            if (!code) return;
+                            const qs = new URLSearchParams();
+                            if (effectivePlanilhaId) qs.set("planilhaId", String(effectivePlanilhaId));
+                            qs.set("returnTo", selfHref);
+                            router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}?${qs.toString()}`);
+                          }}
+                        >
+                          {visible.includes("item") ? (
+                            <td className="px-3 py-2 border-r border-slate-200">
+                              <span className="inline-flex items-center gap-2">
+                                {l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM" ? (
+                                  expandablePrefixes.has(String(l.item || "").trim()) ? (
+                                    <button
+                                      className="rounded border bg-white px-2 py-0.5 text-xs hover:bg-slate-50"
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        toggleCollapsedPrefix(String(l.item || "").trim());
+                                      }}
+                                    >
+                                      {collapsedPrefixes.has(String(l.item || "").trim()) ? "⯈" : "⯆"}
+                                    </button>
+                                  ) : (
+                                    <span className="inline-block w-[30px]" />
+                                  )
+                                ) : (
+                                  <span className="inline-block w-[30px]" />
+                                )}
+                                <span>{l.item || ""}</span>
                               </span>
-                            ) : null;
-                          if (v.status === "SEM_COMPOSICAO")
-                            return (
-                              <span title="Sem composição">
-                                <XCircle className="h-4 w-4 text-red-600" />
-                              </span>
-                            );
-                          if (v.status === "DIVERGENTE")
-                            return (
-                              <span
-                                title={`Planilha: ${moeda(Number(v.totalPlanilha || 0))} | Composição: ${moeda(Number(v.totalComposicao || 0))} | Dif.: ${moeda(Number(v.diff || 0))}`}
-                              >
-                                <TriangleAlert className="h-4 w-4 text-amber-700" />
-                              </span>
-                            );
-                          return (
-                            <span title="OK">
-                              <Check className="h-4 w-4 text-green-600" />
-                            </span>
-                          );
-                        })()}
-                      </td>
-                      <td className="px-3 py-2 w-[118px] max-w-[118px] whitespace-nowrap overflow-hidden text-ellipsis border-r border-slate-200">
-                        <span className="text-[11px]">{l.codigo || ""}</span>
-                      </td>
-                      <td className="px-3 py-2 border-r border-slate-200">{l.fonte || ""}</td>
-                      <td className="px-3 py-2 min-w-[374px] border-r border-slate-200">{l.servicos || ""}</td>
-                      <td className="px-3 py-2 border-r border-slate-200">{l.und || ""}</td>
-                      <td className="px-3 py-2 text-right border-r border-slate-200">{fmtCellNumber(l.quant, 3)}</td>
-                      <td className="px-3 py-2 text-right border-r border-slate-200">{fmtCellNumber(l.valorUnitario, 2)}</td>
-                      <td className="px-3 py-2 text-right border-r border-slate-200">
-                        {l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM"
-                          ? (() => {
-                              const k = String(l.item || "").trim();
-                              const info = k ? subtotalByItemKey.get(k) : null;
-                              if (!info?.count) return "";
-                              return formatNumberPtBR(Number(info.sum || 0), 2);
-                            })()
-                          : (() => {
-                              const n = parseNumberLoose(l.valorParcial);
-                              return n == null ? "" : formatNumberPtBR(n, 2);
-                            })()}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <button className="rounded border bg-white p-2 text-slate-800 hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => iniciarEdicaoLinha(l)} disabled={!podeEditar || loading} title="Editar">
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button className="rounded border bg-white p-2 text-red-700 hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => excluirLinha(l.idLinha)} disabled={!podeEditar || loading} title="Excluir">
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {!planilha.linhas.length ? (
-                    <tr>
-                      <td colSpan={10} className="px-3 py-6 text-center text-slate-500">
-                        Sem linhas na planilha.
-                      </td>
-                    </tr>
-                  ) : planilha.linhas.length && !linhasFiltradas.length ? (
-                    <tr>
-                      <td colSpan={10} className="px-3 py-6 text-center text-slate-500">
-                        Nenhuma linha encontrada com os filtros atuais.
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
+                            </td>
+                          ) : null}
+                          {visible.includes("comp") ? (
+                            <td className="px-3 py-2 border-r border-slate-200">
+                              {(() => {
+                                if (l.tipoLinha !== "SERVICO") return null;
+                                const code = String(l.codigo || "").trim().toUpperCase();
+                                if (!code) return null;
+                                const v = composicaoValidacaoByCodigo[code];
+                                if (!v)
+                                  return composicaoServicoCodes.has(code) ? (
+                                    <span title="Composição definida">
+                                      <Check className="h-4 w-4 text-green-600" />
+                                    </span>
+                                  ) : null;
+                                if (v.status === "SEM_COMPOSICAO")
+                                  return (
+                                    <span title="Sem composição">
+                                      <XCircle className="h-4 w-4 text-red-600" />
+                                    </span>
+                                  );
+                                if (v.status === "DIVERGENTE")
+                                  return (
+                                    <span
+                                      title={`Planilha: ${moeda(Number(v.totalPlanilha || 0))} | Composição: ${moeda(Number(v.totalComposicao || 0))} | Dif.: ${moeda(Number(v.diff || 0))}`}
+                                    >
+                                      <TriangleAlert className="h-4 w-4 text-amber-700" />
+                                    </span>
+                                  );
+                                return (
+                                  <span title="OK">
+                                    <Check className="h-4 w-4 text-green-600" />
+                                  </span>
+                                );
+                              })()}
+                            </td>
+                          ) : null}
+                          {visible.includes("codigo") ? (
+                            <td className="px-3 py-2 whitespace-nowrap overflow-hidden text-ellipsis border-r border-slate-200">
+                              <span className="text-[11px]">{l.codigo || ""}</span>
+                            </td>
+                          ) : null}
+                          {visible.includes("fonte") ? <td className="px-3 py-2 border-r border-slate-200">{l.fonte || ""}</td> : null}
+                          {visible.includes("servicos") ? <td className="px-3 py-2 border-r border-slate-200">{l.servicos || ""}</td> : null}
+                          {visible.includes("und") ? <td className="px-3 py-2 border-r border-slate-200">{l.und || ""}</td> : null}
+                          {visible.includes("quant") ? <td className="px-3 py-2 text-right border-r border-slate-200">{fmtCellNumber(l.quant, 3)}</td> : null}
+                          {visible.includes("valorUnitario") ? (
+                            <td className="px-3 py-2 text-right border-r border-slate-200">{fmtCellNumber(l.valorUnitario, 2)}</td>
+                          ) : null}
+                          {visible.includes("valorParcial") ? (
+                            <td className="px-3 py-2 text-right border-r border-slate-200">
+                              {l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM"
+                                ? (() => {
+                                    const k = String(l.item || "").trim();
+                                    const info = k ? subtotalByItemKey.get(k) : null;
+                                    if (!info?.count) return "";
+                                    return formatNumberPtBR(Number(info.sum || 0), 2);
+                                  })()
+                                : (() => {
+                                    const n = parseNumberLoose(l.valorParcial);
+                                    return n == null ? "" : formatNumberPtBR(n, 2);
+                                  })()}
+                            </td>
+                          ) : null}
+                          {visible.includes("acoes") ? (
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  className="rounded border bg-white p-2 text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+                                  type="button"
+                                  onClick={() => iniciarEdicaoLinha(l)}
+                                  disabled={!podeEditar || loading}
+                                  title="Editar"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                                <button
+                                  className="rounded border bg-white p-2 text-red-700 hover:bg-slate-50 disabled:opacity-60"
+                                  type="button"
+                                  onClick={() => excluirLinha(l.idLinha)}
+                                  disabled={!podeEditar || loading}
+                                  title="Excluir"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          ) : null}
+                        </tr>
+                      ))}
+                      {!planilha.linhas.length ? (
+                        <tr>
+                          <td colSpan={visible.length || 1} className="px-3 py-6 text-center text-slate-500">
+                            Sem linhas na planilha.
+                          </td>
+                        </tr>
+                      ) : planilha.linhas.length && !linhasFiltradas.length ? (
+                        <tr>
+                          <td colSpan={visible.length || 1} className="px-3 py-6 text-center text-slate-500">
+                            Nenhuma linha encontrada com os filtros atuais.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
               </>
             ) : null}
           </section>

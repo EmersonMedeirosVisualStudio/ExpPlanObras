@@ -7966,27 +7966,196 @@ export default async function v1Routes(server: FastifyInstance) {
 
         if (dataBaseSinapi && !ufSinapi) return fail(reply, 422, 'UF (SINAPI) é obrigatória quando Data-base SINAPI está preenchida');
 
-        const idParametros = await upsertParametros(prisma, ctx.tenantId, {
-          dataBaseSbc,
-          dataBaseSinapi,
-          ufSinapi,
-          bdiServicosSbc: p.bdiServicosSbc == null || p.bdiServicosSbc === '' ? null : toDec(p.bdiServicosSbc),
-          bdiServicosSinapi: p.bdiServicosSinapi == null || p.bdiServicosSinapi === '' ? null : toDec(p.bdiServicosSinapi),
-          bdiDiferenciadoSbc: p.bdiDiferenciadoSbc == null || p.bdiDiferenciadoSbc === '' ? null : toDec(p.bdiDiferenciadoSbc),
-          bdiDiferenciadoSinapi: p.bdiDiferenciadoSinapi == null || p.bdiDiferenciadoSinapi === '' ? null : toDec(p.bdiDiferenciadoSinapi),
-          encSociaisSemDesSbc: p.encSociaisSemDesSbc == null || p.encSociaisSemDesSbc === '' ? null : toDec(p.encSociaisSemDesSbc),
-          encSociaisSemDesSinapi: p.encSociaisSemDesSinapi == null || p.encSociaisSemDesSinapi === '' ? null : toDec(p.encSociaisSemDesSinapi),
-          descontoSbc: p.descontoSbc == null || p.descontoSbc === '' ? null : toDec(p.descontoSbc),
-          descontoSinapi: p.descontoSinapi == null || p.descontoSinapi === '' ? null : toDec(p.descontoSinapi),
-        });
+        await prismaTx(async (tx: any) => {
+          const idParametros = await upsertParametros(tx, ctx.tenantId, {
+            dataBaseSbc,
+            dataBaseSinapi,
+            ufSinapi,
+            bdiServicosSbc: p.bdiServicosSbc == null || p.bdiServicosSbc === '' ? null : toDec(p.bdiServicosSbc),
+            bdiServicosSinapi: p.bdiServicosSinapi == null || p.bdiServicosSinapi === '' ? null : toDec(p.bdiServicosSinapi),
+            bdiDiferenciadoSbc: p.bdiDiferenciadoSbc == null || p.bdiDiferenciadoSbc === '' ? null : toDec(p.bdiDiferenciadoSbc),
+            bdiDiferenciadoSinapi: p.bdiDiferenciadoSinapi == null || p.bdiDiferenciadoSinapi === '' ? null : toDec(p.bdiDiferenciadoSinapi),
+            encSociaisSemDesSbc: p.encSociaisSemDesSbc == null || p.encSociaisSemDesSbc === '' ? null : toDec(p.encSociaisSemDesSbc),
+            encSociaisSemDesSinapi: p.encSociaisSemDesSinapi == null || p.encSociaisSemDesSinapi === '' ? null : toDec(p.encSociaisSemDesSinapi),
+            descontoSbc: p.descontoSbc == null || p.descontoSbc === '' ? null : toDec(p.descontoSbc),
+            descontoSinapi: p.descontoSinapi == null || p.descontoSinapi === '' ? null : toDec(p.descontoSinapi),
+          });
 
-        await prisma.$executeRawUnsafe(
-          `UPDATE obras_planilhas_versoes SET id_parametros = $4, atualizado_em = NOW() WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
-          ctx.tenantId,
-          idObra,
-          idPlanilha,
-          idParametros
-        );
+          await tx.$executeRawUnsafe(
+            `UPDATE obras_planilhas_versoes SET id_parametros = $4, atualizado_em = NOW() WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+            ctx.tenantId,
+            idObra,
+            idPlanilha,
+            idParametros
+          );
+
+          await ensurePlanilhaModeloFonteTables(tx);
+
+          await tx.$executeRawUnsafe(
+            `
+            WITH plans AS (
+              SELECT
+                v.id_planilha AS id_planilha,
+                v.id_fonte_dados AS id_fonte_dados,
+                COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
+                COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
+              FROM obras_planilhas_versoes v
+              LEFT JOIN obras_planilhas_parametros p
+                ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
+              WHERE v.tenant_id = $1 AND v.id_parametros = $2 AND v.id_fonte_dados IS NOT NULL
+            ),
+            serv AS (
+              SELECT DISTINCT
+                i.id_planilha AS id_planilha,
+                i.id_servico AS id_servico
+              FROM obras_planilha_itens i
+              JOIN plans pl ON pl.id_planilha = i.id_planilha
+              WHERE i.tenant_id = $1 AND i.tipo_linha = 'SERVICO' AND i.id_servico IS NOT NULL
+            ),
+            comp AS (
+              SELECT
+                s.id_planilha AS id_planilha,
+                s.id_servico AS id_servico,
+                COUNT(ci.id_composicao_item) AS qtd,
+                SUM(
+                  COALESCE(ci.quantidade,0)
+                  * COALESCE(
+                    CASE
+                      WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
+                      ELSE inf.valor_unitario
+                    END,
+                    0
+                  )
+                ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
+                SUM(
+                  COALESCE(ci.quantidade,0)
+                  * COALESCE(
+                    CASE
+                      WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
+                      ELSE inf.valor_unitario
+                    END,
+                    0
+                  )
+                ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
+              FROM serv s
+              JOIN plans pl ON pl.id_planilha = s.id_planilha
+              LEFT JOIN obras_composicoes_itens_fonte ci
+                ON ci.tenant_id = $1 AND ci.id_fonte_dados = pl.id_fonte_dados AND ci.id_servico_pai = s.id_servico
+              LEFT JOIN obras_servicos_fonte sf
+                ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
+                AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+              LEFT JOIN obras_insumos_fonte inf
+                ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
+                AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+              GROUP BY s.id_planilha, s.id_servico
+            ),
+            calc AS (
+              SELECT
+                pl.id_planilha AS id_planilha,
+                c.id_servico AS id_servico,
+                CASE
+                  WHEN COALESCE(c.qtd, 0) > 0 THEN
+                    (
+                      (
+                        (COALESCE(c.total_base,0) - COALESCE(c.total_mao_base,0))
+                        + COALESCE(c.total_mao_base,0) * (1 + (pl.ls / 100.0))
+                      )
+                      * (1 + (pl.bdi / 100.0))
+                    )
+                  ELSE 0
+                END AS valor_unitario
+              FROM plans pl
+              JOIN comp c ON c.id_planilha = pl.id_planilha
+            )
+            UPDATE obras_planilha_itens i
+            SET
+              valor_unitario = ROUND(calc.valor_unitario::numeric, 6),
+              valor_parcial = CASE
+                WHEN i.quantidade IS NULL THEN i.valor_parcial
+                ELSE ROUND((COALESCE(i.quantidade,0) * calc.valor_unitario)::numeric, 6)
+              END,
+              atualizado_em = NOW()
+            FROM calc
+            WHERE i.tenant_id = $1
+              AND i.id_planilha = calc.id_planilha
+              AND i.tipo_linha = 'SERVICO'
+              AND i.id_servico = calc.id_servico
+            `,
+            ctx.tenantId,
+            idParametros
+          );
+
+          const oldExists = (await tx.$queryRawUnsafe(
+            `SELECT to_regclass(current_schema() || '.obras_planilhas_linhas') AS "l", to_regclass(current_schema() || '.obras_planilhas_composicoes_itens') AS "c"`
+          )) as any[];
+          const hasOldLinhas = Boolean(oldExists?.[0]?.l) && Boolean(oldExists?.[0]?.c);
+          if (hasOldLinhas) {
+            await ensurePlanilhaOrcamentariaTables(tx);
+            await ensurePlanilhaComposicaoTables(tx);
+            await tx.$executeRawUnsafe(
+              `
+              WITH plans AS (
+                SELECT
+                  v.id_planilha AS id_planilha,
+                  v.id_obra AS id_obra,
+                  COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
+                  COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
+                FROM obras_planilhas_versoes v
+                LEFT JOIN obras_planilhas_parametros p
+                  ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
+                WHERE v.tenant_id = $1 AND v.id_parametros = $2
+              ),
+              comp AS (
+                SELECT
+                  i.id_planilha AS id_planilha,
+                  i.id_obra AS id_obra,
+                  UPPER(COALESCE(i.codigo_servico,'')) AS codigo,
+                  COUNT(*) AS qtd,
+                  SUM(COALESCE(i.quantidade,0) * COALESCE(i.valor_unitario,0)) FILTER (WHERE COALESCE(i.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
+                  SUM(COALESCE(i.quantidade,0) * COALESCE(i.valor_unitario,0)) FILTER (WHERE COALESCE(i.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
+                FROM obras_planilhas_composicoes_itens i
+                JOIN plans pl ON pl.id_planilha = i.id_planilha AND pl.id_obra = i.id_obra
+                WHERE i.tenant_id = $1
+                GROUP BY i.id_planilha, i.id_obra, UPPER(COALESCE(i.codigo_servico,''))
+              ),
+              calc AS (
+                SELECT
+                  pl.id_planilha AS id_planilha,
+                  c.codigo AS codigo,
+                  CASE
+                    WHEN COALESCE(c.qtd, 0) > 0 THEN
+                      (
+                        (
+                          (COALESCE(c.total_base,0) - COALESCE(c.total_mao_base,0))
+                          + COALESCE(c.total_mao_base,0) * (1 + (pl.ls / 100.0))
+                        )
+                        * (1 + (pl.bdi / 100.0))
+                      )
+                    ELSE 0
+                  END AS valor_unitario
+                FROM plans pl
+                LEFT JOIN comp c ON c.id_planilha = pl.id_planilha AND c.id_obra = pl.id_obra
+                WHERE c.codigo IS NOT NULL AND c.codigo <> ''
+              )
+              UPDATE obras_planilhas_linhas l
+              SET
+                valor_unitario = ROUND(calc.valor_unitario::numeric, 6),
+                valor_parcial = CASE
+                  WHEN l.quantidade IS NULL THEN l.valor_parcial
+                  ELSE ROUND((COALESCE(l.quantidade,0) * calc.valor_unitario)::numeric, 6)
+                END,
+                atualizado_em = NOW()
+              FROM calc
+              WHERE l.tenant_id = $1
+                AND l.id_planilha = calc.id_planilha
+                AND l.tipo_linha = 'SERVICO'
+                AND UPPER(COALESCE(l.codigo,'')) = calc.codigo
+              `,
+              ctx.tenantId,
+              idParametros
+            );
+          }
+        });
 
         return ok(reply, { idObra, obraStatus, obra: obraResumo }, { message: 'Parâmetros atualizados' });
       }
