@@ -6751,9 +6751,9 @@ export default async function v1Routes(server: FastifyInstance) {
               : detectTipoLinha(item, codigo, und, quantRaw, valorUnitRaw);
 
             if (!item.trim()) throw new Error(`Linha ${i + 1}: "item" é obrigatório`);
-            if (!descricao.trim()) throw new Error(`Linha ${i + 1}: "servicos" é obrigatório`);
 
             if (det.tipo === 'SERVICO') {
+              if (!descricao.trim()) throw new Error(`Linha ${i + 1}: "servicos" é obrigatório para serviço`);
               if (!codigo.trim()) throw new Error(`Linha ${i + 1}: "codigo" é obrigatório para serviço`);
               if (!und.trim()) throw new Error(`Linha ${i + 1}: "und" é obrigatório para serviço`);
               if (quantidade == null || !(quantidade > 0)) throw new Error(`Linha ${i + 1}: "quant" inválido para serviço`);
@@ -6795,7 +6795,7 @@ export default async function v1Routes(server: FastifyInstance) {
               valorParcial: null,
               nivel: det.nivel,
               tipoLinha: det.tipo,
-              observacao: descricao.slice(0, 800) || null,
+              observacao: descricao.trim() ? descricao.slice(0, 800) : null,
             };
           });
 

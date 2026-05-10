@@ -336,9 +336,9 @@ export default function PlanilhaImportacoesPage() {
 
         const errors: any = {};
         if (!item.trim()) errors.item = "Obrigatório";
-        if (!servicos.trim()) errors.servicos = "Obrigatório";
         if (tipoLinhaNorm && !tipoLinhaFromCsv) errors.tipoLinha = "tipo_linha inválido";
         if (det.tipo === "SERVICO") {
+          if (!servicos.trim()) errors.servicos = "Obrigatório (serviço)";
           if (!codigo.trim()) errors.codigo = "Obrigatório (serviço)";
           if (!und.trim()) errors.und = "Obrigatório (serviço)";
           if (quantidade == null || !(quantidade > 0)) errors.quant = "Inválido (serviço)";
