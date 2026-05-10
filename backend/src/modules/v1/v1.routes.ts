@@ -6604,7 +6604,7 @@ export default async function v1Routes(server: FastifyInstance) {
           for (let start = 0; start < preparedOk.length; start += chunkSize) {
             const chunk = preparedOk.slice(start, start + chunkSize);
             const params: any[] = [];
-            let p = 1;
+            let p = 5;
             const values = chunk
               .map((r) => {
                 const base = [r.ordem, r.item, r.codigo, r.quantidade, r.valorUnitario, r.valorParcial, r.nivel, r.tipoLinha, r.servico];
@@ -6966,7 +6966,7 @@ export default async function v1Routes(server: FastifyInstance) {
           for (let start = 0; start < rowsPrepared.length; start += chunkSize) {
             const chunk = rowsPrepared.slice(start, start + chunkSize);
             const params: any[] = [];
-            let p = 1;
+            let p = 4;
             const values = chunk
               .map((r, idx) => {
                 const ordem = baseOrd + start + idx + 1;
