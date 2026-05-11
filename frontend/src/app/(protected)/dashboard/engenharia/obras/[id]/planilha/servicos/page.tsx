@@ -39,10 +39,15 @@ export default function Page() {
   const idObra = useMemo(() => Number((params as any)?.id || 0), [params]);
   const returnTo = search.get("returnTo");
   const planilhaIdParam = search.get("planilhaId");
+  const codigoServicoParam = search.get("codigoServico");
   const planilhaIdFromQuery = useMemo(() => {
     const n = Number(planilhaIdParam || 0);
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [planilhaIdParam]);
+  const focusCodigo = useMemo(() => {
+    const c = String(codigoServicoParam || "").trim().toUpperCase();
+    return c ? c : null;
+  }, [codigoServicoParam]);
   const safeReturnTo = useMemo(() => {
     const raw = String(returnTo || "").trim();
     const isExternal = raw.startsWith("//") || /^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(raw) || /^[a-z][a-z0-9+.-]*:/i.test(raw);
@@ -260,7 +265,23 @@ export default function Page() {
     };
   }, [idObra]);
 
-  const filteredRows = useMemo(() => rows.filter((r) => Boolean(statusFilter[r.status])), [rows, statusFilter]);
+  const filteredRows = useMemo(() => {
+    const byStatus = rows.filter((r) => Boolean(statusFilter[r.status]));
+    if (!focusCodigo) return byStatus;
+    return byStatus.filter((r) => String(r.codigoServico || "").trim().toUpperCase() === focusCodigo);
+  }, [rows, statusFilter, focusCodigo]);
+
+  useEffect(() => {
+    if (!bootDone || !focusCodigo) return;
+    const id = `svc-${focusCodigo}`;
+    const t = setTimeout(() => {
+      try {
+        const el = document.getElementById(id);
+        if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "center" });
+      } catch {}
+    }, 0);
+    return () => clearTimeout(t);
+  }, [bootDone, focusCodigo, filteredRows.length]);
 
   function baixarModeloComposicoesCsv() {
     const sep = "\t";
@@ -745,6 +766,11 @@ export default function Page() {
           <div className="text-slate-500">
             Mostrando: {filteredRows.length} / {rows.length}
           </div>
+          {focusCodigo ? (
+            <button className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50" type="button" onClick={() => router.push(selfHref)} disabled={loading}>
+              {`Foco: ${focusCodigo} (limpar)`}
+            </button>
+          ) : null}
         </div>
 
         <div className="overflow-auto">
@@ -763,7 +789,11 @@ export default function Page() {
             </thead>
             <tbody>
               {filteredRows.map((r) => (
-                <tr key={r.codigoServico} className="border-t">
+                <tr
+                  key={r.codigoServico}
+                  id={`svc-${String(r.codigoServico || "").trim().toUpperCase()}`}
+                  className={`border-t ${focusCodigo && String(r.codigoServico || "").trim().toUpperCase() === focusCodigo ? "bg-amber-50" : ""}`}
+                >
                   <td className="px-3 py-2 font-medium">{r.item || "—"}</td>
                   <td className="px-3 py-2 font-medium">{r.codigoServico}</td>
                   <td className="px-3 py-2">{r.servico}</td>

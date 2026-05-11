@@ -102,6 +102,7 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 - A grade mostra as linhas do CSV antes de gravar
 - Campos com erro ficam destacados (ex.: item vazio, serviço sem código, quant inválida)
 - O sistema calcula o **valor parcial** automaticamente (quant × valor_unitario)
+- Se o **código do serviço** não existir no **catálogo da Fonte**, o sistema cria/atualiza automaticamente o serviço no catálogo quando você confirma a importação
 - Itens e subitens ficam em **negrito** para facilitar leitura
 - A grade tem **rolagem vertical** com **cabeçalho fixo** para facilitar leitura
 - Você pode ajustar o **tamanho da fonte**, **fontes (dados/cabeçalho)**, **negrito do cabeçalho**, **cores de fundo** de Item/Subitem, além de **exibir/ocultar colunas** e ajustar **larguras** (essas preferências ficam salvas no seu usuário)
@@ -112,6 +113,7 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 ### ETAPA 5 — Como validar
 - Clique em **Confirmar importação**
 - A nova versão aparece na lista de versões e pode ser selecionada
+- Na planilha, dê **duplo clique** em um serviço para abrir **Serviços (catálogo da fonte)** já focado no código selecionado
 
 ## 3.1.1 Nova planilha / Editar / Clonar (Fonte e Parâmetros)
 

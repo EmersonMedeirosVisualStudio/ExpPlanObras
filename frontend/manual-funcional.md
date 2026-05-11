@@ -1761,7 +1761,28 @@ ETAPA 5 — Como validar
   - Observação de compatibilidade: leitura “smart” de encoding (UTF-8 / Windows-1252) para reduzir erros de acentuação no texto importado.
   - Observação: ao importar itens do tipo Serviço, o sistema garante que o serviço exista no catálogo da fonte (Serviços (FONTE)).
   - Observação: ao salvar/importar composições, o sistema garante que subcomposições referenciadas existam no catálogo da fonte (reduz “cadastros órfãos”).
+- Regra importante (catálogo): um serviço pode chegar na planilha por CSV/cópia mesmo que ainda não exista no catálogo da Fonte. Ao **importar** (ou ao **salvar** um serviço criado na planilha), o sistema cria/atualiza automaticamente o registro em **Serviços (catálogo da fonte)** usando o mesmo **código**.
 - Importações (tela dedicada): as importações ficam na tela **Importações** (botão no card **Adicionar serviço**). O botão **Importar** só aparece quando a **prévia** estiver aberta.
+
+##### Como criar um serviço novo (pela Planilha)
+
+ETAPA 1 — Onde acessar
+- Acesse: Engenharia → Obras → (selecione a obra) → Planilha orçamentária.
+
+ETAPA 2 — O que clicar
+- No card **Adicionar serviço**, selecione **Tipo = Serviço**.
+
+ETAPA 3 — O que preencher
+- Preencha: **ITEM**, **CÓDIGO**, **SERVIÇOS** (descrição), **UND**, **QUANT.** e **VALOR UNIT.**
+- Se o código já existir no catálogo, o sistema preenche e trava **Fonte/Serviços/UND** pelo catálogo.
+- Se o código não existir, você consegue preencher e, ao salvar, ele passa a existir no catálogo.
+
+ETAPA 4 — O que esperar
+- Ao clicar em **Salvar**, o serviço entra na planilha e também é criado/atualizado no catálogo da Fonte.
+
+ETAPA 5 — Como validar
+- Clique em **Serviços (catálogo da fonte)** e confirme se o serviço aparece pelo **código**.
+- Duplo clique no serviço na planilha abre **Serviços (catálogo da fonte)** já focado no código selecionado.
 
 #### Como usar — Tela Importações (Planilha orçamentária)
 

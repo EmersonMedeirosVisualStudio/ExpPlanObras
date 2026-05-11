@@ -815,6 +815,7 @@ export default function PlanilhaImportacoesPage() {
               <div>
                 - Fonte de dados (SERVICOS_FONTE): a regra depende de <span className="font-semibold">Repetidos na Fonte</span> (manter / completar / sobrescrever).
               </div>
+              <div>- Se um serviço do CSV não existir no catálogo da Fonte, ele é criado automaticamente ao importar (usando o código).</div>
               <div>
                 - Linhas na planilha (SERVICOS_LINHAS): por padrão pode repetir; marque <span className="font-semibold">Ignorar linhas repetidas</span> para não inserir duplicatas iguais.
               </div>
