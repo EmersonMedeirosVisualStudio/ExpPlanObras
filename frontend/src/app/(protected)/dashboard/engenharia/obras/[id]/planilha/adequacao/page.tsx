@@ -34,6 +34,17 @@ type AdequacaoRow = {
   vAdequado: number;
 };
 
+type PlanilhaAudit = {
+  idPlanilha: number;
+  numeroVersao: number;
+  nome: string;
+  valorTotalOficial: number;
+  somaServicosPlanilha: number;
+  somaItensNivel1Planilha: number;
+  totalServicosPlanilha: number;
+  servicosSemItemNumerico: number;
+};
+
 type EmpresaDocumentosLayout = {
   logoDataUrl: string | null;
   cabecalhoHtml: string | null;
@@ -66,6 +77,17 @@ function fmtNumberBlankZero(v: number, decimals: number) {
 
 function fmtMoneyBlankZero(v: number) {
   return isRoundedZero(v, 2) ? "" : fmtMoney(v);
+}
+
+function toNumLoose(v: any) {
+  if (v == null) return null;
+  const direct = Number(v);
+  if (Number.isFinite(direct)) return direct;
+  const s = String(v).trim();
+  if (!s) return null;
+  const norm = s.replace(/\s+/g, "").replace(/\./g, "").replace(/,/g, ".");
+  const n = Number(norm);
+  return Number.isFinite(n) ? n : null;
 }
 
 function escapeHtml(s: unknown) {
@@ -181,6 +203,11 @@ export default function AdequacaoPlanilhaPage() {
 
   const [rows, setRows] = useState<AdequacaoRow[]>([]);
   const [dstParams, setDstParams] = useState<any>(null);
+
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditErr, setAuditErr] = useState<string | null>(null);
+  const [auditSrc, setAuditSrc] = useState<PlanilhaAudit | null>(null);
+  const [auditDst, setAuditDst] = useState<PlanilhaAudit | null>(null);
 
   async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     let token: string | null = null;
@@ -410,6 +437,128 @@ export default function AdequacaoPlanilhaPage() {
     return { src, dst, diffSrc, diffDst };
   }, [selectedSource, selectedTarget, totalsAll.adequadoTotal, totalsAll.contratadoTotal]);
 
+  const adequacaoBreakdown = useMemo(() => {
+    const isTopItem = (r: AdequacaoRow) => r.tipoLinha === "ITEM" && String(r.item || "").trim() && !String(r.item).includes(".");
+    let srcServ = 0;
+    let dstServ = 0;
+    let srcTopItems = 0;
+    let dstTopItems = 0;
+    for (const r of rows) {
+      if (r.tipoLinha === "SERVICO") {
+        srcServ += Number(r.contratadoTotal || 0);
+        dstServ += Number(r.vAdequado || 0);
+      } else if (isTopItem(r)) {
+        srcTopItems += Number(r.contratadoTotal || 0);
+        dstTopItems += Number(r.vAdequado || 0);
+      }
+    }
+    return {
+      srcServ: Number(srcServ.toFixed(2)),
+      dstServ: Number(dstServ.toFixed(2)),
+      srcTopItems: Number(srcTopItems.toFixed(2)),
+      dstTopItems: Number(dstTopItems.toFixed(2)),
+    };
+  }, [rows]);
+
+  const divergenciasTop = useMemo(() => {
+    const out: Array<{ item: string; servicos: string; und: string; cTotal: number; aTotal: number; diffV: number; cQty: number; aQty: number; diffQ: number }> = [];
+    for (const r of rows) {
+      if (r.tipoLinha !== "SERVICO") continue;
+      const cTotal = Number(r.contratadoTotal || 0);
+      const aTotal = Number(r.vAdequado || 0);
+      const diffV = Number((aTotal - cTotal).toFixed(2));
+      const cQty = Number(r.contratadoQuant || 0);
+      const aQty = Number(r.qAdequado || 0);
+      const diffQ = Number((aQty - cQty).toFixed(3));
+      if (Math.abs(diffV) < 0.01 && Math.abs(diffQ) < 0.001) continue;
+      out.push({
+        item: String(r.item || ""),
+        servicos: String(r.servicos || ""),
+        und: String(r.und || ""),
+        cTotal,
+        aTotal,
+        diffV,
+        cQty,
+        aQty,
+        diffQ,
+      });
+    }
+    out.sort((a, b) => Math.abs(b.diffV) - Math.abs(a.diffV));
+    return out.slice(0, 20);
+  }, [rows]);
+
+  async function carregarAuditoriaTotais() {
+    const srcId = selectedSource?.idPlanilha ? Number(selectedSource.idPlanilha) : 0;
+    const dstId = selectedTarget?.idPlanilha ? Number(selectedTarget.idPlanilha) : 0;
+    if (!idObra || !srcId || !dstId) {
+      setAuditSrc(null);
+      setAuditDst(null);
+      setAuditErr(null);
+      return;
+    }
+    try {
+      setAuditLoading(true);
+      setAuditErr(null);
+
+      async function loadOne(v: VersaoRow) {
+        const pid = Number(v.idPlanilha || 0);
+        const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${pid}&includeCatalog=0`);
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.success) throw new Error(json?.message || `Erro ao carregar planilha #${pid}`);
+        const plan = json.data?.planilha || null;
+        const linhas = Array.isArray(plan?.linhas) ? plan.linhas : [];
+        let totalServ = 0;
+        let countServ = 0;
+        const byTop = new Map<string, number>();
+        let semItem = 0;
+        for (const l of linhas) {
+          if (String(l.tipoLinha || "").toUpperCase() !== "SERVICO") continue;
+          const vp = toNumLoose((l as any).valorParcial);
+          const vu = toNumLoose((l as any).valorUnitario);
+          const q = toNumLoose((l as any).quant);
+          const t = vp != null ? vp : vu != null && q != null ? vu * q : 0;
+          totalServ += Number(t || 0);
+          countServ += 1;
+          const item = String((l as any).item || "").trim();
+          const top = /^[0-9]+(\.[0-9]+)*$/.test(item) ? item.split(".")[0] : "";
+          if (!top) {
+            semItem += 1;
+            continue;
+          }
+          byTop.set(top, Number((byTop.get(top) || 0) + Number(t || 0)));
+        }
+        let sumTop = 0;
+        for (const v of byTop.values()) sumTop += Number(v || 0);
+        const valorTotalOficial =
+          plan?.valorTotal != null && Number.isFinite(Number(plan.valorTotal))
+            ? Number(plan.valorTotal)
+            : v.valorTotal != null && Number.isFinite(Number(v.valorTotal))
+              ? Number(v.valorTotal)
+              : Number(totalServ.toFixed(2));
+        return {
+          idPlanilha: pid,
+          numeroVersao: Number(plan?.numeroVersao || v.numeroVersao || 0),
+          nome: String(plan?.nome || v.nome || "").trim(),
+          valorTotalOficial: Number(Number(valorTotalOficial || 0).toFixed(2)),
+          somaServicosPlanilha: Number(totalServ.toFixed(2)),
+          somaItensNivel1Planilha: Number(sumTop.toFixed(2)),
+          totalServicosPlanilha: countServ,
+          servicosSemItemNumerico: semItem,
+        } as PlanilhaAudit;
+      }
+
+      const [aSrc, aDst] = await Promise.all([loadOne(selectedSource), loadOne(selectedTarget)]);
+      setAuditSrc(aSrc);
+      setAuditDst(aDst);
+    } catch (e: any) {
+      setAuditSrc(null);
+      setAuditDst(null);
+      setAuditErr(e?.message || "Erro ao auditar totais");
+    } finally {
+      setAuditLoading(false);
+    }
+  }
+
   const breadcrumbButtons = useMemo(() => {
     const obraLabel = obraNome ? String(obraNome).trim() : "";
     return [
@@ -526,6 +675,10 @@ export default function AdequacaoPlanilhaPage() {
     if (!bootDone) return;
     void carregarAdequacao();
   }, [bootDone, sourcePlanilhaId, targetPlanilhaId]);
+
+  useEffect(() => {
+    void carregarAuditoriaTotais();
+  }, [selectedSource?.idPlanilha, selectedTarget?.idPlanilha, bootDone]);
 
   function exportarCsv() {
     const src = selectedTarget?.idPlanilha ? selectedTarget.idPlanilha : 0;
@@ -1014,6 +1167,195 @@ export default function AdequacaoPlanilhaPage() {
             <div className="mt-1 text-sm font-semibold text-slate-900">{fmtMoney(Number((totalsAll.adequadoTotal - totalsAll.contratadoTotal).toFixed(2)))}</div>
           </div>
         </div>
+      </section>
+
+      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="text-lg font-semibold">Auditoria de igualdade (Planilha × Adequação)</div>
+            <div className="text-sm text-slate-600">Cada coluna (Anterior e Adequada) deve fechar internamente. Se v2 for cópia da v1 sem alteração, a diferença entre elas deve ser zero.</div>
+          </div>
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={carregarAuditoriaTotais}
+            disabled={loading || auditLoading}
+            title="Recarregar os totais diretamente das planilhas e recomputar validações"
+          >
+            Revalidar
+          </button>
+        </div>
+
+        {auditErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{auditErr}</div> : null}
+
+        {auditLoading ? (
+          <div className="text-sm text-slate-600">Carregando auditoria…</div>
+        ) : auditSrc && auditDst ? (
+          (() => {
+            const eq = (a: number, b: number) => Math.abs(Number(a || 0) - Number(b || 0)) < 0.01;
+            const srcVals = {
+              planilhaOficial: auditSrc.valorTotalOficial,
+              planilhaServicos: auditSrc.somaServicosPlanilha,
+              planilhaItensN1: auditSrc.somaItensNivel1Planilha,
+              adequacaoServicos: adequacaoBreakdown.srcServ,
+              adequacaoItensN1: adequacaoBreakdown.srcTopItems,
+            };
+            const dstVals = {
+              planilhaOficial: auditDst.valorTotalOficial,
+              planilhaServicos: auditDst.somaServicosPlanilha,
+              planilhaItensN1: auditDst.somaItensNivel1Planilha,
+              adequacaoServicos: adequacaoBreakdown.dstServ,
+              adequacaoItensN1: adequacaoBreakdown.dstTopItems,
+            };
+
+            const okSrc =
+              eq(srcVals.planilhaOficial, srcVals.planilhaServicos) &&
+              eq(srcVals.planilhaOficial, srcVals.planilhaItensN1) &&
+              eq(srcVals.planilhaOficial, srcVals.adequacaoServicos) &&
+              eq(srcVals.planilhaOficial, srcVals.adequacaoItensN1);
+            const okDst =
+              eq(dstVals.planilhaOficial, dstVals.planilhaServicos) &&
+              eq(dstVals.planilhaOficial, dstVals.planilhaItensN1) &&
+              eq(dstVals.planilhaOficial, dstVals.adequacaoServicos) &&
+              eq(dstVals.planilhaOficial, dstVals.adequacaoItensN1);
+
+            const diffEntreVersoes = Number((dstVals.planilhaOficial - srcVals.planilhaOficial).toFixed(2));
+            const okEntreVersoes = Math.abs(diffEntreVersoes) < 0.01;
+
+            const cellCls = (ok: boolean) => (ok ? "text-slate-900" : "text-amber-800 font-semibold");
+
+            return (
+              <div className="space-y-3">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className={`rounded-lg border p-3 ${okSrc ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
+                    <div className="text-xs text-slate-600">Planilha anterior</div>
+                    <div className="mt-1 text-sm font-semibold">{`#${auditSrc.idPlanilha} — v${auditSrc.numeroVersao}${auditSrc.nome ? ` — ${auditSrc.nome}` : ""}`}</div>
+                    <div className="mt-1 text-sm">{okSrc ? "OK (todos os totais fecham)" : "Divergência interna (algum total não fecha)"}</div>
+                    {auditSrc.servicosSemItemNumerico > 0 ? (
+                      <div className="mt-1 text-xs text-amber-800 font-semibold" title="Serviços sem item numérico não entram na soma por itens (nível 1).">
+                        {`Atenção: ${auditSrc.servicosSemItemNumerico} serviço(s) sem ITEM numérico (ex.: vazio ou texto).`}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className={`rounded-lg border p-3 ${okDst ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
+                    <div className="text-xs text-slate-600">Planilha adequada</div>
+                    <div className="mt-1 text-sm font-semibold">{`#${auditDst.idPlanilha} — v${auditDst.numeroVersao}${auditDst.nome ? ` — ${auditDst.nome}` : ""}`}</div>
+                    <div className="mt-1 text-sm">{okDst ? "OK (todos os totais fecham)" : "Divergência interna (algum total não fecha)"}</div>
+                    {auditDst.servicosSemItemNumerico > 0 ? (
+                      <div className="mt-1 text-xs text-amber-800 font-semibold" title="Serviços sem item numérico não entram na soma por itens (nível 1).">
+                        {`Atenção: ${auditDst.servicosSemItemNumerico} serviço(s) sem ITEM numérico (ex.: vazio ou texto).`}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className={`rounded-lg border p-3 ${okEntreVersoes ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
+                    <div className="text-xs text-slate-600">Diferença entre versões</div>
+                    <div className="mt-1 text-sm font-semibold">{fmtMoney(diffEntreVersoes)}</div>
+                    <div className="mt-1 text-sm">{okEntreVersoes ? "OK (v2 = v1)" : "v2 diferente de v1"}</div>
+                    <div className="mt-1 text-xs text-slate-600" title="Diferença = Valor total (Versão adequada) - Valor total (Versão anterior).">
+                      {`(v${auditDst.numeroVersao} − v${auditSrc.numeroVersao})`}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="overflow-auto rounded-lg border">
+                  <table className="min-w-[920px] w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-700">
+                      <tr>
+                        <th className="px-3 py-2">Métrica</th>
+                        <th className="px-3 py-2 text-right">{`Anterior (v${auditSrc.numeroVersao})`}</th>
+                        <th className="px-3 py-2 text-right">{`Adequada (v${auditDst.numeroVersao})`}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        {
+                          k: "planilhaOficial",
+                          label: "Valor da planilha (oficial)",
+                          tip: "Total oficial da versão: somatório do VALOR PARCIAL das linhas de SERVIÇO.",
+                        },
+                        {
+                          k: "planilhaServicos",
+                          label: "Soma de todos os serviços da planilha",
+                          tip: "Recalcula somando os serviços carregados da planilha (SERVIÇO). Deve bater com o valor oficial.",
+                        },
+                        {
+                          k: "planilhaItensN1",
+                          label: "Soma de todos os itens (nível 1) da planilha",
+                          tip: "Soma por ITEM principal (ex.: 1, 2, 3...) agregando os serviços. Deve bater com o total se todos os serviços tiverem ITEM numérico.",
+                        },
+                        {
+                          k: "adequacaoServicos",
+                          label: "Valor no lado correspondente da Adequação (serviços)",
+                          tip: "Na Adequação: soma das linhas de SERVIÇO. No lado anterior usa CONTRATADO; no lado adequada usa ADEQUADO.",
+                        },
+                        {
+                          k: "adequacaoItensN1",
+                          label: "Valor no lado correspondente da Adequação (itens nível 1)",
+                          tip: "Na Adequação: soma das linhas ITEM (nível 1) agregadas por prefixo. Deve bater com a soma de serviços.",
+                        },
+                      ].map((r) => {
+                        const a = (srcVals as any)[r.k] as number;
+                        const b = (dstVals as any)[r.k] as number;
+                        const okA = eq(a, srcVals.planilhaOficial);
+                        const okB = eq(b, dstVals.planilhaOficial);
+                        return (
+                          <tr key={r.k} className="border-t">
+                            <td className="px-3 py-2" title={r.tip}>
+                              {r.label}
+                            </td>
+                            <td className={`px-3 py-2 text-right tabular-nums ${cellCls(okA)}`}>{fmtMoney(a)}</td>
+                            <td className={`px-3 py-2 text-right tabular-nums ${cellCls(okB)}`}>{fmtMoney(b)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {divergenciasTop.length ? (
+                  <div className="space-y-2">
+                    <div className="text-sm font-semibold">Principais divergências (serviços)</div>
+                    <div className="text-sm text-slate-600">Se v2 for cópia da v1, esta lista deve ficar vazia.</div>
+                    <div className="overflow-auto rounded-lg border">
+                      <table className="min-w-[1100px] w-full text-sm">
+                        <thead className="bg-slate-50 text-left text-slate-700">
+                          <tr>
+                            <th className="px-3 py-2">ITEM</th>
+                            <th className="px-3 py-2">SERVIÇO</th>
+                            <th className="px-3 py-2">UND</th>
+                            <th className="px-3 py-2 text-right">Contratado</th>
+                            <th className="px-3 py-2 text-right">Adequado</th>
+                            <th className="px-3 py-2 text-right">Dif. (R$)</th>
+                            <th className="px-3 py-2 text-right">Qtd (C)</th>
+                            <th className="px-3 py-2 text-right">Qtd (A)</th>
+                            <th className="px-3 py-2 text-right">Dif. (Qtd)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {divergenciasTop.map((d, idx) => (
+                            <tr key={`${d.item}-${idx}`} className="border-t">
+                              <td className="px-3 py-2">{d.item}</td>
+                              <td className="px-3 py-2">{d.servicos}</td>
+                              <td className="px-3 py-2">{d.und}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(d.cTotal)}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(d.aTotal)}</td>
+                              <td className={`px-3 py-2 text-right tabular-nums ${Math.abs(d.diffV) >= 0.01 ? "text-amber-800 font-semibold" : ""}`}>{fmtMoney(d.diffV)}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(d.cQty, 3)}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(d.aQty, 3)}</td>
+                              <td className={`px-3 py-2 text-right tabular-nums ${Math.abs(d.diffQ) >= 0.001 ? "text-amber-800 font-semibold" : ""}`}>{fmtNumber(d.diffQ, 3)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })()
+        ) : (
+          <div className="text-sm text-slate-600">Selecione a versão anterior e a versão adequada.</div>
+        )}
       </section>
 
       {showVisual ? (
