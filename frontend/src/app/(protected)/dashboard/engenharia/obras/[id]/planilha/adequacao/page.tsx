@@ -567,7 +567,14 @@ export default function AdequacaoPlanilhaPage() {
         } as PlanilhaAudit;
       }
 
-      const [aSrc, aDst] = await Promise.all([loadOne(selectedSource), loadOne(selectedTarget)]);
+      const srcV = selectedSource;
+      const dstV = selectedTarget;
+      if (!srcV || !dstV) {
+        setAuditSrc(null);
+        setAuditDst(null);
+        return;
+      }
+      const [aSrc, aDst] = await Promise.all([loadOne(srcV), loadOne(dstV)]);
       setAuditSrc(aSrc);
       setAuditDst(aDst);
     } catch (e: any) {
