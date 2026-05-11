@@ -187,10 +187,6 @@ async function readTextSmart(file: File) {
     if (!rootCodigo || rootCodigo === codigoServico) return codigoServico || "—";
     return `${rootCodigo} / ${codigoServico || "—"}`;
   }, [codigoServico, rootCodigo]);
-  const breadcrumb = useMemo(() => {
-    const base = "Engenharia → Obras → Obra selecionada → Planilha orçamentária → Análise de composição";
-    return analysisTitle && analysisTitle !== "—" ? `${base} - ${analysisTitle}` : base;
-  }, [analysisTitle]);
   const [returnToMem, setReturnToMem] = useState<string | null>(null);
  
    const [loading, setLoading] = useState(false);
@@ -206,7 +202,13 @@ async function readTextSmart(file: File) {
   const [navPlanilhaServicos, setNavPlanilhaServicos] = useState<Array<{ item: string; codigo: string; servicos: string }>>([]);
   const [navIdx, setNavIdx] = useState<number>(-1);
   const [planilhaParams, setPlanilhaParams] = useState<PlanilhaParams | null>(null);
-  const [planilhaInfo, setPlanilhaInfo] = useState<{ idPlanilha: number; numeroVersao: number; dataBaseSinapi: string | null; ufSinapi: string | null } | null>(null);
+  const [planilhaInfo, setPlanilhaInfo] = useState<{
+    idPlanilha: number;
+    numeroVersao: number;
+    nome: string;
+    dataBaseSinapi: string | null;
+    ufSinapi: string | null;
+  } | null>(null);
   const [definedComposicoesCodes, setDefinedComposicoesCodes] = useState<Set<string>>(new Set());
   const [empresaDocumentosLayout, setEmpresaDocumentosLayout] = useState<EmpresaDocumentosLayout | null>(null);
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
@@ -700,6 +702,7 @@ async function readTextSmart(file: File) {
           ? {
               idPlanilha: Number(plan.idPlanilha || pid),
               numeroVersao: Number(plan.numeroVersao || 0),
+              nome: plan?.nome != null ? String(plan.nome || "").trim() : "",
               dataBaseSinapi: p.dataBaseSinapi == null ? null : String(p.dataBaseSinapi || ""),
               ufSinapi: p.ufSinapi == null ? null : String(p.ufSinapi || "").trim().toUpperCase(),
             }
@@ -1045,6 +1048,13 @@ async function readTextSmart(file: File) {
 
   const bancosBase = useMemo(() => ["SINAPI", "Próprio", "SBC", "SICRO3"], []);
   const bancosOptions = useMemo(() => Array.from(new Set([...bancosBase, ...bancosCustom])), [bancosBase, bancosCustom]);
+
+  const previstoPlanilhaTitle = useMemo(() => {
+    const pid = planilhaInfo?.idPlanilha ? Number(planilhaInfo.idPlanilha) : 0;
+    const nome = String(planilhaInfo?.nome || "").trim();
+    if (!pid) return "Previsto na planilha";
+    return `Previsto na planilha - #${pid}${nome ? ` - ${nome}` : ""}`;
+  }, [planilhaInfo]);
 
   const previstoTotal = useMemo(() => {
     let total = 0;
@@ -2101,7 +2111,41 @@ async function readTextSmart(file: File) {
               {bootLoading ? "Carregando página..." : bootDone ? "Página carregada" : "—"}
             </div>
           </div>
-          <div className="text-xs text-slate-500">{breadcrumb}</div>
+          <div className="flex flex-wrap items-center gap-1 text-xs text-slate-500">
+            <button className="hover:underline" type="button" onClick={() => router.push("/dashboard/engenharia")} title="Ir para Engenharia">
+              Engenharia
+            </button>
+            <span aria-hidden="true">→</span>
+            <button className="hover:underline" type="button" onClick={() => router.push("/dashboard/engenharia/obras")} title="Ir para Obras">
+              Obras
+            </button>
+            <span aria-hidden="true">→</span>
+            <button
+              className="hover:underline"
+              type="button"
+              onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}`)}
+              title="Ir para a Obra"
+            >
+              Obra
+            </button>
+            <span aria-hidden="true">→</span>
+            <button
+              className="hover:underline"
+              type="button"
+              onClick={() => {
+                const qs = new URLSearchParams();
+                const pid = planilhaInfo?.idPlanilha || planilhaId;
+                if (pid) qs.set("planilhaId", String(pid));
+                qs.set("returnTo", getSelfUrl());
+                router.push(`/dashboard/engenharia/obras/${idObra}/planilha?${qs.toString()}`);
+              }}
+              title="Ir para Planilha orçamentária"
+            >
+              Planilha
+            </button>
+            <span aria-hidden="true">→</span>
+            <span>{`Análise de composição - ${analysisTitle}`}</span>
+          </div>
           <h1 className="text-2xl font-semibold">Análise de composição — {analysisTitle}</h1>
         </div>
          <div className="flex items-center gap-2 flex-wrap">
@@ -2722,7 +2766,7 @@ async function readTextSmart(file: File) {
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <div className="text-lg font-semibold">Previsto na planilha</div>
+            <div className="text-lg font-semibold">{previstoPlanilhaTitle}</div>
             <div className="text-sm text-slate-700">
               <span className="font-semibold">Serviço:</span>{" "}
               {(() => {

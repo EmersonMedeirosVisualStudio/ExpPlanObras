@@ -235,12 +235,6 @@ export default function Page() {
     return versoes.find((v) => Number(v.idPlanilha) === pid) || null;
   }, [planilhaId, versoes]);
 
-  const v1v2 = useMemo(() => {
-    const v1 = versoes.find((v) => Number(v.numeroVersao) === 1) || null;
-    const v2 = versoes.find((v) => Number(v.numeroVersao) === 2) || null;
-    return { v1, v2 };
-  }, [versoes]);
-
   useEffect(() => {
     if (copyForm.insumosPrecoMode !== "MANTER") setCopyForm((p) => ({ ...p, insumosPrecoMode: "MANTER" }));
     if (copyForm.replaceComposicao) setCopyForm((p) => ({ ...p, replaceComposicao: false }));
@@ -393,7 +387,40 @@ export default function Page() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />
-          <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Serviços (catálogo da fonte)</div>
+          <div className="flex flex-wrap items-center gap-1 text-xs text-slate-500">
+            <button className="hover:underline" type="button" onClick={() => router.push("/dashboard/engenharia")} title="Ir para Engenharia">
+              Engenharia
+            </button>
+            <span aria-hidden="true">→</span>
+            <button className="hover:underline" type="button" onClick={() => router.push("/dashboard/engenharia/obras")} title="Ir para Obras">
+              Obras
+            </button>
+            <span aria-hidden="true">→</span>
+            <button
+              className="hover:underline"
+              type="button"
+              onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}`)}
+              title="Ir para a Obra"
+            >
+              Obra
+            </button>
+            <span aria-hidden="true">→</span>
+            <button
+              className="hover:underline"
+              type="button"
+              onClick={() => {
+                const qs = new URLSearchParams();
+                if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
+                qs.set("returnTo", selfHref);
+                router.push(`/dashboard/engenharia/obras/${idObra}/planilha?${qs.toString()}`);
+              }}
+              title="Ir para Planilha orçamentária"
+            >
+              Planilha
+            </button>
+            <span aria-hidden="true">→</span>
+            <span>Serviços (catálogo da fonte)</span>
+          </div>
           <h1 className="text-2xl font-semibold">Serviços (catálogo da fonte) — Obra #{idObra}</h1>
           <div className="text-sm text-slate-600">Catálogo técnico de serviços da fonte de dados vinculada à planilha.</div>
           <div className="mt-1 text-sm text-slate-700">
@@ -465,31 +492,6 @@ export default function Page() {
           </button>
         </div>
       </div>
-
-      {v1v2.v1 && v1v2.v2 ? (
-        <div className="rounded-xl border bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <div className="text-sm font-semibold">Diferença entre v1 e v2</div>
-              <div className="text-sm text-slate-600">{`v1 = #${v1v2.v1.idPlanilha} • v2 = #${v1v2.v2.idPlanilha}`}</div>
-            </div>
-            <button
-              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-              type="button"
-              onClick={() => {
-                const qs = new URLSearchParams();
-                qs.set("planilhaId", String(v1v2.v2?.idPlanilha || ""));
-                qs.set("returnTo", selfHref);
-                router.push(`/dashboard/engenharia/obras/${idObra}/planilha/adequacao?${qs.toString()}`);
-              }}
-              disabled={loading}
-              title="Abre a Adequação com destino v2 e origem automática (v1)"
-            >
-              Abrir adequação v1 × v2
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       <div className="flex items-center justify-end gap-2 flex-wrap">
         <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregarTudo} disabled={loading} title="Recarregar dados da tela">

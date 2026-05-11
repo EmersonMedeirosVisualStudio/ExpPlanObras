@@ -14,6 +14,8 @@ type VersaoRow = {
   idParametros?: number | null;
   fonteNome?: string;
   parametrosNome?: string;
+  valorTotal?: number | null;
+  totalServicos?: number | null;
 };
 
 type AdequacaoRow = {
@@ -311,7 +313,7 @@ export default function AdequacaoPlanilhaPage() {
     if (!idObra) return;
     try {
       setErr(null);
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes-info`);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar versões");
 
@@ -331,6 +333,8 @@ export default function AdequacaoPlanilhaPage() {
           idParametros: v?.idParametros == null ? null : Number(v.idParametros),
           fonteNome: String(v?.fonteNome || ""),
           parametrosNome: String(v?.parametrosNome || ""),
+          valorTotal: v?.valorTotal == null ? null : Number(v.valorTotal),
+          totalServicos: v?.totalServicos == null ? null : Number(v.totalServicos),
         }))
         .filter((v) => Number.isFinite(v.idPlanilha) && v.idPlanilha > 0);
       setVersoes(normalized);
@@ -376,6 +380,35 @@ export default function AdequacaoPlanilhaPage() {
     if (!id) return null;
     return versoes.find((v) => Number(v.idPlanilha) === id) || null;
   }, [targetPlanilhaId, versoes]);
+
+  const selectedSource = useMemo(() => {
+    const id = Number(String(sourcePlanilhaId || "").trim() || 0);
+    if (!id) return null;
+    return versoes.find((v) => Number(v.idPlanilha) === id) || null;
+  }, [sourcePlanilhaId, versoes]);
+
+  const totalsAll = useMemo(() => {
+    const serv = rows.filter((r) => r.tipoLinha === "SERVICO");
+    const sum = (pick: (r: AdequacaoRow) => number) => {
+      let t = 0;
+      for (const r of serv) t += Number(pick(r) || 0);
+      return Number(t.toFixed(2));
+    };
+    return {
+      contratadoTotal: sum((r) => r.contratadoTotal),
+      adequadoTotal: sum((r) => r.vAdequado),
+      vAditado: sum((r) => r.vAditado),
+      vSuprimido: sum((r) => r.vSuprimido),
+    };
+  }, [rows]);
+
+  const totalsDiff = useMemo(() => {
+    const src = selectedSource?.valorTotal == null ? null : Number(selectedSource.valorTotal || 0);
+    const dst = selectedTarget?.valorTotal == null ? null : Number(selectedTarget.valorTotal || 0);
+    const diffSrc = src == null ? null : Number((totalsAll.contratadoTotal - src).toFixed(2));
+    const diffDst = dst == null ? null : Number((totalsAll.adequadoTotal - dst).toFixed(2));
+    return { src, dst, diffSrc, diffDst };
+  }, [selectedSource, selectedTarget, totalsAll.adequadoTotal, totalsAll.contratadoTotal]);
 
   const breadcrumbButtons = useMemo(() => {
     const obraLabel = obraNome ? String(obraNome).trim() : "";
@@ -893,6 +926,66 @@ export default function AdequacaoPlanilhaPage() {
               ))}
             </select>
           </label>
+        </div>
+      </section>
+
+      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="text-lg font-semibold">Totais (validação)</div>
+            <div className="text-sm text-slate-600">Os totais abaixo devem bater com os totais das versões selecionadas.</div>
+          </div>
+        </div>
+
+        {(totalsDiff.diffSrc != null && Math.abs(totalsDiff.diffSrc) >= 0.01) || (totalsDiff.diffDst != null && Math.abs(totalsDiff.diffDst) >= 0.01) ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            Há divergência entre os totais da Adequação e os totais da Planilha. Isso normalmente acontece por arredondamento ou por alguma linha de serviço com dados inconsistentes
+            (ex.: serviço sem valor parcial, serviço duplicado com item/código diferente, etc.). Use este quadro para localizar qual versão está divergindo.
+          </div>
+        ) : (
+          <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">OK: totais da Adequação coerentes com as versões selecionadas.</div>
+        )}
+
+        <div className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-lg border bg-white p-3">
+            <div className="text-[11px] uppercase tracking-wide text-slate-500">Contratado (Adequação)</div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">{fmtMoney(totalsAll.contratadoTotal)}</div>
+            <div className="mt-1 text-xs text-slate-500">{selectedSource ? `Versão anterior: v${selectedSource.numeroVersao}` : "Selecione a versão anterior"}</div>
+          </div>
+          <div className="rounded-lg border bg-white p-3">
+            <div className="text-[11px] uppercase tracking-wide text-slate-500">Valor total (Versão anterior)</div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">{selectedSource?.valorTotal == null ? "—" : fmtMoney(Number(selectedSource.valorTotal || 0))}</div>
+            <div className={`mt-1 text-xs ${totalsDiff.diffSrc != null && Math.abs(totalsDiff.diffSrc) >= 0.01 ? "text-amber-800 font-semibold" : "text-slate-500"}`}>
+              {totalsDiff.diffSrc == null ? "—" : `Dif.: ${fmtMoney(totalsDiff.diffSrc)}`}
+            </div>
+          </div>
+          <div className="rounded-lg border bg-white p-3">
+            <div className="text-[11px] uppercase tracking-wide text-slate-500">Adequado (Adequação)</div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">{fmtMoney(totalsAll.adequadoTotal)}</div>
+            <div className="mt-1 text-xs text-slate-500">{selectedTarget ? `Versão adequada: v${selectedTarget.numeroVersao}` : "Selecione a versão adequada"}</div>
+          </div>
+          <div className="rounded-lg border bg-white p-3">
+            <div className="text-[11px] uppercase tracking-wide text-slate-500">Valor total (Versão adequada)</div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">{selectedTarget?.valorTotal == null ? "—" : fmtMoney(Number(selectedTarget.valorTotal || 0))}</div>
+            <div className={`mt-1 text-xs ${totalsDiff.diffDst != null && Math.abs(totalsDiff.diffDst) >= 0.01 ? "text-amber-800 font-semibold" : "text-slate-500"}`}>
+              {totalsDiff.diffDst == null ? "—" : `Dif.: ${fmtMoney(totalsDiff.diffDst)}`}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-lg border bg-white p-3">
+            <div className="text-[11px] uppercase tracking-wide text-slate-500">Total aditado (Adequação)</div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">{fmtMoney(totalsAll.vAditado)}</div>
+          </div>
+          <div className="rounded-lg border bg-white p-3">
+            <div className="text-[11px] uppercase tracking-wide text-slate-500">Total suprimido (Adequação)</div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">{fmtMoney(totalsAll.vSuprimido)}</div>
+          </div>
+          <div className="rounded-lg border bg-white p-3">
+            <div className="text-[11px] uppercase tracking-wide text-slate-500">Diferença (Adequado - Contratado)</div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">{fmtMoney(Number((totalsAll.adequadoTotal - totalsAll.contratadoTotal).toFixed(2)))}</div>
+          </div>
         </div>
       </section>
 

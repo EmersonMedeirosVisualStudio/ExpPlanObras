@@ -1125,6 +1125,41 @@ async function ensurePlanilhaMigratedToModeloFonte(tx: any, tenantId: number, id
       .catch(() => null);
   }
 
+  await ensureComposicoesItensFonteTables(tx);
+  await tx
+    .$executeRawUnsafe(
+      `
+      UPDATE obras_planilha_itens i
+      SET
+        valor_unitario = sf.valor_unitario,
+        valor_parcial = CASE
+          WHEN i.quantidade IS NULL THEN i.valor_parcial
+          ELSE ROUND((COALESCE(i.quantidade,0) * sf.valor_unitario)::numeric, 6)
+        END,
+        atualizado_em = NOW()
+      FROM obras_servicos_fonte sf
+      WHERE i.tenant_id = $1
+        AND i.id_planilha = $2
+        AND i.tipo_linha = 'SERVICO'
+        AND i.id_servico IS NOT NULL
+        AND sf.tenant_id = $1
+        AND sf.id_fonte_dados = $3
+        AND sf.id_servico = i.id_servico
+        AND COALESCE(i.valor_unitario, 0) = 0
+        AND COALESCE(sf.valor_unitario, 0) > 0
+        AND NOT EXISTS (
+          SELECT 1
+          FROM obras_composicoes_itens_fonte ci
+          WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $3 AND ci.id_servico_pai = i.id_servico
+          LIMIT 1
+        )
+      `,
+      tenantId,
+      idPlanilha,
+      idFonteDados
+    )
+    .catch(() => null);
+
   return { idFonteDados, idParametros };
 }
 
@@ -8126,15 +8161,16 @@ export default async function v1Routes(server: FastifyInstance) {
                       )
                       * (1 + (pl.bdi / 100.0))
                     )
-                  ELSE 0
+                  ELSE NULL
                 END AS valor_unitario
               FROM plans pl
               JOIN comp c ON c.id_planilha = pl.id_planilha
             )
             UPDATE obras_planilha_itens i
             SET
-              valor_unitario = ROUND(calc.valor_unitario::numeric, 6),
+              valor_unitario = COALESCE(ROUND(calc.valor_unitario::numeric, 6), i.valor_unitario),
               valor_parcial = CASE
+                WHEN calc.valor_unitario IS NULL THEN i.valor_parcial
                 WHEN i.quantidade IS NULL THEN i.valor_parcial
                 ELSE ROUND((COALESCE(i.quantidade,0) * calc.valor_unitario)::numeric, 6)
               END,
@@ -8195,7 +8231,7 @@ export default async function v1Routes(server: FastifyInstance) {
                         )
                         * (1 + (pl.bdi / 100.0))
                       )
-                    ELSE 0
+                    ELSE NULL
                   END AS valor_unitario
                 FROM plans pl
                 LEFT JOIN comp c ON c.id_planilha = pl.id_planilha AND c.id_obra = pl.id_obra
@@ -8203,8 +8239,9 @@ export default async function v1Routes(server: FastifyInstance) {
               )
               UPDATE obras_planilhas_linhas l
               SET
-                valor_unitario = ROUND(calc.valor_unitario::numeric, 6),
+                valor_unitario = COALESCE(ROUND(calc.valor_unitario::numeric, 6), l.valor_unitario),
                 valor_parcial = CASE
+                  WHEN calc.valor_unitario IS NULL THEN l.valor_parcial
                   WHEN l.quantidade IS NULL THEN l.valor_parcial
                   ELSE ROUND((COALESCE(l.quantidade,0) * calc.valor_unitario)::numeric, 6)
                 END,
@@ -8347,8 +8384,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
           const row = rows?.[0] || null;
           const hasComposicao = Number(row?.qtd || 0) > 0;
-          if (!hasComposicao) valorUnitario = toDec(0);
-          else {
+          if (hasComposicao) {
             const totalBase = row?.total_base == null ? 0 : Number(row.total_base);
             const totalMaoBase = row?.total_mao_base == null ? 0 : Number(row.total_mao_base);
             const lsPercent = row?.ls == null ? 0 : Number(row.ls);
@@ -8356,6 +8392,23 @@ export default async function v1Routes(server: FastifyInstance) {
             const totalComLS = (totalBase - totalMaoBase) + totalMaoBase * (1 + (lsPercent || 0) / 100);
             const totalComLSComBDI = totalComLS * (1 + (bdiPercent || 0) / 100);
             valorUnitario = toDec(Number(totalComLSComBDI.toFixed(6)));
+          } else {
+            const cur = valorUnitario == null ? null : Number(valorUnitario);
+            if (cur == null || !(cur > 0)) {
+              const vuRows = (await prisma.$queryRawUnsafe(
+                `
+                SELECT valor_unitario AS "valorUnitario"
+                FROM obras_servicos_fonte
+                WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico = $3
+                LIMIT 1
+                `,
+                ctx.tenantId,
+                idFonteDados,
+                idServico
+              )) as any[];
+              const vu = vuRows?.[0]?.valorUnitario == null ? null : Number(vuRows[0].valorUnitario);
+              if (vu != null && Number.isFinite(vu) && vu > 0) valorUnitario = toDec(vu);
+            }
           }
           valorParcial = quantidade != null && valorUnitario != null ? Number((Number(quantidade) * Number(valorUnitario)).toFixed(6)) : null;
           valorParcialBody = null;
@@ -9920,14 +9973,15 @@ export default async function v1Routes(server: FastifyInstance) {
                     )
                     * (1 + (bdi / 100.0))
                   )
-                ELSE 0
+                ELSE NULL
               END AS valor_unitario
             FROM plans
           )
           UPDATE obras_planilha_itens i
           SET
-            valor_unitario = ROUND(calc.valor_unitario::numeric, 6),
+            valor_unitario = COALESCE(ROUND(calc.valor_unitario::numeric, 6), i.valor_unitario),
             valor_parcial = CASE
+              WHEN calc.valor_unitario IS NULL THEN i.valor_parcial
               WHEN i.quantidade IS NULL THEN i.valor_parcial
               ELSE ROUND((COALESCE(i.quantidade,0) * calc.valor_unitario)::numeric, 6)
             END,
