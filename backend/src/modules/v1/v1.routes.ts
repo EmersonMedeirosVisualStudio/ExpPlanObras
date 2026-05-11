@@ -13889,6 +13889,7 @@ export default async function v1Routes(server: FastifyInstance) {
         rowOut.push({
           tipoLinha: h.tipoLinha,
           item: prefix,
+          codigo: '',
           servicos: label,
           und: '',
           contratadoQuant: 0,
@@ -13909,6 +13910,7 @@ export default async function v1Routes(server: FastifyInstance) {
         const dst = dstServiceByKey.get(k) || null;
         const base = dst || src;
         const item = String(base?.item || '').trim();
+        const codigo = String(base?.codigo || '').trim().toUpperCase();
         const servicos = String(base?.servicos || '').trim();
         const und = String(base?.und || '').trim();
         const cQty = src?.quantidade != null ? Number(src.quantidade) : 0;
@@ -13920,6 +13922,7 @@ export default async function v1Routes(server: FastifyInstance) {
         rowOut.push({
           tipoLinha: 'SERVICO',
           item,
+          codigo,
           servicos,
           und,
           contratadoQuant: cQty,
@@ -13959,6 +13962,230 @@ export default async function v1Routes(server: FastifyInstance) {
           nome: String(dstMeta.nome || ''),
         },
         rows,
+      });
+    }
+  );
+
+  server.get(
+    '/engenharia/obras/:id/planilha/adequacao/detalhe',
+    {
+      schema: {
+        params: z.object({ id: z.coerce.number().int().positive() }),
+        querystring: z.object({
+          sourcePlanilhaId: z.coerce.number().int().positive(),
+          targetPlanilhaId: z.coerce.number().int().positive(),
+          codigoServico: z.string().min(1),
+          item: z.string().optional().nullable(),
+        }),
+      },
+    },
+    async (request, reply) => {
+      const ctx = await requireTenantUser(request, reply);
+      if (!ctx || (ctx as any).success === false) return;
+
+      const params = request.params as any;
+      const q = request.query as any;
+      const idObra = Number(params.id);
+      const sourcePlanilhaId = Number(q.sourcePlanilhaId);
+      const targetPlanilhaId = Number(q.targetPlanilhaId);
+      const codigoServico = String(q.codigoServico || '').trim().toUpperCase();
+      const itemFilter = q.item != null && String(q.item).trim() ? String(q.item).trim() : null;
+
+      const scope = (request.user as any)?.abrangencia as any;
+      if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+      if (!codigoServico) return fail(reply, 422, 'Código do serviço inválido');
+
+      await ensurePlanilhaModeloFonteTables(prisma);
+      await ensureServicosFonteTables(prisma);
+      await ensureInsumosFonteTables(prisma);
+      await ensureComposicoesItensFonteTables(prisma);
+
+      const versoes = (await prisma.$queryRawUnsafe(
+        `
+        SELECT
+          id_planilha AS "idPlanilha",
+          numero_versao AS "numeroVersao",
+          nome,
+          id_fonte_dados AS "idFonteDados",
+          id_parametros AS "idParametros"
+        FROM obras_planilhas_versoes
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha IN ($3, $4)
+        `,
+        ctx.tenantId,
+        idObra,
+        sourcePlanilhaId,
+        targetPlanilhaId
+      )) as any[];
+      const srcMeta = versoes.find((v: any) => Number(v.idPlanilha) === sourcePlanilhaId) || null;
+      const dstMeta = versoes.find((v: any) => Number(v.idPlanilha) === targetPlanilhaId) || null;
+      if (!srcMeta) return fail(reply, 404, 'Planilha origem não encontrada');
+      if (!dstMeta) return fail(reply, 404, 'Planilha destino não encontrada');
+
+      const idFonteDadosSrc = srcMeta.idFonteDados != null ? Number(srcMeta.idFonteDados) : 0;
+      const idFonteDadosDst = dstMeta.idFonteDados != null ? Number(dstMeta.idFonteDados) : 0;
+      const idFonteDados = idFonteDadosDst || idFonteDadosSrc || 0;
+
+      const linhaRows = (await prisma.$queryRawUnsafe(
+        `
+        SELECT
+          i.id_planilha AS "idPlanilha",
+          COALESCE(i.item,'') AS item,
+          COALESCE(sf.codigo,'') AS codigo,
+          CASE
+            WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(NULLIF(sf.descricao,''), COALESCE(i.observacao,''), '')
+            ELSE COALESCE(i.observacao,'')
+          END AS servicos,
+          COALESCE(sf.und,'') AS und,
+          i.quantidade AS quantidade,
+          i.valor_unitario AS "valorUnitario",
+          i.valor_parcial AS "valorParcial"
+        FROM obras_planilha_itens i
+        LEFT JOIN obras_servicos_fonte sf
+          ON sf.tenant_id = i.tenant_id AND sf.id_servico = i.id_servico
+        WHERE i.tenant_id = $1
+          AND i.id_planilha IN ($2, $3)
+          AND i.tipo_linha = 'SERVICO'
+          AND sf.codigo = $4
+          AND ($5::text IS NULL OR COALESCE(i.item,'') = $5::text)
+        ORDER BY COALESCE(i.item,'') ASC, i.id_planilha_item ASC
+        `,
+        ctx.tenantId,
+        sourcePlanilhaId,
+        targetPlanilhaId,
+        codigoServico,
+        itemFilter
+      )) as any[];
+
+      const srcLinhas = (linhaRows || [])
+        .filter((r: any) => Number(r.idPlanilha) === sourcePlanilhaId)
+        .map((r: any) => ({
+          item: String(r.item || '').trim(),
+          codigo: String(r.codigo || '').trim().toUpperCase(),
+          servicos: String(r.servicos || '').trim(),
+          und: String(r.und || '').trim(),
+          quantidade: r.quantidade == null ? null : Number(r.quantidade),
+          valorUnitario: r.valorUnitario == null ? null : Number(r.valorUnitario),
+          valorParcial: r.valorParcial == null ? null : Number(r.valorParcial),
+        }));
+      const dstLinhas = (linhaRows || [])
+        .filter((r: any) => Number(r.idPlanilha) === targetPlanilhaId)
+        .map((r: any) => ({
+          item: String(r.item || '').trim(),
+          codigo: String(r.codigo || '').trim().toUpperCase(),
+          servicos: String(r.servicos || '').trim(),
+          und: String(r.und || '').trim(),
+          quantidade: r.quantidade == null ? null : Number(r.quantidade),
+          valorUnitario: r.valorUnitario == null ? null : Number(r.valorUnitario),
+          valorParcial: r.valorParcial == null ? null : Number(r.valorParcial),
+        }));
+
+      const svcRows = idFonteDados
+        ? ((await prisma.$queryRawUnsafe(
+            `
+            SELECT
+              id_servico AS "idServico",
+              codigo,
+              COALESCE(NULLIF(trim(banco),''),'') AS banco,
+              COALESCE(NULLIF(trim(descricao),''),'') AS descricao,
+              COALESCE(NULLIF(trim(und),''),'') AS und,
+              valor_unitario AS "valorUnitario"
+            FROM obras_servicos_fonte
+            WHERE tenant_id = $1 AND id_fonte_dados = $2 AND codigo = $3
+            LIMIT 1
+            `,
+            ctx.tenantId,
+            idFonteDados,
+            codigoServico
+          )) as any[])
+        : [];
+      const svc = svcRows?.[0] || null;
+      const idServico = svc?.idServico != null ? Number(svc.idServico) : 0;
+
+      const compRows = idFonteDados && idServico
+        ? ((await prisma.$queryRawUnsafe(
+            `
+            SELECT
+              ci.tipo_item AS "tipoItem",
+              ci.quantidade AS quantidade,
+              COALESCE(NULLIF(trim(ci.unidade),''),'') AS undItem,
+              COALESCE(
+                CASE
+                  WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.codigo
+                  ELSE inf.codigo
+                END,
+                ''
+              ) AS codigo,
+              COALESCE(
+                CASE
+                  WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN COALESCE(NULLIF(trim(sf.banco),''),'')
+                  ELSE COALESCE(NULLIF(trim(inf.banco),''),'')
+                END,
+                ''
+              ) AS banco,
+              COALESCE(
+                CASE
+                  WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN COALESCE(NULLIF(trim(sf.descricao),''),'')
+                  ELSE COALESCE(NULLIF(trim(inf.descricao),''),'')
+                END,
+                ''
+              ) AS descricao,
+              COALESCE(
+                CASE
+                  WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN COALESCE(NULLIF(trim(sf.und),''),'')
+                  ELSE COALESCE(NULLIF(trim(inf.und),''),'')
+                END,
+                ''
+              ) AS und,
+              COALESCE(
+                CASE
+                  WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
+                  ELSE inf.valor_unitario
+                END,
+                0
+              ) AS "valorUnitario",
+              ci.ordem AS ordem
+            FROM obras_composicoes_itens_fonte ci
+            LEFT JOIN obras_servicos_fonte sf
+              ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
+              AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+            LEFT JOIN obras_insumos_fonte inf
+              ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
+              AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+            WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $2 AND ci.id_servico_pai = $3
+            ORDER BY COALESCE(ci.ordem,0) ASC, ci.id_composicao_item ASC
+            `,
+            ctx.tenantId,
+            idFonteDados,
+            idServico
+          )) as any[])
+        : [];
+
+      return ok(reply, {
+        obraId: idObra,
+        codigoServico,
+        source: { idPlanilha: sourcePlanilhaId, numeroVersao: Number(srcMeta.numeroVersao || 0), nome: String(srcMeta.nome || ''), idFonteDados: idFonteDadosSrc, idParametros: srcMeta.idParametros != null ? Number(srcMeta.idParametros) : null },
+        target: { idPlanilha: targetPlanilhaId, numeroVersao: Number(dstMeta.numeroVersao || 0), nome: String(dstMeta.nome || ''), idFonteDados: idFonteDadosDst, idParametros: dstMeta.idParametros != null ? Number(dstMeta.idParametros) : null },
+        linhas: { source: srcLinhas, target: dstLinhas },
+        catalogo: svc
+          ? {
+              idFonteDados,
+              idServico,
+              codigo: String(svc.codigo || '').trim().toUpperCase(),
+              banco: String(svc.banco || '').trim(),
+              descricao: String(svc.descricao || '').trim(),
+              und: String(svc.und || '').trim(),
+              valorUnitario: svc.valorUnitario == null ? 0 : Number(svc.valorUnitario),
+            }
+          : null,
+        composicao: (compRows || []).map((r: any) => ({
+          tipoItem: String(r.tipoItem || '').trim(),
+          codigo: String(r.codigo || '').trim().toUpperCase(),
+          banco: String(r.banco || '').trim(),
+          descricao: String(r.descricao || '').trim(),
+          und: String(r.und || '').trim(),
+          quantidade: r.quantidade == null ? 0 : Number(r.quantidade),
+          valorUnitario: r.valorUnitario == null ? 0 : Number(r.valorUnitario),
+        })),
       });
     }
   );

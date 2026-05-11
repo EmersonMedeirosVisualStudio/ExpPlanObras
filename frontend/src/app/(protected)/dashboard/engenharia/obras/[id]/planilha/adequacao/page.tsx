@@ -21,6 +21,7 @@ type VersaoRow = {
 type AdequacaoRow = {
   tipoLinha: "ITEM" | "SUBITEM" | "SERVICO";
   item: string;
+  codigo: string;
   servicos: string;
   und: string;
   contratadoQuant: number;
@@ -43,6 +44,19 @@ type PlanilhaAudit = {
   somaItensNivel1Planilha: number;
   totalServicosPlanilha: number;
   servicosSemItemNumerico: number;
+};
+
+type AdequacaoDetalhe = {
+  obraId: number;
+  codigoServico: string;
+  source: { idPlanilha: number; numeroVersao: number; nome: string; idFonteDados: number; idParametros: number | null };
+  target: { idPlanilha: number; numeroVersao: number; nome: string; idFonteDados: number; idParametros: number | null };
+  linhas: {
+    source: Array<{ item: string; codigo: string; servicos: string; und: string; quantidade: number | null; valorUnitario: number | null; valorParcial: number | null }>;
+    target: Array<{ item: string; codigo: string; servicos: string; und: string; quantidade: number | null; valorUnitario: number | null; valorParcial: number | null }>;
+  };
+  catalogo: null | { idFonteDados: number; idServico: number; codigo: string; banco: string; descricao: string; und: string; valorUnitario: number };
+  composicao: Array<{ tipoItem: string; codigo: string; banco: string; descricao: string; und: string; quantidade: number; valorUnitario: number }>;
 };
 
 type EmpresaDocumentosLayout = {
@@ -208,6 +222,11 @@ export default function AdequacaoPlanilhaPage() {
   const [auditErr, setAuditErr] = useState<string | null>(null);
   const [auditSrc, setAuditSrc] = useState<PlanilhaAudit | null>(null);
   const [auditDst, setAuditDst] = useState<PlanilhaAudit | null>(null);
+
+  const [detalheOpen, setDetalheOpen] = useState(false);
+  const [detalheLoading, setDetalheLoading] = useState(false);
+  const [detalheErr, setDetalheErr] = useState<string | null>(null);
+  const [detalheData, setDetalheData] = useState<AdequacaoDetalhe | null>(null);
 
   async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     let token: string | null = null;
@@ -461,7 +480,7 @@ export default function AdequacaoPlanilhaPage() {
   }, [rows]);
 
   const divergenciasTop = useMemo(() => {
-    const out: Array<{ item: string; servicos: string; und: string; cTotal: number; aTotal: number; diffV: number; cQty: number; aQty: number; diffQ: number }> = [];
+    const out: Array<{ item: string; codigo: string; servicos: string; und: string; cTotal: number; aTotal: number; diffV: number; cQty: number; aQty: number; diffQ: number }> = [];
     for (const r of rows) {
       if (r.tipoLinha !== "SERVICO") continue;
       const cTotal = Number(r.contratadoTotal || 0);
@@ -473,6 +492,7 @@ export default function AdequacaoPlanilhaPage() {
       if (Math.abs(diffV) < 0.01 && Math.abs(diffQ) < 0.001) continue;
       out.push({
         item: String(r.item || ""),
+        codigo: String(r.codigo || "").trim().toUpperCase(),
         servicos: String(r.servicos || ""),
         und: String(r.und || ""),
         cTotal,
@@ -559,6 +579,33 @@ export default function AdequacaoPlanilhaPage() {
     }
   }
 
+  async function abrirDetalheServico(args: { codigo: string; item?: string | null }) {
+    const srcId = selectedSource?.idPlanilha ? Number(selectedSource.idPlanilha) : 0;
+    const dstId = selectedTarget?.idPlanilha ? Number(selectedTarget.idPlanilha) : 0;
+    const codigo = String(args.codigo || "").trim().toUpperCase();
+    if (!idObra || !srcId || !dstId || !codigo) return;
+    try {
+      setDetalheOpen(true);
+      setDetalheLoading(true);
+      setDetalheErr(null);
+      setDetalheData(null);
+      const qs = new URLSearchParams();
+      qs.set("sourcePlanilhaId", String(srcId));
+      qs.set("targetPlanilhaId", String(dstId));
+      qs.set("codigoServico", codigo);
+      if (args.item != null && String(args.item).trim()) qs.set("item", String(args.item).trim());
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/adequacao/detalhe?${qs.toString()}`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar detalhe do serviço");
+      setDetalheData((json.data || null) as AdequacaoDetalhe | null);
+    } catch (e: any) {
+      setDetalheErr(e?.message || "Erro ao carregar detalhe do serviço");
+      setDetalheData(null);
+    } finally {
+      setDetalheLoading(false);
+    }
+  }
+
   const breadcrumbButtons = useMemo(() => {
     const obraLabel = obraNome ? String(obraNome).trim() : "";
     return [
@@ -633,6 +680,7 @@ export default function AdequacaoPlanilhaPage() {
         list.map((r) => ({
           tipoLinha: String(r.tipoLinha || "ITEM") as any,
           item: String(r.item || ""),
+          codigo: String(r.codigo || ""),
           servicos: String(r.servicos || ""),
           und: String(r.und || ""),
           contratadoQuant: Number(r.contratadoQuant || 0),
@@ -946,6 +994,218 @@ export default function AdequacaoPlanilhaPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-7xl text-slate-900">
+      {detalheOpen ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-auto">
+          <div className="w-full max-w-6xl rounded-xl border bg-white shadow-lg">
+            <div className="flex items-center justify-between gap-3 border-b p-4">
+              <div className="text-lg font-semibold">{detalheData?.codigoServico ? `Detalhe — ${detalheData.codigoServico}` : "Detalhe do serviço"}</div>
+              <button
+                className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                type="button"
+                onClick={() => setDetalheOpen(false)}
+                disabled={detalheLoading}
+                title="Fechar"
+              >
+                Fechar
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              {detalheErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{detalheErr}</div> : null}
+
+              {detalheLoading ? (
+                <div className="text-sm text-slate-600">Carregando…</div>
+              ) : detalheData ? (
+                <>
+                  <div className="flex flex-wrap gap-2 items-center justify-between">
+                    <div className="text-sm text-slate-700">
+                      <div className="font-semibold">{`Origem: #${detalheData.source.idPlanilha} — v${detalheData.source.numeroVersao}${detalheData.source.nome ? ` — ${detalheData.source.nome}` : ""}`}</div>
+                      <div className="font-semibold">{`Destino: #${detalheData.target.idPlanilha} — v${detalheData.target.numeroVersao}${detalheData.target.nome ? ` — ${detalheData.target.nome}` : ""}`}</div>
+                      <div className="text-xs text-slate-600">
+                        {`Fonte (origem/destino): #${detalheData.source.idFonteDados || 0} / #${detalheData.target.idFonteDados || 0} • Parâmetros (origem/destino): #${
+                          detalheData.source.idParametros || 0
+                        } / #${detalheData.target.idParametros || 0}`}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                        type="button"
+                        onClick={() =>
+                          router.push(
+                            `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(detalheData.codigoServico)}?planilhaId=${encodeURIComponent(
+                              String(detalheData.source.idPlanilha)
+                            )}`
+                          )
+                        }
+                        title="Abrir Análise de composição usando a planilha de origem (Previsto na planilha)"
+                      >
+                        Abrir composição (v1)
+                      </button>
+                      <button
+                        className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                        type="button"
+                        onClick={() =>
+                          router.push(
+                            `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(detalheData.codigoServico)}?planilhaId=${encodeURIComponent(
+                              String(detalheData.target.idPlanilha)
+                            )}`
+                          )
+                        }
+                        title="Abrir Análise de composição usando a planilha de destino (Previsto na planilha)"
+                      >
+                        Abrir composição (v2)
+                      </button>
+                      <button
+                        className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                        type="button"
+                        onClick={() =>
+                          router.push(
+                            `/dashboard/engenharia/obras/${idObra}/planilha/servicos?planilhaId=${encodeURIComponent(String(detalheData.target.idPlanilha))}`
+                          )
+                        }
+                        title="Abrir Serviços (catálogo da fonte) da planilha selecionada"
+                      >
+                        Abrir catálogo
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-lg border p-3">
+                      <div className="text-sm font-semibold">{`Linha na planilha v${detalheData.source.numeroVersao}`}</div>
+                      <div className="overflow-auto mt-2">
+                        <table className="min-w-[720px] w-full text-sm">
+                          <thead className="bg-slate-50 text-left text-slate-700">
+                            <tr>
+                              <th className="px-3 py-2">ITEM</th>
+                              <th className="px-3 py-2">UND</th>
+                              <th className="px-3 py-2 text-right">QUANT.</th>
+                              <th className="px-3 py-2 text-right">VALOR UNIT.</th>
+                              <th className="px-3 py-2 text-right">VALOR PARCIAL</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(detalheData.linhas.source || []).map((l, i) => (
+                              <tr key={`${l.item}-${i}`} className="border-t">
+                                <td className="px-3 py-2">{l.item || "—"}</td>
+                                <td className="px-3 py-2">{l.und || "—"}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{l.quantidade == null ? "—" : fmtNumber(l.quantidade, 3)}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{l.valorUnitario == null ? "—" : fmtMoney(l.valorUnitario)}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{l.valorParcial == null ? "—" : fmtMoney(l.valorParcial)}</td>
+                              </tr>
+                            ))}
+                            {!(detalheData.linhas.source || []).length ? (
+                              <tr>
+                                <td colSpan={5} className="px-3 py-4 text-center text-slate-500">
+                                  Nenhuma linha encontrada.
+                                </td>
+                              </tr>
+                            ) : null}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border p-3">
+                      <div className="text-sm font-semibold">{`Linha na planilha v${detalheData.target.numeroVersao}`}</div>
+                      <div className="overflow-auto mt-2">
+                        <table className="min-w-[720px] w-full text-sm">
+                          <thead className="bg-slate-50 text-left text-slate-700">
+                            <tr>
+                              <th className="px-3 py-2">ITEM</th>
+                              <th className="px-3 py-2">UND</th>
+                              <th className="px-3 py-2 text-right">QUANT.</th>
+                              <th className="px-3 py-2 text-right">VALOR UNIT.</th>
+                              <th className="px-3 py-2 text-right">VALOR PARCIAL</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(detalheData.linhas.target || []).map((l, i) => (
+                              <tr key={`${l.item}-${i}`} className="border-t">
+                                <td className="px-3 py-2">{l.item || "—"}</td>
+                                <td className="px-3 py-2">{l.und || "—"}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{l.quantidade == null ? "—" : fmtNumber(l.quantidade, 3)}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{l.valorUnitario == null ? "—" : fmtMoney(l.valorUnitario)}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{l.valorParcial == null ? "—" : fmtMoney(l.valorParcial)}</td>
+                              </tr>
+                            ))}
+                            {!(detalheData.linhas.target || []).length ? (
+                              <tr>
+                                <td colSpan={5} className="px-3 py-4 text-center text-slate-500">
+                                  Nenhuma linha encontrada.
+                                </td>
+                              </tr>
+                            ) : null}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-lg border p-3">
+                      <div className="text-sm font-semibold">Catálogo da fonte (serviço)</div>
+                      <div className="mt-2 text-sm text-slate-700">
+                        {detalheData.catalogo ? (
+                          <div className="space-y-1">
+                            <div className="font-semibold">{`${detalheData.catalogo.codigo} — ${detalheData.catalogo.descricao || "—"}`}</div>
+                            <div>{`Fonte: #${detalheData.catalogo.idFonteDados} • Banco: ${detalheData.catalogo.banco || "—"} • UND: ${detalheData.catalogo.und || "—"}`}</div>
+                            <div className="font-semibold">{`Preço catálogo: ${fmtMoney(detalheData.catalogo.valorUnitario || 0)}`}</div>
+                          </div>
+                        ) : (
+                          <div className="text-slate-600">Serviço não encontrado no catálogo da Fonte.</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border p-3">
+                      <div className="text-sm font-semibold">Composição e insumos (Fonte)</div>
+                      <div className="mt-2 overflow-auto">
+                        <table className="min-w-[900px] w-full text-sm">
+                          <thead className="bg-slate-50 text-left text-slate-700">
+                            <tr>
+                              <th className="px-3 py-2">TIPO</th>
+                              <th className="px-3 py-2">CÓDIGO</th>
+                              <th className="px-3 py-2">BANCO</th>
+                              <th className="px-3 py-2">DESCRIÇÃO</th>
+                              <th className="px-3 py-2">UND</th>
+                              <th className="px-3 py-2 text-right">QTD</th>
+                              <th className="px-3 py-2 text-right">VALOR UNIT.</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(detalheData.composicao || []).map((c, i) => (
+                              <tr key={`${c.codigo}-${i}`} className="border-t">
+                                <td className="px-3 py-2">{c.tipoItem || "—"}</td>
+                                <td className="px-3 py-2 font-semibold">{c.codigo || "—"}</td>
+                                <td className="px-3 py-2">{c.banco || "—"}</td>
+                                <td className="px-3 py-2">{c.descricao || "—"}</td>
+                                <td className="px-3 py-2">{c.und || "—"}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(c.quantidade || 0, 6)}</td>
+                                <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(c.valorUnitario || 0)}</td>
+                              </tr>
+                            ))}
+                            {!(detalheData.composicao || []).length ? (
+                              <tr>
+                                <td colSpan={7} className="px-3 py-4 text-center text-slate-500">
+                                  Nenhuma composição encontrada para este serviço na Fonte.
+                                </td>
+                              </tr>
+                            ) : null}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-slate-600">Nenhum dado.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <div className="text-xs text-slate-500 flex flex-wrap items-center gap-1">
@@ -1321,6 +1581,7 @@ export default function AdequacaoPlanilhaPage() {
                         <thead className="bg-slate-50 text-left text-slate-700">
                           <tr>
                             <th className="px-3 py-2">ITEM</th>
+                            <th className="px-3 py-2">CÓDIGO</th>
                             <th className="px-3 py-2">SERVIÇO</th>
                             <th className="px-3 py-2">UND</th>
                             <th className="px-3 py-2 text-right">Contratado</th>
@@ -1329,12 +1590,14 @@ export default function AdequacaoPlanilhaPage() {
                             <th className="px-3 py-2 text-right">Qtd (C)</th>
                             <th className="px-3 py-2 text-right">Qtd (A)</th>
                             <th className="px-3 py-2 text-right">Dif. (Qtd)</th>
+                            <th className="px-3 py-2 text-right">Ações</th>
                           </tr>
                         </thead>
                         <tbody>
                           {divergenciasTop.map((d, idx) => (
                             <tr key={`${d.item}-${idx}`} className="border-t">
                               <td className="px-3 py-2">{d.item}</td>
+                              <td className="px-3 py-2 font-semibold">{d.codigo || "—"}</td>
                               <td className="px-3 py-2">{d.servicos}</td>
                               <td className="px-3 py-2">{d.und}</td>
                               <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(d.cTotal)}</td>
@@ -1343,6 +1606,17 @@ export default function AdequacaoPlanilhaPage() {
                               <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(d.cQty, 3)}</td>
                               <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(d.aQty, 3)}</td>
                               <td className={`px-3 py-2 text-right tabular-nums ${Math.abs(d.diffQ) >= 0.001 ? "text-amber-800 font-semibold" : ""}`}>{fmtNumber(d.diffQ, 3)}</td>
+                              <td className="px-3 py-2 text-right">
+                                <button
+                                  className="rounded border bg-white px-3 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-60"
+                                  type="button"
+                                  onClick={() => abrirDetalheServico({ codigo: d.codigo, item: d.item })}
+                                  disabled={loading || !d.codigo}
+                                  title="Ver planilha v1/v2, catálogo da fonte, composição e insumos deste serviço"
+                                >
+                                  Detalhar
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
