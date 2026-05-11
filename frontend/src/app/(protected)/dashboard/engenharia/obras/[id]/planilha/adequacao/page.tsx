@@ -947,42 +947,69 @@ export default function AdequacaoPlanilhaPage() {
         )}
 
         <div className="grid gap-3 md:grid-cols-4">
-          <div className="rounded-lg border bg-white p-3">
+          <div
+            className="rounded-lg border bg-white p-3"
+            title='Soma dos valores "Contratado" (linhas de SERVIÇO) calculados pela Adequação para a versão anterior. Deve bater com "Valor total (Versão anterior)".'
+          >
             <div className="text-[11px] uppercase tracking-wide text-slate-500">Contratado (Adequação)</div>
             <div className="mt-1 text-sm font-semibold text-slate-900">{fmtMoney(totalsAll.contratadoTotal)}</div>
             <div className="mt-1 text-xs text-slate-500">{selectedSource ? `Versão anterior: v${selectedSource.numeroVersao}` : "Selecione a versão anterior"}</div>
           </div>
-          <div className="rounded-lg border bg-white p-3">
+          <div
+            className="rounded-lg border bg-white p-3"
+            title='Total oficial da versão anterior na Planilha orçamentária (somatório do VALOR PARCIAL das linhas de SERVIÇO).'
+          >
             <div className="text-[11px] uppercase tracking-wide text-slate-500">Valor total (Versão anterior)</div>
             <div className="mt-1 text-sm font-semibold text-slate-900">{selectedSource?.valorTotal == null ? "—" : fmtMoney(Number(selectedSource.valorTotal || 0))}</div>
-            <div className={`mt-1 text-xs ${totalsDiff.diffSrc != null && Math.abs(totalsDiff.diffSrc) >= 0.01 ? "text-amber-800 font-semibold" : "text-slate-500"}`}>
+            <div
+              className={`mt-1 text-xs ${totalsDiff.diffSrc != null && Math.abs(totalsDiff.diffSrc) >= 0.01 ? "text-amber-800 font-semibold" : "text-slate-500"}`}
+              title='Diferença = Contratado (Adequação) - Valor total (Versão anterior). Deve ser 0,00 (pode variar por arredondamento).'
+            >
               {totalsDiff.diffSrc == null ? "—" : `Dif.: ${fmtMoney(totalsDiff.diffSrc)}`}
             </div>
           </div>
-          <div className="rounded-lg border bg-white p-3">
+          <div
+            className="rounded-lg border bg-white p-3"
+            title='Soma dos valores "Adequado" (linhas de SERVIÇO) calculados pela Adequação para a versão adequada. Deve bater com "Valor total (Versão adequada)".'
+          >
             <div className="text-[11px] uppercase tracking-wide text-slate-500">Adequado (Adequação)</div>
             <div className="mt-1 text-sm font-semibold text-slate-900">{fmtMoney(totalsAll.adequadoTotal)}</div>
             <div className="mt-1 text-xs text-slate-500">{selectedTarget ? `Versão adequada: v${selectedTarget.numeroVersao}` : "Selecione a versão adequada"}</div>
           </div>
-          <div className="rounded-lg border bg-white p-3">
+          <div
+            className="rounded-lg border bg-white p-3"
+            title='Total oficial da versão adequada na Planilha orçamentária (somatório do VALOR PARCIAL das linhas de SERVIÇO).'
+          >
             <div className="text-[11px] uppercase tracking-wide text-slate-500">Valor total (Versão adequada)</div>
             <div className="mt-1 text-sm font-semibold text-slate-900">{selectedTarget?.valorTotal == null ? "—" : fmtMoney(Number(selectedTarget.valorTotal || 0))}</div>
-            <div className={`mt-1 text-xs ${totalsDiff.diffDst != null && Math.abs(totalsDiff.diffDst) >= 0.01 ? "text-amber-800 font-semibold" : "text-slate-500"}`}>
+            <div
+              className={`mt-1 text-xs ${totalsDiff.diffDst != null && Math.abs(totalsDiff.diffDst) >= 0.01 ? "text-amber-800 font-semibold" : "text-slate-500"}`}
+              title='Diferença = Adequado (Adequação) - Valor total (Versão adequada). Deve ser 0,00 (pode variar por arredondamento).'
+            >
               {totalsDiff.diffDst == null ? "—" : `Dif.: ${fmtMoney(totalsDiff.diffDst)}`}
             </div>
           </div>
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border bg-white p-3">
+          <div
+            className="rounded-lg border bg-white p-3"
+            title='Soma de todos os aumentos (entradas ou acréscimos) ao comparar a versão adequada com a anterior. Se v2 for igual à v1, este total fica 0,00.'
+          >
             <div className="text-[11px] uppercase tracking-wide text-slate-500">Total aditado (Adequação)</div>
             <div className="mt-1 text-sm font-semibold text-slate-900">{fmtMoney(totalsAll.vAditado)}</div>
           </div>
-          <div className="rounded-lg border bg-white p-3">
+          <div
+            className="rounded-lg border bg-white p-3"
+            title='Soma de todas as reduções (saídas ou supressões) ao comparar a versão adequada com a anterior. É exibido como valor positivo.'
+          >
             <div className="text-[11px] uppercase tracking-wide text-slate-500">Total suprimido (Adequação)</div>
             <div className="mt-1 text-sm font-semibold text-slate-900">{fmtMoney(totalsAll.vSuprimido)}</div>
           </div>
-          <div className="rounded-lg border bg-white p-3">
+          <div
+            className="rounded-lg border bg-white p-3"
+            title='Diferença = Adequado - Contratado. Também equivale a (Total aditado - Total suprimido). Valor negativo indica que a versão adequada ficou menor.'
+          >
             <div className="text-[11px] uppercase tracking-wide text-slate-500">Diferença (Adequado - Contratado)</div>
             <div className="mt-1 text-sm font-semibold text-slate-900">{fmtMoney(Number((totalsAll.adequadoTotal - totalsAll.contratadoTotal).toFixed(2)))}</div>
           </div>
