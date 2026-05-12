@@ -90,6 +90,7 @@ export default function Page() {
     DIVERGENTE: true,
   });
   const [listMode, setListMode] = useState<"TODOS" | "PLANILHADOS" | "NAO_PLANILHADOS">("TODOS");
+  const [orderBy, setOrderBy] = useState<"ITEM" | "CODIGO">("ITEM");
   const [textFilter, setTextFilter] = useState("");
   const [fonteFilter, setFonteFilter] = useState<string>("");
   const [showColsCard, setShowColsCard] = useState(false);
@@ -314,6 +315,33 @@ export default function Page() {
   }, [idObra]);
 
   const filteredRows = useMemo(() => {
+    const parseItemParts = (s: string) =>
+      String(s || "")
+        .trim()
+        .split(".")
+        .filter(Boolean)
+        .map((x) => Number(x))
+        .map((n) => (Number.isFinite(n) ? n : NaN));
+    const cmpItem = (a: string, b: string) => {
+      const aa = parseItemParts(a);
+      const bb = parseItemParts(b);
+      const n = Math.max(aa.length, bb.length);
+      for (let i = 0; i < n; i++) {
+        const av = aa[i];
+        const bv = bb[i];
+        const aOk = Number.isFinite(av);
+        const bOk = Number.isFinite(bv);
+        if (aOk && bOk) {
+          if (av !== bv) return av - bv;
+          continue;
+        }
+        const as = String(a || "").trim();
+        const bs = String(b || "").trim();
+        return as.localeCompare(bs);
+      }
+      return aa.length - bb.length;
+    };
+
     const merged: CatalogListRow[] = [
       ...rows.map((r) => ({
         kind: "SERVICO" as const,
@@ -363,8 +391,25 @@ export default function Page() {
       });
     }
     if (focusCodigo) out = out.filter((r) => String(r.codigo || "").trim().toUpperCase() === focusCodigo);
+
+    out = [...out].sort((a, b) => {
+      if (orderBy === "CODIGO") {
+        const c = String(a.codigo || "").localeCompare(String(b.codigo || ""), "pt-BR", { numeric: true, sensitivity: "base" });
+        if (c !== 0) return c;
+      } else {
+        const ai = String(a.item || "").trim();
+        const bi = String(b.item || "").trim();
+        if (ai && bi) {
+          const c = cmpItem(ai, bi);
+          if (c !== 0) return c;
+        } else if (ai && !bi) return -1;
+        else if (!ai && bi) return 1;
+      }
+      return String(a.codigo || "").localeCompare(String(b.codigo || ""), "pt-BR", { numeric: true, sensitivity: "base" });
+    });
+
     return out;
-  }, [rows, refs, statusFilter, focusCodigo, listMode, textFilter, fonteFilter]);
+  }, [rows, refs, statusFilter, focusCodigo, listMode, textFilter, fonteFilter, orderBy]);
 
   const fonteOptions = useMemo(() => {
     const set = new Set<string>();
@@ -956,28 +1001,13 @@ export default function Page() {
             <input type="checkbox" checked={statusFilter.OK} onChange={(e) => setStatusFilter((p) => ({ ...p, OK: Boolean(e.target.checked) }))} />
             <span className="text-slate-700">OK</span>
           </label>
-          <select className="input bg-white" value={listMode} onChange={(e) => setListMode(e.target.value as any)} disabled={loading} title="Exibição">
-            <option value="TODOS">Todos</option>
-            <option value="PLANILHADOS">Somente usados na planilha (direto ou indiretamente)</option>
-            <option value="NAO_PLANILHADOS">Não planilhados</option>
-          </select>
-          <select className="input bg-white" value={fonteFilter} onChange={(e) => setFonteFilter(e.target.value)} disabled={loading} title="Filtrar por fonte">
-            <option value="">(todas as fontes)</option>
-            <option value="__SEM_FONTE__">(sem fonte)</option>
-            {fonteOptions.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
-          <input
-            className="input bg-white"
-            value={textFilter}
-            onChange={(e) => setTextFilter(e.target.value)}
-            placeholder="Filtrar por código, fonte ou serviço"
-            disabled={loading}
-            style={{ minWidth: "260px" }}
-          />
+          <label className="flex items-center gap-2">
+            <span className="text-slate-700">Ordenar:</span>
+            <select className="input bg-white" value={orderBy} onChange={(e) => setOrderBy(e.target.value as any)} disabled={loading} title="Ordenar a lista">
+              <option value="ITEM">Item</option>
+              <option value="CODIGO">Código</option>
+            </select>
+          </label>
           <div className="text-slate-500">
             Mostrando: {filteredRows.length} / {rows.length + refs.length}
           </div>
@@ -994,6 +1024,39 @@ export default function Page() {
           ) : null}
         </div>
 
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="flex-1 space-y-1" title="Filtra a lista por código do serviço ou descrição (texto livre)">
+            <div className="text-xs text-slate-500">Código / Serviço</div>
+            <input
+              className="input bg-white w-full"
+              value={textFilter}
+              onChange={(e) => setTextFilter(e.target.value)}
+              placeholder="Filtrar por código, fonte ou serviço"
+              disabled={loading}
+            />
+          </label>
+          <label className="space-y-1" style={{ width: "200px" }} title="Filtra a lista pela fonte (banco) do serviço">
+            <div className="text-xs text-slate-500">Fonte</div>
+            <select className="input bg-white w-full" value={fonteFilter} onChange={(e) => setFonteFilter(e.target.value)} disabled={loading}>
+              <option value="">(todas as fontes)</option>
+              <option value="__SEM_FONTE__">(sem fonte)</option>
+              {fonteOptions.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1" style={{ width: "300px" }} title="Define se a lista mostra todos, somente planilhados (direto/indireto) ou não planilhados">
+            <div className="text-xs text-slate-500">Itens planilhados</div>
+            <select className="input bg-white w-full" value={listMode} onChange={(e) => setListMode(e.target.value as any)} disabled={loading}>
+              <option value="TODOS">Todos</option>
+              <option value="PLANILHADOS">Somente usados na planilha (direto ou indiretamente)</option>
+              <option value="NAO_PLANILHADOS">Não planilhados</option>
+            </select>
+          </label>
+        </div>
+
         {showColsCard ? (
           <div className="rounded-lg border bg-slate-50 p-3">
             <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -1002,47 +1065,36 @@ export default function Page() {
                 Ocultar
               </button>
             </div>
-            <div className="mt-2 overflow-auto">
-              <table className="min-w-[760px] w-full text-sm">
-                <thead className="text-center text-slate-600">
-                  <tr>
-                    <th className="py-2 pr-3 text-left">Coluna</th>
-                    <th className="py-2 pr-3 text-left">Largura</th>
-                  </tr>
-                </thead>
-                <tbody className="text-slate-700">
-                  {[
-                    { key: "item", label: "ITEM" },
-                    { key: "codigo", label: "CÓDIGO" },
-                    { key: "tipo", label: "TIPO" },
-                    { key: "fonte", label: "FONTE" },
-                    { key: "servico", label: "SERVIÇO" },
-                    { key: "planilha", label: "PLANILHA" },
-                    { key: "composicao", label: "COMPOSIÇÃO" },
-                    { key: "dif", label: "DIF." },
-                    { key: "status", label: "STATUS" },
-                    { key: "acao", label: "AÇÃO" },
-                  ].map((c) => (
-                    <tr key={c.key} className="border-t">
-                      <td className="py-2 pr-3 font-medium">{c.label}</td>
-                      <td className="py-2 pr-3">
-                        <input
-                          className="input bg-white w-[120px]"
-                          type="number"
-                          min={60}
-                          max={1200}
-                          value={(colWidths as any)[c.key]}
-                          onChange={(e) => {
-                            const v = Number(e.target.value || 0);
-                            const next = Number.isFinite(v) ? Math.max(60, Math.min(1200, Math.round(v))) : 120;
-                            setColWidths((p) => ({ ...(p as any), [c.key]: next }));
-                          }}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {[
+                { key: "item", label: "ITEM" },
+                { key: "codigo", label: "CÓDIGO" },
+                { key: "tipo", label: "TIPO" },
+                { key: "fonte", label: "FONTE" },
+                { key: "servico", label: "SERVIÇO" },
+                { key: "planilha", label: "PLANILHA" },
+                { key: "composicao", label: "COMPOSIÇÃO" },
+                { key: "dif", label: "DIF." },
+                { key: "status", label: "STATUS" },
+                { key: "acao", label: "AÇÃO" },
+              ].map((c) => (
+                <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-sm">
+                  <div className="font-medium text-slate-700">{c.label}</div>
+                  <input
+                    className="input bg-white w-[92px]"
+                    type="number"
+                    min={10}
+                    max={1200}
+                    value={(colWidths as any)[c.key]}
+                    onChange={(e) => {
+                      const v = Number(e.target.value || 0);
+                      const next = Number.isFinite(v) ? Math.max(10, Math.min(1200, Math.round(v))) : 120;
+                      setColWidths((p) => ({ ...(p as any), [c.key]: next }));
+                    }}
+                    title="Largura (px)"
+                  />
+                </div>
+              ))}
             </div>
           </div>
         ) : null}
