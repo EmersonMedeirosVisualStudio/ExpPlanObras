@@ -3586,7 +3586,7 @@ export default function PlanilhaObraClient({
                                 return next;
                               });
                             }}
-                            disabled={!podeEditar || servicoCamposTravadosPorCatalogo}
+                            disabled={!podeEditar || servicoCamposTravadosPorCatalogo || Boolean(editingLinhaId)}
                             placeholder="—"
                           />
                         </div>
@@ -3635,7 +3635,7 @@ export default function PlanilhaObraClient({
                               const vu = info?.valorUnitario != null ? info.valorUnitario : 0;
                               setNovo((p) => (p.tipoLinha === "SERVICO" ? applyValorParcialAuto({ ...p, valorUnitario: formatNumberPtBR(Number(vu || 0), 2) }) : p));
                             }}
-                            disabled={!podeEditar || servicoCamposTravadosPorCatalogo}
+                            disabled={!podeEditar || servicoCamposTravadosPorCatalogo || Boolean(editingLinhaId)}
                           />
                         </div>
                       </div>
@@ -3654,7 +3654,7 @@ export default function PlanilhaObraClient({
                               return rest;
                             });
                           }}
-                          disabled={!podeEditar || servicoCamposTravadosPorCatalogo}
+                          disabled={!podeEditar || servicoCamposTravadosPorCatalogo || Boolean(editingLinhaId)}
                           title={servicoCamposTravadosPorCatalogo ? "Campo vem do catálogo (Serviços (PLANILHA))." : undefined}
                           placeholder="m²"
                         />

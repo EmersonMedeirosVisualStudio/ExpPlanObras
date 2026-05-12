@@ -1779,6 +1779,7 @@ ETAPA 3 — O que preencher
 - Preencha: **ITEM**, **CÓDIGO**, **SERVIÇOS** (descrição), **UND**, **QUANT.** e **VALOR UNIT.**
 - Se o código já existir no catálogo, o sistema preenche e trava **Fonte/Serviços/UND** pelo catálogo.
 - Se o código não existir, você consegue preencher e, ao salvar, ele passa a existir no catálogo.
+- Regra: ao editar uma linha de serviço existente na planilha, **não é permitido** alterar **nome** e **UND** pela planilha. Essas informações ficam no **catálogo da Fonte** (Serviços (catálogo da Fonte)).
 
 ETAPA 4 — O que esperar
 - Ao clicar em **Salvar**, o serviço entra na planilha e também é criado/atualizado no catálogo da Fonte.

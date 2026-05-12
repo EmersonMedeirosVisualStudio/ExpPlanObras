@@ -75,6 +75,8 @@ export default function Page() {
     SEM_COMPOSICAO: true,
     DIVERGENTE: true,
   });
+  const [usedOnly, setUsedOnly] = useState(true);
+  const [textFilter, setTextFilter] = useState("");
   const [refs, setRefs] = useState<RefRow[]>([]);
   const [composicoesSemServico, setComposicoesSemServico] = useState<{ total: number; codes: string[]; blankCount: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -273,10 +275,19 @@ export default function Page() {
   }, [idObra]);
 
   const filteredRows = useMemo(() => {
-    const byStatus = rows.filter((r) => Boolean(statusFilter[r.status]));
-    if (!focusCodigo) return byStatus;
-    return byStatus.filter((r) => String(r.codigoServico || "").trim().toUpperCase() === focusCodigo);
-  }, [rows, statusFilter, focusCodigo]);
+    let out = rows.filter((r) => Boolean(statusFilter[r.status]));
+    if (usedOnly) out = out.filter((r) => Boolean(String(r.item || "").trim()));
+    const q = String(textFilter || "").trim().toLowerCase();
+    if (q) {
+      out = out.filter((r) => {
+        const code = String(r.codigoServico || "").trim().toLowerCase();
+        const desc = String(r.servico || "").trim().toLowerCase();
+        return code.includes(q) || desc.includes(q);
+      });
+    }
+    if (focusCodigo) out = out.filter((r) => String(r.codigoServico || "").trim().toUpperCase() === focusCodigo);
+    return out;
+  }, [rows, statusFilter, focusCodigo, usedOnly, textFilter]);
 
   useEffect(() => {
     if (!bootDone || !focusCodigo) return;
@@ -889,7 +900,7 @@ export default function Page() {
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <div className="text-lg font-semibold">Serviços (catálogo da Fonte) — verificação</div>
+            <div className="text-lg font-semibold">Serviços (catálogo da Fonte)</div>
             <div className="text-sm text-slate-600">
               Lista os serviços do catálogo da Fonte e marca: sem composição e divergente entre total da planilha e total calculado pela composição.
             </div>
@@ -914,6 +925,18 @@ export default function Page() {
             <input type="checkbox" checked={statusFilter.OK} onChange={(e) => setStatusFilter((p) => ({ ...p, OK: Boolean(e.target.checked) }))} />
             <span className="text-slate-700">OK</span>
           </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={usedOnly} onChange={(e) => setUsedOnly(Boolean(e.target.checked))} />
+            <span className="text-slate-700">Somente usados na planilha</span>
+          </label>
+          <input
+            className="input bg-white"
+            value={textFilter}
+            onChange={(e) => setTextFilter(e.target.value)}
+            placeholder="Filtrar por código ou serviço"
+            disabled={loading}
+            style={{ minWidth: "260px" }}
+          />
           <div className="text-slate-500">
             Mostrando: {filteredRows.length} / {rows.length}
           </div>

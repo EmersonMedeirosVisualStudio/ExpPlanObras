@@ -8418,9 +8418,6 @@ export default async function v1Routes(server: FastifyInstance) {
               ($1,$2,'SERVICO',$3,$4,$5,$6,$7)
             ON CONFLICT (tenant_id, id_fonte_dados, codigo)
             DO UPDATE SET
-              banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-              descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-              und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
               valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
               atualizado_em = NOW()
             RETURNING id_servico AS "idServico"

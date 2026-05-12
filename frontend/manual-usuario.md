@@ -138,6 +138,7 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 - O sistema mostra um aviso de compartilhamento:
   - Alterar Serviço/Insumo/Composição da Fonte afeta todas as planilhas que usam essa Fonte
   - Alterar um Parâmetro afeta todas as planilhas que usam esse Parâmetro (e o sistema recalcula automaticamente os valores unitários/parciais vinculados)
+- Ao editar um serviço existente na planilha, **nome** e **UND** vêm do **catálogo da Fonte** e não são alterados pela planilha.
 
 ### ETAPA 5 — Como validar
 - Volte em **Versões cadastradas** e confirme que as colunas **Fonte** e **Parâmetros** aparecem preenchidas na versão criada/editada

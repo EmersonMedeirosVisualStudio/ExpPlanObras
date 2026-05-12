@@ -179,14 +179,24 @@ async function readTextSmart(file: File) {
     const n = Number(planilhaIdParam || 0);
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [planilhaIdParam]);
-  const rootCodigoParam = String(search.get("rootCodigo") || "")
-    .trim()
-    .toUpperCase();
-  const rootCodigo = rootCodigoParam || codigoServico;
-  const analysisTitle = useMemo(() => {
-    if (!rootCodigo || rootCodigo === codigoServico) return codigoServico || "—";
-    return `${rootCodigo} / ${codigoServico || "—"}`;
-  }, [codigoServico, rootCodigo]);
+  const trailParam = search.get("trail");
+  const trailCodes = useMemo(() => {
+    const raw = String(trailParam || "").trim();
+    if (!raw) return [];
+    const parts = raw
+      .split(",")
+      .map((s) => String(s || "").trim().toUpperCase())
+      .filter(Boolean);
+    const out: string[] = [];
+    for (const p of parts) {
+      if (!p) continue;
+      if (p === codigoServico) continue;
+      if (out.includes(p)) continue;
+      out.push(p);
+    }
+    return out;
+  }, [trailParam, codigoServico]);
+  const analysisTitle = useMemo(() => codigoServico || "—", [codigoServico]);
   const [returnToMem, setReturnToMem] = useState<string | null>(null);
  
    const [loading, setLoading] = useState(false);
@@ -1059,23 +1069,44 @@ async function readTextSmart(file: File) {
     return `/dashboard/engenharia/obras/${idObra}/planilha`;
   }
 
+  function buildAnalysisUrl(targetCodigo: string, trail: string[], returnToHref: string) {
+    const qs = new URLSearchParams();
+    if (trail.length) qs.set("trail", trail.join(","));
+    const pid = planilhaInfo?.idPlanilha || planilhaId;
+    if (pid) qs.set("planilhaId", String(pid));
+    qs.set("returnTo", returnToHref);
+    return `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(targetCodigo)}?${qs.toString()}`;
+  }
+
   function getSelfUrl() {
     const qs = new URLSearchParams();
-    qs.set("rootCodigo", rootCodigo);
+    if (trailCodes.length) qs.set("trail", trailCodes.join(","));
     if (planilhaId) qs.set("planilhaId", String(planilhaId));
     qs.set("returnTo", getBackTargetUrl());
     return `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}?${qs.toString()}`;
   }
 
+  const breadcrumbComposicoes = useMemo(() => {
+    const codes = [...trailCodes, codigoServico].filter((c) => String(c || "").trim());
+    const out: Array<{ codigo: string; href: string }> = [];
+    const baseReturnTo = getBackTargetUrl();
+    let currentTrail: string[] = [];
+    let currentReturnTo = baseReturnTo;
+    for (const c of codes) {
+      const href = buildAnalysisUrl(c, currentTrail, currentReturnTo);
+      out.push({ codigo: c, href });
+      currentReturnTo = href;
+      currentTrail = [...currentTrail, c];
+    }
+    return out;
+  }, [codigoServico, planilhaId, planilhaInfo?.idPlanilha, planilhaInfo?.nome, returnTo, returnToMem, trailCodes]);
+
   const bancosBase = useMemo(() => ["SINAPI", "Próprio", "SBC", "SICRO3"], []);
   const bancosOptions = useMemo(() => Array.from(new Set([...bancosBase, ...bancosCustom])), [bancosBase, bancosCustom]);
 
   const previstoPlanilhaTitle = useMemo(() => {
-    const pid = planilhaInfo?.idPlanilha ? Number(planilhaInfo.idPlanilha) : 0;
-    const nome = String(planilhaInfo?.nome || "").trim();
-    if (!pid) return "Previsto na planilha";
-    return `Previsto na planilha - #${pid}${nome ? ` - ${nome}` : ""}`;
-  }, [planilhaInfo]);
+    return "Serviço";
+  }, []);
 
   const previstoTotal = useMemo(() => {
     let total = 0;
@@ -1337,10 +1368,8 @@ async function readTextSmart(file: File) {
       setErr("Código inválido. Use apenas letras, números, ponto, traço, barra ou underline.");
       return;
     }
-    const target = `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoNovo)}?rootCodigo=${encodeURIComponent(
-      rootCodigo
-    )}&returnTo=${encodeURIComponent(getSelfUrl())}`;
-    router.push(target);
+    const nextTrail = [...trailCodes, codigoServico].filter(Boolean);
+    router.push(buildAnalysisUrl(codigoNovo, nextTrail, getSelfUrl()));
   }
 
   function navegarParaIndice(next: number) {
@@ -1708,11 +1737,7 @@ async function readTextSmart(file: File) {
                                 : "Composição não definida (clique para abrir/definir)"
                             }
                             onClick={() =>
-                              router.push(
-                                `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoComposicao)}?rootCodigo=${encodeURIComponent(
-                                  rootCodigo
-                                )}&returnTo=${encodeURIComponent(getSelfUrl())}`
-                              )
+                              router.push(buildAnalysisUrl(codigoComposicao, [...trailCodes, codigoServico].filter(Boolean), getSelfUrl()))
                             }
                           >
                             {isDefinida ? <CheckCircle2 className="h-4 w-4 text-green-700" /> : <XCircle className="h-4 w-4 text-red-700" />}
@@ -2193,8 +2218,21 @@ async function readTextSmart(file: File) {
                 <span className="text-blue-600">{`planilha #${planilhaInfo.idPlanilha} - ${planilhaInfo.nome || "—"}`}</span>
               </>
             ) : null}
-            <span aria-hidden="true">→</span>
-            <span>{`Análise de composição - ${analysisTitle}`}</span>
+            {breadcrumbComposicoes.map((b, idx) => {
+              const isLast = idx === breadcrumbComposicoes.length - 1;
+              return (
+                <span key={`${b.codigo}-${idx}`} className="inline-flex items-center gap-1">
+                  <span aria-hidden="true">→</span>
+                  {isLast ? (
+                    <span className="text-blue-600">{`Análise de composição - ${b.codigo || "—"}`}</span>
+                  ) : (
+                    <button className="hover:underline" type="button" onClick={() => router.push(b.href)} title="Voltar para esta composição">
+                      {`Análise de composição - ${b.codigo || "—"}`}
+                    </button>
+                  )}
+                </span>
+              );
+            })}
           </div>
           <h1 className="text-2xl font-semibold">Análise de composição — {analysisTitle}</h1>
           <div className="mt-1 text-sm text-slate-700">
@@ -2822,14 +2860,8 @@ async function readTextSmart(file: File) {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="text-lg font-semibold">{previstoPlanilhaTitle}</div>
-            <div className="text-sm text-slate-700">
-              <span className="font-semibold">Serviço:</span>{" "}
-              {(() => {
-                const nome = String(previstoRows?.[0]?.servicos || previstoServicoMeta?.descricao || "").trim();
-                return nome ? `${codigoServico} - ${nome}` : codigoServico;
-              })()}
-              <span className="inline-block w-[15ch]" aria-hidden="true" />
-              <span className="font-semibold">Unid.:</span> {String(previstoRows?.[0]?.und || previstoServicoMeta?.und || "—").trim() || "—"}
+            <div className="text-sm text-slate-600">
+              {planilhaInfo?.idPlanilha ? `Dados da planilha ativa: Planilha > #${planilhaInfo.idPlanilha} - ${planilhaInfo.nome || "—"}` : "Dados da planilha ativa"}
             </div>
           </div>
         </div>
@@ -2841,8 +2873,15 @@ async function readTextSmart(file: File) {
           <table className="min-w-[900px] w-full text-sm">
             <thead className="bg-slate-50 text-center text-slate-700">
               <tr>
+                <th className="px-3 py-2" colSpan={4} />
+                <th className="px-3 py-2 font-semibold" colSpan={5}>
+                  {planilhaInfo?.idPlanilha ? `Valores da planilha ativa (#${planilhaInfo.idPlanilha} - ${planilhaInfo.nome || "—"})` : "Valores da planilha ativa"}
+                </th>
+              </tr>
+              <tr>
                 <th className="px-3 py-2">ITEM</th>
                 <th className="px-3 py-2">SERVIÇO</th>
+                <th className="px-3 py-2" />
                 <th className="px-3 py-2">UND</th>
                 <th className="px-3 py-2">QUANT.</th>
                 <th className="px-3 py-2">VALOR UNIT.</th>
@@ -2856,6 +2895,19 @@ async function readTextSmart(file: File) {
                 <tr key={`${r.item}-${idx}`} className="border-t">
                   <td className="px-3 py-2">{r.item}</td>
                   <td className="px-3 py-2">{r.servicos}</td>
+                  <td className="px-3 py-2 text-center">
+                    {(() => {
+                      const a = String(r.servicos || "").trim();
+                      const b = String(previstoServicoMeta?.descricao || "").trim();
+                      const au = String(r.und || "").trim();
+                      const bu = String(previstoServicoMeta?.und || "").trim();
+                      const nomeOk = !a || !b ? true : a.toUpperCase() === b.toUpperCase();
+                      const undOk = !au || !bu ? true : au.toUpperCase() === bu.toUpperCase();
+                      const ok = nomeOk && undOk;
+                      const title = `Planilha: "${a || "—"}" / "${au || "—"}" • Catálogo: "${b || "—"}" / "${bu || "—"}"`;
+                      return ok ? <CheckCircle2 className="h-4 w-4 text-green-700 inline-block" title={title} /> : <XCircle className="h-4 w-4 text-red-700 inline-block" title={title} />;
+                    })()}
+                  </td>
                   <td className="px-3 py-2">{r.und}</td>
                   <td className="px-3 py-2 text-right">
                     {(() => {
@@ -2892,7 +2944,7 @@ async function readTextSmart(file: File) {
               ))}
               {previstoRows.length > 1 ? (
                 <tr className="border-t bg-slate-50">
-                  <td className="px-3 py-2 font-semibold" colSpan={5}>
+                  <td className="px-3 py-2 font-semibold" colSpan={6}>
                     Totais
                   </td>
                   <td className="px-3 py-2 text-right font-semibold">{moeda(Number(previstoTotal || 0))}</td>
@@ -2902,7 +2954,7 @@ async function readTextSmart(file: File) {
               ) : null}
               {!previstoRows.length ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={9} className="px-3 py-6 text-center text-slate-500">
                     Serviço não encontrado na planilha atual.
                   </td>
                 </tr>
@@ -2927,7 +2979,6 @@ async function readTextSmart(file: File) {
                     const qs = new URLSearchParams();
                     qs.set("codigo", String(codigoServico || "").trim());
                     qs.set("returnTo", getSelfUrl());
-                    qs.set("rootCodigo", rootCodigo);
                     qs.set("from", "importar");
                     if (planilhaInfo?.idPlanilha) qs.set("planilhaId", String(planilhaInfo.idPlanilha));
                     router.push(`/dashboard/engenharia/obras/${idObra}/planilha/sinapi?${qs.toString()}`);
