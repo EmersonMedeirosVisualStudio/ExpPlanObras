@@ -291,7 +291,6 @@ export default function Page() {
 
   useEffect(() => {
     if (copyForm.insumosPrecoMode !== "MANTER") setCopyForm((p) => ({ ...p, insumosPrecoMode: "MANTER" }));
-    if (copyForm.replaceComposicao) setCopyForm((p) => ({ ...p, replaceComposicao: false }));
   }, [copyForm.insumosPrecoMode, copyForm.replaceComposicao]);
 
   useEffect(() => {
@@ -446,6 +445,9 @@ export default function Page() {
           sourcePlanilhaId: copyForm.sourcePlanilhaId,
           targetPlanilhaId: copyForm.targetPlanilhaId,
           codigoServico: copyForm.codigoServico,
+          replaceServico: copyForm.replaceServico,
+          replaceComposicao: copyForm.replaceComposicao,
+          insumosPrecoMode: copyForm.insumosPrecoMode,
           dryRun: true,
         }),
       });
@@ -475,6 +477,7 @@ export default function Page() {
     try {
       const warnings: string[] = [];
       warnings.push("Se a Fonte do destino for diferente, a cópia cria/atualiza o serviço na Fonte destino (impacta todas as planilhas que usam essa Fonte).");
+      if (copyForm.replaceComposicao) warnings.push('Substituir composição pode sobrescrever a composição do serviço na Fonte destino (impacta todas as planilhas que usam essa Fonte).');
       if (copyForm.replaceServico) warnings.push("Substituir serviço no destino irá sobrescrever ITEM/QUANT. do serviço na planilha destino (versão).");
       if (warnings.length) {
         const ok = window.confirm(`${warnings.join("\n\n")}\n\nDeseja continuar?`);
@@ -491,8 +494,8 @@ export default function Page() {
           targetPlanilhaId: copyForm.targetPlanilhaId,
           codigoServico: copyForm.codigoServico,
           replaceServico: copyForm.replaceServico,
-          replaceComposicao: false,
-          insumosPrecoMode: "MANTER",
+          replaceComposicao: copyForm.replaceComposicao,
+          insumosPrecoMode: copyForm.insumosPrecoMode,
           dryRun: false,
         }),
       });
@@ -764,9 +767,7 @@ export default function Page() {
         <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div>
           <div className="text-lg font-semibold">Copiar serviço/composição entre planilhas (versões)</div>
-          <div className="text-sm text-slate-600">
-            Copia a linha do serviço (ITEM/QUANT.) entre versões. Se a Fonte do destino for diferente, o sistema também copia o serviço e a composição para a Fonte destino.
-          </div>
+          <div className="text-sm text-slate-600">Copia a linha do serviço (ITEM/QUANT.) entre versões. Se a Fonte do destino for diferente, o sistema também pode copiar o serviço e a composição para a Fonte destino.</div>
         </div>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
@@ -830,12 +831,12 @@ export default function Page() {
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
-                checked={false}
-                onChange={() => null}
-                disabled
-                title="A composição é da Fonte e não é copiada entre versões. Para alterar composição, edite na Fonte."
+                checked={copyForm.replaceComposicao}
+                onChange={(e) => setCopyForm((p) => ({ ...p, replaceComposicao: Boolean(e.target.checked) }))}
+                disabled={loading}
+                title="Quando marcado e a Fonte do destino for diferente, a composição é copiada mesmo que já exista na Fonte destino (sobrescreve)."
               />
-              <span className="text-slate-500">Substituir composição no destino</span>
+              <span>Substituir composição no destino</span>
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -888,7 +889,7 @@ export default function Page() {
             <div>
               Destino já tem serviço: {copyPreview.existsServicoTarget ? "Sim" : "Não"} • Destino já tem composição: {copyPreview.existsComposicaoTarget ? "Sim" : "Não"}
             </div>
-            <div>Observação: a composição é compartilhada pela Fonte.</div>
+            <div>Observação: a composição é compartilhada pela Fonte. Copiar composição só é relevante quando a Fonte do destino é diferente.</div>
             {copyPreview.diffs.length ? (
               <div className="overflow-auto">
                 <table className="min-w-[600px] w-full text-xs">

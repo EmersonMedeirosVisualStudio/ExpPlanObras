@@ -181,7 +181,7 @@ export default function PlanilhaImportacoesPage() {
   const [importMode, setImportMode] = useState<"CSV" | "PLANILHA">("CSV");
   const [csvMode, setCsvMode] = useState<"APPEND" | "REPLACE">("APPEND");
   const [csvCatalogDupPolicy, setCsvCatalogDupPolicy] = useState<"FILL" | "KEEP" | "OVERWRITE">("FILL");
-  const [csvSkipExistingLines, setCsvSkipExistingLines] = useState(false);
+  const csvSkipExistingLines = true;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [csvPreview, setCsvPreview] = useState<{
     file: File | null;
@@ -202,7 +202,7 @@ export default function PlanilhaImportacoesPage() {
   }>({ file: null, rows: [], missingColumns: [] });
 
   const [planilhaImportMode, setPlanilhaImportMode] = useState<"APPEND" | "REPLACE">("APPEND");
-  const [planilhaSkipExistingLines, setPlanilhaSkipExistingLines] = useState(false);
+  const planilhaSkipExistingLines = true;
   const [sourcePlanilhaId, setSourcePlanilhaId] = useState<string>("");
   const [sourceRows, setSourceRows] = useState<Array<{ checked: boolean; r: LinhaServico }>>([]);
   const planilhaCatalogDupPolicy: "KEEP" = "KEEP";
@@ -388,13 +388,6 @@ export default function PlanilhaImportacoesPage() {
     return csvPreview.rows.some((r) => r.checked && Object.keys(r.errors || {}).length > 0);
   }, [csvPreview]);
 
-  useEffect(() => {
-    if (csvMode === "REPLACE" && csvSkipExistingLines) setCsvSkipExistingLines(false);
-  }, [csvMode, csvSkipExistingLines]);
-
-  useEffect(() => {
-    if (planilhaImportMode === "REPLACE" && planilhaSkipExistingLines) setPlanilhaSkipExistingLines(false);
-  }, [planilhaImportMode, planilhaSkipExistingLines]);
 
   async function confirmarImportacaoCsv() {
     const idPlanilha = Number(String(targetPlanilhaId || "").trim() || 0);
@@ -427,7 +420,7 @@ export default function PlanilhaImportacoesPage() {
       form.append("idPlanilha", String(idPlanilha));
       form.append("modoImportacao", csvMode);
       form.append("catalogDupPolicy", csvCatalogDupPolicy);
-      form.append("skipExistingLines", csvSkipExistingLines ? "1" : "0");
+      form.append("skipExistingLines", "1");
       const selected = csvPreview.rows.filter((r) => r.checked).map((r) => r.rowIndex);
       form.append("selectedRowIndexes", JSON.stringify(selected));
       form.append("file", csvPreview.file);
@@ -564,7 +557,7 @@ export default function PlanilhaImportacoesPage() {
           idPlanilhaSource,
           modoImportacao: planilhaImportMode,
           catalogDupPolicy: planilhaCatalogDupPolicy,
-          skipExistingLines: planilhaSkipExistingLines,
+          skipExistingLines: true,
           rows: selected,
         }),
       });
@@ -737,20 +730,7 @@ export default function PlanilhaImportacoesPage() {
               <option value="OVERWRITE">Sobrescrever (somente dados informados)</option>
             </select>
           </label>
-          <label className="flex items-center gap-2 mt-6 text-sm text-slate-700 select-none">
-            <input
-              type="checkbox"
-              checked={csvSkipExistingLines}
-              onChange={(e) => setCsvSkipExistingLines(Boolean(e.target.checked))}
-              disabled={loading || csvMode === "REPLACE"}
-              title={
-                csvMode === "REPLACE"
-                  ? 'Indisponível no modo "Substituir": a planilha destino será apagada antes de importar.'
-                  : 'Quando marcado, o sistema não insere linhas iguais que já existam na planilha destino (mesmo Item/Código/Qtd/Valor).'
-              }
-            />
-            Ignorar linhas repetidas na planilha
-          </label>
+          <div className="mt-6 text-sm text-slate-600">No modo Complementar, o sistema evita inserir duplicatas idênticas automaticamente (Item/Código/Quant/Valor).</div>
         </div>
         {csvMode === "REPLACE" || csvCatalogDupPolicy === "OVERWRITE" ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -816,9 +796,7 @@ export default function PlanilhaImportacoesPage() {
                 - Fonte de dados (SERVICOS_FONTE): a regra depende de <span className="font-semibold">Repetidos na Fonte</span> (manter / completar / sobrescrever).
               </div>
               <div>- Se um serviço do CSV não existir no catálogo da Fonte, ele é criado automaticamente ao importar (usando o código).</div>
-              <div>
-                - Linhas na planilha (SERVICOS_LINHAS): por padrão pode repetir; marque <span className="font-semibold">Ignorar linhas repetidas</span> para não inserir duplicatas iguais.
-              </div>
+            <div>- Linhas na planilha (SERVICOS_LINHAS): no modo Complementar o sistema evita inserir duplicatas idênticas (Item/Código/Quant/Valor).</div>
               <div>- Composições/insumos não são importados por esta tela; são tratados nas telas Serviços/SINAPI/Insumos.</div>
             </div>
             <div className="overflow-auto rounded-lg border">
@@ -917,20 +895,6 @@ export default function PlanilhaImportacoesPage() {
               <option value="APPEND">Complementar</option>
               <option value="REPLACE">Substituir (apaga e importa)</option>
             </select>
-            <label className="flex items-center gap-2 text-sm text-slate-700 select-none pt-2">
-              <input
-                type="checkbox"
-                checked={planilhaSkipExistingLines}
-                onChange={(e) => setPlanilhaSkipExistingLines(Boolean(e.target.checked))}
-                disabled={loading || planilhaImportMode === "REPLACE"}
-                title={
-                  planilhaImportMode === "REPLACE"
-                    ? 'Indisponível no modo "Substituir": a planilha destino será apagada antes de importar.'
-                    : 'Quando marcado, o sistema não insere linhas iguais que já existam na planilha destino (mesmo Item/Código/Qtd/Valor).'
-                }
-              />
-              Ignorar linhas repetidas
-            </label>
           </div>
           </label>
         </div>

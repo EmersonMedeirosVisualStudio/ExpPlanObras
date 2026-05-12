@@ -6483,7 +6483,7 @@ export default async function v1Routes(server: FastifyInstance) {
         if (!Number.isFinite(idPlanilhaTarget) || idPlanilhaTarget <= 0) return fail(reply, 422, 'Selecione uma planilha destino válida para importar o CSV');
         const modoImportacao = modoImportacaoRaw === 'REPLACE' ? 'REPLACE' : 'APPEND';
         const catalogDupPolicy = catalogDupPolicyRaw === 'KEEP' || catalogDupPolicyRaw === 'OVERWRITE' ? (catalogDupPolicyRaw as any) : ('FILL' as const);
-        const skipExistingLines =
+        const skipExistingLinesParsed =
           String(skipExistingLinesRaw || '').trim() === '1' ||
           String(skipExistingLinesRaw || '').trim().toLowerCase() === 'true' ||
           String(skipExistingLinesRaw || '').trim().toLowerCase() === 'yes';
@@ -6644,6 +6644,7 @@ export default async function v1Routes(server: FastifyInstance) {
           const baseOrd = modoImportacao === 'APPEND' ? Number(maxOrdRows?.[0]?.maxOrd || 0) : 0;
 
           let preparedOk = preparedOkBase;
+          const skipExistingLines = modoImportacao === 'APPEND' ? true : skipExistingLinesParsed;
           if (skipExistingLines && preparedOk.length) {
             const existing = (await tx.$queryRawUnsafe(
               `
@@ -6915,7 +6916,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
         const modoImportacao = payload.modoImportacao === 'REPLACE' ? 'REPLACE' : 'APPEND';
         const catalogDupPolicy = 'KEEP' as const;
-        const skipExistingLines = Boolean(payload.skipExistingLines);
+        const skipExistingLines = modoImportacao === 'APPEND' ? true : false;
         const cadastrarServicosFaltantes = true;
 
         const created = await prismaTx(async (tx: any) => {
@@ -9407,7 +9408,7 @@ export default async function v1Routes(server: FastifyInstance) {
     }
 
     await prismaTx(async (tx: any) => {
-      if (replaceComposicao && idFonteDadosSrc !== idFonteDadosDst && srcHasComposicao && !existsComposicaoTarget) {
+      if (idFonteDadosSrc !== idFonteDadosDst && srcHasComposicao && (replaceComposicao || !existsComposicaoTarget)) {
         const visited = new Set<string>();
         const queue: string[] = [codigoServico];
         const affectedServicoIds: number[] = [];
@@ -9475,6 +9476,7 @@ export default async function v1Routes(server: FastifyInstance) {
             idServicoPaiDst
           )) as any[];
           const dstAlreadyHas = Boolean(dstHas?.[0]?.ok);
+          if (dstAlreadyHas && !replaceComposicao) continue;
 
           const items = (await tx.$queryRawUnsafe(
             `
@@ -9589,75 +9591,74 @@ export default async function v1Routes(server: FastifyInstance) {
             }
           }
 
-          if (!dstAlreadyHas) {
-            await tx.$executeRawUnsafe(
-              `DELETE FROM obras_composicoes_itens_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3`,
-              ctx.tenantId,
-              idFonteDadosDst,
-              idServicoPaiDst
-            );
-            for (const it of items || []) {
-              const tipoItem = String(it?.tipoItem || '').trim().toUpperCase();
-              const idItemSrc = it?.idItem ? Number(it.idItem) : 0;
-              if (!idItemSrc) continue;
-              let idItemDst = 0;
-              if (tipoItem === 'COMPOSICAO' || tipoItem === 'COMPOSICAO_AUXILIAR') {
-                const childRows = (await tx.$queryRawUnsafe(
-                  `
+          await tx.$executeRawUnsafe(
+            `DELETE FROM obras_composicoes_itens_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3`,
+            ctx.tenantId,
+            idFonteDadosDst,
+            idServicoPaiDst
+          );
+          for (const it of items || []) {
+            const tipoItem = String(it?.tipoItem || '').trim().toUpperCase();
+            const idItemSrc = it?.idItem ? Number(it.idItem) : 0;
+            if (!idItemSrc) continue;
+            let idItemDst = 0;
+            if (tipoItem === 'COMPOSICAO' || tipoItem === 'COMPOSICAO_AUXILIAR') {
+              const childRows = (await tx.$queryRawUnsafe(
+                `
                   SELECT COALESCE(codigo,'') AS codigo
                   FROM obras_servicos_fonte
                   WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico = $3
                   LIMIT 1
                   `,
-                  ctx.tenantId,
-                  idFonteDadosSrc,
-                  idItemSrc
-                )) as any[];
-                const childCode = String(childRows?.[0]?.codigo || '').trim().toUpperCase();
-                if (!childCode) continue;
-                const idRows = (await tx.$queryRawUnsafe(
-                  `
+                ctx.tenantId,
+                idFonteDadosSrc,
+                idItemSrc
+              )) as any[];
+              const childCode = String(childRows?.[0]?.codigo || '').trim().toUpperCase();
+              if (!childCode) continue;
+              const idRows = (await tx.$queryRawUnsafe(
+                `
                   SELECT id_servico AS "id"
                   FROM obras_servicos_fonte
                   WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
                   LIMIT 1
                   `,
-                  ctx.tenantId,
-                  idFonteDadosDst,
-                  childCode
-                )) as any[];
-                idItemDst = idRows?.[0]?.id ? Number(idRows[0].id) : 0;
-              } else {
-                const insRows = (await tx.$queryRawUnsafe(
-                  `
+                ctx.tenantId,
+                idFonteDadosDst,
+                childCode
+              )) as any[];
+              idItemDst = idRows?.[0]?.id ? Number(idRows[0].id) : 0;
+            } else {
+              const insRows = (await tx.$queryRawUnsafe(
+                `
                   SELECT COALESCE(codigo,'') AS codigo
                   FROM obras_insumos_fonte
                   WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_insumo = $3
                   LIMIT 1
                   `,
-                  ctx.tenantId,
-                  idFonteDadosSrc,
-                  idItemSrc
-                )) as any[];
-                const insCode = String(insRows?.[0]?.codigo || '').trim().toUpperCase();
-                if (!insCode) continue;
-                const idRows = (await tx.$queryRawUnsafe(
-                  `
+                ctx.tenantId,
+                idFonteDadosSrc,
+                idItemSrc
+              )) as any[];
+              const insCode = String(insRows?.[0]?.codigo || '').trim().toUpperCase();
+              if (!insCode) continue;
+              const idRows = (await tx.$queryRawUnsafe(
+                `
                   SELECT id_insumo AS "id"
                   FROM obras_insumos_fonte
                   WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
                   LIMIT 1
                   `,
-                  ctx.tenantId,
-                  idFonteDadosDst,
-                  insCode
-                )) as any[];
-                idItemDst = idRows?.[0]?.id ? Number(idRows[0].id) : 0;
-              }
+                ctx.tenantId,
+                idFonteDadosDst,
+                insCode
+              )) as any[];
+              idItemDst = idRows?.[0]?.id ? Number(idRows[0].id) : 0;
+            }
 
-              if (!idItemDst) continue;
-              await tx.$executeRawUnsafe(
-                `
+            if (!idItemDst) continue;
+            await tx.$executeRawUnsafe(
+              `
                 INSERT INTO obras_composicoes_itens_fonte
                   (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item, quantidade, unidade, ordem)
                 VALUES
@@ -9669,18 +9670,17 @@ export default async function v1Routes(server: FastifyInstance) {
                   ordem = EXCLUDED.ordem,
                   atualizado_em = NOW()
                 `,
-                ctx.tenantId,
-                idFonteDadosDst,
-                idServicoPaiDst,
-                tipoItem.slice(0, 24) || 'INSUMO',
-                idItemDst,
-                it?.quantidade == null ? null : toDec(it.quantidade),
-                String(it?.unidade || '') || null,
-                it?.ordem == null ? 0 : Number(it.ordem)
-              );
-            }
-            affectedServicoIds.push(idServicoPaiDst);
+              ctx.tenantId,
+              idFonteDadosDst,
+              idServicoPaiDst,
+              tipoItem.slice(0, 24) || 'INSUMO',
+              idItemDst,
+              it?.quantidade == null ? null : toDec(it.quantidade),
+              String(it?.unidade || '') || null,
+              it?.ordem == null ? 0 : Number(it.ordem)
+            );
           }
+          affectedServicoIds.push(idServicoPaiDst);
         }
 
         const uniqIds = Array.from(new Set(affectedServicoIds)).filter((n) => Number.isFinite(n) && n > 0);

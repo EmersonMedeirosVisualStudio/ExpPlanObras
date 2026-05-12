@@ -1876,7 +1876,9 @@ ETAPA 3 — O que preencher
 ETAPA 4 — O que esperar
 - O sistema mostra a grade de conferência antes de permitir importar
 - Se nada estiver marcado, o sistema bloqueia a importação
-- Se a **Fonte da planilha origem** for diferente da **Fonte da planilha destino**, o sistema copia automaticamente para a **Fonte destino** o cadastro do **serviço** (catálogo), para que o mesmo código exista no catálogo da Fonte destino.
+- Se a **Fonte da planilha origem** for diferente da **Fonte da planilha destino**, o sistema copia automaticamente para a **Fonte destino**:
+  - o cadastro do **serviço** (catálogo); e
+  - a **composição** do serviço quando ela existir na Fonte origem e **ainda não existir** na Fonte destino.
 
 ETAPA 5 — Como validar
 - Clique em **Importar**
@@ -1900,9 +1902,10 @@ ETAPA 5 — Como validar
 - Planilha (exportação): no card **Planilha orçamentária**, os botões **Imprimir**, **PDF** e **CSV** ficam no canto superior direito do card.
 - Serviços:
   - A tela marca serviços **sem composição** e **divergentes** comparando total da planilha x total calculado por composição.
-  - Existe ação para **copiar serviço entre versões** (origem → destino), com prévia (não copia composição).
+  - Existe ação para **copiar serviço entre versões** (origem → destino), com prévia (pode copiar composição).
     - Se a **Fonte** for a mesma: copia apenas a **linha do serviço** (ITEM/QUANT.) na planilha destino, pois a composição já é compartilhada.
-    - Se a **Fonte** for diferente: além da linha, copia também o **serviço e sua composição** para a **Fonte destino** (quando existir na Fonte origem).
+    - Se a **Fonte** for diferente: além da linha, copia também o **serviço** para a **Fonte destino** e copia a **composição** quando ela existir na origem e não existir no destino.
+    - Se marcar **Substituir composição no destino**, a composição é sobrescrita na Fonte destino (impacta todas as planilhas que usam essa Fonte).
 - Análise de composição (editar itens):
   - em **Composições**, é permitido alterar apenas **Código** e **Qtd** (demais campos são preenchidos/calculados automaticamente);
   - em **Insumos**, é permitido alterar apenas **Código**, **Qtd** e **Valor Unit** (demais campos são preenchidos/calculados automaticamente);
@@ -3551,10 +3554,10 @@ Legenda:
 - Manter como está: não altera o cadastro (somente usa o que já existe).
 - Sobrescrever (somente dados informados): atualiza no cadastro apenas os campos que vierem preenchidos na importação.
 
-3) Ignorar linhas repetidas na planilha
+3) Repetidos nas linhas da planilha (automaticamente)
 - Controla apenas as **LINHAS** na planilha destino.
-- Quando marcado, o sistema evita inserir linhas “iguais” que já existam na planilha destino.
-- Fica desabilitado no modo Substituir, porque a planilha destino é apagada antes.
+- No modo **Complementar**, o sistema evita inserir linhas “iguais” que já existam na planilha destino (Item/Código/Quant/Valor).
+- No modo **Substituir**, a planilha destino é apagada antes de importar.
 
 **Importar CSV — combinações (com exemplos)**
 
@@ -3562,17 +3565,12 @@ Exemplo base:
 - A planilha destino já tem o serviço `1.1` (código `COMP.UPA.155`, quant `100`, valor `3540,99`).
 - O CSV traz a mesma linha novamente.
 
-1) Modo: Complementar + Ignorar repetidas: desmarcado
-- Resultado na planilha destino: a linha será inserida novamente (pode existir duplicidade de linha).
+1) Modo: Complementar
+- Resultado na planilha destino: evita inserir duplicatas idênticas automaticamente (Item/Código/Quant/Valor).
 - Cadastro da Fonte: depende de Repetidos na Fonte.
 
-2) Modo: Complementar + Ignorar repetidas: marcado
-- Resultado na planilha destino: a linha NÃO é inserida novamente (evita duplicidade idêntica).
-- Cadastro da Fonte: depende de Repetidos na Fonte.
-
-3) Modo: Substituir
+2) Modo: Substituir
 - Resultado na planilha destino: apaga tudo e recria com o CSV (não existe “repetida” porque a planilha foi apagada).
-- Ignorar repetidas fica desabilitado.
 - Cadastro da Fonte: depende de Repetidos na Fonte.
 
 Repetidos na Fonte (CSV) — exemplo:
@@ -3590,12 +3588,10 @@ Exemplo base:
 - Destino: v2 (planilha adequada)
 
 1) Modo: Complementar
-- Resultado na planilha destino: adiciona as linhas selecionadas ao final.
-- Se “Ignorar repetidas” estiver marcado: evita inserir linhas idênticas que já existam na planilha destino.
+- Resultado na planilha destino: adiciona as linhas selecionadas ao final e evita inserir duplicatas idênticas automaticamente (Item/Código/Quant/Valor).
 
 2) Modo: Substituir
 - Resultado na planilha destino: apaga tudo e recria com as linhas selecionadas da origem.
-- “Ignorar repetidas” fica desabilitado.
 
 3) Repetidos na Fonte (de outra planilha)
 - Regra geral: controla o cadastro da Fonte da planilha destino.
@@ -3613,7 +3609,6 @@ ETAPA 2 — O que clicar
 ETAPA 3 — O que preencher (CSV)
 - Modo: Complementar ou Substituir.
 - Repetidos na Fonte: escolha conforme o impacto desejado no cadastro compartilhado.
-- (Opcional) Ignorar linhas repetidas na planilha.
 - Clique em “Selecionar CSV” → confira a prévia → clique em “Importar”.
 
 ETAPA 3 — O que preencher (de outra planilha)
@@ -3630,7 +3625,7 @@ ETAPA 4 — O que esperar
 ETAPA 5 — Como validar
 - Volte para Planilha orçamentária e confira se:
   - os itens/subitens/serviços aparecem conforme esperado;
-  - não houve duplicidade indesejada (use “Ignorar linhas repetidas” quando necessário);
+  - não houve duplicidade indesejada;
   - se você alterou “Repetidos na Fonte”, confira se outras planilhas que usam a mesma Fonte não foram impactadas indevidamente.
 
 ### 18.3 Documentos e acervos
