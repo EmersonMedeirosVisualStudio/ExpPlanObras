@@ -225,6 +225,14 @@ export default function SinapiImportPage() {
   const [planilhaDataBaseSinapi, setPlanilhaDataBaseSinapi] = useState<string>("");
   const [planilhaUfSinapi, setPlanilhaUfSinapi] = useState<string>("");
   const [planilhaCallerInfo, setPlanilhaCallerInfo] = useState<{ idPlanilha: number; numeroVersao: number; nome: string } | null>(null);
+  const [planilhaCallerCtx, setPlanilhaCallerCtx] = useState<{
+    idPlanilha: number;
+    nome: string;
+    idFonteDados: number | null;
+    fonteNome: string;
+    idParametros: number | null;
+    parametrosNome: string;
+  } | null>(null);
   const [composicaoCard, setComposicaoCard] = useState<{
     codigo: string;
     descricao: string;
@@ -1523,27 +1531,85 @@ export default function SinapiImportPage() {
     };
   }, [idObra]);
 
+  useEffect(() => {
+    if (!Number.isFinite(idObra) || idObra <= 0) return;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes-info`);
+        const json = await res.json().catch(() => null);
+        if (!alive) return;
+        if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar contexto da planilha");
+        const list = Array.isArray(json?.data?.versoes) ? json.data.versoes : [];
+        const byId = list.find((v: any) => Number(v?.idPlanilha || 0) === Number(planilhaIdCaller)) || null;
+        const atual = list.find((v: any) => Boolean(v?.atual)) || list[0] || null;
+        const pick = byId || atual || null;
+        if (!pick?.idPlanilha) {
+          setPlanilhaCallerCtx(null);
+          return;
+        }
+        setPlanilhaCallerCtx({
+          idPlanilha: Number(pick.idPlanilha),
+          nome: String(pick.nome || ""),
+          idFonteDados: pick.idFonteDados == null ? null : Number(pick.idFonteDados),
+          fonteNome: String(pick.fonteNome || ""),
+          idParametros: pick.idParametros == null ? null : Number(pick.idParametros),
+          parametrosNome: String(pick.parametrosNome || ""),
+        });
+      } catch {
+        if (!alive) return;
+        setPlanilhaCallerCtx(null);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [idObra, planilhaIdCaller]);
+
   return (
     <div className="p-4 md:p-6 space-y-6 w-full max-w-none text-slate-900">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex-1 min-w-[260px]">
-          <div className="text-xs text-slate-500">{breadcrumb}</div>
-          <h1 className="text-2xl font-semibold">Sinapi</h1>
+          <div className="flex flex-wrap items-center gap-1 text-xs text-slate-500">
+            <button className="hover:underline" type="button" onClick={() => router.push("/dashboard/engenharia")} title="Ir para Engenharia">
+              Engenharia
+            </button>
+            <span aria-hidden="true">→</span>
+            <button className="hover:underline" type="button" onClick={() => router.push("/dashboard/engenharia/obras")} title="Ir para Obras">
+              Obras
+            </button>
+            <span aria-hidden="true">→</span>
+            <button className="hover:underline text-blue-600" type="button" onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}`)} title="Ir para a Obra">
+              {`Obra #${idObra}${obraContrato?.nomeObra ? ` - ${obraContrato.nomeObra}` : ""}`}
+            </button>
+            <span aria-hidden="true">→</span>
+            <button
+              className="hover:underline"
+              type="button"
+              onClick={() => {
+                const qs = new URLSearchParams();
+                if (planilhaIdCaller) qs.set("planilhaId", String(planilhaIdCaller));
+                qs.set("returnTo", selfHref);
+                router.push(`/dashboard/engenharia/obras/${idObra}/planilha?${qs.toString()}`);
+              }}
+              title="Ir para Planilha orçamentária"
+            >
+              Planilha orçamentária
+            </button>
+            {planilhaCallerCtx?.idPlanilha ? (
+              <>
+                <span aria-hidden="true">→</span>
+                <span className="text-blue-600">{`planilha #${planilhaCallerCtx.idPlanilha} - ${planilhaCallerCtx.nome || "—"}`}</span>
+              </>
+            ) : null}
+            <span aria-hidden="true">→</span>
+            <span>SINAPI</span>
+          </div>
+          <h1 className="text-2xl font-semibold">SINAPI</h1>
           <div className="mt-1 text-sm text-slate-700">
-            <div>
-              OBRA: {idObra} - {obraContrato?.nomeObra ? obraContrato.nomeObra : `Obra #${idObra}`}
-            </div>
-            <div>
-              CONTRATO: {obraContrato?.idContrato != null ? obraContrato.idContrato : "—"} - {obraContrato?.objeto ? obraContrato.objeto : "—"}
-            </div>
-            <div>
-              PLANILHA: {planilhaCallerInfo?.idPlanilha != null ? planilhaCallerInfo.idPlanilha : "—"} -{" "}
-              {String(planilhaCallerInfo?.nome || "").trim() || "—"} -{" "}
-              {planilhaCallerInfo?.numeroVersao != null ? `v${planilhaCallerInfo.numeroVersao}` : "—"}
-            </div>
-            <div>
-              SINAPI (planilha): {planilhaDataBaseSinapi || "—"} • UF: {planilhaUfSinapi || ufFiltro || uf || "—"}
-            </div>
+            {planilhaCallerCtx?.idPlanilha ? <div className="font-semibold">{`Planilha: #${planilhaCallerCtx.idPlanilha} - ${planilhaCallerCtx.nome || "—"}`}</div> : null}
+            {planilhaCallerCtx?.idParametros ? <div>{`Parâmetros: #${planilhaCallerCtx.idParametros} - ${planilhaCallerCtx.parametrosNome || "—"}`}</div> : null}
+            {planilhaCallerCtx?.idFonteDados ? <div>{`Fonte de dados: #${planilhaCallerCtx.idFonteDados} - ${planilhaCallerCtx.fonteNome || "—"}`}</div> : null}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

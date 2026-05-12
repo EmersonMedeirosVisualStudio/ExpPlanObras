@@ -2671,15 +2671,27 @@ export default function PlanilhaObraClient({
             </button>
             <span>→</span>
             <button
-              className="hover:underline"
+              className="hover:underline text-blue-600"
               type="button"
               onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}`)}
               title="Ir para a Obra selecionada"
             >
-              {obraResumo?.nome ? obraResumo.nome : "Obra selecionada"}
+              {`Obra #${idObra}${obraResumo?.nome ? ` - ${obraResumo.nome}` : ""}`}
             </button>
             <span>→</span>
             <span className="font-semibold text-slate-700">Planilha orçamentária</span>
+            {(() => {
+              const pid = planilhaId != null ? Number(planilhaId) : null;
+              if (!pid) return null;
+              const v = versoes.find((x) => Number(x.idPlanilha) === pid) || null;
+              if (!v) return null;
+              return (
+                <>
+                  <span>→</span>
+                  <span className="text-blue-600">{`planilha #${v.idPlanilha} - ${v.nome || "—"}`}</span>
+                </>
+              );
+            })()}
           </div>
           <h1 className="text-2xl font-semibold">Planilha orçamentária — Obra #{idObra}</h1>
           {obraResumo ? (

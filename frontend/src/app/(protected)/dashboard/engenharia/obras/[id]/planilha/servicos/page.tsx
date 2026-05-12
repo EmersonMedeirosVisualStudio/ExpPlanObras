@@ -69,6 +69,7 @@ export default function Page() {
   const [planilhaId, setPlanilhaId] = useState<number | null>(null);
   const [versoes, setVersoes] = useState<VersaoRow[]>([]);
   const [rows, setRows] = useState<ValidacaoRow[]>([]);
+  const [obraNome, setObraNome] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<{ OK: boolean; SEM_COMPOSICAO: boolean; DIVERGENTE: boolean }>({
     OK: true,
     SEM_COMPOSICAO: true,
@@ -120,6 +121,8 @@ export default function Page() {
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes-info`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar versões");
+      const obra = json?.data?.obra || null;
+      setObraNome(String(obra?.nome || obra?.name || "").trim());
       const versoes = Array.isArray(json.data?.versoes) ? json.data.versoes : [];
       const mapped: VersaoRow[] = versoes
         .map((v: any) => ({
@@ -152,6 +155,7 @@ export default function Page() {
       setErr(e?.message || "Erro ao carregar versões");
       setPlanilhaId(null);
       setVersoes([]);
+      setObraNome("");
       return null;
     }
   }
@@ -418,12 +422,12 @@ export default function Page() {
             </button>
             <span aria-hidden="true">→</span>
             <button
-              className="hover:underline"
+              className="hover:underline text-blue-600"
               type="button"
               onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}`)}
               title="Ir para a Obra"
             >
-              Obra
+              {`Obra #${idObra}${String(obraNome || "").trim() ? ` - ${obraNome}` : ""}`}
             </button>
             <span aria-hidden="true">→</span>
             <button
@@ -437,15 +441,25 @@ export default function Page() {
               }}
               title="Ir para Planilha orçamentária"
             >
-              Planilha
+              Planilha orçamentária
             </button>
+            {selectedVersao?.idPlanilha ? (
+              <>
+                <span aria-hidden="true">→</span>
+                <span className="text-blue-600">{`planilha #${selectedVersao.idPlanilha} - ${selectedVersao.nome || "—"}`}</span>
+              </>
+            ) : null}
             <span aria-hidden="true">→</span>
-            <span>Serviços (catálogo da fonte)</span>
+            <span>Serviços</span>
           </div>
-          <h1 className="text-2xl font-semibold">Serviços (catálogo da fonte) — Obra #{idObra}</h1>
+          <h1 className="text-2xl font-semibold">Serviços</h1>
           <div className="text-sm text-slate-600">Catálogo técnico de serviços da fonte de dados vinculada à planilha.</div>
           <div className="mt-1 text-sm text-slate-700">
-            {selectedVersao?.idPlanilha ? <div className="font-semibold">{`Planilha: #${selectedVersao.idPlanilha} - ${selectedVersao.nome || "—"}`}</div> : null}
+            {(() => {
+              const destaque = versoes.find((v) => Number(v.idPlanilha) === 4) || selectedVersao;
+              if (!destaque?.idPlanilha) return null;
+              return <div className="font-semibold">{`Planilha: #${destaque.idPlanilha} - ${destaque.nome || "—"}`}</div>;
+            })()}
             {selectedVersao?.idParametros ? <div>{`Parâmetros: #${selectedVersao.idParametros} - ${selectedVersao.parametrosNome || "—"}`}</div> : null}
             {selectedVersao?.idFonteDados ? <div>{`Fonte de dados: #${selectedVersao.idFonteDados} - ${selectedVersao.fonteNome || "—"}`}</div> : null}
           </div>

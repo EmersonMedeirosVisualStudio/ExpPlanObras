@@ -202,6 +202,13 @@ async function readTextSmart(file: File) {
   const [navPlanilhaServicos, setNavPlanilhaServicos] = useState<Array<{ item: string; codigo: string; servicos: string }>>([]);
   const [navIdx, setNavIdx] = useState<number>(-1);
   const [planilhaParams, setPlanilhaParams] = useState<PlanilhaParams | null>(null);
+  const [obraNome, setObraNome] = useState<string>("");
+  const [planilhaCtx, setPlanilhaCtx] = useState<{
+    idFonteDados: number | null;
+    fonteNome: string;
+    idParametros: number | null;
+    parametrosNome: string;
+  } | null>(null);
   const [planilhaInfo, setPlanilhaInfo] = useState<{
     idPlanilha: number;
     numeroVersao: number;
@@ -679,14 +686,26 @@ async function readTextSmart(file: File) {
     try {
       setPrevistoServicoMeta(null);
       setPrevistoAlert(null);
-      const resV = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes`);
+      const resV = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes-info`);
       const jsonV = await resV.json().catch(() => null);
       if (!resV.ok || !jsonV?.success) throw new Error(jsonV?.message || "Erro ao carregar versões");
+      const obra = jsonV?.data?.obra || null;
+      setObraNome(String(obra?.nome || obra?.name || "").trim());
       const versoes = Array.isArray(jsonV.data?.versoes) ? jsonV.data.versoes : [];
       const byQuery = planilhaId != null ? versoes.find((v: any) => Number(v?.idPlanilha || 0) === Number(planilhaId)) : null;
       const atual = versoes.find((v: any) => Boolean(v.atual)) || versoes[0] || null;
       const pick = byQuery || atual || null;
       const pid = pick?.idPlanilha != null ? Number(pick.idPlanilha) : 0;
+      setPlanilhaCtx(
+        pick
+          ? {
+              idFonteDados: pick.idFonteDados == null ? null : Number(pick.idFonteDados),
+              fonteNome: String(pick.fonteNome || ""),
+              idParametros: pick.idParametros == null ? null : Number(pick.idParametros),
+              parametrosNome: String(pick.parametrosNome || ""),
+            }
+          : null
+      );
       if (!pid) {
         setPrevistoRows([]);
         return;
@@ -794,6 +813,8 @@ async function readTextSmart(file: File) {
       setPrevistoAlert(null);
       setPlanilhaParams(null);
       setPlanilhaInfo(null);
+      setObraNome("");
+      setPlanilhaCtx(null);
       setNavPlanilhaServicos([]);
       setNavIdx(-1);
     }
@@ -1444,6 +1465,26 @@ async function readTextSmart(file: File) {
     return `${Math.max(0, Math.round(Number(n) || 0))}px`;
   }
 
+  function sanitizeQtdInput(raw: string) {
+    const s = String(raw ?? "");
+    let out = "";
+    let sep: "." | "," | null = null;
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i] || "";
+      if (ch >= "0" && ch <= "9") {
+        out += ch;
+        continue;
+      }
+      if (ch === "." || ch === ",") {
+        if (sep == null) {
+          sep = ch;
+          out += ch;
+        }
+      }
+    }
+    return out;
+  }
+
   function fmtQtd(v: unknown) {
     const n = parseNumberLoose(v);
     if (n == null) return "";
@@ -1724,7 +1765,10 @@ async function readTextSmart(file: File) {
                     <input
                       className="input bg-white text-right"
                       value={r.quantidade}
-                      onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, quantidade: e.target.value } : x)))}
+                      onChange={(e) => {
+                        const next = sanitizeQtdInput(e.target.value);
+                        setItens((p) => p.map((x, i) => (i === idx ? { ...x, quantidade: next } : x)));
+                      }}
                       onBlur={() => {
                         setItens((p) => {
                           const row = p[idx];
@@ -2121,12 +2165,12 @@ async function readTextSmart(file: File) {
             </button>
             <span aria-hidden="true">→</span>
             <button
-              className="hover:underline"
+              className="hover:underline text-blue-600"
               type="button"
               onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}`)}
               title="Ir para a Obra"
             >
-              Obra
+              {`Obra #${idObra}${String(obraNome || "").trim() ? ` - ${obraNome}` : ""}`}
             </button>
             <span aria-hidden="true">→</span>
             <button
@@ -2141,12 +2185,23 @@ async function readTextSmart(file: File) {
               }}
               title="Ir para Planilha orçamentária"
             >
-              Planilha
+              Planilha orçamentária
             </button>
+            {planilhaInfo?.idPlanilha ? (
+              <>
+                <span aria-hidden="true">→</span>
+                <span className="text-blue-600">{`planilha #${planilhaInfo.idPlanilha} - ${planilhaInfo.nome || "—"}`}</span>
+              </>
+            ) : null}
             <span aria-hidden="true">→</span>
             <span>{`Análise de composição - ${analysisTitle}`}</span>
           </div>
           <h1 className="text-2xl font-semibold">Análise de composição — {analysisTitle}</h1>
+          <div className="mt-1 text-sm text-slate-700">
+            {planilhaInfo?.idPlanilha ? <div className="font-semibold">{`Planilha: #${planilhaInfo.idPlanilha} - ${planilhaInfo.nome || "—"}`}</div> : null}
+            {planilhaCtx?.idParametros ? <div>{`Parâmetros: #${planilhaCtx.idParametros} - ${planilhaCtx.parametrosNome || "—"}`}</div> : null}
+            {planilhaCtx?.idFonteDados ? <div>{`Fonte de dados: #${planilhaCtx.idFonteDados} - ${planilhaCtx.fonteNome || "—"}`}</div> : null}
+          </div>
         </div>
          <div className="flex items-center gap-2 flex-wrap">
            <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={voltar} title="Voltar para a tela anterior">

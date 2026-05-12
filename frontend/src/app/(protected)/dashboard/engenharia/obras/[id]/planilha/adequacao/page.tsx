@@ -1215,27 +1215,48 @@ export default function AdequacaoPlanilhaPage() {
 
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <div className="text-xs text-slate-500 flex flex-wrap items-center gap-1">
-            {breadcrumbButtons.map((b, idx) => (
-              <span key={b.href} className="inline-flex items-center gap-1">
-                <button
-                  className="hover:underline"
-                  type="button"
-                  onClick={() => router.push(b.href)}
-                  disabled={loading}
-                  title={b.label}
-                >
-                  {b.label}
-                </button>
-                <span className="text-slate-400">{idx < breadcrumbButtons.length - 1 ? "→" : ""}</span>
-              </span>
-            ))}
-            <span className="text-slate-400">→</span>
-            <span>Adequação entre versões</span>
+          <div className="flex flex-wrap items-center gap-1 text-xs text-slate-500">
+            <button className="hover:underline" type="button" onClick={() => router.push("/dashboard/engenharia")} title="Ir para Engenharia">
+              Engenharia
+            </button>
+            <span aria-hidden="true">→</span>
+            <button className="hover:underline" type="button" onClick={() => router.push("/dashboard/engenharia/obras")} title="Ir para Obras">
+              Obras
+            </button>
+            <span aria-hidden="true">→</span>
+            <button className="hover:underline text-blue-600" type="button" onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}`)} title="Ir para a Obra">
+              {`Obra #${idObra}${String(obraNome || "").trim() ? ` - ${obraNome}` : ""}`}
+            </button>
+            <span aria-hidden="true">→</span>
+            <button
+              className="hover:underline"
+              type="button"
+              onClick={() => {
+                const qs = new URLSearchParams();
+                const pid = selectedTarget?.idPlanilha || (planilhaIdFromQs ? Number(planilhaIdFromQs) : 0);
+                if (pid) qs.set("planilhaId", String(pid));
+                qs.set("returnTo", `${window.location.pathname}${window.location.search}`);
+                router.push(`/dashboard/engenharia/obras/${idObra}/planilha?${qs.toString()}`);
+              }}
+              title="Ir para Planilha orçamentária"
+            >
+              Planilha orçamentária
+            </button>
+            {selectedTarget?.idPlanilha ? (
+              <>
+                <span aria-hidden="true">→</span>
+                <span className="text-blue-600">{`planilha #${selectedTarget.idPlanilha} - ${selectedTarget.nome || "—"}`}</span>
+              </>
+            ) : null}
+            <span aria-hidden="true">→</span>
+            <span>Planilha de Adequação</span>
           </div>
-          <h1 className="text-2xl font-semibold">Adequação entre versões</h1>
-          <div className="text-sm text-slate-600">Consulta de diferenças entre duas versões da planilha (origem x destino).</div>
-          <div className="mt-1 text-sm text-slate-600">{bootLoading ? "Carregando página…" : bootDone ? "Página carregada" : ""}</div>
+          <h1 className="text-2xl font-semibold">Planilha de Adequação</h1>
+          <div className="mt-1 text-sm text-slate-700">
+            {selectedTarget?.idPlanilha ? <div className="font-semibold">{`Planilha: #${selectedTarget.idPlanilha} - ${selectedTarget.nome || "—"}`}</div> : null}
+            {selectedTarget?.idParametros ? <div>{`Parâmetros: #${selectedTarget.idParametros} - ${selectedTarget.parametrosNome || "—"}`}</div> : null}
+            {selectedTarget?.idFonteDados ? <div>{`Fonte de dados: #${selectedTarget.idFonteDados} - ${selectedTarget.fonteNome || "—"}`}</div> : null}
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />

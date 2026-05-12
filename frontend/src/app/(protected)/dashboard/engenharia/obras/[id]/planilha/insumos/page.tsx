@@ -5,6 +5,16 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type Row = { codigoItem: string; descricao: string; und: string; valorUnitario: number; quantidadeTotal: number };
+type VersaoInfo = {
+  idPlanilha: number;
+  numeroVersao: number;
+  nome: string;
+  atual: boolean;
+  idFonteDados: number | null;
+  idParametros: number | null;
+  fonteNome: string;
+  parametrosNome: string;
+};
 
 export default function Page() {
   const router = useRouter();
@@ -37,6 +47,9 @@ export default function Page() {
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
+  const [obraNome, setObraNome] = useState<string>("");
+  const [versoes, setVersoes] = useState<VersaoInfo[]>([]);
+  const [selectedVersao, setSelectedVersao] = useState<VersaoInfo | null>(null);
   const [edits, setEdits] = useState<Record<string, string>>({});
   const valueBeforeFocusRef = useRef<Record<string, string>>({});
 
@@ -53,6 +66,40 @@ export default function Page() {
       },
       cache: "no-store",
     });
+  }
+
+  async function carregarContextoPlanilha() {
+    if (!idObra) return;
+    try {
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes-info`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar contexto da planilha");
+      const obra = json?.data?.obra || null;
+      setObraNome(String(obra?.nome || obra?.name || "").trim());
+
+      const list = Array.isArray(json?.data?.versoes) ? json.data.versoes : [];
+      const mapped: VersaoInfo[] = list
+        .map((v: any) => ({
+          idPlanilha: Number(v?.idPlanilha || 0),
+          numeroVersao: Number(v?.numeroVersao || 0),
+          nome: String(v?.nome || ""),
+          atual: Boolean(v?.atual),
+          idFonteDados: v?.idFonteDados == null ? null : Number(v.idFonteDados),
+          idParametros: v?.idParametros == null ? null : Number(v.idParametros),
+          fonteNome: String(v?.fonteNome || ""),
+          parametrosNome: String(v?.parametrosNome || ""),
+        }))
+        .filter((v: VersaoInfo) => Number.isFinite(v.idPlanilha) && v.idPlanilha > 0);
+      setVersoes(mapped);
+
+      const pickByQuery = planilhaId != null ? mapped.find((v) => Number(v.idPlanilha) === Number(planilhaId)) ?? null : null;
+      const pickAtual = mapped.find((v) => Boolean(v.atual)) ?? mapped[0] ?? null;
+      setSelectedVersao(pickByQuery || pickAtual || null);
+    } catch (e: any) {
+      setObraNome("");
+      setVersoes([]);
+      setSelectedVersao(null);
+    }
   }
 
   async function carregar() {
@@ -135,6 +182,7 @@ export default function Page() {
     setBootDone(false);
     void (async () => {
       try {
+        await carregarContextoPlanilha();
         await carregar();
       } finally {
         if (!cancelled) {
@@ -153,9 +201,53 @@ export default function Page() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />
-          <div className="text-xs text-slate-500">Engenharia → Obras → Obra selecionada → Planilha orçamentária → Insumos</div>
-          <h1 className="text-2xl font-semibold">Insumos consolidados — Obra #{idObra}</h1>
-          <div className="text-sm text-slate-600">Cálculo baseado na planilha selecionada (versão) e nas composições importadas/cadastradas.</div>
+          <div className="flex flex-wrap items-center gap-1 text-xs text-slate-500">
+            <button className="hover:underline" type="button" onClick={() => router.push("/dashboard/engenharia")} title="Ir para Engenharia">
+              Engenharia
+            </button>
+            <span aria-hidden="true">→</span>
+            <button className="hover:underline" type="button" onClick={() => router.push("/dashboard/engenharia/obras")} title="Ir para Obras">
+              Obras
+            </button>
+            <span aria-hidden="true">→</span>
+            <button
+              className="hover:underline text-blue-600"
+              type="button"
+              onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}`)}
+              title="Ir para a Obra"
+            >
+              {`Obra #${idObra}${String(obraNome || "").trim() ? ` - ${obraNome}` : ""}`}
+            </button>
+            <span aria-hidden="true">→</span>
+            <button
+              className="hover:underline"
+              type="button"
+              onClick={() => {
+                const qs = new URLSearchParams();
+                const pid = selectedVersao?.idPlanilha || planilhaId;
+                if (pid) qs.set("planilhaId", String(pid));
+                qs.set("returnTo", selfHref);
+                router.push(`/dashboard/engenharia/obras/${idObra}/planilha?${qs.toString()}`);
+              }}
+              title="Ir para Planilha orçamentária"
+            >
+              Planilha orçamentária
+            </button>
+            {selectedVersao?.idPlanilha ? (
+              <>
+                <span aria-hidden="true">→</span>
+                <span className="text-blue-600">{`planilha #${selectedVersao.idPlanilha} - ${selectedVersao.nome || "—"}`}</span>
+              </>
+            ) : null}
+            <span aria-hidden="true">→</span>
+            <span>Insumos</span>
+          </div>
+          <h1 className="text-2xl font-semibold">Insumos</h1>
+          <div className="mt-1 text-sm text-slate-700">
+            {selectedVersao?.idPlanilha ? <div className="font-semibold">{`Planilha: #${selectedVersao.idPlanilha} - ${selectedVersao.nome || "—"}`}</div> : null}
+            {selectedVersao?.idParametros ? <div>{`Parâmetros: #${selectedVersao.idParametros} - ${selectedVersao.parametrosNome || "—"}`}</div> : null}
+            {selectedVersao?.idFonteDados ? <div>{`Fonte de dados: #${selectedVersao.idFonteDados} - ${selectedVersao.fonteNome || "—"}`}</div> : null}
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button

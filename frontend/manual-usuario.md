@@ -165,12 +165,10 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
 
 ### ETAPA 4 — O que esperar
 - O topo da tela mostra:
-  - **OBRA: id da obra - nome da obra**
-  - **CONTRATO: id do contrato - objeto do contrato**
-- A trilha (subtítulo) mostra o caminho completo até a tela (inclui o código da composição, e ao abrir Sinapi aparece “→ Sinapi”).
-- O topo da tela também mostra:
-  - **PLANILHA: id da planilha - versão da planilha**
-  - **SINAPI (planilha): data-base e UF** (usados como padrão para filtros/importação)
+  - **Planilha: #id - nome**
+  - **Parâmetros: #id - nome**
+  - **Fonte de dados: #id - nome**
+- A trilha (subtítulo) mostra o caminho completo até a tela e é clicável (Engenharia → Obras → Obra → Planilha). A **Obra selecionada** e a **planilha selecionada** ficam destacadas em **azul**.
 - Clique em **Configurar tela** para abrir o card **Configuração de tela** (fica oculto por padrão) e ajustar colunas (exibir/ocultar) e larguras (isso fica gravado).
 - Se os dados da lista “Serviços SINAPI importados” estiverem filtrados, aparece um aviso **Dados filtrados** com os filtros ativos.
 - Quando a planilha tiver **data-base SINAPI** definida, a lista “Serviços SINAPI importados” considera automaticamente essa data-base como filtro (mesmo que você não preencha o campo “Data-base”).
@@ -214,6 +212,7 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
 - Os itens ficam separados em 2 blocos: **Composições** e **Insumos**. No bloco **Insumos**, o campo **Tipo** mostra a classificação e existe um filtro rápido por tipo.
 - O botão **Composição primitiva** abre um consolidado de insumos (inclui insumos das composições auxiliares). Esse consolidado é salvo e reaproveitado para abrir mais rápido; use **Atualizar** para recalcular quando você alterar itens/quantidades.
 - No grid da composição:
+  - ao digitar em **Qtd**, o campo aceita apenas números e um único separador decimal (**.** ou **,**)
   - **Qtd** aparece com separador de milhar e **3** casas decimais
   - **Total** aparece com separador de milhar e **2** casas decimais
 

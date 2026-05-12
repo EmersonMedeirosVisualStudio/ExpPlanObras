@@ -1882,6 +1882,7 @@ ETAPA 5 — Como validar
 - Planilha (visual): a grade tem **rolagem vertical** com **cabeçalho fixo** (também na tela de **Adequação**). Linhas do tipo **Item** e **Subitem** são exibidas em negrito; o usuário pode definir **tamanho da fonte**, **fontes (dados/cabeçalho)**, **negrito do cabeçalho**, **cor de fundo** (Item/Subitem), além de **mostrar/ocultar colunas** e ajustar **larguras**. Essas preferências ficam salvas para o usuário.
 - Ordem/organização das linhas: o campo **Ordem** foi removido da edição. A visualização segue a ordem do **ITEM** (ordenação numérica/hierárquica, por exemplo: `1.2` vem antes de `1.10`).
 - Navegação ativa: quando o usuário está na tela **Planilha orçamentária**, o botão **Planilha** fica destacado no topo para indicar a tela atual.
+- Navegação (breadcrumb): nas telas de **Planilha**, **Serviços**, **Insumos**, **SINAPI**, **Adequação** e **Análise de composição**, o caminho é exibido como botões clicáveis (Engenharia → Obras → Obra → Planilha). A **Obra selecionada** e a **planilha selecionada** ficam destacadas em **azul**.
 - Edição de serviço (regra de preço):
   - ao selecionar **Tipo = Serviço**, os campos **Código**, **Serviços** e **Fonte** viram campos de **seleção com busca** (clicar mostra opções, digitar filtra em tempo real);
   - ao selecionar um valor (ou concluir a digitação), o sistema **preenche/filtra os demais campos** com base no catálogo de serviços da fonte (Código/Serviços/Fonte/UND);
@@ -1903,12 +1904,13 @@ ETAPA 5 — Como validar
 - Análise de composição (editar itens):
   - em **Composições**, é permitido alterar apenas **Código** e **Qtd** (demais campos são preenchidos/calculados automaticamente);
   - em **Insumos**, é permitido alterar apenas **Código**, **Qtd** e **Valor Unit** (demais campos são preenchidos/calculados automaticamente);
-  - alterações têm efeito em cascata: recalculam composições dependentes e atualizam o valor do serviço na planilha;
+  - o campo **Qtd** aceita apenas números e um único separador decimal (**.** ou **,**); ao sair do campo, o sistema formata com **3 casas decimais** e separador de milhar;
+  - alterações têm efeito em cascata: recalculam serviços afetados (direta e indiretamente) e atualizam o valor nas planilhas vinculadas à mesma Fonte;
   - a tecla **Esc** cancela a edição e restaura o último estado salvo.
   - Indicador de carregamento: a tela exibe “Carregando página…” e “Página carregada” para deixar claro quando o carregamento inicial terminou.
 - Insumos consolidados:
   - A lista é derivada das **composições da Fonte** aplicadas aos **serviços existentes na planilha selecionada**.
-  - O preço base do insumo vem da **Fonte de dados**. Quando um preço é alterado na Fonte (via composição/importação), isso recalcula automaticamente os serviços em todas as planilhas que usam a mesma Fonte.
+  - O preço base do insumo vem da **Fonte de dados**. Quando um preço de insumo é alterado na Fonte (via composição/importação), isso recalcula automaticamente os serviços afetados em todas as planilhas que usam a mesma Fonte.
 
 #### Validação
 

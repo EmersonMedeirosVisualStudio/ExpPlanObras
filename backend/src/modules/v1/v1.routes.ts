@@ -10598,98 +10598,205 @@ export default async function v1Routes(server: FastifyInstance) {
           );
         }
 
-        await tx.$executeRawUnsafe(
-          `
-          WITH base AS (
-            SELECT
-              COUNT(ci.id_composicao_item) AS qtd,
-              COALESCE(SUM(
-                COALESCE(ci.quantidade,0)
-                * COALESCE(
-                  CASE
-                    WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                    ELSE inf.valor_unitario
-                  END,
-                  0
-                )
-              ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')), 0) AS total_base,
-              COALESCE(SUM(
-                COALESCE(ci.quantidade,0)
-                * COALESCE(
-                  CASE
-                    WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                    ELSE inf.valor_unitario
-                  END,
-                  0
-                )
-              ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA'), 0) AS total_mao_base
-            FROM obras_composicoes_itens_fonte ci
-            LEFT JOIN obras_servicos_fonte sf
-              ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
-              AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-            LEFT JOIN obras_insumos_fonte inf
-              ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
-              AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-            WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $2 AND ci.id_servico_pai = $3
-          ),
-          plans AS (
-            SELECT
-              v.id_planilha AS id_planilha,
-              COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
-              COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
-            FROM obras_planilhas_versoes v
-            LEFT JOIN obras_planilhas_parametros p
-              ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
-            WHERE v.tenant_id = $1 AND v.id_fonte_dados = $2
-          ),
-          calc AS (
-            SELECT
-              id_planilha,
-              CASE
-                WHEN (SELECT qtd FROM base) > 0 THEN
-                  (
-                    (
-                      ((SELECT total_base FROM base) - (SELECT total_mao_base FROM base))
-                      + (SELECT total_mao_base FROM base) * (1 + (ls / 100.0))
-                    )
-                    * (1 + (bdi / 100.0))
-                  )
-                ELSE 0
-              END AS valor_unitario
-            FROM plans
+        const changedInsumoCodes = Array.from(
+          new Set(
+            normalized
+              .filter((r) => {
+                const tipoKey = normalizeHeader(String(r.tipoItem || ''));
+                const isComp = tipoKey === 'composicao' || tipoKey === 'composicao_auxiliar';
+                const code = String(r.codigoItem || '').trim().toUpperCase();
+                return !isComp && code && r.valorUnitario != null;
+              })
+              .map((r) => String(r.codigoItem || '').trim().toUpperCase())
           )
-          UPDATE obras_planilha_itens i
-          SET
-            valor_unitario = ROUND(calc.valor_unitario::numeric, 6),
-            valor_parcial = CASE
-              WHEN i.quantidade IS NULL THEN i.valor_parcial
-              ELSE ROUND((COALESCE(i.quantidade,0) * calc.valor_unitario)::numeric, 6)
-            END,
-            atualizado_em = NOW()
-          FROM calc
-          WHERE i.tenant_id = $1
-            AND i.id_planilha = calc.id_planilha
-            AND i.tipo_linha = 'SERVICO'
-            AND i.id_servico = $3
-          `,
-          ctx.tenantId,
-          idFonteDados,
-          idServicoPai
         );
+
+        const affectedServicos = new Set<number>([idServicoPai]);
+        if (changedInsumoCodes.length) {
+          const insRows = (await tx.$queryRawUnsafe(
+            `
+            SELECT id_insumo AS "idInsumo"
+            FROM obras_insumos_fonte
+            WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = ANY($3::text[])
+            `,
+            ctx.tenantId,
+            idFonteDados,
+            changedInsumoCodes
+          )) as any[];
+          const insumoIds = (insRows || [])
+            .map((r: any) => (r?.idInsumo == null ? 0 : Number(r.idInsumo)))
+            .filter((n: number) => Number.isFinite(n) && n > 0);
+
+          if (insumoIds.length) {
+            const impacted = (await tx.$queryRawUnsafe(
+              `
+              WITH RECURSIVE impacted AS (
+                SELECT DISTINCT ci.id_servico_pai AS id_servico
+                FROM obras_composicoes_itens_fonte ci
+                WHERE ci.tenant_id = $1
+                  AND ci.id_fonte_dados = $2
+                  AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+                  AND ci.id_item = ANY($3::bigint[])
+                UNION
+                SELECT DISTINCT ci.id_servico_pai
+                FROM obras_composicoes_itens_fonte ci
+                INNER JOIN impacted i ON i.id_servico = ci.id_item
+                WHERE ci.tenant_id = $1
+                  AND ci.id_fonte_dados = $2
+                  AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+              )
+              SELECT DISTINCT id_servico AS "idServico" FROM impacted
+              `,
+              ctx.tenantId,
+              idFonteDados,
+              insumoIds
+            )) as any[];
+            for (const r of impacted || []) {
+              const n = r?.idServico == null ? 0 : Number(r.idServico);
+              if (Number.isFinite(n) && n > 0) affectedServicos.add(n);
+            }
+          }
+        }
+
+        const affectedServicosList = Array.from(affectedServicos).filter((n) => Number.isFinite(n) && n > 0);
+        if (affectedServicosList.length) {
+          await tx.$executeRawUnsafe(
+            `
+            WITH roots AS (
+              SELECT UNNEST($3::bigint[])::bigint AS id_servico
+            ),
+            walk AS (
+              SELECT
+                ci.id_servico_pai AS root_servico,
+                ci.tipo_item AS tipo_item,
+                ci.id_item AS id_item,
+                COALESCE(ci.quantidade,0)::numeric AS coef,
+                ARRAY[ci.id_servico_pai]::bigint[] AS path
+              FROM obras_composicoes_itens_fonte ci
+              WHERE ci.tenant_id = $1
+                AND ci.id_fonte_dados = $2
+                AND ci.id_servico_pai = ANY($3::bigint[])
+              UNION ALL
+              SELECT
+                w.root_servico,
+                ci.tipo_item,
+                ci.id_item,
+                (w.coef * COALESCE(ci.quantidade,0))::numeric AS coef,
+                w.path || ci.id_servico_pai
+              FROM walk w
+              INNER JOIN obras_composicoes_itens_fonte ci
+                ON ci.tenant_id = $1
+               AND ci.id_fonte_dados = $2
+               AND ci.id_servico_pai = w.id_item
+              WHERE COALESCE(w.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+                AND NOT (ci.id_servico_pai = ANY(w.path))
+            ),
+            leaf AS (
+              SELECT w.root_servico, w.tipo_item, w.id_item, w.coef
+              FROM walk w
+              WHERE COALESCE(w.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+            ),
+            agg AS (
+              SELECT
+                l.root_servico AS id_servico,
+                COUNT(*)::int AS qtd,
+                COALESCE(SUM(l.coef * COALESCE(inf.valor_unitario,0)),0) AS total_base,
+                COALESCE(SUM(l.coef * COALESCE(inf.valor_unitario,0)) FILTER (WHERE COALESCE(l.tipo_item,'') = 'MAO_DE_OBRA'),0) AS total_mao_base
+              FROM leaf l
+              LEFT JOIN obras_insumos_fonte inf
+                ON inf.tenant_id = $1 AND inf.id_fonte_dados = $2 AND inf.id_insumo = l.id_item
+              GROUP BY l.root_servico
+            ),
+            base AS (
+              SELECT
+                r.id_servico,
+                COALESCE(a.qtd,0) AS qtd,
+                COALESCE(a.total_base,0) AS total_base,
+                COALESCE(a.total_mao_base,0) AS total_mao_base
+              FROM roots r
+              LEFT JOIN agg a ON a.id_servico = r.id_servico
+            ),
+            plans AS (
+              SELECT
+                v.id_planilha AS id_planilha,
+                COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
+                COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
+              FROM obras_planilhas_versoes v
+              LEFT JOIN obras_planilhas_parametros p
+                ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
+              WHERE v.tenant_id = $1 AND v.id_fonte_dados = $2
+            ),
+            calc AS (
+              SELECT
+                pl.id_planilha,
+                b.id_servico,
+                CASE
+                  WHEN b.qtd > 0 THEN
+                    (
+                      (
+                        (b.total_base - b.total_mao_base)
+                        + b.total_mao_base * (1 + (pl.ls / 100.0))
+                      )
+                      * (1 + (pl.bdi / 100.0))
+                    )
+                  ELSE 0
+                END AS valor_unitario
+              FROM plans pl
+              CROSS JOIN base b
+            )
+            UPDATE obras_planilha_itens i
+            SET
+              valor_unitario = ROUND(calc.valor_unitario::numeric, 6),
+              valor_parcial = CASE
+                WHEN i.quantidade IS NULL THEN i.valor_parcial
+                ELSE ROUND((COALESCE(i.quantidade,0) * calc.valor_unitario)::numeric, 6)
+              END,
+              atualizado_em = NOW()
+            FROM calc
+            WHERE i.tenant_id = $1
+              AND i.id_planilha = calc.id_planilha
+              AND i.tipo_linha = 'SERVICO'
+              AND i.id_servico = calc.id_servico
+            `,
+            ctx.tenantId,
+            idFonteDados,
+            affectedServicosList
+          );
+        }
 
         const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
         const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
         if (hasPrimitivaTable) {
-          await tx.$executeRawUnsafe(
+          const svcRows = (await tx.$queryRawUnsafe(
             `
-            DELETE FROM obras_planilhas_composicoes_primitivas
-            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
+            SELECT UPPER(COALESCE(codigo,'')) AS "codigo"
+            FROM obras_servicos_fonte
+            WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico = ANY($3::bigint[])
             `,
             ctx.tenantId,
-            idObra,
-            idPlanilha,
-            codigoServico
-          );
+            idFonteDados,
+            affectedServicosList.length ? affectedServicosList : [idServicoPai]
+          )) as any[];
+          const codes = (svcRows || [])
+            .map((r: any) => String(r?.codigo || '').trim().toUpperCase())
+            .filter(Boolean);
+          if (codes.length) {
+            await tx.$executeRawUnsafe(
+              `
+              DELETE FROM obras_planilhas_composicoes_primitivas p
+              USING obras_planilhas_versoes v
+              WHERE p.tenant_id = $1
+                AND v.tenant_id = p.tenant_id
+                AND v.id_planilha = p.id_planilha
+                AND v.id_obra = p.id_obra
+                AND v.id_fonte_dados = $2
+                AND UPPER(COALESCE(p.codigo_servico,'')) = ANY($3::text[])
+              `,
+              ctx.tenantId,
+              idFonteDados,
+              codes
+            );
+          }
         }
       });
 
