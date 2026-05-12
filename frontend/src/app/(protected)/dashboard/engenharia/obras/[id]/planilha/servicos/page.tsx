@@ -7,6 +7,7 @@ import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 type ValidacaoRow = {
   item: string;
   codigoServico: string;
+  fonte: string;
   servico: string;
   totalPlanilha: number;
   totalComposicao: number;
@@ -175,6 +176,7 @@ export default function Page() {
         list.map((r) => ({
           item: String(r.item || "").trim(),
           codigoServico: String(r.codigoServico || "").trim().toUpperCase(),
+          fonte: String(r.fonte || "").trim().toUpperCase(),
           servico: String(r.servico || ""),
           totalPlanilha: Number(r.totalPlanilha || 0),
           totalComposicao: Number(r.totalComposicao || 0),
@@ -959,6 +961,7 @@ export default function Page() {
               <tr>
                 <th className="px-3 py-2">ITEM</th>
                 <th className="px-3 py-2">CÓDIGO</th>
+                <th className="px-3 py-2">FONTE</th>
                 <th className="px-3 py-2">SERVIÇO</th>
                 <th className="px-3 py-2 text-right">PLANILHA</th>
                 <th className="px-3 py-2 text-right">COMPOSIÇÃO</th>
@@ -976,6 +979,7 @@ export default function Page() {
                 >
                   <td className="px-3 py-2 font-medium">{r.item || "—"}</td>
                   <td className="px-3 py-2 font-medium">{r.codigoServico}</td>
+                  <td className="px-3 py-2">{r.fonte || "—"}</td>
                   <td className="px-3 py-2">{r.servico}</td>
                   <td className="px-3 py-2 text-right">{moeda(Number(r.totalPlanilha || 0))}</td>
                   <td className="px-3 py-2 text-right">{moeda(Number(r.totalComposicao || 0))}</td>

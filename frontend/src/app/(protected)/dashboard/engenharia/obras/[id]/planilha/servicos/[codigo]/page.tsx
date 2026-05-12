@@ -207,7 +207,7 @@ async function readTextSmart(file: File) {
    const [itens, setItens] = useState<ItemRow[]>([]);
   const itensSavedRef = useRef<ItemRow[]>([]);
   const [previstoRows, setPrevistoRows] = useState<PrevistoPlanilhaRow[]>([]);
-  const [previstoServicoMeta, setPrevistoServicoMeta] = useState<{ descricao: string; und: string } | null>(null);
+  const [previstoServicoMeta, setPrevistoServicoMeta] = useState<{ descricao: string; und: string; fonte: string } | null>(null);
   const [previstoAlert, setPrevistoAlert] = useState<string | null>(null);
   const [navPlanilhaServicos, setNavPlanilhaServicos] = useState<Array<{ item: string; codigo: string; servicos: string }>>([]);
   const [navIdx, setNavIdx] = useState<number>(-1);
@@ -462,6 +462,17 @@ async function readTextSmart(file: File) {
        setLoading(true);
        setErr(null);
       setOkMsg(null);
+      const pid = planilhaInfo?.idPlanilha || planilhaId;
+      if (!pid) throw new Error("Selecione uma planilha para salvar a composição.");
+      const qsMeta = new URLSearchParams();
+      qsMeta.set("planilhaId", String(pid));
+      const resMeta = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/meta?${qsMeta.toString()}`);
+      const jsonMeta = await resMeta.json().catch(() => null);
+      const metaDesc = resMeta.ok && jsonMeta?.success ? String(jsonMeta.data?.descricao || "").trim() : "";
+      const metaUnd = resMeta.ok && jsonMeta?.success ? String(jsonMeta.data?.und || "").trim() : "";
+      if (!metaDesc || !metaUnd) {
+        throw new Error("Para salvar a composição, o serviço deve existir no catálogo da Fonte com nome e UND (cadastre em Serviços → Novo Serviço).");
+      }
        const payload = itens
          .map((i) => ({
            etapa: i.etapa,
@@ -477,7 +488,7 @@ async function readTextSmart(file: File) {
          }))
          .filter((i) => i.codigoItem.trim() && toNum(i.quantidade) != null);
  
-      const qs = planilhaId ? `?planilhaId=${encodeURIComponent(String(planilhaId))}` : "";
+      const qs = pid ? `?planilhaId=${encodeURIComponent(String(pid))}` : "";
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-itens${qs}`, {
          method: "PUT",
          headers: { "Content-Type": "application/json" },
@@ -774,6 +785,7 @@ async function readTextSmart(file: File) {
       let usedMeta = false;
       let metaDesc = "";
       let metaUnd = "";
+      let metaFonte = "";
       if (precisaMeta) {
         try {
           const qs = new URLSearchParams();
@@ -785,10 +797,12 @@ async function readTextSmart(file: File) {
           if (resMeta.ok && jsonMeta?.success) {
             const desc = jsonMeta.data?.descricao != null ? String(jsonMeta.data.descricao || "").trim() : "";
             const und = jsonMeta.data?.und != null ? String(jsonMeta.data.und || "").trim() : "";
+            const fonte = jsonMeta.data?.fonte != null ? String(jsonMeta.data.fonte || "").trim().toUpperCase() : "";
             metaDesc = desc;
             metaUnd = und;
+            metaFonte = fonte;
             if (desc || und) {
-              setPrevistoServicoMeta({ descricao: desc, und });
+              setPrevistoServicoMeta({ descricao: desc, und, fonte });
               usedMeta = true;
               rows = rows.map((r: PrevistoPlanilhaRow) => ({
                 ...r,
@@ -800,11 +814,7 @@ async function readTextSmart(file: File) {
         } catch {}
       }
       if (!rows.length) {
-        if (metaDesc || metaUnd) {
-          setPrevistoAlert("Serviço está no catálogo da planilha, mas não está em Serviços (linhas). Para aparecer no previsto, adicione uma linha de serviço na Planilha orçamentária.");
-        } else {
-          setPrevistoAlert(`Serviço não existe na planilha: ${codigoServico}`);
-        }
+        setPrevistoAlert(null);
       } else {
         const nomeFinal = String(rows?.[0]?.servicos || "").trim();
         const undFinal = String(rows?.[0]?.und || "").trim();
@@ -1107,6 +1117,34 @@ async function readTextSmart(file: File) {
   const previstoPlanilhaTitle = useMemo(() => {
     return "Serviço";
   }, []);
+
+  const previstoFonte = useMemo(() => {
+    const raw = String(previstoRows?.[0]?.fonte || previstoServicoMeta?.fonte || "").trim().toUpperCase();
+    if (!raw) return "";
+    if (raw.includes("SINAPI")) return "SINAPI";
+    if (raw.includes("SBC")) return "SBC";
+    return raw;
+  }, [previstoRows, previstoServicoMeta]);
+
+  const previstoServicoNome = useMemo(() => {
+    const a = String(previstoServicoMeta?.descricao || "").trim();
+    if (a) return a;
+    return String(previstoRows?.[0]?.servicos || "").trim();
+  }, [previstoRows, previstoServicoMeta]);
+
+  const previstoUnd = useMemo(() => {
+    const a = String(previstoServicoMeta?.und || "").trim();
+    if (a) return a;
+    return String(previstoRows?.[0]?.und || "").trim();
+  }, [previstoRows, previstoServicoMeta]);
+
+  const totalSemBDI = useMemo(() => Number(totalComLS || 0), [totalComLS]);
+
+  const totalSemBDIComDesconto = useMemo(() => {
+    const d = Number(descontoPercent || 0);
+    if (!d || !Number.isFinite(d) || d <= 0) return null;
+    return Number((Number(totalSemBDI || 0) * (1 - d / 100)).toFixed(2));
+  }, [descontoPercent, totalSemBDI]);
 
   const previstoTotal = useMemo(() => {
     let total = 0;
@@ -2269,6 +2307,15 @@ async function readTextSmart(file: File) {
            <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60" type="button" onClick={salvar} disabled={loading} title="Salvar alterações da composição">
              Salvar
            </button>
+           <button
+             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+             type="button"
+             onClick={criarNovaComposicao}
+             disabled={loading || primitiveLoading}
+             title="Cria uma nova composição (novo código) e abre para edição. Não substitui nem apaga a atual automaticamente."
+           >
+             Nova composição
+           </button>
           <button
             className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
@@ -2860,9 +2907,6 @@ async function readTextSmart(file: File) {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="text-lg font-semibold">{previstoPlanilhaTitle}</div>
-            <div className="text-sm text-slate-600">
-              {planilhaInfo?.idPlanilha ? `Dados da planilha ativa: Planilha > #${planilhaInfo.idPlanilha} - ${planilhaInfo.nome || "—"}` : "Dados da planilha ativa"}
-            </div>
           </div>
         </div>
         {previstoAlert ? (
@@ -2870,99 +2914,30 @@ async function readTextSmart(file: File) {
         ) : null}
 
         <div className="overflow-auto">
-          <table className="min-w-[900px] w-full text-sm">
+          <table className="min-w-[1050px] w-full text-sm border border-slate-200">
             <thead className="bg-slate-50 text-center text-slate-700">
               <tr>
-                <th className="px-3 py-2" colSpan={4} />
-                <th className="px-3 py-2 font-semibold" colSpan={5}>
-                  {planilhaInfo?.idPlanilha ? `Valores da planilha ativa (#${planilhaInfo.idPlanilha} - ${planilhaInfo.nome || "—"})` : "Valores da planilha ativa"}
-                </th>
-              </tr>
-              <tr>
-                <th className="px-3 py-2">ITEM</th>
-                <th className="px-3 py-2">SERVIÇO</th>
-                <th className="px-3 py-2" />
-                <th className="px-3 py-2">UND</th>
-                <th className="px-3 py-2">QUANT.</th>
-                <th className="px-3 py-2">VALOR UNIT.</th>
-                <th className="px-3 py-2">TOTAL</th>
-                <th className="px-3 py-2">{Number(descontoPercent || 0) > 0 ? "TOTAL COM DESCONTO" : "TOTAL FINAL (LS + BDI)"}</th>
-                <th className="px-3 py-2">DIFERENÇA</th>
+                <th className="px-3 py-2 border-r border-slate-200">CÓDIGO</th>
+                <th className="px-3 py-2 border-r border-slate-200">FONTE</th>
+                <th className="px-3 py-2 border-r border-slate-200">SERVIÇO</th>
+                <th className="px-3 py-2 border-r border-slate-200">UND</th>
+                <th className="px-3 py-2 border-r border-slate-200">VALOR UNIT.</th>
+                <th className="px-3 py-2 border-r border-slate-200">TOTAL SEM BDI</th>
+                {Number(descontoPercent || 0) > 0 ? <th className="px-3 py-2">TOTAL SEM BDI COM DESCONTO</th> : <th className="px-3 py-2">—</th>}
               </tr>
             </thead>
             <tbody>
-              {previstoRows.map((r, idx) => (
-                <tr key={`${r.item}-${idx}`} className="border-t">
-                  <td className="px-3 py-2">{r.item}</td>
-                  <td className="px-3 py-2">{r.servicos}</td>
-                  <td className="px-3 py-2 text-center">
-                    {(() => {
-                      const a = String(r.servicos || "").trim();
-                      const b = String(previstoServicoMeta?.descricao || "").trim();
-                      const au = String(r.und || "").trim();
-                      const bu = String(previstoServicoMeta?.und || "").trim();
-                      const nomeOk = !a || !b ? true : a.toUpperCase() === b.toUpperCase();
-                      const undOk = !au || !bu ? true : au.toUpperCase() === bu.toUpperCase();
-                      const ok = nomeOk && undOk;
-                      const title = `Planilha: "${a || "—"}" / "${au || "—"}" • Catálogo: "${b || "—"}" / "${bu || "—"}"`;
-                      return (
-                        <span title={title}>
-                          {ok ? <CheckCircle2 className="h-4 w-4 text-green-700 inline-block" /> : <XCircle className="h-4 w-4 text-red-700 inline-block" />}
-                        </span>
-                      );
-                    })()}
-                  </td>
-                  <td className="px-3 py-2">{r.und}</td>
-                  <td className="px-3 py-2 text-right">
-                    {(() => {
-                      const n = parseNumberLoose(r.quant);
-                      return n == null ? r.quant : n.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-                    })()}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {(() => {
-                      const n = parseNumberLoose(r.valorUnitario);
-                      return n == null ? r.valorUnitario : n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                    })()}
-                  </td>
-                  <td className="px-3 py-2 text-right">{r.valorParcial ? moeda(Number(parseNumberLoose(r.valorParcial) || 0)) : ""}</td>
-                  <td className="px-3 py-2 text-right">
-                    {(() => {
-                      const q = parseNumberLoose(r.quant);
-                      if (q == null) return "";
-                      return moeda(Number((q * Number(previstoCalcUnit || 0)).toFixed(2)));
-                    })()}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {(() => {
-                      const q = parseNumberLoose(r.quant);
-                      const p = parseNumberLoose(r.valorParcial);
-                      if (q == null || p == null) return "";
-                      const calc = q * Number(previstoCalcUnit || 0);
-                      const diff = Number((p - calc).toFixed(2));
-                      const cls = Math.abs(diff) < 0.01 ? "text-slate-600" : diff > 0 ? "text-red-700" : "text-emerald-700";
-                      return <span className={cls}>{moeda(diff)}</span>;
-                    })()}
-                  </td>
-                </tr>
-              ))}
-              {previstoRows.length > 1 ? (
-                <tr className="border-t bg-slate-50">
-                  <td className="px-3 py-2 font-semibold" colSpan={6}>
-                    Totais
-                  </td>
-                  <td className="px-3 py-2 text-right font-semibold">{moeda(Number(previstoTotal || 0))}</td>
-                  <td className="px-3 py-2 text-right font-semibold">{moeda(Number(previstoCalcTotal || 0))}</td>
-                  <td className="px-3 py-2 text-right font-semibold">{moeda(Number((Number(previstoTotal || 0) - Number(previstoCalcTotal || 0)).toFixed(2)))}</td>
-                </tr>
-              ) : null}
-              {!previstoRows.length ? (
-                <tr>
-                  <td colSpan={9} className="px-3 py-6 text-center text-slate-500">
-                    Serviço não encontrado na planilha atual.
-                  </td>
-                </tr>
-              ) : null}
+              <tr className="border-t">
+                <td className="px-3 py-2 border-r border-slate-200 text-center font-semibold">{codigoServico || "—"}</td>
+                <td className="px-3 py-2 border-r border-slate-200 text-center">{previstoFonte || "—"}</td>
+                <td className="px-3 py-2 border-r border-slate-200">{previstoServicoNome || "—"}</td>
+                <td className="px-3 py-2 border-r border-slate-200 text-center">{previstoUnd || "—"}</td>
+                <td className="px-3 py-2 border-r border-slate-200 text-right">{moeda(Number(totalComLSComBDI || 0))}</td>
+                <td className="px-3 py-2 border-r border-slate-200 text-right">{moeda(Number(totalSemBDI || 0))}</td>
+                <td className="px-3 py-2 text-right">
+                  {Number(descontoPercent || 0) > 0 ? moeda(Number(totalSemBDIComDesconto || 0)) : "—"}
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -2991,15 +2966,6 @@ async function readTextSmart(file: File) {
                   title="Importar do SINAPI"
                 >
                   Importar do SINAPI
-                </button>
-                <button
-                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-                  type="button"
-                  onClick={criarNovaComposicao}
-                  disabled={loading || primitiveLoading}
-                  title="Criar uma nova composição da planilha"
-                >
-                  Nova composição
                 </button>
                 <button
                   className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"

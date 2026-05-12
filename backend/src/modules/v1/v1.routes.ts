@@ -9127,6 +9127,7 @@ export default async function v1Routes(server: FastifyInstance) {
         SELECT
           sf.id_servico AS id_servico,
           UPPER(COALESCE(sf.codigo,'')) AS codigo_servico,
+          COALESCE(sf.banco,'') AS fonte,
           COALESCE(sf.descricao, '') AS servico
         FROM obras_servicos_fonte sf
         WHERE sf.tenant_id = $1
@@ -9149,6 +9150,7 @@ export default async function v1Routes(server: FastifyInstance) {
         SELECT
           sf.id_servico AS id_servico,
           sf.codigo_servico AS codigo_servico,
+          sf.fonte AS fonte,
           sf.servico AS servico,
           COALESCE(ps.item,'') AS item,
           COALESCE(ps.total_planilha, 0) AS total_planilha
@@ -9194,6 +9196,7 @@ export default async function v1Routes(server: FastifyInstance) {
       SELECT
         b.codigo_servico AS "codigoServico",
         b.item AS "item",
+        b.fonte AS "fonte",
         b.servico AS "servico",
         b.total_planilha AS "totalPlanilha",
         COALESCE(c.qtd_itens, 0) AS "qtdItens",
