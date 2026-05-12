@@ -114,7 +114,8 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 - Clique em **Confirmar importação**
 - A nova versão aparece na lista de versões e pode ser selecionada
 - Na planilha, dê **duplo clique** em um serviço para abrir **Serviços (catálogo da fonte)** já focado no código selecionado
-- Em **Serviços (catálogo da fonte)**, você também pode cadastrar pelo botão **Novo Serviço** (informando CÓDIGO/descrição/UND)
+- Em **Serviços (catálogo da fonte)**, você também pode cadastrar pelo botão **Novo Serviço** (informando CÓDIGO/Fonte/descrição/UND)
+- Você também pode cadastrar/atualizar o serviço direto na tela de **Composição** (ao salvar a composição, o serviço é atualizado no catálogo)
 
 ## 3.1.1 Nova planilha / Editar / Clonar (Fonte e Parâmetros)
 
@@ -138,7 +139,7 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 - O sistema mostra um aviso de compartilhamento:
   - Alterar Serviço/Insumo/Composição da Fonte afeta todas as planilhas que usam essa Fonte
   - Alterar um Parâmetro afeta todas as planilhas que usam esse Parâmetro (e o sistema recalcula automaticamente os valores unitários/parciais vinculados)
-- Ao editar um serviço existente na planilha, **nome** e **UND** vêm do **catálogo da Fonte** e não são alterados pela planilha.
+- Ao editar um serviço existente na planilha, **Fonte**, **nome** e **UND** vêm do **catálogo da Fonte** e não são alterados pela planilha.
 
 ### ETAPA 5 — Como validar
 - Volte em **Versões cadastradas** e confirme que as colunas **Fonte** e **Parâmetros** aparecem preenchidas na versão criada/editada

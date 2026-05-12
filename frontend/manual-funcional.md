@@ -1749,11 +1749,13 @@ ETAPA 5 — Como validar
   - 2) Parâmetros: ao criar/clonar uma planilha, define-se o conjunto de **parâmetros** (UF, data-base, BDI, encargos e descontos). Eles determinam como os custos são calculados na planilha.
   - 3) Serviços (FONTE) — catálogo técnico: é a **união de todos os serviços usados** nas planilhas que apontam para esta Fonte. Ele é alimentado automaticamente quando:
     - você cria um serviço na Planilha (Adicionar linha) com um CÓDIGO novo; ou
+    - você cria/edita na Composição e salva (atualiza também o catálogo); ou
     - você importa serviços (CSV / outra planilha).
     Para criar um serviço novo no catálogo da Fonte:
       1 - Crie o serviço na Planilha (Adicionar linha);
-      2 - Ou através do botão Novo Serviço.
-    Informando o CÓDIGO/descrição/UND.
+      2 - Ou através do botão Novo Serviço;
+      3 - Crie o serviço direto na composição.
+    Informando o CÓDIGO/Fonte/descrição/UND.
   - 4) Planilha (itens): o usuário decide quais serviços do catálogo viram **itens** na planilha. Todo item de serviço referencia um serviço do catálogo da fonte.
   - 5) Composições: para cada serviço do catálogo da fonte, cadastra-se/importa-se sua **composição** (itens, subcomposições e insumos), sempre vinculada ao serviço (pai).
   - 5) Insumos consolidados: a lista de insumos é derivada das composições dos serviços e precisa ser recalculada sempre que uma composição muda.
@@ -1776,10 +1778,10 @@ ETAPA 2 — O que clicar
 - No card **Adicionar serviço**, selecione **Tipo = Serviço**.
 
 ETAPA 3 — O que preencher
-- Preencha: **ITEM**, **CÓDIGO**, **SERVIÇOS** (descrição), **UND**, **QUANT.** e **VALOR UNIT.**
-- Se o código já existir no catálogo, o sistema preenche e trava **Fonte/Serviços/UND** pelo catálogo.
-- Se o código não existir, você consegue preencher e, ao salvar, ele passa a existir no catálogo.
-- Regra: ao editar uma linha de serviço existente na planilha, **não é permitido** alterar **nome** e **UND** pela planilha. Essas informações ficam no **catálogo da Fonte** (Serviços (catálogo da Fonte)).
+- Sempre preencha: **ITEM**, **CÓDIGO** e **QUANT.**
+- Os campos **Fonte**, **Serviços (descrição)**, **UND** e **VALOR UNIT.** são **virtuais** (vêm do **catálogo da Fonte**) e ficam travados quando o código já existe no catálogo.
+- Se o código ainda não existir no catálogo, você poderá preencher **Fonte/descrição/UND** uma única vez para cadastrar o serviço. Ao salvar, o serviço passa a existir no catálogo e, a partir daí, esses campos ficam travados na Planilha.
+- Regra: não é permitido alterar **Fonte**, **nome** e **UND** de um serviço já cadastrado através da Planilha. Essas informações são gravadas e mantidas em **Serviços (catálogo da Fonte)** (ou na tela de **Composição**, que atualiza o catálogo ao salvar).
 
 ETAPA 4 — O que esperar
 - Ao clicar em **Salvar**, o serviço entra na planilha e também é criado/atualizado no catálogo da Fonte.
@@ -1874,10 +1876,7 @@ ETAPA 3 — O que preencher
 ETAPA 4 — O que esperar
 - O sistema mostra a grade de conferência antes de permitir importar
 - Se nada estiver marcado, o sistema bloqueia a importação
-- Se a **Fonte da planilha origem** for diferente da **Fonte da planilha destino**, o sistema copia automaticamente para a **Fonte destino**:
-  - o serviço; e
-  - a composição do serviço (se existir na Fonte origem),
-  para que o mesmo código funcione no catálogo da Fonte destino.
+- Se a **Fonte da planilha origem** for diferente da **Fonte da planilha destino**, o sistema copia automaticamente para a **Fonte destino** o cadastro do **serviço** (catálogo), para que o mesmo código exista no catálogo da Fonte destino.
 
 ETAPA 5 — Como validar
 - Clique em **Importar**
@@ -1900,9 +1899,8 @@ ETAPA 5 — Como validar
 - Cancelamento de edição (atalho): a tecla **Esc** cancela a edição em andamento e restaura o último estado salvo.
 - Planilha (exportação): no card **Planilha orçamentária**, os botões **Imprimir**, **PDF** e **CSV** ficam no canto superior direito do card.
 - Serviços:
-  - Importação e modelo de CSV de composições ficam na própria tela **Serviços**.
   - A tela marca serviços **sem composição** e **divergentes** comparando total da planilha x total calculado por composição.
-  - Existe ação para **copiar serviço entre versões** (origem → destino), com prévia.
+  - Existe ação para **copiar serviço entre versões** (origem → destino), com prévia (não copia composição).
     - Se a **Fonte** for a mesma: copia apenas a **linha do serviço** (ITEM/QUANT.) na planilha destino, pois a composição já é compartilhada.
     - Se a **Fonte** for diferente: além da linha, copia também o **serviço e sua composição** para a **Fonte destino** (quando existir na Fonte origem).
 - Análise de composição (editar itens):

@@ -8418,7 +8418,10 @@ export default async function v1Routes(server: FastifyInstance) {
               ($1,$2,'SERVICO',$3,$4,$5,$6,$7)
             ON CONFLICT (tenant_id, id_fonte_dados, codigo)
             DO UPDATE SET
-              valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
+              banco = COALESCE(NULLIF(obras_servicos_fonte.banco,''), EXCLUDED.banco),
+              descricao = COALESCE(NULLIF(obras_servicos_fonte.descricao,''), EXCLUDED.descricao),
+              und = COALESCE(NULLIF(obras_servicos_fonte.und,''), EXCLUDED.und),
+              valor_unitario = COALESCE(obras_servicos_fonte.valor_unitario, EXCLUDED.valor_unitario),
               atualizado_em = NOW()
             RETURNING id_servico AS "idServico"
             `,
@@ -9229,6 +9232,7 @@ export default async function v1Routes(server: FastifyInstance) {
       return {
         codigoServico: String(r.codigoServico || '').trim(),
         item: String(r.item || '').trim(),
+          fonte: String(r.fonte || '').trim(),
         servico: String(r.servico || ''),
         totalPlanilha,
         totalComposicao: Number(totalComLSComBDI.toFixed(6)),
@@ -9403,7 +9407,7 @@ export default async function v1Routes(server: FastifyInstance) {
     }
 
     await prismaTx(async (tx: any) => {
-      if (idFonteDadosSrc !== idFonteDadosDst && srcHasComposicao && !existsComposicaoTarget) {
+      if (replaceComposicao && idFonteDadosSrc !== idFonteDadosDst && srcHasComposicao && !existsComposicaoTarget) {
         const visited = new Set<string>();
         const queue: string[] = [codigoServico];
         const affectedServicoIds: number[] = [];

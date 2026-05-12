@@ -89,8 +89,7 @@ export default function Page() {
     SEM_COMPOSICAO: true,
     DIVERGENTE: true,
   });
-  const [showAll, setShowAll] = useState(true);
-  const [usedOnly, setUsedOnly] = useState(true);
+  const [listMode, setListMode] = useState<"TODOS" | "PLANILHADOS" | "NAO_PLANILHADOS">("TODOS");
   const [textFilter, setTextFilter] = useState("");
   const [fonteFilter, setFonteFilter] = useState<string>("");
   const [showColsCard, setShowColsCard] = useState(false);
@@ -346,10 +345,8 @@ export default function Page() {
     ];
 
     let out = merged.filter((r) => Boolean(statusFilter[r.status]));
-    if (!showAll) {
-      if (usedOnly) out = out.filter((r) => r.kind === "REF" || Boolean(String(r.item || "").trim()));
-      else out = out.filter((r) => r.kind === "SERVICO" && !String(r.item || "").trim());
-    }
+    if (listMode === "PLANILHADOS") out = out.filter((r) => r.kind === "REF" || Boolean(String(r.item || "").trim()));
+    if (listMode === "NAO_PLANILHADOS") out = out.filter((r) => r.kind === "SERVICO" && !String(r.item || "").trim());
 
     const fonteSel = String(fonteFilter || "").trim().toUpperCase();
     if (fonteSel) {
@@ -368,7 +365,7 @@ export default function Page() {
     }
     if (focusCodigo) out = out.filter((r) => String(r.codigo || "").trim().toUpperCase() === focusCodigo);
     return out;
-  }, [rows, refs, statusFilter, focusCodigo, usedOnly, textFilter, fonteFilter, showAll]);
+  }, [rows, refs, statusFilter, focusCodigo, listMode, textFilter, fonteFilter]);
 
   const fonteOptions = useMemo(() => {
     const set = new Set<string>();
@@ -477,7 +474,7 @@ export default function Page() {
     }
     try {
       const warnings: string[] = [];
-      warnings.push("Se a Fonte do destino for diferente, a cópia também cria/atualiza o serviço e a composição na Fonte destino (impacta todas as planilhas que usam essa Fonte).");
+      warnings.push("Se a Fonte do destino for diferente, a cópia cria/atualiza o serviço na Fonte destino (impacta todas as planilhas que usam essa Fonte).");
       if (copyForm.replaceServico) warnings.push("Substituir serviço no destino irá sobrescrever ITEM/QUANT. do serviço na planilha destino (versão).");
       if (warnings.length) {
         const ok = window.confirm(`${warnings.join("\n\n")}\n\nDeseja continuar?`);
@@ -500,12 +497,12 @@ export default function Page() {
         }),
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao copiar serviço/composição");
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao copiar serviço");
       setOkMsg("Serviço copiado com sucesso.");
       setCopyPreview(null);
       await carregarTudo();
     } catch (e: any) {
-      setErr(e?.message || "Erro ao copiar serviço/composição");
+      setErr(e?.message || "Erro ao copiar serviço");
     } finally {
       setLoading(false);
     }
@@ -958,23 +955,11 @@ export default function Page() {
             <input type="checkbox" checked={statusFilter.OK} onChange={(e) => setStatusFilter((p) => ({ ...p, OK: Boolean(e.target.checked) }))} />
             <span className="text-slate-700">OK</span>
           </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={showAll}
-              onChange={(e) => {
-                const v = Boolean(e.target.checked);
-                setShowAll(v);
-                if (v) setUsedOnly(true);
-                else setUsedOnly(false);
-              }}
-            />
-            <span className="text-slate-700">Todos</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={usedOnly} onChange={(e) => setUsedOnly(Boolean(e.target.checked))} disabled={showAll} />
-            <span className="text-slate-700">Somente usados na planilha (direto ou indiretamente)</span>
-          </label>
+          <select className="input bg-white" value={listMode} onChange={(e) => setListMode(e.target.value as any)} disabled={loading} title="Exibição">
+            <option value="TODOS">Todos</option>
+            <option value="PLANILHADOS">Somente usados na planilha (direto ou indiretamente)</option>
+            <option value="NAO_PLANILHADOS">Não planilhados</option>
+          </select>
           <select className="input bg-white" value={fonteFilter} onChange={(e) => setFonteFilter(e.target.value)} disabled={loading} title="Filtrar por fonte">
             <option value="">(todas as fontes)</option>
             <option value="__SEM_FONTE__">(sem fonte)</option>
