@@ -89,8 +89,34 @@ export default function Page() {
     SEM_COMPOSICAO: true,
     DIVERGENTE: true,
   });
+  const [showAll, setShowAll] = useState(true);
   const [usedOnly, setUsedOnly] = useState(true);
   const [textFilter, setTextFilter] = useState("");
+  const [fonteFilter, setFonteFilter] = useState<string>("");
+  const [showColsCard, setShowColsCard] = useState(false);
+  const [colWidths, setColWidths] = useState<{
+    item: number;
+    codigo: number;
+    tipo: number;
+    fonte: number;
+    servico: number;
+    planilha: number;
+    composicao: number;
+    dif: number;
+    status: number;
+    acao: number;
+  }>({
+    item: 90,
+    codigo: 100,
+    tipo: 120,
+    fonte: 90,
+    servico: 520,
+    planilha: 120,
+    composicao: 130,
+    dif: 110,
+    status: 120,
+    acao: 90,
+  });
   const [refs, setRefs] = useState<RefRow[]>([]);
   const [composicoesSemServico, setComposicoesSemServico] = useState<{ total: number; codes: string[]; blankCount: number } | null>(null);
   const [copyForm, setCopyForm] = useState<{
@@ -320,7 +346,16 @@ export default function Page() {
     ];
 
     let out = merged.filter((r) => Boolean(statusFilter[r.status]));
-    if (usedOnly) out = out.filter((r) => r.kind === "REF" || Boolean(String(r.item || "").trim()));
+    if (!showAll) {
+      if (usedOnly) out = out.filter((r) => r.kind === "REF" || Boolean(String(r.item || "").trim()));
+      else out = out.filter((r) => r.kind === "SERVICO" && !String(r.item || "").trim());
+    }
+
+    const fonteSel = String(fonteFilter || "").trim().toUpperCase();
+    if (fonteSel) {
+      if (fonteSel === "__SEM_FONTE__") out = out.filter((r) => !String(r.fonte || "").trim());
+      else out = out.filter((r) => String(r.fonte || "").trim().toUpperCase() === fonteSel);
+    }
     const q = String(textFilter || "").trim().toLowerCase();
     if (q) {
       out = out.filter((r) => {
@@ -333,7 +368,16 @@ export default function Page() {
     }
     if (focusCodigo) out = out.filter((r) => String(r.codigo || "").trim().toUpperCase() === focusCodigo);
     return out;
-  }, [rows, refs, statusFilter, focusCodigo, usedOnly, textFilter]);
+  }, [rows, refs, statusFilter, focusCodigo, usedOnly, textFilter, fonteFilter, showAll]);
+
+  const fonteOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      const f = String(r.fonte || "").trim().toUpperCase();
+      if (f) set.add(f);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
 
   useEffect(() => {
     if (!bootDone || !focusCodigo) return;
@@ -883,7 +927,18 @@ export default function Page() {
               Lista serviços do catálogo da Fonte e também composições auxiliares/referenciadas (usadas indiretamente), marcando: sem composição/não definida e divergente entre total da planilha e total calculado pela composição.
             </div>
           </div>
-          <div className="text-sm text-slate-600">Planilha: {planilhaId ? `#${planilhaId}` : "—"}</div>
+          <div className="flex items-center gap-2">
+            <div className="text-sm text-slate-600">Planilha: {planilhaId ? `#${planilhaId}` : "—"}</div>
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+              type="button"
+              onClick={() => setShowColsCard((v) => !v)}
+              disabled={loading}
+              title={showColsCard ? "Ocultar configurações de colunas" : "Exibir configurações de colunas"}
+            >
+              Colunas
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -904,9 +959,31 @@ export default function Page() {
             <span className="text-slate-700">OK</span>
           </label>
           <label className="flex items-center gap-2">
-            <input type="checkbox" checked={usedOnly} onChange={(e) => setUsedOnly(Boolean(e.target.checked))} />
+            <input
+              type="checkbox"
+              checked={showAll}
+              onChange={(e) => {
+                const v = Boolean(e.target.checked);
+                setShowAll(v);
+                if (v) setUsedOnly(true);
+                else setUsedOnly(false);
+              }}
+            />
+            <span className="text-slate-700">Todos</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={usedOnly} onChange={(e) => setUsedOnly(Boolean(e.target.checked))} disabled={showAll} />
             <span className="text-slate-700">Somente usados na planilha (direto ou indiretamente)</span>
           </label>
+          <select className="input bg-white" value={fonteFilter} onChange={(e) => setFonteFilter(e.target.value)} disabled={loading} title="Filtrar por fonte">
+            <option value="">(todas as fontes)</option>
+            <option value="__SEM_FONTE__">(sem fonte)</option>
+            {fonteOptions.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
           <input
             className="input bg-white"
             value={textFilter}
@@ -931,20 +1008,93 @@ export default function Page() {
           ) : null}
         </div>
 
+        {showColsCard ? (
+          <div className="rounded-lg border bg-slate-50 p-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-sm font-semibold text-slate-800">Largura das colunas (px)</div>
+              <button className="rounded-lg border bg-white px-3 py-1.5 text-sm hover:bg-slate-50" type="button" onClick={() => setShowColsCard(false)} title="Ocultar">
+                Ocultar
+              </button>
+            </div>
+            <div className="mt-2 overflow-auto">
+              <table className="min-w-[760px] w-full text-sm">
+                <thead className="text-center text-slate-600">
+                  <tr>
+                    <th className="py-2 pr-3 text-left">Coluna</th>
+                    <th className="py-2 pr-3 text-left">Largura</th>
+                  </tr>
+                </thead>
+                <tbody className="text-slate-700">
+                  {[
+                    { key: "item", label: "ITEM" },
+                    { key: "codigo", label: "CÓDIGO" },
+                    { key: "tipo", label: "TIPO" },
+                    { key: "fonte", label: "FONTE" },
+                    { key: "servico", label: "SERVIÇO" },
+                    { key: "planilha", label: "PLANILHA" },
+                    { key: "composicao", label: "COMPOSIÇÃO" },
+                    { key: "dif", label: "DIF." },
+                    { key: "status", label: "STATUS" },
+                    { key: "acao", label: "AÇÃO" },
+                  ].map((c) => (
+                    <tr key={c.key} className="border-t">
+                      <td className="py-2 pr-3 font-medium">{c.label}</td>
+                      <td className="py-2 pr-3">
+                        <input
+                          className="input bg-white w-[120px]"
+                          type="number"
+                          min={60}
+                          max={1200}
+                          value={(colWidths as any)[c.key]}
+                          onChange={(e) => {
+                            const v = Number(e.target.value || 0);
+                            const next = Number.isFinite(v) ? Math.max(60, Math.min(1200, Math.round(v))) : 120;
+                            setColWidths((p) => ({ ...(p as any), [c.key]: next }));
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+
         <div className="overflow-auto">
           <table className="min-w-[1180px] w-full text-sm">
             <thead className="bg-slate-50 text-left text-slate-700">
               <tr>
-                <th className="px-3 py-2">ITEM</th>
-                <th className="px-3 py-2">CÓDIGO</th>
-                <th className="px-3 py-2">TIPO</th>
-                <th className="px-3 py-2">FONTE</th>
-                <th className="px-3 py-2">SERVIÇO</th>
-                <th className="px-3 py-2 text-right">PLANILHA</th>
-                <th className="px-3 py-2 text-right">COMPOSIÇÃO</th>
-                <th className="px-3 py-2 text-right">DIF.</th>
-                <th className="px-3 py-2">STATUS</th>
-                <th className="px-3 py-2">Ação</th>
+                <th className="px-3 py-2" style={{ width: `${colWidths.item}px` }}>
+                  ITEM
+                </th>
+                <th className="px-3 py-2" style={{ width: `${colWidths.codigo}px` }}>
+                  CÓDIGO
+                </th>
+                <th className="px-3 py-2" style={{ width: `${colWidths.tipo}px` }}>
+                  TIPO
+                </th>
+                <th className="px-3 py-2" style={{ width: `${colWidths.fonte}px` }}>
+                  FONTE
+                </th>
+                <th className="px-3 py-2" style={{ width: `${colWidths.servico}px` }}>
+                  SERVIÇO
+                </th>
+                <th className="px-3 py-2 text-right" style={{ width: `${colWidths.planilha}px` }}>
+                  PLANILHA
+                </th>
+                <th className="px-3 py-2 text-right" style={{ width: `${colWidths.composicao}px` }}>
+                  COMPOSIÇÃO
+                </th>
+                <th className="px-3 py-2 text-right" style={{ width: `${colWidths.dif}px` }}>
+                  DIF.
+                </th>
+                <th className="px-3 py-2" style={{ width: `${colWidths.status}px` }}>
+                  STATUS
+                </th>
+                <th className="px-3 py-2" style={{ width: `${colWidths.acao}px` }}>
+                  Ação
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -954,14 +1104,30 @@ export default function Page() {
                   id={`row-${String(r.codigo || "").trim().toUpperCase()}`}
                   className={`border-t ${focusCodigo && String(r.codigo || "").trim().toUpperCase() === focusCodigo ? "bg-amber-50" : ""}`}
                 >
-                  <td className="px-3 py-2 font-medium">{r.item || "—"}</td>
-                  <td className="px-3 py-2 font-medium">{r.codigo || "—"}</td>
-                  <td className="px-3 py-2">{r.tipo || "—"}</td>
-                  <td className="px-3 py-2">{r.fonte || "—"}</td>
-                  <td className="px-3 py-2">{r.descricao || "—"}</td>
-                  <td className="px-3 py-2 text-right">{r.totalPlanilha == null ? "—" : moeda(Number(r.totalPlanilha || 0))}</td>
-                  <td className="px-3 py-2 text-right">{r.totalComposicao == null ? "—" : moeda(Number(r.totalComposicao || 0))}</td>
-                  <td className="px-3 py-2 text-right">{r.diff == null ? "—" : moeda(Number(r.diff || 0))}</td>
+                  <td className="px-3 py-2 font-medium" style={{ width: `${colWidths.item}px` }}>
+                    {r.item || "—"}
+                  </td>
+                  <td className="px-3 py-2 font-medium" style={{ width: `${colWidths.codigo}px` }}>
+                    {r.codigo || "—"}
+                  </td>
+                  <td className="px-3 py-2" style={{ width: `${colWidths.tipo}px` }}>
+                    {r.tipo || "—"}
+                  </td>
+                  <td className="px-3 py-2" style={{ width: `${colWidths.fonte}px` }}>
+                    {r.fonte || "—"}
+                  </td>
+                  <td className="px-3 py-2" style={{ width: `${colWidths.servico}px` }}>
+                    {r.descricao || "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right" style={{ width: `${colWidths.planilha}px` }}>
+                    {r.totalPlanilha == null ? "—" : moeda(Number(r.totalPlanilha || 0))}
+                  </td>
+                  <td className="px-3 py-2 text-right" style={{ width: `${colWidths.composicao}px` }}>
+                    {r.totalComposicao == null ? "—" : moeda(Number(r.totalComposicao || 0))}
+                  </td>
+                  <td className="px-3 py-2 text-right" style={{ width: `${colWidths.dif}px` }}>
+                    {r.diff == null ? "—" : moeda(Number(r.diff || 0))}
+                  </td>
                   <td className="px-3 py-2">
                     {r.kind === "REF" ? (
                       r.definida ? (
@@ -977,7 +1143,7 @@ export default function Page() {
                       <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">Divergente</span>
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2" style={{ width: `${colWidths.acao}px` }}>
                     <button
                       className="rounded border bg-white px-3 py-1.5 text-xs hover:bg-slate-50"
                       type="button"
