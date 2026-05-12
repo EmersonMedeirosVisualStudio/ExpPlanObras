@@ -10606,8 +10606,39 @@ export default async function v1Routes(server: FastifyInstance) {
           idFonteDados,
           codigoServico
         )) as any[];
-        const idServicoPai = paiRows?.[0]?.idServico ? Number(paiRows[0].idServico) : 0;
-        if (!idServicoPai) throw new Error('Serviço não encontrado na fonte de dados');
+        let idServicoPai = paiRows?.[0]?.idServico ? Number(paiRows[0].idServico) : 0;
+
+        if (body.servico && typeof body.servico === 'object') {
+          const sDesc = String(body.servico.descricao || '').trim();
+          const sUnd = String(body.servico.und || '').trim();
+          const sBanco = String(body.servico.banco || '').trim() || null;
+          if (sDesc && sUnd) {
+            const upsertPai = (await tx.$queryRawUnsafe(
+              `
+              INSERT INTO obras_servicos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+              VALUES ($1,$2,NULL,$3,$4,$5,$6,NULL)
+              ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+              DO UPDATE SET
+                banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
+                descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
+                und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
+                atualizado_em = NOW()
+              RETURNING id_servico AS "idItem"
+              `,
+              ctx.tenantId,
+              idFonteDados,
+              codigoServico,
+              sBanco,
+              sDesc,
+              sUnd
+            )) as any[];
+            if (upsertPai?.[0]?.idItem) {
+              idServicoPai = Number(upsertPai[0].idItem);
+            }
+          }
+        }
+
+        if (!idServicoPai) throw new Error('Serviço não encontrado na fonte de dados e os dados do serviço não foram fornecidos para criação.');
 
         await tx.$executeRawUnsafe(
           `DELETE FROM obras_composicoes_itens_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3`,

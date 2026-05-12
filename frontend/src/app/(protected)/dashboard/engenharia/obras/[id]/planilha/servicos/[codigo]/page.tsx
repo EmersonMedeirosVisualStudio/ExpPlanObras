@@ -464,15 +464,17 @@ async function readTextSmart(file: File) {
       setOkMsg(null);
       const pid = planilhaInfo?.idPlanilha || planilhaId;
       if (!pid) throw new Error("Selecione uma planilha para salvar a composição.");
-      const qsMeta = new URLSearchParams();
-      qsMeta.set("planilhaId", String(pid));
-      const resMeta = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/meta?${qsMeta.toString()}`);
-      const jsonMeta = await resMeta.json().catch(() => null);
-      const metaDesc = resMeta.ok && jsonMeta?.success ? String(jsonMeta.data?.descricao || "").trim() : "";
-      const metaUnd = resMeta.ok && jsonMeta?.success ? String(jsonMeta.data?.und || "").trim() : "";
-      if (!metaDesc || !metaUnd) {
-        throw new Error("Para salvar a composição, o serviço deve existir no catálogo da Fonte com nome e UND (cadastre em Serviços → Novo Serviço).");
+
+      const servicoPayload = {
+        descricao: String(previstoServicoMeta?.descricao || "").trim(),
+        und: String(previstoServicoMeta?.und || "").trim(),
+        banco: String(previstoServicoMeta?.fonte || "").trim(),
+      };
+
+      if (!servicoPayload.descricao || !servicoPayload.und) {
+        throw new Error("Para salvar a composição, você deve preencher o Nome (Descrição) e a Unidade (UND) do serviço no painel 'Serviço'.");
       }
+
        const payload = itens
          .map((i) => ({
            etapa: i.etapa,
@@ -492,7 +494,7 @@ async function readTextSmart(file: File) {
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-itens${qs}`, {
          method: "PUT",
          headers: { "Content-Type": "application/json" },
-         body: JSON.stringify({ itens: payload }),
+         body: JSON.stringify({ itens: payload, servico: servicoPayload }),
        });
        const json = await res.json().catch(() => null);
        if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao salvar composição");
@@ -510,11 +512,22 @@ async function readTextSmart(file: File) {
        setLoading(true);
        setErr(null);
       setOkMsg(null);
+
+      const servicoPayload = {
+        descricao: String(previstoServicoMeta?.descricao || "").trim(),
+        und: String(previstoServicoMeta?.und || "").trim(),
+        banco: String(previstoServicoMeta?.fonte || "").trim(),
+      };
+
+      if (!servicoPayload.descricao || !servicoPayload.und) {
+        throw new Error("Para importar a composição, você deve preencher o Nome (Descrição) e a Unidade (UND) do serviço no painel 'Serviço'.");
+      }
+
       const qs = planilhaId ? `?planilhaId=${encodeURIComponent(String(planilhaId))}` : "";
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-itens${qs}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itens: payload }),
+        body: JSON.stringify({ itens: payload, servico: servicoPayload }),
       });
        const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao salvar composição");
@@ -1114,12 +1127,28 @@ async function readTextSmart(file: File) {
   const bancosBase = useMemo(() => ["SINAPI", "Próprio", "SBC", "SICRO3"], []);
   const bancosOptions = useMemo(() => Array.from(new Set([...bancosBase, ...bancosCustom])), [bancosBase, bancosCustom]);
 
+  function excluirBancoCustom(banco: string) {
+    setBancosCustom((prev) => prev.filter((b) => b !== banco));
+  }
+
   const previstoPlanilhaTitle = useMemo(() => {
     return "Serviço";
   }, []);
 
+  const [fonteDropdownOpen, setFonteDropdownOpen] = useState(false);
+  const fonteDropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (fonteDropdownRef.current && !fonteDropdownRef.current.contains(e.target as Node)) {
+        setFonteDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const previstoFonte = useMemo(() => {
-    const raw = String(previstoRows?.[0]?.fonte || previstoServicoMeta?.fonte || "").trim().toUpperCase();
+    const raw = String(previstoRows?.[0]?.fonte || "").trim().toUpperCase();
     if (!raw) return "";
     if (raw.includes("SINAPI")) return "SINAPI";
     if (raw.includes("SBC")) return "SBC";
@@ -1137,14 +1166,6 @@ async function readTextSmart(file: File) {
     if (a) return a;
     return String(previstoRows?.[0]?.und || "").trim();
   }, [previstoRows, previstoServicoMeta]);
-
-  const totalSemBDI = useMemo(() => Number(totalComLS || 0), [totalComLS]);
-
-  const totalSemBDIComDesconto = useMemo(() => {
-    const d = Number(descontoPercent || 0);
-    if (!d || !Number.isFinite(d) || d <= 0) return null;
-    return Number((Number(totalSemBDI || 0) * (1 - d / 100)).toFixed(2));
-  }, [descontoPercent, totalSemBDI]);
 
   const previstoTotal = useMemo(() => {
     let total = 0;
@@ -1279,6 +1300,14 @@ async function readTextSmart(file: File) {
     const total = (totalBase - totalMaoBase) + mao;
     return Number(total.toFixed(2));
   }, [totalBase, totalMaoBase, lsPercent]);
+
+  const totalSemBDI = useMemo(() => Number(totalComLS || 0), [totalComLS]);
+
+  const totalSemBDIComDesconto = useMemo(() => {
+    const d = Number(descontoPercent || 0);
+    if (!d || !Number.isFinite(d) || d <= 0) return null;
+    return Number((Number(totalSemBDI || 0) * (1 - d / 100)).toFixed(2));
+  }, [descontoPercent, totalSemBDI]);
 
   const totalComLSComBDI = useMemo(() => {
     const t = totalComLS * (1 + Number(bdiPercent || 0) / 100);
@@ -2929,9 +2958,78 @@ async function readTextSmart(file: File) {
             <tbody>
               <tr className="border-t">
                 <td className="px-3 py-2 border-r border-slate-200 text-center font-semibold">{codigoServico || "—"}</td>
-                <td className="px-3 py-2 border-r border-slate-200 text-center">{previstoFonte || "—"}</td>
-                <td className="px-3 py-2 border-r border-slate-200">{previstoServicoNome || "—"}</td>
-                <td className="px-3 py-2 border-r border-slate-200 text-center">{previstoUnd || "—"}</td>
+                <td className="px-3 py-2 border-r border-slate-200 text-center relative" ref={fonteDropdownRef}>
+                  <input
+                    className="input bg-white w-full text-center"
+                    value={previstoServicoMeta?.fonte || ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPrevistoServicoMeta((p: any) => ({ ...p, fonte: val }));
+                      setFonteDropdownOpen(true);
+                    }}
+                    onFocus={() => setFonteDropdownOpen(true)}
+                    placeholder="Selecione ou digite..."
+                  />
+                  {fonteDropdownOpen && (
+                    <div className="absolute z-10 mt-1 w-64 bg-white border rounded shadow-lg left-1/2 -translate-x-1/2 max-h-60 overflow-y-auto">
+                      {bancosOptions
+                        .filter((b) => b.toLowerCase().includes((previstoServicoMeta?.fonte || "").toLowerCase()))
+                        .map((b) => (
+                          <div key={b} className="flex items-center justify-between px-3 py-2 hover:bg-slate-50 cursor-pointer border-b last:border-0 text-sm">
+                            <span
+                              className="flex-1 text-left"
+                              onClick={() => {
+                                setPrevistoServicoMeta((p: any) => ({ ...p, fonte: b }));
+                                setFonteDropdownOpen(false);
+                              }}
+                            >
+                              {b}
+                            </span>
+                            {!bancosBase.includes(b) && (
+                              <button
+                                type="button"
+                                className="text-red-500 hover:text-red-700 ml-2"
+                                title="Excluir banco"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  excluirBancoCustom(b);
+                                }}
+                              >
+                                <XCircle className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      {previstoServicoMeta?.fonte && !bancosOptions.some(b => b.toLowerCase() === previstoServicoMeta.fonte?.toLowerCase()) && (
+                        <div
+                          className="px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 cursor-pointer text-left"
+                          onClick={() => {
+                            setBancosCustom(p => Array.from(new Set([...p, previstoServicoMeta.fonte!])));
+                            setFonteDropdownOpen(false);
+                          }}
+                        >
+                          Criar "{previstoServicoMeta.fonte}"
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </td>
+                <td className="px-3 py-2 border-r border-slate-200">
+                  <input
+                    className="input bg-white w-full"
+                    value={previstoServicoMeta?.descricao || ""}
+                    onChange={(e) => setPrevistoServicoMeta((p: any) => ({ ...p, descricao: e.target.value }))}
+                    placeholder="Nome do serviço"
+                  />
+                </td>
+                <td className="px-3 py-2 border-r border-slate-200 text-center w-24">
+                  <input
+                    className="input bg-white w-full text-center"
+                    value={previstoServicoMeta?.und || ""}
+                    onChange={(e) => setPrevistoServicoMeta((p: any) => ({ ...p, und: e.target.value }))}
+                    placeholder="UND"
+                  />
+                </td>
                 <td className="px-3 py-2 border-r border-slate-200 text-right">{moeda(Number(totalComLSComBDI || 0))}</td>
                 <td className="px-3 py-2 border-r border-slate-200 text-right">{moeda(Number(totalSemBDI || 0))}</td>
                 <td className="px-3 py-2 text-right">
