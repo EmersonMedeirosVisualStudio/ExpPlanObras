@@ -5311,6 +5311,67 @@ export default async function v1Routes(server: FastifyInstance) {
     });
   });
 
+  server.get(
+    '/engenharia/fontes-dados/:id/planilhas-afetadas',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const ctx = await requireTenantUser(request, reply);
+      if (!ctx || (ctx as any).success === false) return;
+      const { id } = request.params as any;
+      const idFonteDados = Number(id);
+      await ensurePlanilhaModeloFonteTables(prisma);
+
+      const versoes = (await prisma.$queryRawUnsafe(
+        `
+        SELECT
+          id_obra AS "idObra",
+          id_planilha AS "idPlanilha",
+          numero_versao AS "numeroVersao",
+          COALESCE(nome,'') AS "nome",
+          atual AS "atual"
+        FROM obras_planilhas_versoes
+        WHERE tenant_id = $1 AND id_fonte_dados = $2
+        ORDER BY id_obra ASC, numero_versao DESC, id_planilha DESC
+        `,
+        ctx.tenantId,
+        idFonteDados
+      )) as any[];
+
+      const obraIds = Array.from(new Set((versoes || []).map((v: any) => Number(v?.idObra || 0)).filter((n: number) => Number.isFinite(n) && n > 0)));
+      const obras = obraIds.length
+        ? await prisma.obra.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: obraIds } },
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              contrato: { select: { id: true, numeroContrato: true, status: true } },
+            },
+          })
+        : [];
+      const obraById = new Map<number, any>(obras.map((o: any) => [Number(o.id), o]));
+
+      return ok(reply, {
+        rows: (versoes || []).map((v: any) => {
+          const idObra = Number(v?.idObra || 0);
+          const obra = obraById.get(idObra) || null;
+          return {
+            idObra,
+            obraNome: obra?.name != null ? String(obra.name || '') : '',
+            obraStatus: obra?.status != null ? String(obra.status || '') : '',
+            contratoId: obra?.contrato?.id != null ? Number(obra.contrato.id) : null,
+            contratoNumero: obra?.contrato?.numeroContrato != null ? String(obra.contrato.numeroContrato || '') : null,
+            contratoStatus: obra?.contrato?.status != null ? String(obra.contrato.status || '') : null,
+            idPlanilha: Number(v?.idPlanilha || 0),
+            numeroVersao: Number(v?.numeroVersao || 0),
+            nome: String(v?.nome || ''),
+            atual: Boolean(v?.atual),
+          };
+        }),
+      });
+    }
+  );
+
   server.post('/engenharia/fontes-dados', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
@@ -5567,6 +5628,67 @@ export default async function v1Routes(server: FastifyInstance) {
       })),
     });
   });
+
+  server.get(
+    '/engenharia/planilhas/parametros/:id/planilhas-afetadas',
+    { schema: { params: z.object({ id: z.coerce.number().int().positive() }) } },
+    async (request, reply) => {
+      const ctx = await requireTenantUser(request, reply);
+      if (!ctx || (ctx as any).success === false) return;
+      const { id } = request.params as any;
+      const idParametros = Number(id);
+      await ensurePlanilhaModeloFonteTables(prisma);
+
+      const versoes = (await prisma.$queryRawUnsafe(
+        `
+        SELECT
+          id_obra AS "idObra",
+          id_planilha AS "idPlanilha",
+          numero_versao AS "numeroVersao",
+          COALESCE(nome,'') AS "nome",
+          atual AS "atual"
+        FROM obras_planilhas_versoes
+        WHERE tenant_id = $1 AND id_parametros = $2
+        ORDER BY id_obra ASC, numero_versao DESC, id_planilha DESC
+        `,
+        ctx.tenantId,
+        idParametros
+      )) as any[];
+
+      const obraIds = Array.from(new Set((versoes || []).map((v: any) => Number(v?.idObra || 0)).filter((n: number) => Number.isFinite(n) && n > 0)));
+      const obras = obraIds.length
+        ? await prisma.obra.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: obraIds } },
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              contrato: { select: { id: true, numeroContrato: true, status: true } },
+            },
+          })
+        : [];
+      const obraById = new Map<number, any>(obras.map((o: any) => [Number(o.id), o]));
+
+      return ok(reply, {
+        rows: (versoes || []).map((v: any) => {
+          const idObra = Number(v?.idObra || 0);
+          const obra = obraById.get(idObra) || null;
+          return {
+            idObra,
+            obraNome: obra?.name != null ? String(obra.name || '') : '',
+            obraStatus: obra?.status != null ? String(obra.status || '') : '',
+            contratoId: obra?.contrato?.id != null ? Number(obra.contrato.id) : null,
+            contratoNumero: obra?.contrato?.numeroContrato != null ? String(obra.contrato.numeroContrato || '') : null,
+            contratoStatus: obra?.contrato?.status != null ? String(obra.contrato.status || '') : null,
+            idPlanilha: Number(v?.idPlanilha || 0),
+            numeroVersao: Number(v?.numeroVersao || 0),
+            nome: String(v?.nome || ''),
+            atual: Boolean(v?.atual),
+          };
+        }),
+      });
+    }
+  );
 
   server.post('/engenharia/planilhas/parametros', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);

@@ -455,11 +455,7 @@ export default function Page() {
           <h1 className="text-2xl font-semibold">Serviços</h1>
           <div className="text-sm text-slate-600">Catálogo técnico de serviços da fonte de dados vinculada à planilha.</div>
           <div className="mt-1 text-sm text-slate-700">
-            {(() => {
-              const destaque = versoes.find((v) => Number(v.idPlanilha) === 4) || selectedVersao;
-              if (!destaque?.idPlanilha) return null;
-              return <div className="font-semibold">{`Planilha: #${destaque.idPlanilha} - ${destaque.nome || "—"}`}</div>;
-            })()}
+            {selectedVersao?.idPlanilha ? <div className="font-semibold">{`Planilha: #${selectedVersao.idPlanilha} - ${selectedVersao.nome || "—"}`}</div> : null}
             {selectedVersao?.idParametros ? <div>{`Parâmetros: #${selectedVersao.idParametros} - ${selectedVersao.parametrosNome || "—"}`}</div> : null}
             {selectedVersao?.idFonteDados ? <div>{`Fonte de dados: #${selectedVersao.idFonteDados} - ${selectedVersao.fonteNome || "—"}`}</div> : null}
           </div>

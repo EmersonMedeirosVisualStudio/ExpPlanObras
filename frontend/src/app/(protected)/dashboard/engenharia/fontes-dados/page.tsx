@@ -12,6 +12,19 @@ type FonteDadosDTO = {
   tipoPreco: string;
 };
 
+type PlanilhaAfetadaRow = {
+  idObra: number;
+  obraNome: string;
+  obraStatus: string;
+  contratoId: number | null;
+  contratoNumero: string | null;
+  contratoStatus: string | null;
+  idPlanilha: number;
+  numeroVersao: number;
+  nome: string;
+  atual: boolean;
+};
+
 export default function FontesDadosPage() {
   const router = useRouter();
   const search = useSearchParams();
@@ -27,6 +40,9 @@ export default function FontesDadosPage() {
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const [fontes, setFontes] = useState<FonteDadosDTO[]>([]);
+  const [afetadasLoading, setAfetadasLoading] = useState(false);
+  const [afetadasErr, setAfetadasErr] = useState<string | null>(null);
+  const [afetadasRows, setAfetadasRows] = useState<PlanilhaAfetadaRow[]>([]);
   const [form, setForm] = useState<{
     idFonteDados: number | null;
     nome: string;
@@ -141,9 +157,49 @@ export default function FontesDadosPage() {
     }
   }
 
+  async function carregarAfetadas(idFonteDados: number) {
+    try {
+      setAfetadasLoading(true);
+      setAfetadasErr(null);
+      const res = await authFetch(`/api/v1/engenharia/fontes-dados/${idFonteDados}/planilhas-afetadas`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar planilhas afetadas");
+      const rows = Array.isArray(json.data?.rows) ? json.data.rows : [];
+      setAfetadasRows(
+        rows.map((r: any) => ({
+          idObra: Number(r.idObra || 0),
+          obraNome: String(r.obraNome || ""),
+          obraStatus: String(r.obraStatus || ""),
+          contratoId: r.contratoId == null ? null : Number(r.contratoId),
+          contratoNumero: r.contratoNumero == null ? null : String(r.contratoNumero || ""),
+          contratoStatus: r.contratoStatus == null ? null : String(r.contratoStatus || ""),
+          idPlanilha: Number(r.idPlanilha || 0),
+          numeroVersao: Number(r.numeroVersao || 0),
+          nome: String(r.nome || ""),
+          atual: Boolean(r.atual),
+        }))
+      );
+    } catch (e: any) {
+      setAfetadasErr(e?.message || "Erro ao carregar planilhas afetadas");
+      setAfetadasRows([]);
+    } finally {
+      setAfetadasLoading(false);
+    }
+  }
+
   useEffect(() => {
     void carregar();
   }, []);
+
+  useEffect(() => {
+    const idFonteDados = form.idFonteDados != null ? Number(form.idFonteDados) : 0;
+    if (!idFonteDados) {
+      setAfetadasErr(null);
+      setAfetadasRows([]);
+      return;
+    }
+    void carregarAfetadas(idFonteDados);
+  }, [form.idFonteDados]);
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-7xl text-slate-900">
@@ -154,6 +210,29 @@ export default function FontesDadosPage() {
           <div className="text-sm text-slate-600">Cadastro compartilhado. Alterações podem impactar várias planilhas.</div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => {
+              const qs = new URLSearchParams();
+              if (safeReturnTo) qs.set("returnTo", safeReturnTo);
+              const tail = qs.toString();
+              router.push(`/dashboard/engenharia/planilhas/parametros${tail ? `?${tail}` : ""}`);
+            }}
+            disabled={loading}
+            title="Abrir Parâmetros"
+          >
+            Parâmetros
+          </button>
+          <button
+            className="rounded-lg border bg-blue-600 px-4 py-2 text-sm text-white border-blue-600 hover:bg-blue-500 disabled:opacity-60"
+            type="button"
+            onClick={() => router.push(`/dashboard/engenharia/fontes-dados${safeReturnTo ? `?returnTo=${encodeURIComponent(safeReturnTo)}` : ""}`)}
+            disabled={loading}
+            title="Você está em Fontes de Dados"
+          >
+            Fonte de Dados
+          </button>
           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregar} disabled={loading}>
             Atualizar
           </button>
@@ -275,7 +354,7 @@ export default function FontesDadosPage() {
               onClick={() => setForm({ idFonteDados: null, nome: "", tipo: "SINAPI", uf: "", dataBase: "", tipoPreco: "" })}
               disabled={loading}
             >
-              Limpar
+              {form.idFonteDados ? "Cancelar" : "Limpar"}
             </button>
             <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60" type="button" onClick={salvar} disabled={loading}>
               Salvar
@@ -283,6 +362,60 @@ export default function FontesDadosPage() {
           </div>
         </section>
       </div>
+
+      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+        <div className="flex items-start justify-between gap-2 flex-wrap">
+          <div>
+            <div className="text-lg font-semibold">Planilhas afetadas</div>
+            <div className="text-sm text-slate-600">Mostra as planilhas que usam esta Fonte (por id).</div>
+          </div>
+          <div className="text-sm text-slate-600">
+            {afetadasLoading ? "Carregando…" : form.idFonteDados ? `${afetadasRows.length} planilha(s)` : "Selecione uma fonte para ver"}
+          </div>
+        </div>
+
+        {afetadasErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{afetadasErr}</div> : null}
+
+        {form.idFonteDados ? (
+          <div className="overflow-auto rounded-lg border">
+            <table className="min-w-[980px] w-full text-sm">
+              <thead className="bg-slate-50 text-left text-slate-700">
+                <tr>
+                  <th className="px-3 py-2">OBRA</th>
+                  <th className="px-3 py-2">STATUS (OBRA)</th>
+                  <th className="px-3 py-2">CONTRATO</th>
+                  <th className="px-3 py-2">STATUS (CONTRATO)</th>
+                  <th className="px-3 py-2">PLANILHA</th>
+                  <th className="px-3 py-2">VERSÃO</th>
+                  <th className="px-3 py-2">ATUAL</th>
+                </tr>
+              </thead>
+              <tbody>
+                {afetadasRows.map((r) => (
+                  <tr key={`${r.idPlanilha}-${r.idObra}`} className="border-t">
+                    <td className="px-3 py-2">{`Obra #${r.idObra} - ${r.obraNome || "—"}`}</td>
+                    <td className="px-3 py-2">{r.obraStatus || "—"}</td>
+                    <td className="px-3 py-2">{r.contratoId ? `#${r.contratoId} - ${r.contratoNumero || "—"}` : r.contratoNumero ? r.contratoNumero : "—"}</td>
+                    <td className="px-3 py-2">{r.contratoStatus || "—"}</td>
+                    <td className="px-3 py-2">{`Planilha #${r.idPlanilha} - ${r.nome || "—"}`}</td>
+                    <td className="px-3 py-2">{r.numeroVersao ? `v${r.numeroVersao}` : "—"}</td>
+                    <td className="px-3 py-2">{r.atual ? "Sim" : "Não"}</td>
+                  </tr>
+                ))}
+                {!afetadasRows.length && !afetadasLoading ? (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
+                      Nenhuma planilha encontrada usando esta Fonte.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">Selecione uma fonte (Editar) para listar as planilhas afetadas.</div>
+        )}
+      </section>
     </div>
   );
 }

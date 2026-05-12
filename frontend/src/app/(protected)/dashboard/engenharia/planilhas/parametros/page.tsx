@@ -19,6 +19,19 @@ type ParametroDTO = {
   descontoSinapi: number | null;
 };
 
+type PlanilhaAfetadaRow = {
+  idObra: number;
+  obraNome: string;
+  obraStatus: string;
+  contratoId: number | null;
+  contratoNumero: string | null;
+  contratoStatus: string | null;
+  idPlanilha: number;
+  numeroVersao: number;
+  nome: string;
+  atual: boolean;
+};
+
 export default function ParametrosPage() {
   const router = useRouter();
   const search = useSearchParams();
@@ -34,6 +47,9 @@ export default function ParametrosPage() {
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const [parametros, setParametros] = useState<ParametroDTO[]>([]);
+  const [afetadasLoading, setAfetadasLoading] = useState(false);
+  const [afetadasErr, setAfetadasErr] = useState<string | null>(null);
+  const [afetadasRows, setAfetadasRows] = useState<PlanilhaAfetadaRow[]>([]);
   const [form, setForm] = useState<{
     idParametros: number | null;
     nome: string;
@@ -210,9 +226,49 @@ export default function ParametrosPage() {
     }
   }
 
+  async function carregarAfetadas(idParametros: number) {
+    try {
+      setAfetadasLoading(true);
+      setAfetadasErr(null);
+      const res = await authFetch(`/api/v1/engenharia/planilhas/parametros/${idParametros}/planilhas-afetadas`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar planilhas afetadas");
+      const rows = Array.isArray(json.data?.rows) ? json.data.rows : [];
+      setAfetadasRows(
+        rows.map((r: any) => ({
+          idObra: Number(r.idObra || 0),
+          obraNome: String(r.obraNome || ""),
+          obraStatus: String(r.obraStatus || ""),
+          contratoId: r.contratoId == null ? null : Number(r.contratoId),
+          contratoNumero: r.contratoNumero == null ? null : String(r.contratoNumero || ""),
+          contratoStatus: r.contratoStatus == null ? null : String(r.contratoStatus || ""),
+          idPlanilha: Number(r.idPlanilha || 0),
+          numeroVersao: Number(r.numeroVersao || 0),
+          nome: String(r.nome || ""),
+          atual: Boolean(r.atual),
+        }))
+      );
+    } catch (e: any) {
+      setAfetadasErr(e?.message || "Erro ao carregar planilhas afetadas");
+      setAfetadasRows([]);
+    } finally {
+      setAfetadasLoading(false);
+    }
+  }
+
   useEffect(() => {
     void carregar();
   }, []);
+
+  useEffect(() => {
+    const idParametros = form.idParametros != null ? Number(form.idParametros) : 0;
+    if (!idParametros) {
+      setAfetadasErr(null);
+      setAfetadasRows([]);
+      return;
+    }
+    void carregarAfetadas(idParametros);
+  }, [form.idParametros]);
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-7xl text-slate-900">
@@ -223,6 +279,29 @@ export default function ParametrosPage() {
           <div className="text-sm text-slate-600">Cadastro compartilhado. Alterações podem impactar várias planilhas.</div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            className="rounded-lg border bg-blue-600 px-4 py-2 text-sm text-white border-blue-600 hover:bg-blue-500 disabled:opacity-60"
+            type="button"
+            onClick={() => router.push(`/dashboard/engenharia/planilhas/parametros${safeReturnTo ? `?returnTo=${encodeURIComponent(safeReturnTo)}` : ""}`)}
+            disabled={loading}
+            title="Você está em Parâmetros"
+          >
+            Parâmetros
+          </button>
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => {
+              const qs = new URLSearchParams();
+              if (safeReturnTo) qs.set("returnTo", safeReturnTo);
+              const tail = qs.toString();
+              router.push(`/dashboard/engenharia/fontes-dados${tail ? `?${tail}` : ""}`);
+            }}
+            disabled={loading}
+            title="Abrir Fontes de Dados"
+          >
+            Fonte de Dados
+          </button>
           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregar} disabled={loading}>
             Atualizar
           </button>
@@ -389,7 +468,7 @@ export default function ParametrosPage() {
               }
               disabled={loading}
             >
-              Limpar
+              {form.idParametros ? "Cancelar" : "Limpar"}
             </button>
             <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60" type="button" onClick={salvar} disabled={loading}>
               Salvar
@@ -397,6 +476,60 @@ export default function ParametrosPage() {
           </div>
         </section>
       </div>
+
+      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+        <div className="flex items-start justify-between gap-2 flex-wrap">
+          <div>
+            <div className="text-lg font-semibold">Planilhas afetadas</div>
+            <div className="text-sm text-slate-600">Mostra as planilhas que usam este Parâmetro (por id).</div>
+          </div>
+          <div className="text-sm text-slate-600">
+            {afetadasLoading ? "Carregando…" : form.idParametros ? `${afetadasRows.length} planilha(s)` : "Selecione um parâmetro para ver"}
+          </div>
+        </div>
+
+        {afetadasErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{afetadasErr}</div> : null}
+
+        {form.idParametros ? (
+          <div className="overflow-auto rounded-lg border">
+            <table className="min-w-[980px] w-full text-sm">
+              <thead className="bg-slate-50 text-left text-slate-700">
+                <tr>
+                  <th className="px-3 py-2">OBRA</th>
+                  <th className="px-3 py-2">STATUS (OBRA)</th>
+                  <th className="px-3 py-2">CONTRATO</th>
+                  <th className="px-3 py-2">STATUS (CONTRATO)</th>
+                  <th className="px-3 py-2">PLANILHA</th>
+                  <th className="px-3 py-2">VERSÃO</th>
+                  <th className="px-3 py-2">ATUAL</th>
+                </tr>
+              </thead>
+              <tbody>
+                {afetadasRows.map((r) => (
+                  <tr key={`${r.idPlanilha}-${r.idObra}`} className="border-t">
+                    <td className="px-3 py-2">{`Obra #${r.idObra} - ${r.obraNome || "—"}`}</td>
+                    <td className="px-3 py-2">{r.obraStatus || "—"}</td>
+                    <td className="px-3 py-2">{r.contratoId ? `#${r.contratoId} - ${r.contratoNumero || "—"}` : r.contratoNumero ? r.contratoNumero : "—"}</td>
+                    <td className="px-3 py-2">{r.contratoStatus || "—"}</td>
+                    <td className="px-3 py-2">{`Planilha #${r.idPlanilha} - ${r.nome || "—"}`}</td>
+                    <td className="px-3 py-2">{r.numeroVersao ? `v${r.numeroVersao}` : "—"}</td>
+                    <td className="px-3 py-2">{r.atual ? "Sim" : "Não"}</td>
+                  </tr>
+                ))}
+                {!afetadasRows.length && !afetadasLoading ? (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
+                      Nenhuma planilha encontrada usando este Parâmetro.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">Selecione um parâmetro (Editar) para listar as planilhas afetadas.</div>
+        )}
+      </section>
     </div>
   );
 }
