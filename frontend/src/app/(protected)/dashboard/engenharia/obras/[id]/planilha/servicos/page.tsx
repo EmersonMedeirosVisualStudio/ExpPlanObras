@@ -17,6 +17,19 @@ type ValidacaoRow = {
 };
 
 type RefRow = { codigo: string; tipo: string; definida: boolean };
+type CatalogListRow = {
+  kind: "SERVICO" | "REF";
+  item: string;
+  codigo: string;
+  tipo: string;
+  fonte: string;
+  descricao: string;
+  totalPlanilha: number | null;
+  totalComposicao: number | null;
+  diff: number | null;
+  status: "SEM_COMPOSICAO" | "DIVERGENTE" | "OK";
+  definida: boolean | null;
+};
 type VersaoRow = {
   idPlanilha: number;
   numeroVersao: number;
@@ -80,7 +93,6 @@ export default function Page() {
   const [textFilter, setTextFilter] = useState("");
   const [refs, setRefs] = useState<RefRow[]>([]);
   const [composicoesSemServico, setComposicoesSemServico] = useState<{ total: number; codes: string[]; blankCount: number } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [copyForm, setCopyForm] = useState<{
     sourcePlanilhaId: number | null;
     targetPlanilhaId: number | null;
@@ -194,7 +206,8 @@ export default function Page() {
   async function carregarReferencias() {
     try {
       const qs = new URLSearchParams();
-      if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
+      const effectivePid = planilhaIdFromQuery ?? planilhaId ?? null;
+      if (effectivePid) qs.set("planilhaId", String(effectivePid));
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/referencias?${qs.toString()}`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar referências");
@@ -277,23 +290,54 @@ export default function Page() {
   }, [idObra]);
 
   const filteredRows = useMemo(() => {
-    let out = rows.filter((r) => Boolean(statusFilter[r.status]));
-    if (usedOnly) out = out.filter((r) => Boolean(String(r.item || "").trim()));
+    const merged: CatalogListRow[] = [
+      ...rows.map((r) => ({
+        kind: "SERVICO" as const,
+        item: String(r.item || "").trim(),
+        codigo: String(r.codigoServico || "").trim().toUpperCase(),
+        tipo: "Serviço",
+        fonte: String(r.fonte || "").trim().toUpperCase(),
+        descricao: String(r.servico || ""),
+        totalPlanilha: Number(r.totalPlanilha || 0),
+        totalComposicao: Number(r.totalComposicao || 0),
+        diff: Number(r.diff || 0),
+        status: r.status,
+        definida: null,
+      })),
+      ...refs.map((r) => ({
+        kind: "REF" as const,
+        item: "",
+        codigo: String(r.codigo || "").trim().toUpperCase(),
+        tipo: String(r.tipo || ""),
+        fonte: "",
+        descricao: "",
+        totalPlanilha: null,
+        totalComposicao: null,
+        diff: null,
+        status: r.definida ? ("OK" as const) : ("SEM_COMPOSICAO" as const),
+        definida: Boolean(r.definida),
+      })),
+    ];
+
+    let out = merged.filter((r) => Boolean(statusFilter[r.status]));
+    if (usedOnly) out = out.filter((r) => r.kind === "REF" || Boolean(String(r.item || "").trim()));
     const q = String(textFilter || "").trim().toLowerCase();
     if (q) {
       out = out.filter((r) => {
-        const code = String(r.codigoServico || "").trim().toLowerCase();
-        const desc = String(r.servico || "").trim().toLowerCase();
-        return code.includes(q) || desc.includes(q);
+        const code = String(r.codigo || "").trim().toLowerCase();
+        const fonte = String(r.fonte || "").trim().toLowerCase();
+        const desc = String(r.descricao || "").trim().toLowerCase();
+        const tipo = String(r.tipo || "").trim().toLowerCase();
+        return code.includes(q) || fonte.includes(q) || desc.includes(q) || tipo.includes(q);
       });
     }
-    if (focusCodigo) out = out.filter((r) => String(r.codigoServico || "").trim().toUpperCase() === focusCodigo);
+    if (focusCodigo) out = out.filter((r) => String(r.codigo || "").trim().toUpperCase() === focusCodigo);
     return out;
-  }, [rows, statusFilter, focusCodigo, usedOnly, textFilter]);
+  }, [rows, refs, statusFilter, focusCodigo, usedOnly, textFilter]);
 
   useEffect(() => {
     if (!bootDone || !focusCodigo) return;
-    const id = `svc-${focusCodigo}`;
+    const id = `row-${focusCodigo}`;
     const t = setTimeout(() => {
       try {
         const el = document.getElementById(id);
@@ -302,47 +346,6 @@ export default function Page() {
     }, 0);
     return () => clearTimeout(t);
   }, [bootDone, focusCodigo, filteredRows.length]);
-
-  function baixarModeloComposicoesCsv() {
-    const sep = "\t";
-    const lines = [
-      ["Serviço", "tipo", "codigo", "banco", "descricao", "und", "quantidade", "Valor Unit"].join(sep),
-      ["SER-0001", "Insumo", "INS-0001", "SINAPI", "Cimento CP-II", "kg", "100", "10,50"].join(sep),
-      ["SER-0001", "Composição Auxiliar", "AUX-0001", "SBC", "Argamassa (auxiliar)", "m³", "0,20", "350,00"].join(sep),
-      ["SER-0001", "Composição", "COMP-0001", "Próprio", "Concreto usinado (composição)", "m³", "1", "0"].join(sep),
-    ];
-    const csv = `${lines.join("\n")}\n`;
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `composicoes_obra_${idObra}_modelo.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  async function importarComposicoesCsv(file: File) {
-    try {
-      setLoading(true);
-      setErr(null);
-      setOkMsg(null);
-      const form = new FormData();
-      form.append("file", file);
-      const qs = new URLSearchParams();
-      if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/importar-csv?${qs.toString()}`, { method: "POST", body: form });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao importar composições (CSV)");
-      await carregarTudo();
-    } catch (e: any) {
-      setErr(e?.message || "Erro ao importar composições (CSV)");
-    } finally {
-      setLoading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }
 
   async function criarNovoServico() {
     const codigoServico = String(novoServicoForm.codigoServico || "").trim().toUpperCase();
@@ -585,25 +588,6 @@ export default function Page() {
         <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregarTudo} disabled={loading} title="Recarregar dados da tela">
           Atualizar
         </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,text/csv"
-          className="hidden"
-          onChange={(e) => {
-            const f = (e.target.files || [])[0] || null;
-            if (f) importarComposicoesCsv(f);
-          }}
-        />
-        <button
-          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={loading}
-          title="Importar itens de composição (insumos/composições auxiliares) por CSV para a Fonte de dados"
-        >
-          Importar CSV (composições)
-        </button>
         <button
           className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
           type="button"
@@ -622,15 +606,6 @@ export default function Page() {
         >
           Copiar
         </button>
-        <button
-          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-          type="button"
-          onClick={baixarModeloComposicoesCsv}
-          disabled={loading}
-          title="Baixar um modelo de CSV para importação de composições"
-        >
-          Modelo CSV (composições)
-        </button>
       </div>
 
       {okMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{okMsg}</div> : null}
@@ -641,7 +616,8 @@ export default function Page() {
           <div className="font-semibold">Para criar um serviço novo no catálogo da Fonte:</div>
           <div className="mt-1">1 - Crie o serviço na Planilha (Adicionar linha);</div>
           <div>2 - Ou através do botão Novo Serviço.</div>
-          <div className="mt-1">Informando o CÓDIGO/descrição/UND.</div>
+          <div>3 - Crie o serviço direto na composição.</div>
+          <div className="mt-1">Informando o CÓDIGO/Fonte/descrição/UND.</div>
         </div>
       </div>
 
@@ -902,9 +878,9 @@ export default function Page() {
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <div className="text-lg font-semibold">Serviços (catálogo da Fonte)</div>
+            <div className="text-lg font-semibold">Serviços e composições referenciadas (catálogo da Fonte)</div>
             <div className="text-sm text-slate-600">
-              Lista os serviços do catálogo da Fonte e marca: sem composição e divergente entre total da planilha e total calculado pela composição.
+              Lista serviços do catálogo da Fonte e também composições auxiliares/referenciadas (usadas indiretamente), marcando: sem composição/não definida e divergente entre total da planilha e total calculado pela composição.
             </div>
           </div>
           <div className="text-sm text-slate-600">Planilha: {planilhaId ? `#${planilhaId}` : "—"}</div>
@@ -929,18 +905,18 @@ export default function Page() {
           </label>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={usedOnly} onChange={(e) => setUsedOnly(Boolean(e.target.checked))} />
-            <span className="text-slate-700">Somente usados na planilha</span>
+            <span className="text-slate-700">Somente usados na planilha (direto ou indiretamente)</span>
           </label>
           <input
             className="input bg-white"
             value={textFilter}
             onChange={(e) => setTextFilter(e.target.value)}
-            placeholder="Filtrar por código ou serviço"
+            placeholder="Filtrar por código, fonte ou serviço"
             disabled={loading}
             style={{ minWidth: "260px" }}
           />
           <div className="text-slate-500">
-            Mostrando: {filteredRows.length} / {rows.length}
+            Mostrando: {filteredRows.length} / {rows.length + refs.length}
           </div>
           {focusCodigo ? (
             <button
@@ -961,6 +937,7 @@ export default function Page() {
               <tr>
                 <th className="px-3 py-2">ITEM</th>
                 <th className="px-3 py-2">CÓDIGO</th>
+                <th className="px-3 py-2">TIPO</th>
                 <th className="px-3 py-2">FONTE</th>
                 <th className="px-3 py-2">SERVIÇO</th>
                 <th className="px-3 py-2 text-right">PLANILHA</th>
@@ -973,80 +950,31 @@ export default function Page() {
             <tbody>
               {filteredRows.map((r) => (
                 <tr
-                  key={r.codigoServico}
-                  id={`svc-${String(r.codigoServico || "").trim().toUpperCase()}`}
-                  className={`border-t ${focusCodigo && String(r.codigoServico || "").trim().toUpperCase() === focusCodigo ? "bg-amber-50" : ""}`}
+                  key={`${r.kind}-${r.codigo}`}
+                  id={`row-${String(r.codigo || "").trim().toUpperCase()}`}
+                  className={`border-t ${focusCodigo && String(r.codigo || "").trim().toUpperCase() === focusCodigo ? "bg-amber-50" : ""}`}
                 >
                   <td className="px-3 py-2 font-medium">{r.item || "—"}</td>
-                  <td className="px-3 py-2 font-medium">{r.codigoServico}</td>
+                  <td className="px-3 py-2 font-medium">{r.codigo || "—"}</td>
+                  <td className="px-3 py-2">{r.tipo || "—"}</td>
                   <td className="px-3 py-2">{r.fonte || "—"}</td>
-                  <td className="px-3 py-2">{r.servico}</td>
-                  <td className="px-3 py-2 text-right">{moeda(Number(r.totalPlanilha || 0))}</td>
-                  <td className="px-3 py-2 text-right">{moeda(Number(r.totalComposicao || 0))}</td>
-                  <td className="px-3 py-2 text-right">{moeda(Number(r.diff || 0))}</td>
+                  <td className="px-3 py-2">{r.descricao || "—"}</td>
+                  <td className="px-3 py-2 text-right">{r.totalPlanilha == null ? "—" : moeda(Number(r.totalPlanilha || 0))}</td>
+                  <td className="px-3 py-2 text-right">{r.totalComposicao == null ? "—" : moeda(Number(r.totalComposicao || 0))}</td>
+                  <td className="px-3 py-2 text-right">{r.diff == null ? "—" : moeda(Number(r.diff || 0))}</td>
                   <td className="px-3 py-2">
-                    {r.status === "OK" ? (
+                    {r.kind === "REF" ? (
+                      r.definida ? (
+                        <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Definida</span>
+                      ) : (
+                        <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Não definida</span>
+                      )
+                    ) : r.status === "OK" ? (
                       <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">OK</span>
                     ) : r.status === "SEM_COMPOSICAO" ? (
                       <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Sem composição</span>
                     ) : (
                       <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">Divergente</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <button
-                      className="rounded border bg-white px-3 py-1.5 text-xs hover:bg-slate-50"
-                      type="button"
-                      onClick={() => {
-                        const qs = new URLSearchParams();
-                        if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
-                        qs.set("returnTo", selfHref);
-                        router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(r.codigoServico)}?${qs.toString()}`);
-                      }}
-                    >
-                      Abrir
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {!filteredRows.length ? (
-                <tr>
-                  <td colSpan={8} className="px-3 py-6 text-center text-slate-500">
-                    Sem dados.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-        <div>
-          <div className="text-lg font-semibold">Composições auxiliares / composições referenciadas</div>
-          <div className="text-sm text-slate-600">Quando um item é “Composição Auxiliar” ou “Composição”, esta lista mostra se o código já foi definido na Fonte.</div>
-        </div>
-
-        <div className="overflow-auto">
-          <table className="min-w-[900px] w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-700">
-              <tr>
-                <th className="px-3 py-2">CÓDIGO</th>
-                <th className="px-3 py-2">TIPO</th>
-                <th className="px-3 py-2">DEFINIDA</th>
-                <th className="px-3 py-2">Ação</th>
-              </tr>
-            </thead>
-            <tbody>
-              {refs.map((r) => (
-                <tr key={`${r.tipo}-${r.codigo}`} className="border-t">
-                  <td className="px-3 py-2 font-medium">{r.codigo}</td>
-                  <td className="px-3 py-2">{r.tipo}</td>
-                  <td className="px-3 py-2">
-                    {r.definida ? (
-                      <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Sim</span>
-                    ) : (
-                      <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Não</span>
                     )}
                   </td>
                   <td className="px-3 py-2">
@@ -1065,10 +993,10 @@ export default function Page() {
                   </td>
                 </tr>
               ))}
-              {!refs.length ? (
+              {!filteredRows.length ? (
                 <tr>
-                  <td colSpan={4} className="px-3 py-6 text-center text-slate-500">
-                    Sem referências.
+                  <td colSpan={10} className="px-3 py-6 text-center text-slate-500">
+                    Sem dados.
                   </td>
                 </tr>
               ) : null}
