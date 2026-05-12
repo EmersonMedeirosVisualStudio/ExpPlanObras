@@ -114,6 +114,7 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 - Clique em **Confirmar importação**
 - A nova versão aparece na lista de versões e pode ser selecionada
 - Na planilha, dê **duplo clique** em um serviço para abrir **Serviços (catálogo da fonte)** já focado no código selecionado
+- Em **Serviços (catálogo da fonte)**, você também pode cadastrar pelo botão **Novo Serviço** (informando CÓDIGO/descrição/UND)
 
 ## 3.1.1 Nova planilha / Editar / Clonar (Fonte e Parâmetros)
 

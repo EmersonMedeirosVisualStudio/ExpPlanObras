@@ -225,6 +225,15 @@ export default function FontesDadosPage() {
             Parâmetros
           </button>
           <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
+            onClick={() => (safeReturnTo ? router.push(safeReturnTo) : null)}
+            disabled={loading || !safeReturnTo}
+            title={!safeReturnTo ? "Abra esta tela a partir da Planilha para habilitar o retorno" : "Voltar para Planilha"}
+          >
+            Planilha
+          </button>
+          <button
             className="rounded-lg border bg-blue-600 px-4 py-2 text-sm text-white border-blue-600 hover:bg-blue-500 disabled:opacity-60"
             type="button"
             onClick={() => router.push(`/dashboard/engenharia/fontes-dados${safeReturnTo ? `?returnTo=${encodeURIComponent(safeReturnTo)}` : ""}`)}
@@ -344,7 +353,12 @@ export default function FontesDadosPage() {
             </label>
             <label className="space-y-1">
               <div className="text-xs text-slate-500">Tipo de preço</div>
-              <input className="input bg-white w-full" value={form.tipoPreco} onChange={(e) => setForm((p) => ({ ...p, tipoPreco: e.target.value }))} disabled={loading} />
+              <select className="input bg-white w-full" value={form.tipoPreco} onChange={(e) => setForm((p) => ({ ...p, tipoPreco: e.target.value }))} disabled={loading}>
+                <option value="">(vazio)</option>
+                <option value="ISD">ISD</option>
+                <option value="ICD">ICD</option>
+                <option value="ISE">ISE</option>
+              </select>
             </label>
           </div>
           <div className="flex items-center justify-end gap-2">

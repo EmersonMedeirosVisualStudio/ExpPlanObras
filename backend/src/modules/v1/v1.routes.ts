@@ -8759,6 +8759,63 @@ export default async function v1Routes(server: FastifyInstance) {
     });
   });
 
+  server.post('/engenharia/obras/:id/planilha/servicos/novo', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const body = z
+      .object({
+        planilhaId: z.coerce.number().int().positive().optional().nullable(),
+        codigoServico: z.string().min(1),
+        descricao: z.string().min(1).max(500),
+        und: z.string().min(1).max(32),
+        banco: z.string().max(32).optional().nullable(),
+      })
+      .parse(request.body || {});
+    const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
+
+    const idObra = Number(id);
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    const codigoServico = String(body.codigoServico || '').trim().toUpperCase();
+    const descricao = String(body.descricao || '').trim();
+    const und = String(body.und || '').trim().toUpperCase();
+    const banco = body.banco != null ? String(body.banco || '').trim().toUpperCase() : '';
+    if (!codigoServico) return fail(reply, 422, 'Código do serviço é obrigatório');
+    if (!descricao) return fail(reply, 422, 'Descrição do serviço é obrigatória');
+    if (!und) return fail(reply, 422, 'UND do serviço é obrigatória');
+
+    await ensurePlanilhaModeloFonteTables(prisma);
+    await ensureServicosFonteTables(prisma);
+    const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, body.planilhaId ?? q.planilhaId);
+    const mig = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
+    const idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : 0;
+    if (!idFonteDados) return fail(reply, 422, 'Fonte de dados da planilha não definida');
+
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      INSERT INTO obras_servicos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und)
+      VALUES ($1,$2,'SERVICO',$3,$4,$5,$6)
+      ON CONFLICT (tenant_id, id_fonte_dados, codigo) DO UPDATE
+      SET
+        banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
+        descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
+        und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und)
+      RETURNING id_servico AS "idServico"
+      `,
+      ctx.tenantId,
+      idFonteDados,
+      codigoServico,
+      banco,
+      descricao,
+      und
+    )) as any[];
+    const idServico = rows?.[0]?.idServico ? Number(rows[0].idServico) : 0;
+
+    return ok(reply, { idServico, codigoServico }, { message: 'Serviço salvo no catálogo da Fonte' });
+  });
+
   server.get('/engenharia/obras/:id/planilha/sinapi/servicos/:codigo/meta', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
@@ -9069,25 +9126,42 @@ export default async function v1Routes(server: FastifyInstance) {
         WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
         LIMIT 1
       ),
+      servicos_fonte AS (
+        SELECT
+          sf.id_servico AS id_servico,
+          UPPER(COALESCE(sf.codigo,'')) AS codigo_servico,
+          COALESCE(sf.descricao, '') AS servico
+        FROM obras_servicos_fonte sf
+        WHERE sf.tenant_id = $1
+          AND sf.id_fonte_dados = $4
+          AND COALESCE(sf.tipo,'SERVICO') = 'SERVICO'
+      ),
       planilha_servicos AS (
         SELECT
           i.id_servico AS id_servico,
-          UPPER(COALESCE(sf.codigo,'')) AS codigo_servico,
           COALESCE(MIN(i.item) FILTER (WHERE COALESCE(i.item,'') <> ''), '') AS item,
-          COALESCE(MAX(sf.descricao), '') AS servico,
           SUM(COALESCE(i.valor_parcial, 0)) AS total_planilha
         FROM obras_planilha_itens i
-        LEFT JOIN obras_servicos_fonte sf
-          ON sf.tenant_id = i.tenant_id AND sf.id_servico = i.id_servico
         WHERE i.tenant_id = $1
           AND i.id_planilha = $3
           AND i.tipo_linha = 'SERVICO'
           AND i.id_servico IS NOT NULL
-        GROUP BY i.id_servico, UPPER(COALESCE(sf.codigo,''))
+        GROUP BY i.id_servico
+      ),
+      base AS (
+        SELECT
+          sf.id_servico AS id_servico,
+          sf.codigo_servico AS codigo_servico,
+          sf.servico AS servico,
+          COALESCE(ps.item,'') AS item,
+          COALESCE(ps.total_planilha, 0) AS total_planilha
+        FROM servicos_fonte sf
+        LEFT JOIN planilha_servicos ps
+          ON ps.id_servico = sf.id_servico
       ),
       comps AS (
         SELECT
-          ps.id_servico AS id_servico,
+          b.id_servico AS id_servico,
           COUNT(ci.id_composicao_item) AS qtd_itens,
           SUM(
             COALESCE(ci.quantidade,0)
@@ -9109,30 +9183,30 @@ export default async function v1Routes(server: FastifyInstance) {
               0
             )
           ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
-        FROM planilha_servicos ps
+        FROM base b
         LEFT JOIN obras_composicoes_itens_fonte ci
-          ON ci.tenant_id = $1 AND ci.id_fonte_dados = $4 AND ci.id_servico_pai = ps.id_servico
+          ON ci.tenant_id = $1 AND ci.id_fonte_dados = $4 AND ci.id_servico_pai = b.id_servico
         LEFT JOIN obras_servicos_fonte sfilho
           ON sfilho.tenant_id = $1 AND sfilho.id_fonte_dados = $4 AND sfilho.id_servico = ci.id_item
           AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
         LEFT JOIN obras_insumos_fonte inf
           ON inf.tenant_id = $1 AND inf.id_fonte_dados = $4 AND inf.id_insumo = ci.id_item
           AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-        GROUP BY ps.id_servico
+        GROUP BY b.id_servico
       )
       SELECT
-        s.codigo_servico AS "codigoServico",
-        s.item AS "item",
-        s.servico AS "servico",
-        s.total_planilha AS "totalPlanilha",
+        b.codigo_servico AS "codigoServico",
+        b.item AS "item",
+        b.servico AS "servico",
+        b.total_planilha AS "totalPlanilha",
         COALESCE(c.qtd_itens, 0) AS "qtdItens",
         COALESCE(c.total_base, 0) AS "totalBase",
         COALESCE(c.total_mao_base, 0) AS "totalMaoBase",
         (SELECT bdi FROM planilha_params) AS "bdiPercent",
         (SELECT ls FROM planilha_params) AS "lsPercent"
-      FROM planilha_servicos s
-      LEFT JOIN comps c ON c.id_servico = s.id_servico
-      ORDER BY s.codigo_servico
+      FROM base b
+      LEFT JOIN comps c ON c.id_servico = b.id_servico
+      ORDER BY b.codigo_servico
       `,
       ctx.tenantId,
       idObra,

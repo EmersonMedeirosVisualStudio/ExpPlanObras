@@ -1750,7 +1750,10 @@ ETAPA 5 — Como validar
   - 3) Serviços (FONTE) — catálogo técnico: é a **união de todos os serviços usados** nas planilhas que apontam para esta Fonte. Ele é alimentado automaticamente quando:
     - você cria um serviço na Planilha (Adicionar linha) com um CÓDIGO novo; ou
     - você importa serviços (CSV / outra planilha).
-    Para criar um serviço novo no catálogo, a regra é: **crie na Planilha**.
+    Para criar um serviço novo no catálogo da Fonte:
+      1 - Crie o serviço na Planilha (Adicionar linha);
+      2 - Ou através do botão Novo Serviço.
+    Informando o CÓDIGO/descrição/UND.
   - 4) Planilha (itens): o usuário decide quais serviços do catálogo viram **itens** na planilha. Todo item de serviço referencia um serviço do catálogo da fonte.
   - 5) Composições: para cada serviço do catálogo da fonte, cadastra-se/importa-se sua **composição** (itens, subcomposições e insumos), sempre vinculada ao serviço (pai).
   - 5) Insumos consolidados: a lista de insumos é derivada das composições dos serviços e precisa ser recalculada sempre que uma composição muda.

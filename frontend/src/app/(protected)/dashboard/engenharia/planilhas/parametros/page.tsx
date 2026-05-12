@@ -291,6 +291,15 @@ export default function ParametrosPage() {
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
             type="button"
+            onClick={() => (safeReturnTo ? router.push(safeReturnTo) : null)}
+            disabled={loading || !safeReturnTo}
+            title={!safeReturnTo ? "Abra esta tela a partir da Planilha para habilitar o retorno" : "Voltar para Planilha"}
+          >
+            Planilha
+          </button>
+          <button
+            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+            type="button"
             onClick={() => {
               const qs = new URLSearchParams();
               if (safeReturnTo) qs.set("returnTo", safeReturnTo);

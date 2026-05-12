@@ -99,6 +99,9 @@ export default function Page() {
     diffs: Array<{ codigo: string; valorOrig: number; valorDest: number }>;
   } | null>(null);
   const [showCopyCard, setShowCopyCard] = useState(false);
+  const [showNovoServicoCard, setShowNovoServicoCard] = useState(false);
+  const [novoServicoForm, setNovoServicoForm] = useState<{ codigoServico: string; descricao: string; und: string }>({ codigoServico: "", descricao: "", und: "" });
+  const [novoServicoLoading, setNovoServicoLoading] = useState(false);
 
   async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     let token: string | null = null;
@@ -328,6 +331,47 @@ export default function Page() {
     }
   }
 
+  async function criarNovoServico() {
+    const codigoServico = String(novoServicoForm.codigoServico || "").trim().toUpperCase();
+    const descricao = String(novoServicoForm.descricao || "").trim();
+    const und = String(novoServicoForm.und || "").trim();
+    if (!codigoServico) {
+      setErr("Código do serviço é obrigatório.");
+      return;
+    }
+    if (!descricao) {
+      setErr("Descrição do serviço é obrigatória.");
+      return;
+    }
+    if (!und) {
+      setErr("UND do serviço é obrigatória.");
+      return;
+    }
+    try {
+      setNovoServicoLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const qs = new URLSearchParams();
+      const effectivePid = planilhaIdFromQuery ?? planilhaId ?? null;
+      if (effectivePid) qs.set("planilhaId", String(effectivePid));
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/novo?${qs.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codigoServico, descricao, und }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao criar serviço no catálogo da Fonte");
+      setOkMsg("Serviço criado/atualizado no catálogo da Fonte.");
+      setNovoServicoForm({ codigoServico: "", descricao: "", und: "" });
+      setShowNovoServicoCard(false);
+      await carregarTudo();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao criar serviço no catálogo da Fonte");
+    } finally {
+      setNovoServicoLoading(false);
+    }
+  }
+
   async function previewCopiar() {
     if (!copyForm.sourcePlanilhaId || !copyForm.targetPlanilhaId || !copyForm.codigoServico.trim()) {
       setErr("Preencha origem, destino e código do serviço.");
@@ -548,6 +592,15 @@ export default function Page() {
           Importar CSV (composições)
         </button>
         <button
+          className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+          type="button"
+          onClick={() => setShowNovoServicoCard((v) => !v)}
+          disabled={loading}
+          title={showNovoServicoCard ? "Ocultar card de cadastro de serviço" : "Cadastrar um serviço no catálogo da Fonte"}
+        >
+          Novo Serviço
+        </button>
+        <button
           className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
           type="button"
           onClick={() => setShowCopyCard((v) => !v)}
@@ -571,10 +624,37 @@ export default function Page() {
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
         Atenção: alterações aqui são compartilhadas. Se você alterar Serviço/Insumo/Composição da Fonte, muda em TODAS as planilhas que usam essa Fonte. Se você alterar um
         Parâmetro, muda em TODAS as planilhas que usam esse Parâmetro.
-        <div className="mt-1">Para criar um serviço novo no catálogo da Fonte, crie o serviço na Planilha (Adicionar linha) informando o CÓDIGO/descrição/UND.</div>
+        <div className="mt-2">
+          <div className="font-semibold">Para criar um serviço novo no catálogo da Fonte:</div>
+          <div className="mt-1">1 - Crie o serviço na Planilha (Adicionar linha);</div>
+          <div>2 - Ou através do botão Novo Serviço.</div>
+          <div className="mt-1">Informando o CÓDIGO/descrição/UND.</div>
+        </div>
       </div>
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
+      {focusCodigo ? (
+        <div className="rounded-lg border-2 border-amber-400 bg-amber-50 p-3 text-sm text-amber-900 flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <div className="font-semibold">{`ATENÇÃO: você está filtrado (FOCO) no serviço ${focusCodigo}`}</div>
+            <div className="mt-1">A lista abaixo mostra somente este serviço.</div>
+          </div>
+          <button
+            className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm hover:bg-amber-100 disabled:opacity-60"
+            type="button"
+            disabled={loading}
+            onClick={() => {
+              const qs = new URLSearchParams();
+              const effectivePid = planilhaIdFromQuery ?? planilhaId ?? null;
+              if (effectivePid) qs.set("planilhaId", String(effectivePid));
+              qs.set("returnTo", backHref);
+              router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos?${qs.toString()}`);
+            }}
+          >
+            Limpar foco
+          </button>
+        </div>
+      ) : null}
       {composicoesSemServico && (composicoesSemServico.total > 0 || composicoesSemServico.blankCount > 0) ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           <div className="font-semibold">Composições sem serviço no catálogo</div>
@@ -586,6 +666,68 @@ export default function Page() {
             </div>
           ) : null}
         </div>
+      ) : null}
+
+      {showNovoServicoCard ? (
+        <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
+          <div>
+            <div className="text-lg font-semibold">Novo serviço (catálogo da Fonte)</div>
+            <div className="text-sm text-slate-600">Cria/atualiza um serviço no catálogo da Fonte (compartilhado por todas as planilhas que usam esta Fonte).</div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+            <div className="md:col-span-3 space-y-1">
+              <div className="text-sm text-slate-600">Código</div>
+              <input
+                className="input bg-white"
+                value={novoServicoForm.codigoServico}
+                onChange={(e) => setNovoServicoForm((p) => ({ ...p, codigoServico: e.target.value.toUpperCase() }))}
+                placeholder="Ex: COMP.UPA.155"
+                disabled={loading || novoServicoLoading}
+              />
+            </div>
+            <div className="md:col-span-7 space-y-1">
+              <div className="text-sm text-slate-600">Descrição</div>
+              <input
+                className="input bg-white"
+                value={novoServicoForm.descricao}
+                onChange={(e) => setNovoServicoForm((p) => ({ ...p, descricao: e.target.value }))}
+                placeholder="Ex: Execução de alvenaria..."
+                disabled={loading || novoServicoLoading}
+              />
+            </div>
+            <div className="md:col-span-2 space-y-1">
+              <div className="text-sm text-slate-600">UND</div>
+              <input
+                className="input bg-white"
+                value={novoServicoForm.und}
+                onChange={(e) => setNovoServicoForm((p) => ({ ...p, und: e.target.value.toUpperCase() }))}
+                placeholder="Ex: m²"
+                disabled={loading || novoServicoLoading}
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+              type="button"
+              onClick={() => {
+                setNovoServicoForm({ codigoServico: "", descricao: "", und: "" });
+                setShowNovoServicoCard(false);
+              }}
+              disabled={loading || novoServicoLoading}
+            >
+              Cancelar
+            </button>
+            <button
+              className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+              type="button"
+              onClick={criarNovoServico}
+              disabled={loading || novoServicoLoading}
+            >
+              Salvar
+            </button>
+          </div>
+        </section>
       ) : null}
 
       {showCopyCard ? (
@@ -747,10 +889,9 @@ export default function Page() {
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <div className="text-lg font-semibold">Serviços usados na planilha (verificação)</div>
+            <div className="text-lg font-semibold">Serviços (catálogo da Fonte) — verificação</div>
             <div className="text-sm text-slate-600">
-              Marca serviços sem composição e serviços com total divergente da planilha. O catálogo da Fonte contém, no mínimo, todos os serviços usados por planilhas que usam esta
-              Fonte.
+              Lista os serviços do catálogo da Fonte e marca: sem composição e divergente entre total da planilha e total calculado pela composição.
             </div>
           </div>
           <div className="text-sm text-slate-600">Planilha: {planilhaId ? `#${planilhaId}` : "—"}</div>
@@ -777,8 +918,14 @@ export default function Page() {
             Mostrando: {filteredRows.length} / {rows.length}
           </div>
           {focusCodigo ? (
-            <button className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50" type="button" onClick={() => router.push(selfHref)} disabled={loading}>
-              {`Foco: ${focusCodigo} (limpar)`}
+            <button
+              className="rounded border-2 border-amber-400 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-60"
+              type="button"
+              onClick={() => router.push(selfHref)}
+              disabled={loading}
+              title="Você está filtrado (foco) em um serviço específico. Clique para limpar."
+            >
+              {`FOCO ATIVO: ${focusCodigo} (clique para limpar)`}
             </button>
           ) : null}
         </div>
