@@ -1136,7 +1136,7 @@ async function readTextSmart(file: File) {
   }, []);
 
   const [fonteDropdownOpen, setFonteDropdownOpen] = useState(false);
-  const fonteDropdownRef = useRef<HTMLDivElement>(null);
+  const fonteDropdownRef = useRef<HTMLTableDataCellElement>(null);
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (fonteDropdownRef.current && !fonteDropdownRef.current.contains(e.target as Node)) {
