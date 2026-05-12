@@ -307,6 +307,35 @@ async function readTextSmart(file: File) {
     fsCentroCustoPx: 13,
     fsAcoesPx: 13,
   });
+  const [servicoDisplayPrefs, setServicoDisplayPrefs] = useState<{
+    colFonte: boolean;
+    colUnd: boolean;
+    colValorUnit: boolean;
+    colTotalSemBDI: boolean;
+    colTotalSemBDIComDesconto: boolean;
+    wCodigoPx: number;
+    wFontePx: number;
+    wServicoPx: number;
+    wUndPx: number;
+    wValorUnitPx: number;
+    wTotalSemBDIPx: number;
+    wTotalSemBDIComDescontoPx: number;
+    fsPx: number;
+  }>({
+    colFonte: true,
+    colUnd: true,
+    colValorUnit: true,
+    colTotalSemBDI: true,
+    colTotalSemBDIComDesconto: true,
+    wCodigoPx: 110,
+    wFontePx: 160,
+    wServicoPx: 520,
+    wUndPx: 80,
+    wValorUnitPx: 140,
+    wTotalSemBDIPx: 160,
+    wTotalSemBDIComDescontoPx: 220,
+    fsPx: 13,
+  });
   const [printPrefs, setPrintPrefs] = useState<{
     headerFontFamily: string;
     headerFontSizePx: number;
@@ -357,6 +386,10 @@ async function readTextSmart(file: File) {
 
   function getDisplayPrefsKey() {
     return `${getUserKeyBase()}:display`;
+  }
+
+  function getServicoDisplayPrefsKey() {
+    return `${getUserKeyBase()}:display:servico`;
   }
 
   function getPrintPrefsKey() {
@@ -1007,6 +1040,39 @@ async function readTextSmart(file: File) {
 
   useEffect(() => {
     try {
+      const raw = localStorage.getItem(getServicoDisplayPrefsKey());
+      if (!raw) return;
+      const p = JSON.parse(raw) as any;
+      const n = (v: any, min: number, max: number, fallback: number) => {
+        const x = Number(v);
+        return Number.isFinite(x) ? Math.max(min, Math.min(max, Math.round(x))) : fallback;
+      };
+      setServicoDisplayPrefs((cur) => ({
+        colFonte: p?.colFonte !== false,
+        colUnd: p?.colUnd !== false,
+        colValorUnit: p?.colValorUnit !== false,
+        colTotalSemBDI: p?.colTotalSemBDI !== false,
+        colTotalSemBDIComDesconto: p?.colTotalSemBDIComDesconto !== false,
+        wCodigoPx: n(p?.wCodigoPx, 80, 240, cur.wCodigoPx),
+        wFontePx: n(p?.wFontePx, 80, 260, cur.wFontePx),
+        wServicoPx: n(p?.wServicoPx, 220, 1200, cur.wServicoPx),
+        wUndPx: n(p?.wUndPx, 60, 180, cur.wUndPx),
+        wValorUnitPx: n(p?.wValorUnitPx, 90, 240, cur.wValorUnitPx),
+        wTotalSemBDIPx: n(p?.wTotalSemBDIPx, 110, 320, cur.wTotalSemBDIPx),
+        wTotalSemBDIComDescontoPx: n(p?.wTotalSemBDIComDescontoPx, 140, 420, cur.wTotalSemBDIComDescontoPx),
+        fsPx: n(p?.fsPx, 10, 16, cur.fsPx),
+      }));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(getServicoDisplayPrefsKey(), JSON.stringify(servicoDisplayPrefs));
+    } catch {}
+  }, [servicoDisplayPrefs]);
+
+  useEffect(() => {
+    try {
       const raw = localStorage.getItem(getPrintPrefsKey());
       if (!raw) return;
       const p = JSON.parse(raw) as any;
@@ -1136,7 +1202,7 @@ async function readTextSmart(file: File) {
   }, []);
 
   const [fonteDropdownOpen, setFonteDropdownOpen] = useState(false);
-  const fonteDropdownRef = useRef<HTMLTableDataCellElement>(null);
+  const fonteDropdownRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (fonteDropdownRef.current && !fonteDropdownRef.current.contains(e.target as Node)) {
@@ -2410,7 +2476,7 @@ async function readTextSmart(file: File) {
             disabled={loading}
             title="Abrir/ocultar configurações de exibição"
           >
-            {showDisplayConfig ? "⯆" : "⯈"} Configurações de exibição
+            {showDisplayConfig ? "⯆" : "⯈"} Configurações de exibição dos itens da composição
           </button>
         </div>
         <div className="flex items-center justify-end gap-2 flex-wrap">
@@ -2456,8 +2522,8 @@ async function readTextSmart(file: File) {
         <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <div className="text-lg font-semibold">Configurações de exibição</div>
-              <div className="text-sm text-slate-600">Escolha quais colunas exibir e defina as cores de fundo padrão por tipo.</div>
+              <div className="text-lg font-semibold">Configurações de exibição dos itens da composição</div>
+              <div className="text-sm text-slate-600">Ajuste colunas/cores dos itens e também as colunas da tabela Serviço.</div>
             </div>
             <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={() => setShowDisplayConfig(false)} title="Ocultar configurações de exibição">
               Ocultar
@@ -2531,63 +2597,121 @@ async function readTextSmart(file: File) {
           </div>
 
           <div className="rounded-lg border bg-slate-50 p-3">
-            <div className="text-sm font-semibold text-slate-800">Largura e fonte (px)</div>
-            <div className="mt-2 overflow-auto">
-              <table className="min-w-[900px] w-full text-sm">
-                <thead className="text-center text-slate-600">
-                  <tr>
-                    <th className="py-2 pr-3">Coluna</th>
-                    <th className="py-2 pr-3">Largura</th>
-                    <th className="py-2 pr-3">Fonte</th>
-                  </tr>
-                </thead>
-                <tbody className="text-slate-700">
-                  {[
-                    { key: "tipo", label: "Tipo", wKey: "wTipoPx", fsKey: "fsTipoPx" },
-                    { key: "codigo", label: "Código", wKey: "wCodigoPx", fsKey: "fsCodigoPx" },
-                    { key: "banco", label: "Banco", wKey: "wBancoPx", fsKey: "fsBancoPx" },
-                    { key: "descricao", label: "Descrição", wKey: "wDescricaoPx", fsKey: "fsDescricaoPx" },
-                    { key: "und", label: "UND", wKey: "wUndPx", fsKey: "fsUndPx" },
-                    { key: "qtd", label: "Qtd", wKey: "wQtdPx", fsKey: "fsQtdPx" },
-                    { key: "valorUnit", label: "Valor Unit", wKey: "wValorUnitPx", fsKey: "fsValorUnitPx" },
-                    { key: "total", label: "Total", wKey: "wTotalPx", fsKey: "fsTotalPx" },
-                    { key: "cc", label: "Centro de custo", wKey: "wCentroCustoPx", fsKey: "fsCentroCustoPx" },
-                    { key: "acoes", label: "Ações", wKey: "wAcoesPx", fsKey: "fsAcoesPx" },
-                  ].map((c) => (
-                    <tr key={c.key} className="border-t">
-                      <td className="py-2 pr-3 font-medium">{c.label}</td>
-                      <td className="py-2 pr-3">
-                        <input
-                          className="input bg-white w-[120px]"
-                          type="number"
-                          min={40}
-                          max={1200}
-                          value={(displayPrefs as any)[c.wKey]}
-                          onChange={(e) => {
-                            const v = Number(e.target.value || 0);
-                            const next = Number.isFinite(v) ? Math.max(40, Math.min(1200, Math.round(v))) : 40;
-                            setDisplayPrefs((p) => ({ ...(p as any), [c.wKey]: next }));
-                          }}
-                        />
-                      </td>
-                      <td className="py-2 pr-3">
-                        <input
-                          className="input bg-white w-[120px]"
-                          type="number"
-                          min={10}
-                          max={16}
-                          value={(displayPrefs as any)[c.fsKey]}
-                          onChange={(e) => {
-                            const v = Number(e.target.value || 0);
-                            const next = Number.isFinite(v) ? Math.max(10, Math.min(16, Math.round(v))) : 13;
-                            setDisplayPrefs((p) => ({ ...(p as any), [c.fsKey]: next }));
-                          }}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="text-sm font-semibold text-slate-800">Configurações de exibição das colunas serviço</div>
+            <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-slate-700">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={servicoDisplayPrefs.colFonte} onChange={(e) => setServicoDisplayPrefs((p) => ({ ...p, colFonte: Boolean(e.target.checked) }))} />
+                <span>Fonte</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={servicoDisplayPrefs.colUnd} onChange={(e) => setServicoDisplayPrefs((p) => ({ ...p, colUnd: Boolean(e.target.checked) }))} />
+                <span>UND</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={servicoDisplayPrefs.colValorUnit} onChange={(e) => setServicoDisplayPrefs((p) => ({ ...p, colValorUnit: Boolean(e.target.checked) }))} />
+                <span>Valor unit.</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={servicoDisplayPrefs.colTotalSemBDI} onChange={(e) => setServicoDisplayPrefs((p) => ({ ...p, colTotalSemBDI: Boolean(e.target.checked) }))} />
+                <span>Total sem BDI</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={servicoDisplayPrefs.colTotalSemBDIComDesconto}
+                  onChange={(e) => setServicoDisplayPrefs((p) => ({ ...p, colTotalSemBDIComDesconto: Boolean(e.target.checked) }))}
+                  disabled={Number(descontoPercent || 0) <= 0}
+                />
+                <span className={Number(descontoPercent || 0) <= 0 ? "text-slate-400" : ""}>Total sem BDI com desconto</span>
+              </label>
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                { key: "wCodigoPx", label: "CÓDIGO" },
+                { key: "wFontePx", label: "FONTE" },
+                { key: "wServicoPx", label: "SERVIÇO" },
+                { key: "wUndPx", label: "UND" },
+                { key: "wValorUnitPx", label: "VALOR UNIT." },
+                { key: "wTotalSemBDIPx", label: "TOTAL SEM BDI" },
+                { key: "wTotalSemBDIComDescontoPx", label: "TOTAL COM DESCONTO" },
+              ].map((c) => (
+                <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-sm">
+                  <div className="text-slate-700 font-medium">{c.label}</div>
+                  <input
+                    className="input bg-white w-[110px]"
+                    type="number"
+                    min={60}
+                    max={1200}
+                    value={(servicoDisplayPrefs as any)[c.key]}
+                    onChange={(e) => {
+                      const v = Number(e.target.value || 0);
+                      const next = Number.isFinite(v) ? Math.max(60, Math.min(1200, Math.round(v))) : 120;
+                      setServicoDisplayPrefs((p) => ({ ...(p as any), [c.key]: next }));
+                    }}
+                  />
+                </div>
+              ))}
+              <div className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-sm">
+                <div className="text-slate-700 font-medium">FONTE (px)</div>
+                <input
+                  className="input bg-white w-[110px]"
+                  type="number"
+                  min={10}
+                  max={16}
+                  value={servicoDisplayPrefs.fsPx}
+                  onChange={(e) => setServicoDisplayPrefs((p) => ({ ...p, fsPx: Math.max(10, Math.min(16, Number(e.target.value || 13))) }))}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border bg-slate-50 p-3">
+            <div className="text-sm font-semibold text-slate-800">Largura e fonte dos itens (px)</div>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                { key: "tipo", label: "Tipo", wKey: "wTipoPx", fsKey: "fsTipoPx" },
+                { key: "codigo", label: "Código", wKey: "wCodigoPx", fsKey: "fsCodigoPx" },
+                { key: "banco", label: "Banco", wKey: "wBancoPx", fsKey: "fsBancoPx" },
+                { key: "descricao", label: "Descrição", wKey: "wDescricaoPx", fsKey: "fsDescricaoPx" },
+                { key: "und", label: "UND", wKey: "wUndPx", fsKey: "fsUndPx" },
+                { key: "qtd", label: "Qtd", wKey: "wQtdPx", fsKey: "fsQtdPx" },
+                { key: "valorUnit", label: "Valor Unit", wKey: "wValorUnitPx", fsKey: "fsValorUnitPx" },
+                { key: "total", label: "Total", wKey: "wTotalPx", fsKey: "fsTotalPx" },
+                { key: "cc", label: "Centro de custo", wKey: "wCentroCustoPx", fsKey: "fsCentroCustoPx" },
+                { key: "acoes", label: "Ações", wKey: "wAcoesPx", fsKey: "fsAcoesPx" },
+              ].map((c) => (
+                <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-sm">
+                  <div className="min-w-[120px] text-slate-700 font-medium">{c.label}</div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      className="input bg-white w-[100px]"
+                      type="number"
+                      min={40}
+                      max={1200}
+                      value={(displayPrefs as any)[c.wKey]}
+                      onChange={(e) => {
+                        const v = Number(e.target.value || 0);
+                        const next = Number.isFinite(v) ? Math.max(40, Math.min(1200, Math.round(v))) : 40;
+                        setDisplayPrefs((p) => ({ ...(p as any), [c.wKey]: next }));
+                      }}
+                      title="Largura (px)"
+                    />
+                    <input
+                      className="input bg-white w-[90px]"
+                      type="number"
+                      min={10}
+                      max={16}
+                      value={(displayPrefs as any)[c.fsKey]}
+                      onChange={(e) => {
+                        const v = Number(e.target.value || 0);
+                        const next = Number.isFinite(v) ? Math.max(10, Math.min(16, Math.round(v))) : 13;
+                        setDisplayPrefs((p) => ({ ...(p as any), [c.fsKey]: next }));
+                      }}
+                      title="Fonte (px)"
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
             <div className="mt-2 text-xs text-slate-500">As configurações são salvas automaticamente neste navegador.</div>
           </div>
@@ -2943,97 +3067,228 @@ async function readTextSmart(file: File) {
         ) : null}
 
         <div className="overflow-auto">
-          <table className="min-w-[1050px] w-full text-sm border border-slate-200">
+          <table className="min-w-[1050px] w-full text-sm border border-slate-200" style={{ fontSize: `${servicoDisplayPrefs.fsPx}px` }}>
             <thead className="bg-slate-50 text-center text-slate-700">
               <tr>
-                <th className="px-3 py-2 border-r border-slate-200">CÓDIGO</th>
-                <th className="px-3 py-2 border-r border-slate-200">FONTE</th>
-                <th className="px-3 py-2 border-r border-slate-200">SERVIÇO</th>
-                <th className="px-3 py-2 border-r border-slate-200">UND</th>
-                <th className="px-3 py-2 border-r border-slate-200">VALOR UNIT.</th>
-                <th className="px-3 py-2 border-r border-slate-200">TOTAL SEM BDI</th>
-                {Number(descontoPercent || 0) > 0 ? <th className="px-3 py-2">TOTAL SEM BDI COM DESCONTO</th> : <th className="px-3 py-2">—</th>}
+                <th className="px-3 py-2 border-r border-slate-200" style={{ width: `${servicoDisplayPrefs.wCodigoPx}px` }}>
+                  CÓDIGO
+                </th>
+                {servicoDisplayPrefs.colFonte ? (
+                  <th className="px-3 py-2 border-r border-slate-200" style={{ width: `${servicoDisplayPrefs.wFontePx}px` }}>
+                    FONTE
+                  </th>
+                ) : null}
+                <th className="px-3 py-2 border-r border-slate-200" style={{ width: `${servicoDisplayPrefs.wServicoPx}px` }}>
+                  SERVIÇO
+                </th>
+                {servicoDisplayPrefs.colUnd ? (
+                  <th className="px-3 py-2 border-r border-slate-200" style={{ width: `${servicoDisplayPrefs.wUndPx}px` }}>
+                    UND
+                  </th>
+                ) : null}
+                {servicoDisplayPrefs.colValorUnit ? (
+                  <th className="px-3 py-2 border-r border-slate-200" style={{ width: `${servicoDisplayPrefs.wValorUnitPx}px` }}>
+                    VALOR UNIT.
+                  </th>
+                ) : null}
+                {servicoDisplayPrefs.colTotalSemBDI ? (
+                  <th className="px-3 py-2 border-r border-slate-200" style={{ width: `${servicoDisplayPrefs.wTotalSemBDIPx}px` }}>
+                    TOTAL SEM BDI
+                  </th>
+                ) : null}
+                {Number(descontoPercent || 0) > 0 && servicoDisplayPrefs.colTotalSemBDIComDesconto ? (
+                  <th className="px-3 py-2" style={{ width: `${servicoDisplayPrefs.wTotalSemBDIComDescontoPx}px` }}>
+                    TOTAL SEM BDI COM DESCONTO
+                  </th>
+                ) : (
+                  <th className="px-3 py-2">—</th>
+                )}
               </tr>
             </thead>
             <tbody>
               <tr className="border-t">
-                <td className="px-3 py-2 border-r border-slate-200 text-center font-semibold">{codigoServico || "—"}</td>
-                <td className="px-3 py-2 border-r border-slate-200 text-center relative" ref={fonteDropdownRef}>
-                  <input
-                    className="input bg-white w-full text-center"
-                    value={previstoServicoMeta?.fonte || ""}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setPrevistoServicoMeta((p: any) => ({ ...p, fonte: val }));
-                      setFonteDropdownOpen(true);
-                    }}
-                    onFocus={() => setFonteDropdownOpen(true)}
-                    placeholder="Selecione ou digite..."
-                  />
-                  {fonteDropdownOpen && (
-                    <div className="absolute z-10 mt-1 w-64 bg-white border rounded shadow-lg left-1/2 -translate-x-1/2 max-h-60 overflow-y-auto">
-                      {bancosOptions
-                        .filter((b) => b.toLowerCase().includes((previstoServicoMeta?.fonte || "").toLowerCase()))
-                        .map((b) => (
-                          <div key={b} className="flex items-center justify-between px-3 py-2 hover:bg-slate-50 cursor-pointer border-b last:border-0 text-sm">
-                            <span
-                              className="flex-1 text-left"
+                <td className="px-3 py-2 border-r border-slate-200 text-center font-semibold" style={{ width: `${servicoDisplayPrefs.wCodigoPx}px` }}>
+                  {codigoServico || "—"}
+                </td>
+
+                {servicoDisplayPrefs.colFonte ? (
+                  <td className="px-3 py-2 border-r border-slate-200 text-center" style={{ width: `${servicoDisplayPrefs.wFontePx}px` }}>
+                    <div className="relative" ref={fonteDropdownRef}>
+                      <input
+                        className="input bg-white w-full text-center"
+                        value={previstoServicoMeta?.fonte || ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPrevistoServicoMeta((p: any) => ({ ...p, fonte: val }));
+                          setFonteDropdownOpen(true);
+                        }}
+                        onFocus={() => setFonteDropdownOpen(true)}
+                        placeholder="Selecione ou digite..."
+                        style={{ fontSize: `${servicoDisplayPrefs.fsPx}px` }}
+                      />
+                      {fonteDropdownOpen ? (
+                        <div className="absolute z-10 mt-1 w-64 bg-white border rounded shadow-lg left-1/2 -translate-x-1/2 max-h-60 overflow-y-auto">
+                          {bancosOptions
+                            .filter((b) => b.toLowerCase().includes((previstoServicoMeta?.fonte || "").toLowerCase()))
+                            .map((b) => (
+                              <div key={b} className="flex items-center justify-between px-3 py-2 hover:bg-slate-50 cursor-pointer border-b last:border-0 text-sm">
+                                <span
+                                  className="flex-1 text-left"
+                                  onClick={() => {
+                                    setPrevistoServicoMeta((p: any) => ({ ...p, fonte: b }));
+                                    setFonteDropdownOpen(false);
+                                  }}
+                                >
+                                  {b}
+                                </span>
+                                {!bancosBase.includes(b) ? (
+                                  <button
+                                    type="button"
+                                    className="text-red-500 hover:text-red-700 ml-2"
+                                    title="Excluir banco"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      excluirBancoCustom(b);
+                                    }}
+                                  >
+                                    <XCircle className="w-4 h-4" />
+                                  </button>
+                                ) : null}
+                              </div>
+                            ))}
+                          {previstoServicoMeta?.fonte && !bancosOptions.some((b) => b.toLowerCase() === previstoServicoMeta.fonte?.toLowerCase()) ? (
+                            <div
+                              className="px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 cursor-pointer text-left"
                               onClick={() => {
-                                setPrevistoServicoMeta((p: any) => ({ ...p, fonte: b }));
+                                setBancosCustom((p) => Array.from(new Set([...p, previstoServicoMeta.fonte!])));
                                 setFonteDropdownOpen(false);
                               }}
                             >
-                              {b}
-                            </span>
-                            {!bancosBase.includes(b) && (
-                              <button
-                                type="button"
-                                className="text-red-500 hover:text-red-700 ml-2"
-                                title="Excluir banco"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  excluirBancoCustom(b);
-                                }}
-                              >
-                                <XCircle className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      {previstoServicoMeta?.fonte && !bancosOptions.some(b => b.toLowerCase() === previstoServicoMeta.fonte?.toLowerCase()) && (
-                        <div
-                          className="px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 cursor-pointer text-left"
-                          onClick={() => {
-                            setBancosCustom(p => Array.from(new Set([...p, previstoServicoMeta.fonte!])));
-                            setFonteDropdownOpen(false);
-                          }}
-                        >
-                          Criar "{previstoServicoMeta.fonte}"
+                              Criar "{previstoServicoMeta.fonte}"
+                            </div>
+                          ) : null}
                         </div>
-                      )}
+                      ) : null}
                     </div>
-                  )}
+                  </td>
+                ) : null}
+
+                <td className="px-3 py-2 border-r border-slate-200" style={{ width: `${servicoDisplayPrefs.wServicoPx}px` }}>
+                  <div className="space-y-2">
+                    <input
+                      className="input bg-white w-full"
+                      value={previstoServicoMeta?.descricao || ""}
+                      onChange={(e) => setPrevistoServicoMeta((p: any) => ({ ...p, descricao: e.target.value }))}
+                      placeholder="Nome do serviço"
+                      style={{ fontSize: `${servicoDisplayPrefs.fsPx}px` }}
+                    />
+                    {!servicoDisplayPrefs.colFonte || !servicoDisplayPrefs.colUnd ? (
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {!servicoDisplayPrefs.colFonte ? (
+                          <div className="flex items-center gap-2">
+                            <div className="text-xs text-slate-500 min-w-[46px]">Fonte</div>
+                            <div className="relative flex-1" ref={fonteDropdownRef}>
+                              <input
+                                className="input bg-white w-full"
+                                value={previstoServicoMeta?.fonte || ""}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setPrevistoServicoMeta((p: any) => ({ ...p, fonte: val }));
+                                  setFonteDropdownOpen(true);
+                                }}
+                                onFocus={() => setFonteDropdownOpen(true)}
+                                placeholder="Selecione ou digite..."
+                                style={{ fontSize: `${servicoDisplayPrefs.fsPx}px` }}
+                              />
+                              {fonteDropdownOpen ? (
+                                <div className="absolute z-10 mt-1 w-64 bg-white border rounded shadow-lg left-0 max-h-60 overflow-y-auto">
+                                  {bancosOptions
+                                    .filter((b) => b.toLowerCase().includes((previstoServicoMeta?.fonte || "").toLowerCase()))
+                                    .map((b) => (
+                                      <div key={b} className="flex items-center justify-between px-3 py-2 hover:bg-slate-50 cursor-pointer border-b last:border-0 text-sm">
+                                        <span
+                                          className="flex-1 text-left"
+                                          onClick={() => {
+                                            setPrevistoServicoMeta((p: any) => ({ ...p, fonte: b }));
+                                            setFonteDropdownOpen(false);
+                                          }}
+                                        >
+                                          {b}
+                                        </span>
+                                        {!bancosBase.includes(b) ? (
+                                          <button
+                                            type="button"
+                                            className="text-red-500 hover:text-red-700 ml-2"
+                                            title="Excluir banco"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              excluirBancoCustom(b);
+                                            }}
+                                          >
+                                            <XCircle className="w-4 h-4" />
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                    ))}
+                                  {previstoServicoMeta?.fonte && !bancosOptions.some((b) => b.toLowerCase() === previstoServicoMeta.fonte?.toLowerCase()) ? (
+                                    <div
+                                      className="px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 cursor-pointer text-left"
+                                      onClick={() => {
+                                        setBancosCustom((p) => Array.from(new Set([...p, previstoServicoMeta.fonte!])));
+                                        setFonteDropdownOpen(false);
+                                      }}
+                                    >
+                                      Criar "{previstoServicoMeta.fonte}"
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        ) : null}
+                        {!servicoDisplayPrefs.colUnd ? (
+                          <div className="flex items-center gap-2">
+                            <div className="text-xs text-slate-500 min-w-[46px]">UND</div>
+                            <input
+                              className="input bg-white w-full text-center"
+                              value={previstoServicoMeta?.und || ""}
+                              onChange={(e) => setPrevistoServicoMeta((p: any) => ({ ...p, und: e.target.value }))}
+                              placeholder="UND"
+                              style={{ fontSize: `${servicoDisplayPrefs.fsPx}px` }}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 </td>
-                <td className="px-3 py-2 border-r border-slate-200">
-                  <input
-                    className="input bg-white w-full"
-                    value={previstoServicoMeta?.descricao || ""}
-                    onChange={(e) => setPrevistoServicoMeta((p: any) => ({ ...p, descricao: e.target.value }))}
-                    placeholder="Nome do serviço"
-                  />
-                </td>
-                <td className="px-3 py-2 border-r border-slate-200 text-center w-24">
-                  <input
-                    className="input bg-white w-full text-center"
-                    value={previstoServicoMeta?.und || ""}
-                    onChange={(e) => setPrevistoServicoMeta((p: any) => ({ ...p, und: e.target.value }))}
-                    placeholder="UND"
-                  />
-                </td>
-                <td className="px-3 py-2 border-r border-slate-200 text-right">{moeda(Number(totalComLSComBDI || 0))}</td>
-                <td className="px-3 py-2 border-r border-slate-200 text-right">{moeda(Number(totalSemBDI || 0))}</td>
-                <td className="px-3 py-2 text-right">
-                  {Number(descontoPercent || 0) > 0 ? moeda(Number(totalSemBDIComDesconto || 0)) : "—"}
+
+                {servicoDisplayPrefs.colUnd ? (
+                  <td className="px-3 py-2 border-r border-slate-200 text-center" style={{ width: `${servicoDisplayPrefs.wUndPx}px` }}>
+                    <input
+                      className="input bg-white w-full text-center"
+                      value={previstoServicoMeta?.und || ""}
+                      onChange={(e) => setPrevistoServicoMeta((p: any) => ({ ...p, und: e.target.value }))}
+                      placeholder="UND"
+                      style={{ fontSize: `${servicoDisplayPrefs.fsPx}px` }}
+                    />
+                  </td>
+                ) : null}
+
+                {servicoDisplayPrefs.colValorUnit ? (
+                  <td className="px-3 py-2 border-r border-slate-200 text-right" style={{ width: `${servicoDisplayPrefs.wValorUnitPx}px` }}>
+                    {moeda(Number(totalComLSComBDI || 0))}
+                  </td>
+                ) : null}
+
+                {servicoDisplayPrefs.colTotalSemBDI ? (
+                  <td className="px-3 py-2 border-r border-slate-200 text-right" style={{ width: `${servicoDisplayPrefs.wTotalSemBDIPx}px` }}>
+                    {moeda(Number(totalSemBDI || 0))}
+                  </td>
+                ) : null}
+
+                <td className="px-3 py-2 text-right" style={{ width: `${servicoDisplayPrefs.wTotalSemBDIComDescontoPx}px` }}>
+                  {Number(descontoPercent || 0) > 0 && servicoDisplayPrefs.colTotalSemBDIComDesconto ? moeda(Number(totalSemBDIComDesconto || 0)) : "—"}
                 </td>
               </tr>
             </tbody>
