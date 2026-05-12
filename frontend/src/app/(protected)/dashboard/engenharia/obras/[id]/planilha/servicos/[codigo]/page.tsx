@@ -2905,7 +2905,11 @@ async function readTextSmart(file: File) {
                       const undOk = !au || !bu ? true : au.toUpperCase() === bu.toUpperCase();
                       const ok = nomeOk && undOk;
                       const title = `Planilha: "${a || "—"}" / "${au || "—"}" • Catálogo: "${b || "—"}" / "${bu || "—"}"`;
-                      return ok ? <CheckCircle2 className="h-4 w-4 text-green-700 inline-block" title={title} /> : <XCircle className="h-4 w-4 text-red-700 inline-block" title={title} />;
+                      return (
+                        <span title={title}>
+                          {ok ? <CheckCircle2 className="h-4 w-4 text-green-700 inline-block" /> : <XCircle className="h-4 w-4 text-red-700 inline-block" />}
+                        </span>
+                      );
                     })()}
                   </td>
                   <td className="px-3 py-2">{r.und}</td>
