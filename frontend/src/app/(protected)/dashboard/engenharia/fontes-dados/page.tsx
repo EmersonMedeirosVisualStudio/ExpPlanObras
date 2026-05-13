@@ -270,20 +270,16 @@ export default function FontesDadosPage() {
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 text-left text-slate-700">
                 <tr>
-                  <th className="px-3 py-2">#id - nome</th>
-                  <th className="px-3 py-2">Tipo</th>
-                  <th className="px-3 py-2">UF</th>
-                  <th className="px-3 py-2">Data-base</th>
+                  <th className="px-3 py-2">Id da fonte de dados</th>
+                  <th className="px-3 py-2">Descrição</th>
                   <th className="px-3 py-2">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {fontes.map((f) => (
                   <tr key={f.idFonteDados} className="border-t">
-                    <td className="px-3 py-2">{`#${f.idFonteDados} - ${f.nome || "—"}`}</td>
-                    <td className="px-3 py-2">{f.tipo || "—"}</td>
-                    <td className="px-3 py-2">{f.uf || "—"}</td>
-                    <td className="px-3 py-2">{f.dataBase || "—"}</td>
+                    <td className="px-3 py-2 font-medium">{`#${f.idFonteDados}`}</td>
+                    <td className="px-3 py-2">{f.nome || "—"}</td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
                         <button
@@ -318,7 +314,7 @@ export default function FontesDadosPage() {
                 ))}
                 {!fontes.length ? (
                   <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-slate-500">
+                    <td colSpan={3} className="px-3 py-6 text-center text-slate-500">
                       Nenhuma fonte cadastrada.
                     </td>
                   </tr>
@@ -330,36 +326,18 @@ export default function FontesDadosPage() {
 
         <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
           <div className="text-lg font-semibold">{form.idFonteDados ? `Editar fonte #${form.idFonteDados}` : "Cadastrar fonte"}</div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="space-y-1 md:col-span-2">
-              <div className="text-xs text-slate-500">Nome</div>
-              <input className="input bg-white w-full" value={form.nome} onChange={(e) => setForm((p) => ({ ...p, nome: e.target.value }))} disabled={loading} />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-500">Tipo</div>
-              <select className="input bg-white w-full" value={form.tipo} onChange={(e) => setForm((p) => ({ ...p, tipo: e.target.value }))} disabled={loading}>
-                <option value="SINAPI">SINAPI</option>
-                <option value="SBC">SBC</option>
-                <option value="MANUAL">MANUAL</option>
-              </select>
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-500">UF</div>
-              <input className="input bg-white w-full" value={form.uf} onChange={(e) => setForm((p) => ({ ...p, uf: e.target.value }))} disabled={loading} placeholder="SP" />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-500">Data-base</div>
-              <input className="input bg-white w-full" value={form.dataBase} onChange={(e) => setForm((p) => ({ ...p, dataBase: e.target.value }))} disabled={loading} placeholder="2024-01" />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-500">Tipo de preço</div>
-              <select className="input bg-white w-full" value={form.tipoPreco} onChange={(e) => setForm((p) => ({ ...p, tipoPreco: e.target.value }))} disabled={loading}>
-                <option value="">(vazio)</option>
-                <option value="ISD">ISD</option>
-                <option value="ICD">ICD</option>
-                <option value="ISE">ISE</option>
-              </select>
-            </label>
+          <div className="rounded-lg border bg-slate-50 p-3">
+            <div className="text-sm font-semibold text-slate-800">Fonte de dados</div>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="rounded border bg-white px-3 py-2 text-sm">
+                <div className="text-xs text-slate-500">Id da fonte de dados</div>
+                <div className="font-semibold text-slate-900">{form.idFonteDados ? `#${form.idFonteDados}` : "—"}</div>
+              </div>
+              <label className="rounded border bg-white px-3 py-2 text-sm">
+                <div className="text-xs text-slate-500">Descrição</div>
+                <input className="input bg-white w-full mt-1" value={form.nome} onChange={(e) => setForm((p) => ({ ...p, nome: e.target.value }))} disabled={loading} />
+              </label>
+            </div>
           </div>
           <div className="flex items-center justify-end gap-2">
             <button

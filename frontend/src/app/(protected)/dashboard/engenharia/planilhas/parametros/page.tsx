@@ -53,6 +53,7 @@ export default function ParametrosPage() {
   const [form, setForm] = useState<{
     idParametros: number | null;
     nome: string;
+    tipoBase: "SINAPI" | "SBC";
     ufSinapi: string;
     dataBaseSbc: string;
     dataBaseSinapi: string;
@@ -67,6 +68,7 @@ export default function ParametrosPage() {
   }>({
     idParametros: null,
     nome: "",
+    tipoBase: "SINAPI",
     ufSinapi: "",
     dataBaseSbc: "",
     dataBaseSinapi: "",
@@ -158,24 +160,43 @@ export default function ParametrosPage() {
       setLoading(true);
       setErr(null);
       setOkMsg(null);
+      const tipoBase = form.tipoBase === "SBC" ? "SBC" : "SINAPI";
+      const payload =
+        tipoBase === "SINAPI"
+          ? {
+              idParametros: form.idParametros,
+              nome,
+              ufSinapi: String(form.ufSinapi || "").trim().toUpperCase() || null,
+              dataBaseSbc: null,
+              dataBaseSinapi: String(form.dataBaseSinapi || "").trim().toUpperCase() || null,
+              bdiServicosSbc: null,
+              bdiServicosSinapi: parseNumberLoose(form.bdiServicosSinapi),
+              bdiDiferenciadoSbc: null,
+              bdiDiferenciadoSinapi: parseNumberLoose(form.bdiDiferenciadoSinapi),
+              encSociaisSemDesSbc: null,
+              encSociaisSemDesSinapi: parseNumberLoose(form.encSociaisSemDesSinapi),
+              descontoSbc: null,
+              descontoSinapi: parseNumberLoose(form.descontoSinapi),
+            }
+          : {
+              idParametros: form.idParametros,
+              nome,
+              ufSinapi: null,
+              dataBaseSbc: String(form.dataBaseSbc || "").trim().toUpperCase() || null,
+              dataBaseSinapi: null,
+              bdiServicosSbc: parseNumberLoose(form.bdiServicosSbc),
+              bdiServicosSinapi: null,
+              bdiDiferenciadoSbc: parseNumberLoose(form.bdiDiferenciadoSbc),
+              bdiDiferenciadoSinapi: null,
+              encSociaisSemDesSbc: parseNumberLoose(form.encSociaisSemDesSbc),
+              encSociaisSemDesSinapi: null,
+              descontoSbc: parseNumberLoose(form.descontoSbc),
+              descontoSinapi: null,
+            };
       const res = await authFetch(`/api/v1/engenharia/planilhas/parametros`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          idParametros: form.idParametros,
-          nome,
-          ufSinapi: String(form.ufSinapi || "").trim().toUpperCase() || null,
-          dataBaseSbc: String(form.dataBaseSbc || "").trim().toUpperCase() || null,
-          dataBaseSinapi: String(form.dataBaseSinapi || "").trim().toUpperCase() || null,
-          bdiServicosSbc: parseNumberLoose(form.bdiServicosSbc),
-          bdiServicosSinapi: parseNumberLoose(form.bdiServicosSinapi),
-          bdiDiferenciadoSbc: parseNumberLoose(form.bdiDiferenciadoSbc),
-          bdiDiferenciadoSinapi: parseNumberLoose(form.bdiDiferenciadoSinapi),
-          encSociaisSemDesSbc: parseNumberLoose(form.encSociaisSemDesSbc),
-          encSociaisSemDesSinapi: parseNumberLoose(form.encSociaisSemDesSinapi),
-          descontoSbc: parseNumberLoose(form.descontoSbc),
-          descontoSinapi: parseNumberLoose(form.descontoSinapi),
-        }),
+        body: JSON.stringify(payload),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao salvar parâmetro");
@@ -183,6 +204,7 @@ export default function ParametrosPage() {
       setForm({
         idParametros: null,
         nome: "",
+        tipoBase: "SINAPI",
         ufSinapi: "",
         dataBaseSbc: "",
         dataBaseSinapi: "",
@@ -339,18 +361,58 @@ export default function ParametrosPage() {
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 text-left text-slate-700">
                 <tr>
-                  <th className="px-3 py-2">#id - nome</th>
-                  <th className="px-3 py-2">SINAPI</th>
-                  <th className="px-3 py-2">SBC</th>
+                  <th className="px-3 py-2">Parâmetros</th>
+                  <th className="px-3 py-2">1 - Usado em insumos</th>
+                  <th className="px-3 py-2">2 - Usado em Composições</th>
                   <th className="px-3 py-2">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {parametros.map((p) => (
                   <tr key={p.idParametros} className="border-t">
-                    <td className="px-3 py-2">{`#${p.idParametros} - ${p.nome || "—"}`}</td>
-                    <td className="px-3 py-2">{p.dataBaseSinapi ? `${p.ufSinapi || "—"} • ${p.dataBaseSinapi}` : "—"}</td>
-                    <td className="px-3 py-2">{p.dataBaseSbc || "—"}</td>
+                    {(() => {
+                      const hasSinapi = Boolean(
+                        String(p.ufSinapi || "").trim() ||
+                          String(p.dataBaseSinapi || "").trim() ||
+                          p.bdiServicosSinapi != null ||
+                          p.bdiDiferenciadoSinapi != null ||
+                          p.encSociaisSemDesSinapi != null ||
+                          p.descontoSinapi != null
+                      );
+                      const hasSbc = Boolean(
+                        String(p.dataBaseSbc || "").trim() ||
+                          p.bdiServicosSbc != null ||
+                          p.bdiDiferenciadoSbc != null ||
+                          p.encSociaisSemDesSbc != null ||
+                          p.descontoSbc != null
+                      );
+                      const tipoBase = hasSinapi ? "SINAPI" : hasSbc ? "SBC" : "—";
+                      const uf = tipoBase === "SINAPI" ? p.ufSinapi || "—" : "—";
+                      const dataBase = tipoBase === "SINAPI" ? p.dataBaseSinapi || "" : tipoBase === "SBC" ? p.dataBaseSbc || "" : "";
+                      const bdiServicos = tipoBase === "SINAPI" ? p.bdiServicosSinapi : p.bdiServicosSbc;
+                      const bdiDiferenciado = tipoBase === "SINAPI" ? p.bdiDiferenciadoSinapi : p.bdiDiferenciadoSbc;
+                      const encSociais = tipoBase === "SINAPI" ? p.encSociaisSemDesSinapi : p.encSociaisSemDesSbc;
+                      const desconto = tipoBase === "SINAPI" ? p.descontoSinapi : p.descontoSbc;
+                      return (
+                        <>
+                          <td className="px-3 py-2">
+                            <div className="font-medium">{`#${p.idParametros}`}</div>
+                            <div className="text-xs text-slate-600">{p.nome || "—"}</div>
+                          </td>
+                          <td className="px-3 py-2 text-xs text-slate-800">
+                            <div>{`UF: ${uf || "—"}`}</div>
+                            <div>{`Sinapi ou SBC: ${tipoBase}`}</div>
+                            <div>{`Data-base: ${String(dataBase || "").trim() ? String(dataBase || "").trim() : "—"}`}</div>
+                          </td>
+                          <td className="px-3 py-2 text-xs text-slate-800">
+                            <div>{`BDI Serv.: ${bdiServicos == null ? "—" : Number(bdiServicos).toFixed(2)}%`}</div>
+                            <div>{`BDI Dif.: ${bdiDiferenciado == null ? "—" : Number(bdiDiferenciado).toFixed(2)}%`}</div>
+                            <div>{`Enc. Soc.: ${encSociais == null ? "—" : Number(encSociais).toFixed(2)}%`}</div>
+                            <div>{`Desconto: ${desconto == null ? "—" : Number(desconto).toFixed(2)}%`}</div>
+                          </td>
+                        </>
+                      );
+                    })()}
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
                         <button
@@ -360,6 +422,17 @@ export default function ParametrosPage() {
                             setForm({
                               idParametros: p.idParametros,
                               nome: p.nome || "",
+                              tipoBase: (() => {
+                                const hasSinapi = Boolean(
+                                  String(p.ufSinapi || "").trim() ||
+                                    String(p.dataBaseSinapi || "").trim() ||
+                                    p.bdiServicosSinapi != null ||
+                                    p.bdiDiferenciadoSinapi != null ||
+                                    p.encSociaisSemDesSinapi != null ||
+                                    p.descontoSinapi != null
+                                );
+                                return hasSinapi ? "SINAPI" : "SBC";
+                              })(),
                               ufSinapi: p.ufSinapi || "",
                               dataBaseSbc: p.dataBaseSbc || "",
                               dataBaseSinapi: p.dataBaseSinapi || "",
@@ -404,55 +477,100 @@ export default function ParametrosPage() {
 
         <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
           <div className="text-lg font-semibold">{form.idParametros ? `Editar parâmetro #${form.idParametros}` : "Cadastrar parâmetro"}</div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="space-y-1 md:col-span-2">
-              <div className="text-xs text-slate-500">Nome</div>
-              <input className="input bg-white w-full" value={form.nome} onChange={(e) => setForm((p) => ({ ...p, nome: e.target.value }))} disabled={loading} />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-500">UF (SINAPI)</div>
-              <input className="input bg-white w-full" value={form.ufSinapi} onChange={(e) => setForm((p) => ({ ...p, ufSinapi: e.target.value }))} disabled={loading} placeholder="SP" />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-500">Data-base SINAPI</div>
-              <input className="input bg-white w-full" value={form.dataBaseSinapi} onChange={(e) => setForm((p) => ({ ...p, dataBaseSinapi: e.target.value }))} disabled={loading} placeholder="2024-01" />
-            </label>
-            <label className="space-y-1 md:col-span-2">
-              <div className="text-xs text-slate-500">Data-base SBC</div>
-              <input className="input bg-white w-full" value={form.dataBaseSbc} onChange={(e) => setForm((p) => ({ ...p, dataBaseSbc: e.target.value }))} disabled={loading} placeholder="2024-01" />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-500">BDI de Serviços (SBC)</div>
-              <input className="input bg-white w-full" value={form.bdiServicosSbc} onChange={(e) => setForm((p) => ({ ...p, bdiServicosSbc: e.target.value }))} disabled={loading} />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-500">BDI de Serviços (SINAPI)</div>
-              <input className="input bg-white w-full" value={form.bdiServicosSinapi} onChange={(e) => setForm((p) => ({ ...p, bdiServicosSinapi: e.target.value }))} disabled={loading} />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-500">BDI Diferenciado (SBC)</div>
-              <input className="input bg-white w-full" value={form.bdiDiferenciadoSbc} onChange={(e) => setForm((p) => ({ ...p, bdiDiferenciadoSbc: e.target.value }))} disabled={loading} />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-500">BDI Diferenciado (SINAPI)</div>
-              <input className="input bg-white w-full" value={form.bdiDiferenciadoSinapi} onChange={(e) => setForm((p) => ({ ...p, bdiDiferenciadoSinapi: e.target.value }))} disabled={loading} />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-500">Enc. Sociais (SBC)</div>
-              <input className="input bg-white w-full" value={form.encSociaisSemDesSbc} onChange={(e) => setForm((p) => ({ ...p, encSociaisSemDesSbc: e.target.value }))} disabled={loading} />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-500">Enc. Sociais (SINAPI)</div>
-              <input className="input bg-white w-full" value={form.encSociaisSemDesSinapi} onChange={(e) => setForm((p) => ({ ...p, encSociaisSemDesSinapi: e.target.value }))} disabled={loading} />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-500">Desconto (SBC)</div>
-              <input className="input bg-white w-full" value={form.descontoSbc} onChange={(e) => setForm((p) => ({ ...p, descontoSbc: e.target.value }))} disabled={loading} />
-            </label>
-            <label className="space-y-1">
-              <div className="text-xs text-slate-500">Desconto (SINAPI)</div>
-              <input className="input bg-white w-full" value={form.descontoSinapi} onChange={(e) => setForm((p) => ({ ...p, descontoSinapi: e.target.value }))} disabled={loading} />
-            </label>
+          <div className="space-y-3">
+            <div className="rounded-lg border bg-slate-50 p-3">
+              <div className="text-sm font-semibold text-slate-800">Parâmetros</div>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="rounded border bg-white px-3 py-2 text-sm">
+                  <div className="text-xs text-slate-500">id do parâmetro</div>
+                  <div className="font-semibold text-slate-900">{form.idParametros ? `#${form.idParametros}` : "—"}</div>
+                </div>
+                <label className="rounded border bg-white px-3 py-2 text-sm">
+                  <div className="text-xs text-slate-500">Nome</div>
+                  <input className="input bg-white w-full mt-1" value={form.nome} onChange={(e) => setForm((p) => ({ ...p, nome: e.target.value }))} disabled={loading} />
+                </label>
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-slate-50 p-3">
+              <div className="text-sm font-semibold text-slate-800">1 - Usado em insumos</div>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <label className="rounded border bg-white px-3 py-2 text-sm">
+                  <div className="text-xs text-slate-500">UF</div>
+                  <input
+                    className="input bg-white w-full mt-1"
+                    value={form.tipoBase === "SINAPI" ? form.ufSinapi : ""}
+                    onChange={(e) => setForm((p) => ({ ...p, ufSinapi: e.target.value }))}
+                    disabled={loading || form.tipoBase !== "SINAPI"}
+                    placeholder={form.tipoBase === "SINAPI" ? "SP" : "—"}
+                  />
+                </label>
+                <label className="rounded border bg-white px-3 py-2 text-sm">
+                  <div className="text-xs text-slate-500">Sinapi ou SBC</div>
+                  <select
+                    className="input bg-white w-full mt-1"
+                    value={form.tipoBase}
+                    onChange={(e) => setForm((p) => ({ ...p, tipoBase: (e.target.value as any) === "SBC" ? "SBC" : "SINAPI" }))}
+                    disabled={loading}
+                  >
+                    <option value="SINAPI">SINAPI</option>
+                    <option value="SBC">SBC</option>
+                  </select>
+                </label>
+                <label className="rounded border bg-white px-3 py-2 text-sm">
+                  <div className="text-xs text-slate-500">Data-base</div>
+                  <input
+                    className="input bg-white w-full mt-1"
+                    value={form.tipoBase === "SINAPI" ? form.dataBaseSinapi : form.dataBaseSbc}
+                    onChange={(e) => setForm((p) => (p.tipoBase === "SINAPI" ? { ...p, dataBaseSinapi: e.target.value } : { ...p, dataBaseSbc: e.target.value }))}
+                    disabled={loading}
+                    placeholder="2024-01"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-slate-50 p-3">
+              <div className="text-sm font-semibold text-slate-800">2 - Usado em Composições</div>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="rounded border bg-white px-3 py-2 text-sm">
+                  <div className="text-xs text-slate-500">BDI de Serviços (%)</div>
+                  <input
+                    className="input bg-white w-full mt-1"
+                    value={form.tipoBase === "SINAPI" ? form.bdiServicosSinapi : form.bdiServicosSbc}
+                    onChange={(e) => setForm((p) => (p.tipoBase === "SINAPI" ? { ...p, bdiServicosSinapi: e.target.value } : { ...p, bdiServicosSbc: e.target.value }))}
+                    disabled={loading}
+                  />
+                </label>
+                <label className="rounded border bg-white px-3 py-2 text-sm">
+                  <div className="text-xs text-slate-500">BDI Diferenciado (%)</div>
+                  <input
+                    className="input bg-white w-full mt-1"
+                    value={form.tipoBase === "SINAPI" ? form.bdiDiferenciadoSinapi : form.bdiDiferenciadoSbc}
+                    onChange={(e) => setForm((p) => (p.tipoBase === "SINAPI" ? { ...p, bdiDiferenciadoSinapi: e.target.value } : { ...p, bdiDiferenciadoSbc: e.target.value }))}
+                    disabled={loading}
+                  />
+                </label>
+                <label className="rounded border bg-white px-3 py-2 text-sm">
+                  <div className="text-xs text-slate-500">Enc. Sociais (%)</div>
+                  <input
+                    className="input bg-white w-full mt-1"
+                    value={form.tipoBase === "SINAPI" ? form.encSociaisSemDesSinapi : form.encSociaisSemDesSbc}
+                    onChange={(e) => setForm((p) => (p.tipoBase === "SINAPI" ? { ...p, encSociaisSemDesSinapi: e.target.value } : { ...p, encSociaisSemDesSbc: e.target.value }))}
+                    disabled={loading}
+                  />
+                </label>
+                <label className="rounded border bg-white px-3 py-2 text-sm">
+                  <div className="text-xs text-slate-500">Desconto (%)</div>
+                  <input
+                    className="input bg-white w-full mt-1"
+                    value={form.tipoBase === "SINAPI" ? form.descontoSinapi : form.descontoSbc}
+                    onChange={(e) => setForm((p) => (p.tipoBase === "SINAPI" ? { ...p, descontoSinapi: e.target.value } : { ...p, descontoSbc: e.target.value }))}
+                    disabled={loading}
+                  />
+                </label>
+              </div>
+            </div>
           </div>
           <div className="flex items-center justify-end gap-2">
             <button
@@ -462,6 +580,7 @@ export default function ParametrosPage() {
                 setForm({
                   idParametros: null,
                   nome: "",
+                  tipoBase: "SINAPI",
                   ufSinapi: "",
                   dataBaseSbc: "",
                   dataBaseSinapi: "",

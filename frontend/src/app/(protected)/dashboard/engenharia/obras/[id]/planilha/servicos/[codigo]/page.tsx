@@ -2201,7 +2201,6 @@ async function readTextSmart(file: File) {
   </body>
 </html>`);
     w.document.close();
-    setOkMsg("Impressão aberta.");
   }
 
   async function abrirComposicaoPrimitiva() {
@@ -3425,45 +3424,87 @@ async function readTextSmart(file: File) {
           </div>
           <div className="w-full md:w-[420px]">
             <div className="rounded-lg border bg-white p-3">
-              <div className="text-sm font-semibold text-slate-800">Parâmetros (Obra pública)</div>
-              <div className="mt-2 overflow-auto">
-                <table className="w-full min-w-[380px] border-collapse text-xs">
-                  <thead className="bg-slate-50 text-center text-slate-700">
-                    <tr>
-                      <th className="border px-2 py-1">Parâmetros</th>
-                      <th className="border px-2 py-1">SBC</th>
-                      <th className="border px-2 py-1">SINAPI</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td className="border px-2 py-1">Data-base</td>
-                      <td className="border px-2 py-1 text-center">{planilhaParams?.dataBaseSbc ? planilhaParams.dataBaseSbc : "—"}</td>
-                      <td className="border px-2 py-1 text-center">{planilhaParams?.dataBaseSinapi ? planilhaParams.dataBaseSinapi : "—"}</td>
-                    </tr>
-                    <tr>
-                      <td className="border px-2 py-1">BDI de Serviços (%)</td>
-                      <td className="border px-2 py-1 text-center">{planilhaParams?.bdiServicosSbc == null ? "—" : Number(planilhaParams.bdiServicosSbc).toFixed(2)}</td>
-                      <td className="border px-2 py-1 text-center">{planilhaParams?.bdiServicosSinapi == null ? "—" : Number(planilhaParams.bdiServicosSinapi).toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="border px-2 py-1">BDI Diferenciado (%)</td>
-                      <td className="border px-2 py-1 text-center">{planilhaParams?.bdiDiferenciadoSbc == null ? "—" : Number(planilhaParams.bdiDiferenciadoSbc).toFixed(2)}</td>
-                      <td className="border px-2 py-1 text-center">{planilhaParams?.bdiDiferenciadoSinapi == null ? "—" : Number(planilhaParams.bdiDiferenciadoSinapi).toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="border px-2 py-1">Enc. Sociais SEM Desoneração (%)</td>
-                      <td className="border px-2 py-1 text-center">{planilhaParams?.encSociaisSemDesSbc == null ? "—" : Number(planilhaParams.encSociaisSemDesSbc).toFixed(2)}</td>
-                      <td className="border px-2 py-1 text-center">{planilhaParams?.encSociaisSemDesSinapi == null ? "—" : Number(planilhaParams.encSociaisSemDesSinapi).toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                      <td className="border px-2 py-1">Desconto (%)</td>
-                      <td className="border px-2 py-1 text-center">{planilhaParams?.descontoSbc == null ? "—" : Number(planilhaParams.descontoSbc).toFixed(2)}</td>
-                      <td className="border px-2 py-1 text-center">{planilhaParams?.descontoSinapi == null ? "—" : Number(planilhaParams.descontoSinapi).toFixed(2)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+              {(() => {
+                const p = planilhaParams;
+                const hasSinapi = Boolean(
+                  String(p?.ufSinapi || "").trim() ||
+                    String(p?.dataBaseSinapi || "").trim() ||
+                    p?.bdiServicosSinapi != null ||
+                    p?.bdiDiferenciadoSinapi != null ||
+                    p?.encSociaisSemDesSinapi != null ||
+                    p?.descontoSinapi != null
+                );
+                const hasSbc = Boolean(
+                  String(p?.dataBaseSbc || "").trim() ||
+                    p?.bdiServicosSbc != null ||
+                    p?.bdiDiferenciadoSbc != null ||
+                    p?.encSociaisSemDesSbc != null ||
+                    p?.descontoSbc != null
+                );
+                const tipoBase = hasSinapi ? "SINAPI" : hasSbc ? "SBC" : "";
+                const dataBase = tipoBase === "SINAPI" ? String(p?.dataBaseSinapi || "").trim() : tipoBase === "SBC" ? String(p?.dataBaseSbc || "").trim() : "";
+                const bdiServicos = tipoBase === "SINAPI" ? p?.bdiServicosSinapi : p?.bdiServicosSbc;
+                const bdiDiferenciado = tipoBase === "SINAPI" ? p?.bdiDiferenciadoSinapi : p?.bdiDiferenciadoSbc;
+                const encSociais = tipoBase === "SINAPI" ? p?.encSociaisSemDesSinapi : p?.encSociaisSemDesSbc;
+                const desconto = tipoBase === "SINAPI" ? p?.descontoSinapi : p?.descontoSbc;
+
+                return (
+                  <div className="space-y-3">
+                    <div className="text-sm font-semibold text-slate-800">Parâmetros</div>
+
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="rounded border bg-slate-50 px-2 py-2 text-xs">
+                        <div className="text-[10px] text-slate-500">id do parâmetro</div>
+                        <div className="font-semibold text-slate-900">{planilhaCtx?.idParametros ? `#${planilhaCtx.idParametros}` : "—"}</div>
+                      </div>
+                      <div className="rounded border bg-slate-50 px-2 py-2 text-xs">
+                        <div className="text-[10px] text-slate-500">Nome</div>
+                        <div className="font-semibold text-slate-900">{planilhaCtx?.parametrosNome || "—"}</div>
+                      </div>
+                    </div>
+
+                    <div className="rounded border bg-slate-50 p-2">
+                      <div className="text-xs font-semibold text-slate-800">1 - Usado em insumos</div>
+                      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <div className="rounded border bg-white px-2 py-2 text-xs">
+                          <div className="text-[10px] text-slate-500">UF</div>
+                          <div className="font-semibold text-slate-900">{String(p?.ufSinapi || "").trim() ? String(p?.ufSinapi || "").trim() : "—"}</div>
+                        </div>
+                        <div className="rounded border bg-white px-2 py-2 text-xs">
+                          <div className="text-[10px] text-slate-500">Sinapi ou SBC</div>
+                          <div className="font-semibold text-slate-900">{tipoBase || "—"}</div>
+                        </div>
+                        <div className="rounded border bg-white px-2 py-2 text-xs">
+                          <div className="text-[10px] text-slate-500">Data-base</div>
+                          <div className="font-semibold text-slate-900">{dataBase || "—"}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded border bg-slate-50 p-2">
+                      <div className="text-xs font-semibold text-slate-800">2 - Usado em Composições</div>
+                      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <div className="rounded border bg-white px-2 py-2 text-xs">
+                          <div className="text-[10px] text-slate-500">BDI de Serviços (%)</div>
+                          <div className="font-semibold text-slate-900">{bdiServicos == null ? "—" : Number(bdiServicos).toFixed(2)}</div>
+                        </div>
+                        <div className="rounded border bg-white px-2 py-2 text-xs">
+                          <div className="text-[10px] text-slate-500">BDI Diferenciado (%)</div>
+                          <div className="font-semibold text-slate-900">{bdiDiferenciado == null ? "—" : Number(bdiDiferenciado).toFixed(2)}</div>
+                        </div>
+                        <div className="rounded border bg-white px-2 py-2 text-xs">
+                          <div className="text-[10px] text-slate-500">Enc. Sociais (%)</div>
+                          <div className="font-semibold text-slate-900">{encSociais == null ? "—" : Number(encSociais).toFixed(2)}</div>
+                        </div>
+                        <div className="rounded border bg-white px-2 py-2 text-xs">
+                          <div className="text-[10px] text-slate-500">Desconto (%)</div>
+                          <div className="font-semibold text-slate-900">{desconto == null ? "—" : Number(desconto).toFixed(2)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
