@@ -765,13 +765,6 @@ export default function EngenhariaObraHomePage() {
     return qs ? `?${qs}` : "";
   }, [sp]);
   const selfHref = idObra ? `/dashboard/engenharia/obras/${idObra}${selfQuery}` : "/dashboard/engenharia/obras";
-  const breadcrumb = useMemo(() => {
-    if (!effectiveReturnTo) return "Engenharia → Obras → Obra selecionada";
-    const rt = effectiveReturnTo.toLowerCase();
-    if (rt.includes("/dashboard/engenharia/obras/ativa")) return "Engenharia → Obras → Obra ativa → Obra selecionada";
-    if (rt.includes("/dashboard/engenharia/obras")) return "Engenharia → Obras → Obra selecionada";
-    return "Engenharia → Obra selecionada";
-  }, [effectiveReturnTo]);
   const [obra, setObra] = useState<ObraBasica | null>(null);
   const [carregandoObra, setCarregandoObra] = useState(false);
   const [erroObra, setErroObra] = useState<string | null>(null);
@@ -1285,10 +1278,34 @@ export default function EngenhariaObraHomePage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <PageLoadStatusBadge loading={bootLoading || carregandoObra || carregandoContrato} done={bootDone && !bootLoading && !carregandoObra && !carregandoContrato} />
-          <div className="text-xs text-slate-500">{breadcrumb}</div>
+          <div className="text-xs text-slate-500 flex flex-wrap items-center gap-1">
+            <button className="hover:underline" type="button" onClick={() => router.push("/dashboard/engenharia")} title="Ir para Engenharia">
+              Engenharia
+            </button>
+            <span aria-hidden="true">→</span>
+            <button className="hover:underline" type="button" onClick={() => router.push("/dashboard/engenharia/obras")} title="Ir para Obras">
+              Obras
+            </button>
+            <span aria-hidden="true">→</span>
+            <button
+              className="hover:underline text-blue-600"
+              type="button"
+              onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}`)}
+              title="Ir para a Obra selecionada"
+            >
+              {`Obra #${idObra}${String(obra?.name || obraNomeParam || "").trim() ? ` - ${String(obra?.name || obraNomeParam).trim()}` : ""}`}
+            </button>
+            <span aria-hidden="true">→</span>
+            <button className="hover:underline" type="button" onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha`)} title="Ir para Planilha orçamentária">
+              Planilha
+            </button>
+          </div>
           <h1 className="text-2xl font-semibold">Obra selecionada</h1>
           <div className="text-sm text-slate-600">
             {`Obra #${idObra}${obraNomeParam ? ` — ${obraNomeParam}` : ""}${contrato?.numeroContrato?.trim() ? ` — Contrato: ${contrato.numeroContrato}` : ""} — janelas operacionais da obra selecionada.`}
+          </div>
+          <div className="mt-2 text-xs text-slate-600 max-w-3xl">
+            Planilha orçamentária: versões, parâmetros e Fonte (catálogo). Serviços: verificação do catálogo e acesso à análise de composição. SINAPI: importação de composições/insumos para a Fonte. Composições: edição dos itens do serviço e atualização em cascata.
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

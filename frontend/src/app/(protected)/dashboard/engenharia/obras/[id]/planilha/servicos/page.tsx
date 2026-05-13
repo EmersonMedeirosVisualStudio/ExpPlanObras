@@ -1058,14 +1058,14 @@ export default function Page() {
         </div>
 
         {showColsCard ? (
-          <div className="rounded-lg border bg-slate-50 p-3">
+          <div className="rounded-lg border bg-slate-50 p-3 text-xs">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="text-sm font-semibold text-slate-800">Largura das colunas (px)</div>
               <button className="rounded-lg border bg-white px-3 py-1.5 text-sm hover:bg-slate-50" type="button" onClick={() => setShowColsCard(false)} title="Ocultar">
                 Ocultar
               </button>
             </div>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
               {[
                 { key: "item", label: "ITEM" },
                 { key: "codigo", label: "CÓDIGO" },
@@ -1078,7 +1078,7 @@ export default function Page() {
                 { key: "status", label: "STATUS" },
                 { key: "acao", label: "AÇÃO" },
               ].map((c) => (
-                <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-sm">
+                <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-2 py-1.5">
                   <div className="font-medium text-slate-700">{c.label}</div>
                   <input
                     className="input bg-white w-[92px]"
@@ -1100,37 +1100,49 @@ export default function Page() {
         ) : null}
 
         <div className="overflow-auto">
-          <table className="min-w-[1180px] w-full text-sm">
+          <table className="min-w-[1180px] w-full text-xs" style={{ tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: `${colWidths.item}px` }} />
+              <col style={{ width: `${colWidths.codigo}px` }} />
+              <col style={{ width: `${colWidths.tipo}px` }} />
+              <col style={{ width: `${colWidths.fonte}px` }} />
+              <col style={{ width: `${colWidths.servico}px` }} />
+              <col style={{ width: `${colWidths.planilha}px` }} />
+              <col style={{ width: `${colWidths.composicao}px` }} />
+              <col style={{ width: `${colWidths.dif}px` }} />
+              <col style={{ width: `${colWidths.status}px` }} />
+              <col style={{ width: `${colWidths.acao}px` }} />
+            </colgroup>
             <thead className="bg-slate-50 text-left text-slate-700">
               <tr>
-                <th className="px-3 py-2" style={{ width: `${colWidths.item}px` }}>
+                <th className="px-2 py-1.5" style={{ width: `${colWidths.item}px` }}>
                   ITEM
                 </th>
-                <th className="px-3 py-2" style={{ width: `${colWidths.codigo}px` }}>
+                <th className="px-2 py-1.5" style={{ width: `${colWidths.codigo}px` }}>
                   CÓDIGO
                 </th>
-                <th className="px-3 py-2" style={{ width: `${colWidths.tipo}px` }}>
+                <th className="px-2 py-1.5" style={{ width: `${colWidths.tipo}px` }}>
                   TIPO
                 </th>
-                <th className="px-3 py-2" style={{ width: `${colWidths.fonte}px` }}>
+                <th className="px-2 py-1.5" style={{ width: `${colWidths.fonte}px` }}>
                   FONTE
                 </th>
-                <th className="px-3 py-2" style={{ width: `${colWidths.servico}px` }}>
+                <th className="px-2 py-1.5" style={{ width: `${colWidths.servico}px` }}>
                   SERVIÇO
                 </th>
-                <th className="px-3 py-2 text-right" style={{ width: `${colWidths.planilha}px` }}>
+                <th className="px-2 py-1.5 text-right" style={{ width: `${colWidths.planilha}px` }}>
                   PLANILHA
                 </th>
-                <th className="px-3 py-2 text-right" style={{ width: `${colWidths.composicao}px` }}>
+                <th className="px-2 py-1.5 text-right" style={{ width: `${colWidths.composicao}px` }}>
                   COMPOSIÇÃO
                 </th>
-                <th className="px-3 py-2 text-right" style={{ width: `${colWidths.dif}px` }}>
+                <th className="px-2 py-1.5 text-right" style={{ width: `${colWidths.dif}px` }}>
                   DIF.
                 </th>
-                <th className="px-3 py-2" style={{ width: `${colWidths.status}px` }}>
+                <th className="px-2 py-1.5" style={{ width: `${colWidths.status}px` }}>
                   STATUS
                 </th>
-                <th className="px-3 py-2" style={{ width: `${colWidths.acao}px` }}>
+                <th className="px-2 py-1.5" style={{ width: `${colWidths.acao}px` }}>
                   Ação
                 </th>
               </tr>
@@ -1142,31 +1154,31 @@ export default function Page() {
                   id={`row-${String(r.codigo || "").trim().toUpperCase()}`}
                   className={`border-t ${focusCodigo && String(r.codigo || "").trim().toUpperCase() === focusCodigo ? "bg-amber-50" : ""}`}
                 >
-                  <td className="px-3 py-2 font-medium" style={{ width: `${colWidths.item}px` }}>
+                  <td className="px-2 py-1.5 font-medium" style={{ width: `${colWidths.item}px` }}>
                     {r.item || "—"}
                   </td>
-                  <td className="px-3 py-2 font-medium" style={{ width: `${colWidths.codigo}px` }}>
+                  <td className="px-2 py-1.5 font-medium" style={{ width: `${colWidths.codigo}px` }}>
                     {r.codigo || "—"}
                   </td>
-                  <td className="px-3 py-2" style={{ width: `${colWidths.tipo}px` }}>
+                  <td className="px-2 py-1.5" style={{ width: `${colWidths.tipo}px` }}>
                     {r.tipo || "—"}
                   </td>
-                  <td className="px-3 py-2" style={{ width: `${colWidths.fonte}px` }}>
+                  <td className="px-2 py-1.5" style={{ width: `${colWidths.fonte}px` }}>
                     {r.fonte || "—"}
                   </td>
-                  <td className="px-3 py-2" style={{ width: `${colWidths.servico}px` }}>
+                  <td className="px-2 py-1.5" style={{ width: `${colWidths.servico}px` }}>
                     {r.descricao || "—"}
                   </td>
-                  <td className="px-3 py-2 text-right" style={{ width: `${colWidths.planilha}px` }}>
+                  <td className="px-2 py-1.5 text-right" style={{ width: `${colWidths.planilha}px` }}>
                     {r.totalPlanilha == null ? "—" : moeda(Number(r.totalPlanilha || 0))}
                   </td>
-                  <td className="px-3 py-2 text-right" style={{ width: `${colWidths.composicao}px` }}>
+                  <td className="px-2 py-1.5 text-right" style={{ width: `${colWidths.composicao}px` }}>
                     {r.totalComposicao == null ? "—" : moeda(Number(r.totalComposicao || 0))}
                   </td>
-                  <td className="px-3 py-2 text-right" style={{ width: `${colWidths.dif}px` }}>
+                  <td className="px-2 py-1.5 text-right" style={{ width: `${colWidths.dif}px` }}>
                     {r.diff == null ? "—" : moeda(Number(r.diff || 0))}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-1.5">
                     {r.kind === "REF" ? (
                       r.definida ? (
                         <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Definida</span>
@@ -1181,7 +1193,7 @@ export default function Page() {
                       <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">Divergente</span>
                     )}
                   </td>
-                  <td className="px-3 py-2" style={{ width: `${colWidths.acao}px` }}>
+                  <td className="px-2 py-1.5" style={{ width: `${colWidths.acao}px` }}>
                     <button
                       className="rounded border bg-white px-3 py-1.5 text-xs hover:bg-slate-50"
                       type="button"
