@@ -89,6 +89,7 @@ export default function Page() {
     SEM_COMPOSICAO: true,
     DIVERGENTE: true,
   });
+  const [statusSel, setStatusSel] = useState<"TODOS" | "OK" | "SEM_COMPOSICAO" | "DIVERGENTE">("TODOS");
   const [listMode, setListMode] = useState<"TODOS" | "PLANILHADOS" | "NAO_PLANILHADOS">("TODOS");
   const [orderBy, setOrderBy] = useState<"ITEM" | "CODIGO">("ITEM");
   const [textFilter, setTextFilter] = useState("");
@@ -478,6 +479,14 @@ export default function Page() {
     }, 0);
     return () => clearTimeout(t);
   }, [bootDone, focusCodigo, filteredRows.length]);
+
+  useEffect(() => {
+    setStatusFilter({
+      OK: statusSel === "TODOS" ? true : statusSel === "OK",
+      SEM_COMPOSICAO: statusSel === "TODOS" ? true : statusSel === "SEM_COMPOSICAO",
+      DIVERGENTE: statusSel === "TODOS" ? true : statusSel === "DIVERGENTE",
+    });
+  }, [statusSel]);
 
   async function criarNovoServico() {
     const codigoServico = String(novoServicoForm.codigoServico || "").trim().toUpperCase();
@@ -1033,22 +1042,6 @@ export default function Page() {
 
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={statusFilter.SEM_COMPOSICAO}
-              onChange={(e) => setStatusFilter((p) => ({ ...p, SEM_COMPOSICAO: Boolean(e.target.checked) }))}
-            />
-            <span className="text-slate-700">Sem composição</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={statusFilter.DIVERGENTE} onChange={(e) => setStatusFilter((p) => ({ ...p, DIVERGENTE: Boolean(e.target.checked) }))} />
-            <span className="text-slate-700">Divergente</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={statusFilter.OK} onChange={(e) => setStatusFilter((p) => ({ ...p, OK: Boolean(e.target.checked) }))} />
-            <span className="text-slate-700">OK</span>
-          </label>
-          <label className="flex items-center gap-2">
             <span className="text-slate-700">Ordenar:</span>
             <select className="input bg-white" value={orderBy} onChange={(e) => setOrderBy(e.target.value as any)} disabled={loading} title="Ordenar a lista">
               <option value="ITEM">Item</option>
@@ -1082,7 +1075,7 @@ export default function Page() {
               disabled={loading}
             />
           </label>
-          <label className="space-y-1" style={{ width: "200px" }} title="Filtra a lista pela fonte (banco) do serviço">
+          <label className="space-y-1" style={{ width: "160px" }} title="Filtra a lista pela fonte (banco) do serviço">
             <div className="text-xs text-slate-500">Fonte</div>
             <select className="input bg-white w-full" value={fonteFilter} onChange={(e) => setFonteFilter(e.target.value)} disabled={loading}>
               <option value="">(todas as fontes)</option>
@@ -1094,12 +1087,21 @@ export default function Page() {
               ))}
             </select>
           </label>
-          <label className="space-y-1" style={{ width: "300px" }} title="Define se a lista mostra todos, somente planilhados (direto/indireto) ou não planilhados">
+          <label className="space-y-1" style={{ width: "240px" }} title="Define se a lista mostra todos, somente planilhados (direto/indireto) ou não planilhados">
             <div className="text-xs text-slate-500">Itens planilhados</div>
             <select className="input bg-white w-full" value={listMode} onChange={(e) => setListMode(e.target.value as any)} disabled={loading}>
               <option value="TODOS">Todos</option>
               <option value="PLANILHADOS">Somente usados na planilha (direto ou indiretamente)</option>
               <option value="NAO_PLANILHADOS">Não planilhados</option>
+            </select>
+          </label>
+          <label className="space-y-1" style={{ width: "200px" }} title="Filtra por status. Em referências: OK=Definida e Sem composição=Não definida.">
+            <div className="text-xs text-slate-500">Status</div>
+            <select className="input bg-white w-full" value={statusSel} onChange={(e) => setStatusSel(e.target.value as any)} disabled={loading}>
+              <option value="TODOS">Todos</option>
+              <option value="OK">OK / Definida</option>
+              <option value="SEM_COMPOSICAO">Sem composição / Não definida</option>
+              <option value="DIVERGENTE">Divergente</option>
             </select>
           </label>
         </div>

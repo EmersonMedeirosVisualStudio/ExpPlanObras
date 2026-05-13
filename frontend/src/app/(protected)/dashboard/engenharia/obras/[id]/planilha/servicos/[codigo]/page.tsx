@@ -2683,9 +2683,9 @@ async function readTextSmart(file: File) {
               ].map((c) => (
                 <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-[10px]">
                   <div className="min-w-[70px] text-slate-700 font-medium">{c.label}</div>
-                  <div className="flex flex-1 items-center gap-2">
+                  <div className="flex flex-1 flex-wrap items-center justify-end gap-2 min-w-0">
                     <input
-                      className="input bg-white flex-[2] min-w-[96px] h-8 text-[10px]"
+                      className="input bg-white w-[88px] h-7 text-[10px]"
                       type="number"
                       min={40}
                       max={1200}
@@ -2698,7 +2698,7 @@ async function readTextSmart(file: File) {
                       title="Largura (px)"
                     />
                     <input
-                      className="input bg-white flex-[1] min-w-[72px] h-8 text-[10px]"
+                      className="input bg-white w-[64px] h-7 text-[10px]"
                       type="number"
                       min={10}
                       max={16}
