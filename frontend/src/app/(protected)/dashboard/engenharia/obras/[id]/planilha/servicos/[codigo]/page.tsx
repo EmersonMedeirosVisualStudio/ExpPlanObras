@@ -2678,14 +2678,14 @@ async function readTextSmart(file: File) {
                 { key: "qtd", label: "Qtd", wKey: "wQtdPx", fsKey: "fsQtdPx" },
                 { key: "valorUnit", label: "Valor Unit", wKey: "wValorUnitPx", fsKey: "fsValorUnitPx" },
                 { key: "total", label: "Total", wKey: "wTotalPx", fsKey: "fsTotalPx" },
-                { key: "cc", label: "Centro de custo", wKey: "wCentroCustoPx", fsKey: "fsCentroCustoPx" },
+                { key: "cc", label: "C. de Custos", wKey: "wCentroCustoPx", fsKey: "fsCentroCustoPx" },
                 { key: "acoes", label: "Ações", wKey: "wAcoesPx", fsKey: "fsAcoesPx" },
               ].map((c) => (
                 <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-[10px]">
-                  <div className="min-w-[80px] text-slate-700 font-medium">{c.label}</div>
+                  <div className="min-w-[70px] text-slate-700 font-medium">{c.label}</div>
                   <div className="flex flex-1 items-center gap-2">
                     <input
-                      className="input bg-white w-full h-8 text-[10px]"
+                      className="input bg-white flex-[2] min-w-[96px] h-8 text-[10px]"
                       type="number"
                       min={40}
                       max={1200}
@@ -2698,7 +2698,7 @@ async function readTextSmart(file: File) {
                       title="Largura (px)"
                     />
                     <input
-                      className="input bg-white w-full h-8 text-[10px]"
+                      className="input bg-white flex-[1] min-w-[72px] h-8 text-[10px]"
                       type="number"
                       min={10}
                       max={16}
