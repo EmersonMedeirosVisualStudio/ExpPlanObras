@@ -2639,7 +2639,7 @@ async function readTextSmart(file: File) {
                 <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-[10px]">
                   <div className="text-slate-700 font-medium">{c.label}</div>
                   <input
-                    className="input bg-white w-[110px]"
+                    className="input bg-white w-full max-w-[110px]"
                     type="number"
                     min={60}
                     max={1200}
@@ -2655,7 +2655,7 @@ async function readTextSmart(file: File) {
               <div className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-[10px]">
                 <div className="text-slate-700 font-medium">FONTE (px)</div>
                 <input
-                  className="input bg-white w-[110px]"
+                  className="input bg-white w-full max-w-[110px]"
                   type="number"
                   min={10}
                   max={16}
@@ -2682,10 +2682,10 @@ async function readTextSmart(file: File) {
                 { key: "acoes", label: "Ações", wKey: "wAcoesPx", fsKey: "fsAcoesPx" },
               ].map((c) => (
                 <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-[10px]">
-                  <div className="min-w-[120px] text-slate-700 font-medium">{c.label}</div>
-                  <div className="flex items-center gap-2">
+                  <div className="min-w-[80px] text-slate-700 font-medium">{c.label}</div>
+                  <div className="flex flex-1 items-center gap-2">
                     <input
-                      className="input bg-white w-[100px]"
+                      className="input bg-white w-full"
                       type="number"
                       min={40}
                       max={1200}
@@ -2698,7 +2698,7 @@ async function readTextSmart(file: File) {
                       title="Largura (px)"
                     />
                     <input
-                      className="input bg-white w-[90px]"
+                      className="input bg-white w-full"
                       type="number"
                       min={10}
                       max={16}
