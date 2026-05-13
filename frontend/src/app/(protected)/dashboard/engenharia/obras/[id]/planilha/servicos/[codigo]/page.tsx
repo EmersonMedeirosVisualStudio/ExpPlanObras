@@ -2685,7 +2685,7 @@ async function readTextSmart(file: File) {
                   <div className="min-w-[80px] text-slate-700 font-medium">{c.label}</div>
                   <div className="flex flex-1 items-center gap-2">
                     <input
-                      className="input bg-white w-full"
+                      className="input bg-white w-full h-8 text-[10px]"
                       type="number"
                       min={40}
                       max={1200}
@@ -2698,7 +2698,7 @@ async function readTextSmart(file: File) {
                       title="Largura (px)"
                     />
                     <input
-                      className="input bg-white w-full"
+                      className="input bg-white w-full h-8 text-[10px]"
                       type="number"
                       min={10}
                       max={16}
