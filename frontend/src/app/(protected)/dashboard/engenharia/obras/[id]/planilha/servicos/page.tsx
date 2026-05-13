@@ -159,6 +159,53 @@ export default function Page() {
     });
   }
 
+  const colWidthsKey = useMemo(() => {
+    try {
+      const raw = localStorage.getItem("user");
+      const u = raw ? JSON.parse(raw) : null;
+      const id = Number(u?.id);
+      if (Number.isFinite(id) && id > 0) return `exp:servicos:col-widths:${id}`;
+    } catch {}
+    return "exp:servicos:col-widths";
+  }, []);
+
+  useEffect(() => {
+    try {
+      let raw = localStorage.getItem(colWidthsKey);
+      if (!raw && colWidthsKey !== "exp:servicos:col-widths") {
+        const legacy = localStorage.getItem("exp:servicos:col-widths");
+        if (legacy) {
+          localStorage.setItem(colWidthsKey, legacy);
+          raw = legacy;
+        }
+      }
+      if (!raw) return;
+      const p = JSON.parse(raw) as any;
+      const n = (v: any, fallback: number) => {
+        const x = Number(v);
+        return Number.isFinite(x) ? Math.max(10, Math.min(1200, Math.round(x))) : fallback;
+      };
+      setColWidths((cur) => ({
+        item: n(p?.item, cur.item),
+        codigo: n(p?.codigo, cur.codigo),
+        tipo: n(p?.tipo, cur.tipo),
+        fonte: n(p?.fonte, cur.fonte),
+        servico: n(p?.servico, cur.servico),
+        planilha: n(p?.planilha, cur.planilha),
+        composicao: n(p?.composicao, cur.composicao),
+        dif: n(p?.dif, cur.dif),
+        status: n(p?.status, cur.status),
+        acao: n(p?.acao, cur.acao),
+      }));
+    } catch {}
+  }, [colWidthsKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(colWidthsKey, JSON.stringify(colWidths));
+    } catch {}
+  }, [colWidths, colWidthsKey]);
+
   async function carregarPlanilhaAtual() {
     if (!idObra) return;
     try {
@@ -712,13 +759,13 @@ export default function Page() {
 
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
       {focusCodigo ? (
-        <div className="rounded-lg border-2 border-amber-400 bg-amber-50 p-3 text-sm text-amber-900 flex items-start justify-between gap-3 flex-wrap">
+        <div className="rounded-lg border-2 border-red-300 bg-red-50 p-3 text-sm text-red-900 flex items-start justify-between gap-3 flex-wrap">
           <div>
             <div className="font-semibold">{`ATENÇÃO: você está filtrado (FOCO) no serviço ${focusCodigo}`}</div>
             <div className="mt-1">A lista abaixo mostra somente este serviço.</div>
           </div>
           <button
-            className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm hover:bg-amber-100 disabled:opacity-60"
+            className="rounded-lg border border-red-300 bg-white px-3 py-2 text-sm hover:bg-red-100 disabled:opacity-60"
             type="button"
             disabled={loading}
             onClick={() => {
@@ -1013,7 +1060,7 @@ export default function Page() {
           </div>
           {focusCodigo ? (
             <button
-              className="rounded border-2 border-amber-400 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-60"
+              className="rounded border-2 border-red-300 bg-red-50 px-2 py-1 text-xs font-semibold text-red-900 hover:bg-red-100 disabled:opacity-60"
               type="button"
               onClick={() => router.push(selfHref)}
               disabled={loading}
@@ -1152,7 +1199,7 @@ export default function Page() {
                 <tr
                   key={`${r.kind}-${r.codigo}`}
                   id={`row-${String(r.codigo || "").trim().toUpperCase()}`}
-                  className={`border-t ${focusCodigo && String(r.codigo || "").trim().toUpperCase() === focusCodigo ? "bg-amber-50" : ""}`}
+                  className={`border-t ${focusCodigo && String(r.codigo || "").trim().toUpperCase() === focusCodigo ? "bg-red-50" : ""}`}
                 >
                   <td className="px-2 py-1.5 font-medium" style={{ width: `${colWidths.item}px` }}>
                     {r.item || "—"}
