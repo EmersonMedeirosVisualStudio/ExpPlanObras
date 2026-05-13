@@ -2460,8 +2460,9 @@ async function readTextSmart(file: File) {
        </div>
  
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-        Atenção: alterações aqui são compartilhadas. Se você alterar Serviço/Insumo/Composição da Fonte, muda em TODAS as planilhas que usam essa Fonte. Se você alterar um
-        Parâmetro, muda em TODAS as planilhas que usam esse Parâmetro.
+        <div>Atenção: alterações aqui são compartilhadas.</div>
+        <div>Se você alterar Serviço/Insumo/Composição da Fonte, muda em TODAS as planilhas que usam essa Fonte.</div>
+        <div>Se você alterar um Parâmetro, muda em TODAS as planilhas que usam esse Parâmetro.</div>
       </div>
 
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -2625,7 +2626,7 @@ async function readTextSmart(file: File) {
                 <span className={Number(descontoPercent || 0) <= 0 ? "text-slate-400" : ""}>Total sem BDI com desconto</span>
               </label>
             </div>
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {[
                 { key: "wCodigoPx", label: "CÓDIGO" },
                 { key: "wFontePx", label: "FONTE" },
@@ -2635,7 +2636,7 @@ async function readTextSmart(file: File) {
                 { key: "wTotalSemBDIPx", label: "TOTAL SEM BDI" },
                 { key: "wTotalSemBDIComDescontoPx", label: "TOTAL COM DESCONTO" },
               ].map((c) => (
-                <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-sm">
+                <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-[10px]">
                   <div className="text-slate-700 font-medium">{c.label}</div>
                   <input
                     className="input bg-white w-[110px]"
@@ -2651,7 +2652,7 @@ async function readTextSmart(file: File) {
                   />
                 </div>
               ))}
-              <div className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-sm">
+              <div className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-[10px]">
                 <div className="text-slate-700 font-medium">FONTE (px)</div>
                 <input
                   className="input bg-white w-[110px]"
@@ -2667,7 +2668,7 @@ async function readTextSmart(file: File) {
 
           <div className="rounded-lg border bg-slate-50 p-3">
             <div className="text-sm font-semibold text-slate-800">Largura e fonte dos itens (px)</div>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-5">
               {[
                 { key: "tipo", label: "Tipo", wKey: "wTipoPx", fsKey: "fsTipoPx" },
                 { key: "codigo", label: "Código", wKey: "wCodigoPx", fsKey: "fsCodigoPx" },
@@ -2680,7 +2681,7 @@ async function readTextSmart(file: File) {
                 { key: "cc", label: "Centro de custo", wKey: "wCentroCustoPx", fsKey: "fsCentroCustoPx" },
                 { key: "acoes", label: "Ações", wKey: "wAcoesPx", fsKey: "fsAcoesPx" },
               ].map((c) => (
-                <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-sm">
+                <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-[10px]">
                   <div className="min-w-[120px] text-slate-700 font-medium">{c.label}</div>
                   <div className="flex items-center gap-2">
                     <input
