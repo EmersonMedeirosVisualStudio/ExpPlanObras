@@ -30,6 +30,7 @@ type PrevistoPlanilhaRow = {
 };
 
 type PlanilhaParams = {
+  ufSinapi: string | null;
   dataBaseSbc: string | null;
   dataBaseSinapi: string | null;
   bdiServicosSbc: number | null;
