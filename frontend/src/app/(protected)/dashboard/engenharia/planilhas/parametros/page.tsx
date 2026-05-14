@@ -529,6 +529,16 @@ export default function ParametrosPage() {
                     <option value="SBC">SBC</option>
                   </select>
                 </label>
+                <label className="rounded border bg-white px-3 py-2 text-sm">
+                  <div className="text-xs text-slate-500">Data-base</div>
+                  <input
+                    className="input bg-white w-full mt-1"
+                    value={form.tipoBase === "SINAPI" ? form.dataBaseSinapi : form.dataBaseSbc}
+                    onChange={(e) => setForm((p) => (p.tipoBase === "SINAPI" ? { ...p, dataBaseSinapi: e.target.value } : { ...p, dataBaseSbc: e.target.value }))}
+                    disabled={loading}
+                    placeholder="2024-01"
+                  />
+                </label>
                 <label className="rounded border bg-white px-3 py-2 text-sm sm:col-span-3">
                   <div className="text-xs text-slate-500">Tipo de Encargos Sociais</div>
                   <select
@@ -546,16 +556,6 @@ export default function ParametrosPage() {
                     <option value="ICD">ICD — Encargos sociais COM desoneração</option>
                     <option value="ISE">ISE — Sem encargos sociais</option>
                   </select>
-                </label>
-                <label className="rounded border bg-white px-3 py-2 text-sm">
-                  <div className="text-xs text-slate-500">Data-base</div>
-                  <input
-                    className="input bg-white w-full mt-1"
-                    value={form.tipoBase === "SINAPI" ? form.dataBaseSinapi : form.dataBaseSbc}
-                    onChange={(e) => setForm((p) => (p.tipoBase === "SINAPI" ? { ...p, dataBaseSinapi: e.target.value } : { ...p, dataBaseSbc: e.target.value }))}
-                    disabled={loading}
-                    placeholder="2024-01"
-                  />
                 </label>
               </div>
             </div>
