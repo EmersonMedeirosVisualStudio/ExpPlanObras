@@ -3347,6 +3347,34 @@ ETAPA 2 — O que clicar
 - Para importar via XLSX, clique no botão “Importar” (abre o modal “Opções de importação”).
 - Se precisar filtrar a lista, clique em “Exibir filtros” (e use “Limpar filtros” para voltar rápido).
 
+**Ações ao clicar em “Aplicar na planilha” (ícone de seta / Aplicar selecionados)**
+
+Quando você aplica um serviço SINAPI na planilha (por um serviço ou em lote), o backend executa estas ações (sempre no escopo: `tenant + obra + planilha`):
+
+1) **Valida Data-base**
+- Se a Data-base do serviço importado (base SINAPI) for diferente da Data-base SINAPI da planilha, o sistema bloqueia.
+- Para permitir, marque “Forçar importação (mês-base diferente)”.
+
+2) **Garante o Serviço na planilha**
+- Cria/atualiza o serviço em `obras_planilhas_servicos` com:
+  - `fonte = SINAPI`
+  - `servico` (descrição) e `und` (unidade) vindos do SINAPI (para a data-base escolhida)
+
+3) **Cria/atualiza a composição do serviço**
+- Lê a composição na base SINAPI (UF + data-base + tipo de preço ISD/ICD/ISE).
+- Grava os itens em `obras_planilhas_composicoes_itens`:
+  - mantém coeficientes e tipos (INSUMO / COMPOSIÇÃO / AUXILIAR etc.)
+  - para itens que são INSUMO, aplica valor unitário (P.U.) do SINAPI quando existir
+
+4) **Substituir ou não substituir**
+- Se “Ao aplicar na obra: substituir existente” estiver ligado, o sistema remove os itens existentes do serviço e grava os itens do SINAPI (modo UPSERT).
+- Se estiver desligado, e a composição já existir, o sistema ignora a aplicação (modo “importar somente faltantes”).
+
+5) **(Opcional) Aplicar também os preços dos insumos (SINAPI)**
+- Atualiza a tabela `obras_insumos_precos` (preço do insumo por código na obra/planilha).
+- Atualiza o `valor_unitario` dos itens (não-composição) nas composições da planilha que usam esses insumos.
+- Recalcula, em cascata, as composições afetadas para refletir os novos preços.
+
 ETAPA 3 — O que preencher
 - Em “Opções de importação”:
   - Data-base (SINAPI): é preenchida automaticamente com a data-base da planilha, mas pode ser alterada manualmente.
@@ -3391,6 +3419,19 @@ ETAPA 5 — Como validar
     - para os **itens da composição**: usa as linhas onde `Código do Item` e `Coeficiente` estão preenchidos para capturar itens (insumos/composições) e coeficientes.
   - **Abas ISD/ICD/ISE**: localiza cabeçalho com Classificação, Código do Insumo, Descrição do Insumo, Unidade e a coluna UF do preço unitário (P.U.).
 - Persistência: além de gravar a composição na planilha da obra, o backend mantém uma **base SINAPI interna** para reuso (serviços/insumos/PU/composições) vinculada à data-base.
+
+**O que a base SINAPI “arquiva” (o que fica guardado no banco)**
+
+A “lista de Serviços SINAPI importados” vem de tabelas internas do sistema (base SINAPI). Essa base guarda os dados do XLSX já processados, para você aplicar na planilha sem precisar reimportar o arquivo toda vez:
+
+- `sinapi_servicos_base`: catálogo de serviços (código, descrição, unidade) por data-base.
+- `sinapi_insumos_base`: catálogo de insumos (classificação, código, descrição, unidade) por data-base e tipo de preço (ISD/ICD/ISE).
+- `sinapi_insumos_pu`: preços unitários (P.U.) de cada insumo por UF.
+- `sinapi_composicoes_base`: itens da composição do serviço por UF + data-base + tipo de preço (inclui itens do tipo INSUMO e do tipo COMPOSIÇÃO/COMPOSIÇÃO AUXILIAR, com coeficientes).
+
+Obs.:
+- Excluir da base SINAPI remove apenas aquela combinação **(serviço + data-base + UF + ISD/ICD/ISE)** da base interna.
+- Isso não “apaga” automaticamente a composição que já foi aplicada na planilha: a planilha guarda sua própria composição em `obras_planilhas_composicoes_itens`.
 
 **Detalhamento — o que o sistema procura e como procura no XLSX do SINAPI**
 
