@@ -796,6 +796,7 @@ async function readTextSmart(file: File) {
           : null
       );
       setPlanilhaParams({
+        ufSinapi: p.ufSinapi == null ? null : String(p.ufSinapi || "").trim().toUpperCase(),
         dataBaseSbc: p.dataBaseSbc == null ? null : String(p.dataBaseSbc || ""),
         dataBaseSinapi: p.dataBaseSinapi == null ? null : String(p.dataBaseSinapi || ""),
         bdiServicosSbc: p.bdiServicosSbc == null ? null : Number(p.bdiServicosSbc),
