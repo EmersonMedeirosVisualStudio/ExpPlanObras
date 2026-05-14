@@ -545,6 +545,7 @@ async function ensurePlanilhaParametrosTables(tx: any) {
       id_parametros BIGSERIAL PRIMARY KEY,
       tenant_id BIGINT NOT NULL,
       nome VARCHAR(160) NULL,
+      tipo_encargos_sociais VARCHAR(3) NULL,
       uf_sinapi VARCHAR(2) NULL,
       data_base_sbc VARCHAR(16) NULL,
       data_base_sinapi VARCHAR(16) NULL,
@@ -562,6 +563,7 @@ async function ensurePlanilhaParametrosTables(tx: any) {
     )
   `);
   await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_parametros ADD COLUMN IF NOT EXISTS nome VARCHAR(160) NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_parametros ADD COLUMN IF NOT EXISTS tipo_encargos_sociais VARCHAR(3) NULL`).catch(() => null);
   await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_planilhas_parametros_uk ON obras_planilhas_parametros (tenant_id, assinatura)`);
   await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_parametros_idx ON obras_planilhas_parametros (tenant_id)`);
 }
@@ -665,10 +667,12 @@ async function ensurePlanilhaModeloFonteTables(tx: any) {
 }
 
 function buildParametrosAssinatura(p: any) {
+  const enc = p.tipoEncargosSociais ? String(p.tipoEncargosSociais).trim().toUpperCase() : '';
   const uf = p.ufSinapi ? String(p.ufSinapi).trim().toUpperCase() : '';
   const dataSbc = p.dataBaseSbc ? String(p.dataBaseSbc).trim().toUpperCase() : '';
   const dataSin = p.dataBaseSinapi ? String(p.dataBaseSinapi).trim().toUpperCase() : '';
   const parts = [
+    `ENC=${enc}`,
     `UF=${uf}`,
     `SBC=${dataSbc}`,
     `SINAPI=${dataSin}`,
@@ -715,14 +719,15 @@ async function upsertParametros(tx: any, tenantId: number, p: any) {
   await ensurePlanilhaParametrosTables(tx);
   const assinatura = buildParametrosAssinatura(p);
   const nome = p?.nome != null ? String(p.nome || '').trim().slice(0, 160) : '';
+  const tipoEncargosSociais = p.tipoEncargosSociais ? String(p.tipoEncargosSociais).trim().toUpperCase().slice(0, 3) : null;
   const rows = (await tx.$queryRawUnsafe(
     `
     INSERT INTO obras_planilhas_parametros
-      (tenant_id, nome, uf_sinapi, data_base_sbc, data_base_sinapi,
+      (tenant_id, nome, tipo_encargos_sociais, uf_sinapi, data_base_sbc, data_base_sinapi,
        bdi_servicos_sbc, bdi_servicos_sinapi, bdi_diferenciado_sbc, bdi_diferenciado_sinapi,
        enc_sociais_sem_des_sbc, enc_sociais_sem_des_sinapi, desconto_sbc, desconto_sinapi, assinatura)
     VALUES
-      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
     ON CONFLICT (tenant_id, assinatura)
     DO UPDATE SET
       nome = COALESCE(NULLIF(EXCLUDED.nome,''), obras_planilhas_parametros.nome),
@@ -731,6 +736,7 @@ async function upsertParametros(tx: any, tenantId: number, p: any) {
     `,
     tenantId,
     nome || null,
+    tipoEncargosSociais,
     p.ufSinapi ? String(p.ufSinapi).trim().toUpperCase() : null,
     p.dataBaseSbc ? String(p.dataBaseSbc).trim().toUpperCase() : null,
     p.dataBaseSinapi ? String(p.dataBaseSinapi).trim().toUpperCase() : null,
@@ -5585,6 +5591,7 @@ export default async function v1Routes(server: FastifyInstance) {
       SELECT
         id_parametros AS "idParametros",
         COALESCE(nome,'') AS "nome",
+        tipo_encargos_sociais AS "tipoEncargosSociais",
         uf_sinapi AS "ufSinapi",
         data_base_sbc AS "dataBaseSbc",
         data_base_sinapi AS "dataBaseSinapi",
@@ -5611,6 +5618,7 @@ export default async function v1Routes(server: FastifyInstance) {
       parametros: (rows || []).map((r: any) => ({
         idParametros: Number(r.idParametros),
         nome: String(r.nome || '').trim(),
+        tipoEncargosSociais: r.tipoEncargosSociais == null ? '' : String(r.tipoEncargosSociais || '').trim(),
         ufSinapi: r.ufSinapi == null ? '' : String(r.ufSinapi || '').trim(),
         dataBaseSbc: r.dataBaseSbc == null ? '' : String(r.dataBaseSbc || '').trim(),
         dataBaseSinapi: r.dataBaseSinapi == null ? '' : String(r.dataBaseSinapi || '').trim(),
@@ -5697,6 +5705,7 @@ export default async function v1Routes(server: FastifyInstance) {
       .object({
         idParametros: z.coerce.number().int().positive().optional().nullable(),
         nome: z.string().min(1).max(160),
+        tipoEncargosSociais: z.enum(['ISD', 'ICD', 'ISE']).optional().nullable(),
         ufSinapi: z.string().max(2).optional().nullable(),
         dataBaseSbc: z.string().max(16).optional().nullable(),
         dataBaseSinapi: z.string().max(16).optional().nullable(),
@@ -5714,6 +5723,7 @@ export default async function v1Routes(server: FastifyInstance) {
     await ensurePlanilhaParametrosTables(prisma);
     const payload: any = {
       nome: String(body.nome || '').trim(),
+      tipoEncargosSociais: body.tipoEncargosSociais ? String(body.tipoEncargosSociais).trim().toUpperCase() : null,
       ufSinapi: body.ufSinapi ? String(body.ufSinapi).trim().toUpperCase() : null,
       dataBaseSbc: body.dataBaseSbc ? String(body.dataBaseSbc).trim().toUpperCase() : null,
       dataBaseSinapi: body.dataBaseSinapi ? String(body.dataBaseSinapi).trim().toUpperCase() : null,
@@ -5755,24 +5765,26 @@ export default async function v1Routes(server: FastifyInstance) {
         UPDATE obras_planilhas_parametros
         SET
           nome = $3,
-          uf_sinapi = $4,
-          data_base_sbc = $5,
-          data_base_sinapi = $6,
-          bdi_servicos_sbc = $7,
-          bdi_servicos_sinapi = $8,
-          bdi_diferenciado_sbc = $9,
-          bdi_diferenciado_sinapi = $10,
-          enc_sociais_sem_des_sbc = $11,
-          enc_sociais_sem_des_sinapi = $12,
-          desconto_sbc = $13,
-          desconto_sinapi = $14,
-          assinatura = $15,
+          tipo_encargos_sociais = $4,
+          uf_sinapi = $5,
+          data_base_sbc = $6,
+          data_base_sinapi = $7,
+          bdi_servicos_sbc = $8,
+          bdi_servicos_sinapi = $9,
+          bdi_diferenciado_sbc = $10,
+          bdi_diferenciado_sinapi = $11,
+          enc_sociais_sem_des_sbc = $12,
+          enc_sociais_sem_des_sinapi = $13,
+          desconto_sbc = $14,
+          desconto_sinapi = $15,
+          assinatura = $16,
           atualizado_em = NOW()
         WHERE tenant_id = $1 AND id_parametros = $2
         `,
         ctx.tenantId,
         Number(body.idParametros),
         payload.nome,
+        payload.tipoEncargosSociais,
         payload.ufSinapi,
         payload.dataBaseSbc,
         payload.dataBaseSinapi,
@@ -5811,6 +5823,7 @@ export default async function v1Routes(server: FastifyInstance) {
         SELECT
           id_parametros AS "idParametros",
           COALESCE(nome,'') AS "nome",
+          tipo_encargos_sociais AS "tipoEncargosSociais",
           uf_sinapi AS "ufSinapi",
           data_base_sbc AS "dataBaseSbc",
           data_base_sinapi AS "dataBaseSinapi",
@@ -5840,15 +5853,16 @@ export default async function v1Routes(server: FastifyInstance) {
       const ins = (await tx.$queryRawUnsafe(
         `
         INSERT INTO obras_planilhas_parametros
-          (tenant_id, nome, uf_sinapi, data_base_sbc, data_base_sinapi,
+          (tenant_id, nome, tipo_encargos_sociais, uf_sinapi, data_base_sbc, data_base_sinapi,
            bdi_servicos_sbc, bdi_servicos_sinapi, bdi_diferenciado_sbc, bdi_diferenciado_sinapi,
            enc_sociais_sem_des_sbc, enc_sociais_sem_des_sinapi, desconto_sbc, desconto_sinapi, assinatura)
         VALUES
-          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
         RETURNING id_parametros AS "idParametros"
         `,
         ctx.tenantId,
         String(nome || '').trim().slice(0, 160),
+        src.tipoEncargosSociais == null ? null : String(src.tipoEncargosSociais || '').trim().toUpperCase().slice(0, 3),
         src.ufSinapi == null ? null : String(src.ufSinapi || '').trim().toUpperCase().slice(0, 2),
         src.dataBaseSbc == null ? null : String(src.dataBaseSbc || '').trim().toUpperCase().slice(0, 16),
         src.dataBaseSinapi == null ? null : String(src.dataBaseSinapi || '').trim().toUpperCase().slice(0, 16),

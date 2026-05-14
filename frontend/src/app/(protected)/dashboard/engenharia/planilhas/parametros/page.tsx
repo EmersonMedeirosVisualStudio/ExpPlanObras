@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 type ParametroDTO = {
   idParametros: number;
   nome: string;
+  tipoEncargosSociais: string;
   ufSinapi: string;
   dataBaseSbc: string;
   dataBaseSinapi: string;
@@ -53,6 +54,7 @@ export default function ParametrosPage() {
   const [form, setForm] = useState<{
     idParametros: number | null;
     nome: string;
+    tipoEncargosSociais: "ISD" | "ICD" | "ISE";
     tipoBase: "SINAPI" | "SBC";
     ufSinapi: string;
     dataBaseSbc: string;
@@ -68,6 +70,7 @@ export default function ParametrosPage() {
   }>({
     idParametros: null,
     nome: "",
+    tipoEncargosSociais: "ISD",
     tipoBase: "SINAPI",
     ufSinapi: "",
     dataBaseSbc: "",
@@ -129,6 +132,7 @@ export default function ParametrosPage() {
       const normalized: ParametroDTO[] = list.map((r) => ({
         idParametros: Number(r.idParametros),
         nome: String(r.nome || "").trim(),
+        tipoEncargosSociais: String(r.tipoEncargosSociais || "").trim().toUpperCase(),
         ufSinapi: String(r.ufSinapi || "").trim(),
         dataBaseSbc: String(r.dataBaseSbc || "").trim(),
         dataBaseSinapi: String(r.dataBaseSinapi || "").trim(),
@@ -161,11 +165,13 @@ export default function ParametrosPage() {
       setErr(null);
       setOkMsg(null);
       const tipoBase = form.tipoBase === "SBC" ? "SBC" : "SINAPI";
+      const tipoEncargosSociais = form.tipoEncargosSociais === "ICD" ? "ICD" : form.tipoEncargosSociais === "ISE" ? "ISE" : "ISD";
       const payload =
         tipoBase === "SINAPI"
           ? {
               idParametros: form.idParametros,
               nome,
+              tipoEncargosSociais,
               ufSinapi: String(form.ufSinapi || "").trim().toUpperCase() || null,
               dataBaseSbc: null,
               dataBaseSinapi: String(form.dataBaseSinapi || "").trim().toUpperCase() || null,
@@ -181,6 +187,7 @@ export default function ParametrosPage() {
           : {
               idParametros: form.idParametros,
               nome,
+              tipoEncargosSociais,
               ufSinapi: null,
               dataBaseSbc: String(form.dataBaseSbc || "").trim().toUpperCase() || null,
               dataBaseSinapi: null,
@@ -204,6 +211,7 @@ export default function ParametrosPage() {
       setForm({
         idParametros: null,
         nome: "",
+        tipoEncargosSociais: "ISD",
         tipoBase: "SINAPI",
         ufSinapi: "",
         dataBaseSbc: "",
@@ -389,6 +397,8 @@ export default function ParametrosPage() {
                       const tipoBase = hasSinapi ? "SINAPI" : hasSbc ? "SBC" : "—";
                       const uf = tipoBase === "SINAPI" ? p.ufSinapi || "—" : "—";
                       const dataBase = tipoBase === "SINAPI" ? p.dataBaseSinapi || "" : tipoBase === "SBC" ? p.dataBaseSbc || "" : "";
+                      const tipoEncargosSociais =
+                        p.tipoEncargosSociais === "ICD" ? "ICD" : p.tipoEncargosSociais === "ISE" ? "ISE" : p.tipoEncargosSociais === "ISD" ? "ISD" : "—";
                       const bdiServicos = tipoBase === "SINAPI" ? p.bdiServicosSinapi : p.bdiServicosSbc;
                       const bdiDiferenciado = tipoBase === "SINAPI" ? p.bdiDiferenciadoSinapi : p.bdiDiferenciadoSbc;
                       const encSociais = tipoBase === "SINAPI" ? p.encSociaisSemDesSinapi : p.encSociaisSemDesSbc;
@@ -403,6 +413,7 @@ export default function ParametrosPage() {
                             <div>{`UF: ${uf || "—"}`}</div>
                             <div>{`Sinapi ou SBC: ${tipoBase}`}</div>
                             <div>{`Data-base: ${String(dataBase || "").trim() ? String(dataBase || "").trim() : "—"}`}</div>
+                            <div>{`Tipo de Encargos Sociais: ${tipoEncargosSociais}`}</div>
                           </td>
                           <td className="px-3 py-2 text-xs text-slate-800">
                             <div>{`BDI Serv.: ${bdiServicos == null ? "—" : Number(bdiServicos).toFixed(2)}%`}</div>
@@ -422,6 +433,7 @@ export default function ParametrosPage() {
                             setForm({
                               idParametros: p.idParametros,
                               nome: p.nome || "",
+                              tipoEncargosSociais: p.tipoEncargosSociais === "ICD" ? "ICD" : p.tipoEncargosSociais === "ISE" ? "ISE" : "ISD",
                               tipoBase: (() => {
                                 const hasSinapi = Boolean(
                                   String(p.ufSinapi || "").trim() ||
@@ -494,7 +506,7 @@ export default function ParametrosPage() {
 
             <div className="rounded-lg border bg-slate-50 p-3">
               <div className="text-sm font-semibold text-slate-800">1 - Usado em insumos</div>
-              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-4">
                 <label className="rounded border bg-white px-3 py-2 text-sm">
                   <div className="text-xs text-slate-500">UF</div>
                   <input
@@ -515,6 +527,24 @@ export default function ParametrosPage() {
                   >
                     <option value="SINAPI">SINAPI</option>
                     <option value="SBC">SBC</option>
+                  </select>
+                </label>
+                <label className="rounded border bg-white px-3 py-2 text-sm">
+                  <div className="text-xs text-slate-500">Tipo de Encargos Sociais</div>
+                  <select
+                    className="input bg-white w-full mt-1"
+                    value={form.tipoEncargosSociais}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        tipoEncargosSociais: (e.target.value as any) === "ICD" ? "ICD" : (e.target.value as any) === "ISE" ? "ISE" : "ISD",
+                      }))
+                    }
+                    disabled={loading}
+                  >
+                    <option value="ISD">ISD — Encargos sociais SEM desoneração</option>
+                    <option value="ICD">ICD — Encargos sociais COM desoneração</option>
+                    <option value="ISE">ISE — Sem encargos sociais</option>
                   </select>
                 </label>
                 <label className="rounded border bg-white px-3 py-2 text-sm">
@@ -580,6 +610,7 @@ export default function ParametrosPage() {
                 setForm({
                   idParametros: null,
                   nome: "",
+                  tipoEncargosSociais: "ISD",
                   tipoBase: "SINAPI",
                   ufSinapi: "",
                   dataBaseSbc: "",
