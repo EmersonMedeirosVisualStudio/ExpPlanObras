@@ -506,7 +506,7 @@ export default function ParametrosPage() {
 
             <div className="rounded-lg border bg-slate-50 p-3">
               <div className="text-sm font-semibold text-slate-800">1 - Usado em insumos</div>
-              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-4">
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <label className="rounded border bg-white px-3 py-2 text-sm">
                   <div className="text-xs text-slate-500">UF</div>
                   <input
@@ -529,7 +529,7 @@ export default function ParametrosPage() {
                     <option value="SBC">SBC</option>
                   </select>
                 </label>
-                <label className="rounded border bg-white px-3 py-2 text-sm">
+                <label className="rounded border bg-white px-3 py-2 text-sm sm:col-span-3">
                   <div className="text-xs text-slate-500">Tipo de Encargos Sociais</div>
                   <select
                     className="input bg-white w-full mt-1"
