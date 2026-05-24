@@ -1847,6 +1847,8 @@ ETAPA 4 — O que esperar
 - O card **Visual** permite ajustar: **Somente itens**, **tamanho da fonte**, **fonte dos dados**, **fonte do cabeçalho**, **negrito do cabeçalho**, **Fundo Item**, **Fundo Subitem**, além de **exibir/ocultar colunas** e controlar a **largura** de cada coluna
 - O card **Impressão — ajustes finos** permite imprimir em **paisagem** com o **cabeçalho padronizado da empresa** e controlar fonte/espaçamentos
 - Para **Itens/Subitens**, o sistema mostra subtotais apenas em **VALORES** (TOTAL, ADITADO, SUPRIMIDO, ADEQUADO)
+- Na primeira abertura em obras/planilhas mais antigas, o sistema pode levar um pouco mais de tempo porque ajusta automaticamente a estrutura interna de dados da planilha antes de montar a grade
+- Se ocorrer erro ao carregar, recarregue a página uma vez; se persistir, informe ao suporte o caminho completo (Obra → Versão → Adequação) e o texto do erro
 
 ETAPA 5 — Como validar
 - Use **Imprimir** ou **CSV** para conferir o relatório

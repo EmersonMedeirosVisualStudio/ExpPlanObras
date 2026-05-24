@@ -423,8 +423,33 @@ function isValidItemPath(item: string) {
   return /^\d+(?:\.\d+)*$/.test(v);
 }
 
+async function safeExecuteRawUnsafe(tx: any, sql: string, ...params: any[]) {
+  const sp = `sp_${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
+  let savepointOk = false;
+  try {
+    await tx.$executeRawUnsafe(`SAVEPOINT ${sp}`);
+    savepointOk = true;
+  } catch {
+    savepointOk = false;
+  }
+  if (!savepointOk) {
+    try {
+      await tx.$executeRawUnsafe(sql, ...params);
+    } catch {
+    }
+    return;
+  }
+  try {
+    await tx.$executeRawUnsafe(sql, ...params);
+    await tx.$executeRawUnsafe(`RELEASE SAVEPOINT ${sp}`).catch(() => null);
+  } catch {
+    await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT ${sp}`).catch(() => null);
+    await tx.$executeRawUnsafe(`RELEASE SAVEPOINT ${sp}`).catch(() => null);
+  }
+}
+
 async function ensurePlanilhaOrcamentariaTables(tx: any) {
-  await tx.$executeRawUnsafe(`ALTER TABLE IF EXISTS obras_planilhas_versoes RENAME TO tab_planilhas`).catch(() => null);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE IF EXISTS obras_planilhas_versoes RENAME TO tab_planilhas`);
   await tx.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS tab_planilhas (
       id_planilha BIGSERIAL PRIMARY KEY,
@@ -451,13 +476,13 @@ async function ensurePlanilhaOrcamentariaTables(tx: any) {
       id_usuario_criador BIGINT NOT NULL
     )
   `);
-  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS tab_planilhas_uk_versao ON tab_planilhas (tenant_id, id_obra, numero_versao)`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_planilhas_idx_atual ON tab_planilhas (tenant_id, id_obra, atual)`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_planilhas_idx_obra ON tab_planilhas (tenant_id, id_obra)`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS uf_sinapi VARCHAR(2) NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS id_parametros BIGINT NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_planilhas_idx_parametros ON tab_planilhas (tenant_id, id_parametros)`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE OR REPLACE VIEW obras_planilhas_versoes AS SELECT * FROM tab_planilhas`).catch(() => null);
+  await safeExecuteRawUnsafe(tx, `CREATE UNIQUE INDEX IF NOT EXISTS tab_planilhas_uk_versao ON tab_planilhas (tenant_id, id_obra, numero_versao)`);
+  await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_planilhas_idx_atual ON tab_planilhas (tenant_id, id_obra, atual)`);
+  await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_planilhas_idx_obra ON tab_planilhas (tenant_id, id_obra)`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS uf_sinapi VARCHAR(2) NULL`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS id_parametros BIGINT NULL`);
+  await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_planilhas_idx_parametros ON tab_planilhas (tenant_id, id_parametros)`);
+  await safeExecuteRawUnsafe(tx, `CREATE OR REPLACE VIEW obras_planilhas_versoes AS SELECT * FROM tab_planilhas`);
 
   await tx.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS obras_planilhas_linhas (
@@ -482,11 +507,11 @@ async function ensurePlanilhaOrcamentariaTables(tx: any) {
   await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_linhas_idx_planilha ON obras_planilhas_linhas (tenant_id, id_planilha, ordem, id_linha)`);
   await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_linhas_idx_tipo ON obras_planilhas_linhas (tenant_id, id_planilha, tipo_linha)`);
 
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_linhas ALTER COLUMN item TYPE VARCHAR(80)`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_linhas ALTER COLUMN codigo TYPE VARCHAR(80)`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_linhas ALTER COLUMN fonte TYPE VARCHAR(80)`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_linhas ALTER COLUMN servico TYPE VARCHAR(800)`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_linhas ALTER COLUMN und TYPE VARCHAR(40)`).catch(() => null);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN item TYPE VARCHAR(80)`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN codigo TYPE VARCHAR(80)`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN fonte TYPE VARCHAR(80)`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN servico TYPE VARCHAR(800)`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN und TYPE VARCHAR(40)`);
 }
 
 async function ensurePlanilhaEstruturaUnicaTables(tx: any) {
@@ -496,7 +521,7 @@ async function ensurePlanilhaEstruturaUnicaTables(tx: any) {
   await ensurePlanilhaItensTables(tx);
   await ensurePlanilhaComposicaoTables(tx);
   await ensureInsumosPrecosTables(tx);
-  await ensurePlanilhaComposicaoPrimitivaTables(tx).catch(() => null);
+  await ensurePlanilhaComposicaoPrimitivaTables(tx);
 }
 
 async function criarVersaoPlanilha(tx: any, input: { tenantId: number; idObra: number; nome: string; origem: string; idParametros: number | null; userId: number }) {
@@ -664,7 +689,7 @@ async function clonarEstruturaPlanilha(
 }
 
 async function ensurePlanilhaServicosTables(tx: any) {
-  await tx.$executeRawUnsafe(`ALTER TABLE IF EXISTS obras_planilhas_servicos RENAME TO tab_servicos`).catch(() => null);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE IF EXISTS obras_planilhas_servicos RENAME TO tab_servicos`);
   await tx.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS tab_servicos (
       id_servico BIGSERIAL PRIMARY KEY,
@@ -679,20 +704,18 @@ async function ensurePlanilhaServicosTables(tx: any) {
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await tx
-    .$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS tab_servicos_uk ON tab_servicos (tenant_id, id_obra, id_planilha, codigo)`)
-    .catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_servicos_idx ON tab_servicos (tenant_id, id_obra, id_planilha)`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_servicos ALTER COLUMN codigo TYPE VARCHAR(80)`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_servicos ALTER COLUMN fonte TYPE VARCHAR(80)`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_servicos ALTER COLUMN servico TYPE VARCHAR(800)`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_servicos ALTER COLUMN und TYPE VARCHAR(40)`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE OR REPLACE VIEW obras_planilhas_servicos AS SELECT * FROM tab_servicos`).catch(() => null);
+  await safeExecuteRawUnsafe(tx, `CREATE UNIQUE INDEX IF NOT EXISTS tab_servicos_uk ON tab_servicos (tenant_id, id_obra, id_planilha, codigo)`);
+  await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_servicos_idx ON tab_servicos (tenant_id, id_obra, id_planilha)`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ALTER COLUMN codigo TYPE VARCHAR(80)`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ALTER COLUMN fonte TYPE VARCHAR(80)`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ALTER COLUMN servico TYPE VARCHAR(800)`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ALTER COLUMN und TYPE VARCHAR(40)`);
+  await safeExecuteRawUnsafe(tx, `CREATE OR REPLACE VIEW obras_planilhas_servicos AS SELECT * FROM tab_servicos`);
 }
 
 
 async function ensurePlanilhaParametrosTables(tx: any) {
-  await tx.$executeRawUnsafe(`ALTER TABLE IF EXISTS obras_planilhas_parametros RENAME TO tab_parametros`).catch(() => null);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE IF EXISTS obras_planilhas_parametros RENAME TO tab_parametros`);
   await tx.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS tab_parametros (
       id_parametros BIGSERIAL PRIMARY KEY,
@@ -715,17 +738,17 @@ async function ensurePlanilhaParametrosTables(tx: any) {
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_parametros ADD COLUMN IF NOT EXISTS nome VARCHAR(160) NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_parametros ADD COLUMN IF NOT EXISTS tipo_encargos_sociais VARCHAR(3) NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS tab_parametros_uk ON tab_parametros (tenant_id, assinatura)`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_parametros_idx ON tab_parametros (tenant_id)`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE OR REPLACE VIEW obras_planilhas_parametros AS SELECT * FROM tab_parametros`).catch(() => null);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_parametros ADD COLUMN IF NOT EXISTS nome VARCHAR(160) NULL`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_parametros ADD COLUMN IF NOT EXISTS tipo_encargos_sociais VARCHAR(3) NULL`);
+  await safeExecuteRawUnsafe(tx, `CREATE UNIQUE INDEX IF NOT EXISTS tab_parametros_uk ON tab_parametros (tenant_id, assinatura)`);
+  await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_parametros_idx ON tab_parametros (tenant_id)`);
+  await safeExecuteRawUnsafe(tx, `CREATE OR REPLACE VIEW obras_planilhas_parametros AS SELECT * FROM tab_parametros`);
 }
 
 
 
 async function ensurePlanilhaItensTables(tx: any) {
-  await tx.$executeRawUnsafe(`ALTER TABLE IF EXISTS obras_planilha_itens RENAME TO tab_planilha_itens`).catch(() => null);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE IF EXISTS obras_planilha_itens RENAME TO tab_planilha_itens`);
   await tx.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS tab_planilha_itens (
       id_planilha_item BIGSERIAL PRIMARY KEY,
@@ -744,11 +767,12 @@ async function ensurePlanilhaItensTables(tx: any) {
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await tx
-    .$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_planilha_itens_idx_planilha ON tab_planilha_itens (tenant_id, id_planilha, ordem, id_planilha_item)`)
-    .catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_planilha_itens_idx_tipo ON tab_planilha_itens (tenant_id, id_planilha, tipo_linha)`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE OR REPLACE VIEW obras_planilha_itens AS SELECT * FROM tab_planilha_itens`).catch(() => null);
+  await safeExecuteRawUnsafe(
+    tx,
+    `CREATE INDEX IF NOT EXISTS tab_planilha_itens_idx_planilha ON tab_planilha_itens (tenant_id, id_planilha, ordem, id_planilha_item)`
+  );
+  await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_planilha_itens_idx_tipo ON tab_planilha_itens (tenant_id, id_planilha, tipo_linha)`);
+  await safeExecuteRawUnsafe(tx, `CREATE OR REPLACE VIEW obras_planilha_itens AS SELECT * FROM tab_planilha_itens`);
 }
 
 
@@ -890,82 +914,80 @@ async function ensurePlanilhaMigratedToEstruturaUnica(tx: any, tenantId: number,
     idPlanilha
   )) as any[];
   if (linhasExists?.[0] && (!svcExists?.[0] || !itensExists?.[0])) {
-    await tx
-      .$executeRawUnsafe(
+    await safeExecuteRawUnsafe(
+      tx,
+      `
+      WITH src AS (
+        SELECT DISTINCT ON (codigo)
+          UPPER(COALESCE(l.codigo,'')) AS codigo,
+          COALESCE(NULLIF(trim(l.fonte),''), '') AS fonte,
+          COALESCE(NULLIF(trim(l.servico),''), '') AS servico,
+          COALESCE(NULLIF(trim(l.und),''), '') AS und,
+          l.atualizado_em AS atualizado_em,
+          l.id_linha AS id_linha
+        FROM obras_planilhas_linhas l
+        WHERE l.tenant_id = $1 AND l.id_planilha = $2 AND l.tipo_linha = 'SERVICO' AND COALESCE(l.codigo,'') <> ''
+        ORDER BY
+          UPPER(COALESCE(l.codigo,'')),
+          (COALESCE(NULLIF(trim(l.servico),''), '') <> '') DESC,
+          (COALESCE(NULLIF(trim(l.und),''), '') <> '') DESC,
+          (COALESCE(NULLIF(trim(l.fonte),''), '') <> '') DESC,
+          atualizado_em DESC NULLS LAST,
+          id_linha DESC
+      )
+      INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
+      SELECT
+        $1,
+        $3,
+        $2,
+        s.codigo,
+        NULLIF(s.fonte,''),
+        NULLIF(s.servico,''),
+        NULLIF(s.und,'')
+      FROM src s
+      ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+      DO UPDATE SET
+        fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
+        servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
+        und = COALESCE(NULLIF(EXCLUDED.und,''), tab_servicos.und),
+        atualizado_em = NOW()
+      `,
+      tenantId,
+      idPlanilha,
+      idObra
+    );
+
+    if (!itensExists?.[0]) {
+      await safeExecuteRawUnsafe(
+        tx,
         `
-        WITH src AS (
-          SELECT DISTINCT ON (codigo)
-            UPPER(COALESCE(l.codigo,'')) AS codigo,
-            COALESCE(NULLIF(trim(l.fonte),''), '') AS fonte,
-            COALESCE(NULLIF(trim(l.servico),''), '') AS servico,
-            COALESCE(NULLIF(trim(l.und),''), '') AS und,
-            l.atualizado_em AS atualizado_em,
-            l.id_linha AS id_linha
-          FROM obras_planilhas_linhas l
-          WHERE l.tenant_id = $1 AND l.id_planilha = $2 AND l.tipo_linha = 'SERVICO' AND COALESCE(l.codigo,'') <> ''
-          ORDER BY
-            UPPER(COALESCE(l.codigo,'')),
-            (COALESCE(NULLIF(trim(l.servico),''), '') <> '') DESC,
-            (COALESCE(NULLIF(trim(l.und),''), '') <> '') DESC,
-            (COALESCE(NULLIF(trim(l.fonte),''), '') <> '') DESC,
-            atualizado_em DESC NULLS LAST,
-            id_linha DESC
-        )
-        INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
+        INSERT INTO tab_planilha_itens
+          (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
         SELECT
-          $1,
-          $3,
-          $2,
-          s.codigo,
-          NULLIF(s.fonte,''),
-          NULLIF(s.servico,''),
-          NULLIF(s.und,'')
-        FROM src s
-        ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
-        DO UPDATE SET
-          fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
-          servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
-          und = COALESCE(NULLIF(EXCLUDED.und,''), tab_servicos.und),
-          atualizado_em = NOW()
+          l.tenant_id,
+          l.id_planilha,
+          l.ordem,
+          l.item,
+          CASE
+            WHEN l.tipo_linha = 'SERVICO' AND COALESCE(l.codigo,'') <> '' THEN s.id_servico
+            ELSE NULL
+          END AS id_servico,
+          l.quantidade,
+          l.valor_unitario,
+          l.valor_parcial,
+          l.nivel,
+          l.tipo_linha,
+          NULL
+        FROM obras_planilhas_linhas l
+        LEFT JOIN tab_servicos s
+          ON s.tenant_id = l.tenant_id AND s.id_obra = $3 AND s.id_planilha = $2 AND s.codigo = UPPER(COALESCE(l.codigo,''))
+        WHERE l.tenant_id = $1 AND l.id_planilha = $2
+        ORDER BY l.id_linha ASC
         `,
         tenantId,
         idPlanilha,
         idObra
-      )
-      .catch(() => null);
-
-    if (!itensExists?.[0]) {
-      await tx
-        .$executeRawUnsafe(
-          `
-          INSERT INTO tab_planilha_itens
-            (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
-          SELECT
-            l.tenant_id,
-            l.id_planilha,
-            l.ordem,
-            l.item,
-            CASE
-              WHEN l.tipo_linha = 'SERVICO' AND COALESCE(l.codigo,'') <> '' THEN s.id_servico
-              ELSE NULL
-            END AS id_servico,
-            l.quantidade,
-            l.valor_unitario,
-            l.valor_parcial,
-            l.nivel,
-            l.tipo_linha,
-            NULL
-          FROM obras_planilhas_linhas l
-          LEFT JOIN tab_servicos s
-            ON s.tenant_id = l.tenant_id AND s.id_obra = $3 AND s.id_planilha = $2 AND s.codigo = UPPER(COALESCE(l.codigo,''))
-          WHERE l.tenant_id = $1 AND l.id_planilha = $2
-          ORDER BY l.id_linha ASC
-          `,
-          tenantId,
-          idPlanilha,
-          idObra
-        )
-        .catch(() => null);
+      );
     }
   }
 
@@ -988,66 +1010,64 @@ async function ensurePlanilhaMigratedToEstruturaUnica(tx: any, tenantId: number,
       idPlanilha
     )) as any[];
     if (dangling?.[0]) {
-      await tx
-        .$executeRawUnsafe(
-          `
-          WITH ids AS (
-            SELECT DISTINCT i.id_servico AS legacy_id_servico
-            FROM tab_planilha_itens i
-            WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND i.id_servico IS NOT NULL
-          ),
-          src AS (
-            SELECT
-              sf.id_servico AS legacy_id_servico,
-              UPPER(COALESCE(sf.codigo,'')) AS codigo,
-              COALESCE(NULLIF(trim(sf.banco),''), '') AS fonte,
-              COALESCE(NULLIF(trim(sf.descricao),''), '') AS servico,
-              COALESCE(NULLIF(trim(sf.und),''), '') AS und
-            FROM obras_servicos_fonte sf
-            JOIN ids ON ids.legacy_id_servico = sf.id_servico
-            WHERE sf.tenant_id = $1
-          )
-          INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
-          SELECT $1, $3, $2, s.codigo, NULLIF(s.fonte,''), NULLIF(s.servico,''), NULLIF(s.und,'')
-          FROM src s
-          WHERE COALESCE(s.codigo,'') <> ''
-          ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
-          DO UPDATE SET
-            fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
-            servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
-            und = COALESCE(NULLIF(EXCLUDED.und,''), tab_servicos.und),
-            atualizado_em = NOW()
-          `,
-          tenantId,
-          idPlanilha,
-          idObra
+      await safeExecuteRawUnsafe(
+        tx,
+        `
+        WITH ids AS (
+          SELECT DISTINCT i.id_servico AS legacy_id_servico
+          FROM tab_planilha_itens i
+          WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND i.id_servico IS NOT NULL
+        ),
+        src AS (
+          SELECT
+            sf.id_servico AS legacy_id_servico,
+            UPPER(COALESCE(sf.codigo,'')) AS codigo,
+            COALESCE(NULLIF(trim(sf.banco),''), '') AS fonte,
+            COALESCE(NULLIF(trim(sf.descricao),''), '') AS servico,
+            COALESCE(NULLIF(trim(sf.und),''), '') AS und
+          FROM obras_servicos_fonte sf
+          JOIN ids ON ids.legacy_id_servico = sf.id_servico
+          WHERE sf.tenant_id = $1
         )
-        .catch(() => null);
+        INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
+        SELECT $1, $3, $2, s.codigo, NULLIF(s.fonte,''), NULLIF(s.servico,''), NULLIF(s.und,'')
+        FROM src s
+        WHERE COALESCE(s.codigo,'') <> ''
+        ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+        DO UPDATE SET
+          fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
+          servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
+          und = COALESCE(NULLIF(EXCLUDED.und,''), tab_servicos.und),
+          atualizado_em = NOW()
+        `,
+        tenantId,
+        idPlanilha,
+        idObra
+      );
 
-      await tx
-        .$executeRawUnsafe(
-          `
-          WITH map AS (
-            SELECT
-              i.id_planilha_item AS id_planilha_item,
-              s2.id_servico AS new_id_servico
-            FROM tab_planilha_itens i
-            JOIN obras_servicos_fonte sf
-              ON sf.tenant_id = i.tenant_id AND sf.id_servico = i.id_servico
-            JOIN tab_servicos s2
-              ON s2.tenant_id = i.tenant_id AND s2.id_obra = $3 AND s2.id_planilha = $2 AND s2.codigo = UPPER(COALESCE(sf.codigo,''))
-            WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO'
-          )
-          UPDATE tab_planilha_itens i
-          SET id_servico = map.new_id_servico
-          FROM map
-          WHERE i.id_planilha_item = map.id_planilha_item
-          `,
-          tenantId,
-          idPlanilha,
-          idObra
+      await safeExecuteRawUnsafe(
+        tx,
+        `
+        WITH map AS (
+          SELECT
+            i.id_planilha_item AS id_planilha_item,
+            s2.id_servico AS new_id_servico
+          FROM tab_planilha_itens i
+          JOIN obras_servicos_fonte sf
+            ON sf.tenant_id = i.tenant_id AND sf.id_servico = i.id_servico
+          JOIN tab_servicos s2
+            ON s2.tenant_id = i.tenant_id AND s2.id_obra = $3 AND s2.id_planilha = $2 AND s2.codigo = UPPER(COALESCE(sf.codigo,''))
+          WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO'
         )
-        .catch(() => null);
+        UPDATE tab_planilha_itens i
+        SET id_servico = map.new_id_servico
+        FROM map
+        WHERE i.id_planilha_item = map.id_planilha_item
+        `,
+        tenantId,
+        idPlanilha,
+        idObra
+      );
     }
   }
 
@@ -1368,7 +1388,7 @@ async function assertComposicoesVinculadasAServicos(tx: any, tenantId: number, i
 }
 
 async function ensurePlanilhaComposicaoTables(tx: any) {
-  await tx.$executeRawUnsafe(`ALTER TABLE IF EXISTS obras_planilhas_composicoes_itens RENAME TO tab_composicoes`).catch(() => null);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE IF EXISTS obras_planilhas_composicoes_itens RENAME TO tab_composicoes`);
   await tx.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS tab_composicoes (
       id_item BIGSERIAL PRIMARY KEY,
@@ -1390,8 +1410,8 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS id_planilha BIGINT NOT NULL DEFAULT 0`).catch(() => null);
-  await tx.$executeRawUnsafe(`DROP INDEX IF EXISTS tab_composicoes_uk`).catch(() => null);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS id_planilha BIGINT NOT NULL DEFAULT 0`);
+  await safeExecuteRawUnsafe(tx, `DROP INDEX IF EXISTS tab_composicoes_uk`);
   await tx.$executeRawUnsafe(
     `CREATE UNIQUE INDEX IF NOT EXISTS tab_composicoes_uk ON tab_composicoes (tenant_id, id_obra, id_planilha, codigo_servico, COALESCE(etapa,''), tipo_item, codigo_item)`
   );
@@ -1401,32 +1421,32 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
   await tx.$executeRawUnsafe(
     `CREATE INDEX IF NOT EXISTS tab_composicoes_idx_item ON tab_composicoes (tenant_id, id_obra, id_planilha, codigo_item)`
   );
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_composicoes ALTER COLUMN tipo_item TYPE VARCHAR(32)`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS banco VARCHAR(60) NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS valor_unitario NUMERIC(14,6) NULL`).catch(() => null);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_composicoes ALTER COLUMN tipo_item TYPE VARCHAR(32)`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS banco VARCHAR(60) NULL`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS valor_unitario NUMERIC(14,6) NULL`);
 
-  await tx
-    .$executeRawUnsafe(
-      `
-      UPDATE tab_composicoes t
-      SET id_planilha = v.id_planilha
-      FROM (
-        SELECT tenant_id, id_obra, id_planilha
-        FROM tab_planilhas
-        WHERE atual = TRUE
-      ) v
-      WHERE t.tenant_id = v.tenant_id
-        AND t.id_obra = v.id_obra
-        AND COALESCE(t.id_planilha,0) = 0
-      `
-    )
-    .catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE OR REPLACE VIEW obras_planilhas_composicoes_itens AS SELECT * FROM tab_composicoes`).catch(() => null);
+  await safeExecuteRawUnsafe(
+    tx,
+    `
+    UPDATE tab_composicoes t
+    SET id_planilha = v.id_planilha
+    FROM (
+      SELECT tenant_id, id_obra, id_planilha
+      FROM tab_planilhas
+      WHERE atual = TRUE
+    ) v
+    WHERE t.tenant_id = v.tenant_id
+      AND t.id_obra = v.id_obra
+      AND COALESCE(t.id_planilha,0) = 0
+    `
+  );
+  await safeExecuteRawUnsafe(tx, `CREATE OR REPLACE VIEW obras_planilhas_composicoes_itens AS SELECT * FROM tab_composicoes`);
 }
 
 async function ensurePlanilhaComposicaoPrimitivaTables(tx: any) {
-  await tx
-    .$executeRawUnsafe(`
+  await safeExecuteRawUnsafe(
+    tx,
+    `
     DO $$
     BEGIN
       IF EXISTS (
@@ -1448,10 +1468,12 @@ async function ensurePlanilhaComposicaoPrimitivaTables(tx: any) {
         EXECUTE 'DROP TYPE IF EXISTS ' || quote_ident(current_schema()) || '.obras_planilhas_composicoes_primitivas CASCADE';
       END IF;
     END $$;
-  `)
-    .catch(() => null);
+    `
+  );
 
-  await tx.$executeRawUnsafe(`
+  await safeExecuteRawUnsafe(
+    tx,
+    `
     CREATE TABLE IF NOT EXISTS obras_planilhas_composicoes_primitivas (
       id_primitiva BIGSERIAL PRIMARY KEY,
       tenant_id BIGINT NOT NULL,
@@ -1463,32 +1485,32 @@ async function ensurePlanilhaComposicaoPrimitivaTables(tx: any) {
       itens_json JSONB NOT NULL,
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_primitivas ADD COLUMN IF NOT EXISTS id_planilha BIGINT NOT NULL DEFAULT 0`).catch(() => null);
-  await tx.$executeRawUnsafe(`DROP INDEX IF EXISTS obras_planilhas_composicoes_primitivas_uk`).catch(() => null);
+    `
+  );
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_composicoes_primitivas ADD COLUMN IF NOT EXISTS id_planilha BIGINT NOT NULL DEFAULT 0`);
+  await safeExecuteRawUnsafe(tx, `DROP INDEX IF EXISTS obras_planilhas_composicoes_primitivas_uk`);
   await tx.$executeRawUnsafe(
     `CREATE UNIQUE INDEX IF NOT EXISTS obras_planilhas_composicoes_primitivas_uk ON obras_planilhas_composicoes_primitivas (tenant_id, id_obra, id_planilha, codigo_servico)`
   );
-  await tx
-    .$executeRawUnsafe(
-      `
-      UPDATE obras_planilhas_composicoes_primitivas t
-      SET id_planilha = v.id_planilha
-      FROM (
-        SELECT tenant_id, id_obra, id_planilha
-        FROM tab_planilhas
-        WHERE atual = TRUE
-      ) v
-      WHERE t.tenant_id = v.tenant_id
-        AND t.id_obra = v.id_obra
-        AND COALESCE(t.id_planilha,0) = 0
-      `
-    )
-    .catch(() => null);
+  await safeExecuteRawUnsafe(
+    tx,
+    `
+    UPDATE obras_planilhas_composicoes_primitivas t
+    SET id_planilha = v.id_planilha
+    FROM (
+      SELECT tenant_id, id_obra, id_planilha
+      FROM tab_planilhas
+      WHERE atual = TRUE
+    ) v
+    WHERE t.tenant_id = v.tenant_id
+      AND t.id_obra = v.id_obra
+      AND COALESCE(t.id_planilha,0) = 0
+    `
+  );
 }
 
 async function ensureInsumosPrecosTables(tx: any) {
-  await tx.$executeRawUnsafe(`ALTER TABLE IF EXISTS obras_insumos_precos RENAME TO tab_insumos`).catch(() => null);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE IF EXISTS obras_insumos_precos RENAME TO tab_insumos`);
   await tx.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS tab_insumos (
       id_preco BIGSERIAL PRIMARY KEY,
@@ -1505,82 +1527,80 @@ async function ensureInsumosPrecosTables(tx: any) {
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS id_planilha BIGINT NOT NULL DEFAULT 0`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS tipo VARCHAR(32) NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS banco VARCHAR(60) NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS descricao VARCHAR(255) NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS und VARCHAR(40) NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`DROP INDEX IF EXISTS tab_insumos_uk`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS tab_insumos_uk ON tab_insumos (tenant_id, id_obra, id_planilha, codigo_item)`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_insumos_idx_obra ON tab_insumos (tenant_id, id_obra, id_planilha)`).catch(() => null);
-  await tx
-    .$executeRawUnsafe(
-      `
-      UPDATE tab_insumos t
-      SET id_planilha = v.id_planilha
-      FROM (
-        SELECT tenant_id, id_obra, id_planilha
-        FROM tab_planilhas
-        WHERE atual = TRUE
-      ) v
-      WHERE t.tenant_id = v.tenant_id
-        AND t.id_obra = v.id_obra
-        AND COALESCE(t.id_planilha,0) = 0
-      `
-    )
-    .catch(() => null);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS id_planilha BIGINT NOT NULL DEFAULT 0`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS tipo VARCHAR(32) NULL`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS banco VARCHAR(60) NULL`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS descricao VARCHAR(255) NULL`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS und VARCHAR(40) NULL`);
+  await safeExecuteRawUnsafe(tx, `DROP INDEX IF EXISTS tab_insumos_uk`);
+  await safeExecuteRawUnsafe(tx, `CREATE UNIQUE INDEX IF NOT EXISTS tab_insumos_uk ON tab_insumos (tenant_id, id_obra, id_planilha, codigo_item)`);
+  await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_insumos_idx_obra ON tab_insumos (tenant_id, id_obra, id_planilha)`);
+  await safeExecuteRawUnsafe(
+    tx,
+    `
+    UPDATE tab_insumos t
+    SET id_planilha = v.id_planilha
+    FROM (
+      SELECT tenant_id, id_obra, id_planilha
+      FROM tab_planilhas
+      WHERE atual = TRUE
+    ) v
+    WHERE t.tenant_id = v.tenant_id
+      AND t.id_obra = v.id_obra
+      AND COALESCE(t.id_planilha,0) = 0
+    `
+  );
 
-  await tx
-    .$executeRawUnsafe(
-      `
-      WITH src AS (
-        SELECT DISTINCT ON (tenant_id, id_obra, id_planilha, UPPER(COALESCE(codigo_item,'')))
-          tenant_id,
-          id_obra,
-          id_planilha,
-          UPPER(COALESCE(codigo_item,'')) AS codigo_item,
-          UPPER(COALESCE(tipo_item,'')) AS tipo,
-          NULLIF(COALESCE(banco,''), '') AS banco,
-          NULLIF(COALESCE(descricao,''), '') AS descricao,
-          NULLIF(COALESCE(und,''), '') AS und,
-          atualizado_em,
-          id_item
-        FROM tab_composicoes
-        WHERE COALESCE(codigo_item,'') <> ''
-          AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-        ORDER BY
-          tenant_id,
-          id_obra,
-          id_planilha,
-          UPPER(COALESCE(codigo_item,'')),
-          (COALESCE(NULLIF(trim(descricao),''), '') <> '') DESC,
-          (COALESCE(NULLIF(trim(und),''), '') <> '') DESC,
-          (COALESCE(NULLIF(trim(banco),''), '') <> '') DESC,
-          atualizado_em DESC NULLS LAST,
-          id_item DESC
-      )
-      UPDATE tab_insumos t
-      SET
-        tipo = COALESCE(NULLIF(t.tipo,''), src.tipo),
-        banco = COALESCE(NULLIF(t.banco,''), src.banco),
-        descricao = COALESCE(NULLIF(t.descricao,''), src.descricao),
-        und = COALESCE(NULLIF(t.und,''), src.und),
-        atualizado_em = NOW()
-      FROM src
-      WHERE t.tenant_id = src.tenant_id
-        AND t.id_obra = src.id_obra
-        AND t.id_planilha = src.id_planilha
-        AND UPPER(COALESCE(t.codigo_item,'')) = src.codigo_item
-        AND (
-          COALESCE(NULLIF(t.tipo,''), '') = ''
-          OR COALESCE(NULLIF(t.banco,''), '') = ''
-          OR COALESCE(NULLIF(t.descricao,''), '') = ''
-          OR COALESCE(NULLIF(t.und,''), '') = ''
-        )
-      `
+  await safeExecuteRawUnsafe(
+    tx,
+    `
+    WITH src AS (
+      SELECT DISTINCT ON (tenant_id, id_obra, id_planilha, UPPER(COALESCE(codigo_item,'')))
+        tenant_id,
+        id_obra,
+        id_planilha,
+        UPPER(COALESCE(codigo_item,'')) AS codigo_item,
+        UPPER(COALESCE(tipo_item,'')) AS tipo,
+        NULLIF(COALESCE(banco,''), '') AS banco,
+        NULLIF(COALESCE(descricao,''), '') AS descricao,
+        NULLIF(COALESCE(und,''), '') AS und,
+        atualizado_em,
+        id_item
+      FROM tab_composicoes
+      WHERE COALESCE(codigo_item,'') <> ''
+        AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+      ORDER BY
+        tenant_id,
+        id_obra,
+        id_planilha,
+        UPPER(COALESCE(codigo_item,'')),
+        (COALESCE(NULLIF(trim(descricao),''), '') <> '') DESC,
+        (COALESCE(NULLIF(trim(und),''), '') <> '') DESC,
+        (COALESCE(NULLIF(trim(banco),''), '') <> '') DESC,
+        atualizado_em DESC NULLS LAST,
+        id_item DESC
     )
-    .catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE OR REPLACE VIEW obras_insumos_precos AS SELECT * FROM tab_insumos`).catch(() => null);
+    UPDATE tab_insumos t
+    SET
+      tipo = COALESCE(NULLIF(t.tipo,''), src.tipo),
+      banco = COALESCE(NULLIF(t.banco,''), src.banco),
+      descricao = COALESCE(NULLIF(t.descricao,''), src.descricao),
+      und = COALESCE(NULLIF(t.und,''), src.und),
+      atualizado_em = NOW()
+    FROM src
+    WHERE t.tenant_id = src.tenant_id
+      AND t.id_obra = src.id_obra
+      AND t.id_planilha = src.id_planilha
+      AND UPPER(COALESCE(t.codigo_item,'')) = src.codigo_item
+      AND (
+        COALESCE(NULLIF(t.tipo,''), '') = ''
+        OR COALESCE(NULLIF(t.banco,''), '') = ''
+        OR COALESCE(NULLIF(t.descricao,''), '') = ''
+        OR COALESCE(NULLIF(t.und,''), '') = ''
+      )
+    `
+  );
+  await safeExecuteRawUnsafe(tx, `CREATE OR REPLACE VIEW obras_insumos_precos AS SELECT * FROM tab_insumos`);
 }
 
 async function ensureEmpresaDocumentosLayoutTables(tx: any) {
@@ -1597,10 +1617,10 @@ async function ensureEmpresaDocumentosLayoutTables(tx: any) {
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await tx.$executeRawUnsafe(`ALTER TABLE empresa_documentos_layout ADD COLUMN IF NOT EXISTS cabecalho_html TEXT NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE empresa_documentos_layout ADD COLUMN IF NOT EXISTS rodape_html TEXT NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE empresa_documentos_layout ADD COLUMN IF NOT EXISTS cabecalho_altura_mm NUMERIC(8,2) NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE empresa_documentos_layout ADD COLUMN IF NOT EXISTS rodape_altura_mm NUMERIC(8,2) NULL`).catch(() => null);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE empresa_documentos_layout ADD COLUMN IF NOT EXISTS cabecalho_html TEXT NULL`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE empresa_documentos_layout ADD COLUMN IF NOT EXISTS rodape_html TEXT NULL`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE empresa_documentos_layout ADD COLUMN IF NOT EXISTS cabecalho_altura_mm NUMERIC(8,2) NULL`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE empresa_documentos_layout ADD COLUMN IF NOT EXISTS rodape_altura_mm NUMERIC(8,2) NULL`);
 }
 
 async function ensureSinapiBaseTables(tx: any) {
