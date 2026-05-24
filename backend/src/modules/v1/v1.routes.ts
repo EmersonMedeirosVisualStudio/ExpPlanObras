@@ -7054,18 +7054,6 @@ export default async function v1Routes(server: FastifyInstance) {
               )
             : false;
 
-          await tx.$executeRawUnsafe(
-            `DELETE FROM tab_servicos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
-            ctx.tenantId,
-            idObra,
-            idPlanilha
-          );
-          await tx.$executeRawUnsafe(
-            `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
-            ctx.tenantId,
-            idObra,
-            idPlanilha
-          );
           await tx.$executeRawUnsafe(`DELETE FROM tab_insumos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`, ctx.tenantId, idObra, idPlanilha);
           await tx.$executeRawUnsafe(`DELETE FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, idPlanilha);
 
