@@ -272,7 +272,7 @@ type ObraResumo = {
   tipo: string | null;
   contratoId: number | null;
   contratoNumero: string | null;
-  valorPrevisto: number | null;
+  valorAtual: number | null;
 };
 
 type EmpresaDocumentosLayout = {
@@ -1961,9 +1961,9 @@ export default function PlanilhaObraClient({
   }, [planilha]);
 
   const diffPrevistoPlanilha = useMemo(() => {
-    if (!obraResumo || obraResumo.valorPrevisto == null) return null;
+    if (!obraResumo || obraResumo.valorAtual == null) return null;
     if (!planilha) return null;
-    const diff = Number((obraResumo.valorPrevisto || 0) - (valorTotalPlanilha || 0));
+    const diff = Number((obraResumo.valorAtual || 0) - (valorTotalPlanilha || 0));
     return Number.isFinite(diff) ? diff : null;
   }, [obraResumo, planilha, valorTotalPlanilha]);
 
@@ -2578,20 +2578,20 @@ export default function PlanilhaObraClient({
               <span>Status: {obraResumo.status ? obraResumo.status : "—"}</span>
               {" • "}
               <span>Contrato: {obraResumo.contratoNumero ? obraResumo.contratoNumero : obraResumo.contratoId ? `#${obraResumo.contratoId}` : "—"}</span>
-              {(obraResumo.valorPrevisto != null || (diffPrevistoPlanilha != null && Math.abs(diffPrevistoPlanilha) >= 0.01)) ? (
+              {(obraResumo.valorAtual != null || (diffPrevistoPlanilha != null && Math.abs(diffPrevistoPlanilha) >= 0.01)) ? (
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {obraResumo.valorPrevisto != null ? (
-                    <div className="rounded-lg border bg-white px-3 py-2" title="Valor previsto cadastrado para a obra (referência gerencial)">
-                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Valor previsto</div>
-                      <div className="text-sm font-semibold text-slate-900">{moeda(Number(obraResumo.valorPrevisto || 0))}</div>
+                  {obraResumo.valorAtual != null ? (
+                    <div className="rounded-lg border bg-white px-3 py-2" title="Valor atual controlado pela planilha vigente (versão marcada como atual)">
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Valor atual (planilha vigente)</div>
+                      <div className="text-sm font-semibold text-slate-900">{moeda(Number(obraResumo.valorAtual || 0))}</div>
                     </div>
                   ) : null}
                   {diffPrevistoPlanilha != null && Math.abs(diffPrevistoPlanilha) >= 0.01 ? (
                     <div
                       className="rounded-lg border bg-white px-3 py-2"
-                      title="Diferença entre o valor previsto da obra e o valor total calculado na planilha selecionada"
+                      title="Diferença entre o valor atual da obra (planilha vigente) e o valor total calculado na planilha selecionada"
                     >
-                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Diferença (previsto - planilha)</div>
+                      <div className="text-[11px] uppercase tracking-wide text-slate-500">Diferença (vigente - planilha)</div>
                       <div className="text-sm font-semibold text-red-700">{moeda(Number(diffPrevistoPlanilha || 0))}</div>
                     </div>
                   ) : null}

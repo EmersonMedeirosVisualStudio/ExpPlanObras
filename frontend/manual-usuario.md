@@ -428,7 +428,7 @@ O aditivo é o histórico de mudanças. O contrato “vigente” é sempre o con
 - Quando estiver certo, clique em **aprovar**
 
 ### ETAPA 4 — O que esperar
-- Ao aprovar, o sistema atualiza automaticamente o contrato (vigência atual e valores atuais)
+- Ao aprovar, o sistema atualiza automaticamente o contrato (vigência atual e versão de planilha). O valor atual do contrato é recalculado pela soma dos valores atuais das obras (controlados pela planilha vigente de cada obra)
 - Se existir aditivo em rascunho, o contrato pode ficar com pendência “Aditivo em aberto” na coluna **ALERTA**
 
 ### ETAPA 5 — Como validar

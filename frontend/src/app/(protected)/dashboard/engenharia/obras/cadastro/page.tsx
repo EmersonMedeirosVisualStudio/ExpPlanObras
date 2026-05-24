@@ -27,6 +27,7 @@ type ObraRow = {
   type: "PUBLICA" | "PARTICULAR";
   status: string;
   valorPrevisto: number | null;
+  valorAtual?: number | null;
   enderecoObra?: { latitude?: string | null; longitude?: string | null } | null;
 };
 
@@ -321,6 +322,7 @@ export default function EngenhariaCadastroObraPage() {
           type: (String(o.type || "PARTICULAR").toUpperCase() === "PUBLICA" ? "PUBLICA" : "PARTICULAR") as any,
           status: String(o.status || "NAO_INICIADA"),
           valorPrevisto: o.valorPrevisto == null ? null : Number(o.valorPrevisto),
+          valorAtual: o.valorAtual == null ? null : Number(o.valorAtual),
           enderecoObra: o.enderecoObra ?? null,
         }))
       );
@@ -876,7 +878,7 @@ export default function EngenhariaCadastroObraPage() {
   const diasRestantesContrato = useMemo(() => daysDiffFromToday(contratoSelecionado?.vigenciaAtual), [contratoSelecionado?.vigenciaAtual]);
   const totalObrasContrato = useMemo(() => {
     let sum = 0;
-    for (const o of obrasContrato) sum += Number(o.valorPrevisto || 0);
+    for (const o of obrasContrato) sum += Number((o.valorAtual ?? o.valorPrevisto) || 0);
     return sum;
   }, [obrasContrato]);
   const saldoContrato = useMemo(() => {
@@ -888,7 +890,7 @@ export default function EngenhariaCadastroObraPage() {
     const contratoNumero = contratoSelecionado?.numeroContrato || null;
     if (obraSelecionada && enderecos.length > 0) {
       const fin = financeiroByObraId[obraSelecionada.id];
-      const total = fin?.valorTotal ?? (obraSelecionada.valorPrevisto ?? 0);
+      const total = fin?.valorTotal ?? (obraSelecionada.valorAtual ?? obraSelecionada.valorPrevisto ?? 0);
       const medido = fin?.valorMedido ?? 0;
       return enderecos.map((e) => ({
         id: e.id,
@@ -896,7 +898,7 @@ export default function EngenhariaCadastroObraPage() {
         type: obraSelecionada.type,
         status: obraSelecionada.status as any,
         enderecoObra: { latitude: e.latitude, longitude: e.longitude },
-        valorPrevisto: obraSelecionada.valorPrevisto ?? undefined,
+        valorPrevisto: obraSelecionada.valorAtual ?? obraSelecionada.valorPrevisto ?? undefined,
         contratoNumero,
         valorMedido: medido,
         valorAMedir: total - medido,
@@ -909,10 +911,10 @@ export default function EngenhariaCadastroObraPage() {
       type: o.type,
       status: o.status as any,
       enderecoObra: o.enderecoObra ?? null,
-      valorPrevisto: o.valorPrevisto ?? undefined,
+      valorPrevisto: o.valorAtual ?? o.valorPrevisto ?? undefined,
       contratoNumero,
       valorMedido: financeiroByObraId[o.id]?.valorMedido ?? 0,
-      valorAMedir: (financeiroByObraId[o.id]?.valorTotal ?? (o.valorPrevisto ?? 0)) - (financeiroByObraId[o.id]?.valorMedido ?? 0),
+      valorAMedir: (financeiroByObraId[o.id]?.valorTotal ?? (o.valorAtual ?? o.valorPrevisto ?? 0)) - (financeiroByObraId[o.id]?.valorMedido ?? 0),
       hoverTitle: `#${o.id} - ${o.name}`,
     }));
   }, [obrasContrato, obraSelecionada, enderecos, contratoSelecionado, financeiroByObraId]);
@@ -1100,7 +1102,8 @@ export default function EngenhariaCadastroObraPage() {
                 <th className="px-3 py-2">Nome</th>
                 <th className="px-3 py-2">Tipo</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Valor previsto</th>
+                <th className="px-3 py-2">Valor previsto inicial</th>
+                <th className="px-3 py-2">Valor atual</th>
                 <th className="px-3 py-2">Ações</th>
               </tr>
             </thead>
@@ -1126,6 +1129,9 @@ export default function EngenhariaCadastroObraPage() {
                     {o.valorPrevisto == null ? "-" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(o.valorPrevisto)}
                   </td>
                   <td className="px-3 py-2">
+                    {o.valorAtual == null ? "-" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(o.valorAtual)}
+                  </td>
+                  <td className="px-3 py-2">
                     <button
                       type="button"
                       className="rounded-lg border border-[#D1D5DB] bg-white px-2 py-1 text-xs text-[#111827] hover:bg-[#F9FAFB]"
@@ -1141,7 +1147,7 @@ export default function EngenhariaCadastroObraPage() {
               ))}
               {!obrasContrato.length ? (
                 <tr>
-                  <td className="px-3 py-6 text-center text-[#6B7280]" colSpan={6}>
+                  <td className="px-3 py-6 text-center text-[#6B7280]" colSpan={7}>
                     Selecione um contrato.
                   </td>
                 </tr>
@@ -1182,8 +1188,12 @@ export default function EngenhariaCadastroObraPage() {
               </select>
             </div>
             <div className="md:col-span-2">
-              <div className="text-sm text-[#6B7280]">Valor Previsto (R$)</div>
+              <div className="text-sm text-[#6B7280]">Valor previsto inicial (R$)</div>
               <input className="input" value={formObra.valorPrevisto} onChange={(e) => setFormObra((p) => ({ ...p, valorPrevisto: formatMoneyBRFromDigits(e.target.value) }))} />
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-sm text-[#6B7280]">Valor atual (planilha vigente)</div>
+              <input className="input" value={obraSelecionada?.valorAtual == null ? "-" : moeda(Number(obraSelecionada.valorAtual || 0))} disabled />
             </div>
             <div className="md:col-span-6">
               <div className="text-sm text-[#6B7280]">Descrição</div>

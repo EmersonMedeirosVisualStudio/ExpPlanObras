@@ -1691,6 +1691,11 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
   - **Parâmetros** (nome resumido dos parâmetros aplicados: data-base/UF/BDI);
   - **Serviços** (quantidade de itens do tipo Serviço na planilha);
   - **Valor total** (soma dos valores parciais dos itens de serviço).
+- Controle financeiro (Obra/Contrato):
+  - **Obra.Valor atual** é controlado pela **planilha vigente** (a versão marcada como **Atual**) e é igual ao **Valor total** dessa versão.
+  - Ao definir uma versão como **Atual** (ou alterar valores na versão **Atual**), o sistema atualiza automaticamente:
+    - **Obra.Valor atual** = Valor total da planilha vigente;
+    - **Contrato.Valor total atual** = soma dos valores atuais de todas as obras do contrato.
 - Edição por versão selecionada: após selecionar uma versão, o usuário pode **editar a planilha** (linhas) diretamente na versão selecionada.
   - O card **Parâmetros da planilha** é **somente leitura**: ele mostra o **snapshot** de parâmetros vinculado naquela versão (**#id**).
   - Para trocar o parâmetro vinculado, use **Editar** na lista de versões.
@@ -3999,7 +4004,7 @@ Funcionalidades já implementadas:
 Princípio:
 
 - aditivo é histórico (evento), e o “vigente” é o **contrato consolidado**
-- aprovação do aditivo atualiza automaticamente: prazo atual, vigência atual, valores atuais
+- aprovação do aditivo atualiza automaticamente: prazo atual, vigência atual e versão de planilha do contrato; os valores atuais são recalculados a partir das obras e suas planilhas vigentes
 
 Fluxo de tela (novo padrão):
 
@@ -4014,9 +4019,10 @@ Tipos de aditivo (modelo do sistema):
 - planilha: por padrão **Não** (pode ser Sim se você quiser registrar uma reprogramação junto, mas o sistema deixa opcional)
 
 2) Aditivo de **Valor**
-- altera: **valor total do contrato** (define o “Valor total (atual)”)
+- registra: novo valor total após aditivo (histórico do contrato)
 - regra obrigatória: **sempre altera planilha**
 - motivo: aumento/redução precisa estar distribuído nos itens
+  - o **Valor total (atual)** do contrato é recalculado automaticamente pela soma dos **Valores atuais** das obras vinculadas (cada obra é controlada pela planilha vigente)
 
 3) Aditivo de **Reprogramação de Planilha**
 - altera: itens/quantidades/distribuição

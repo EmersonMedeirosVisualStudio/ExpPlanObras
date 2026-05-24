@@ -573,6 +573,7 @@ model Obra {
   status    String   @default("NAO_INICIADA")
   contratoId Int
   valorPrevisto Decimal?
+  valorAtual Decimal?
   tenantId  Int
   contrato  Contrato @relation(fields: [contratoId], references: [id])
   tenant    Tenant   @relation(fields: [tenantId], references: [id])

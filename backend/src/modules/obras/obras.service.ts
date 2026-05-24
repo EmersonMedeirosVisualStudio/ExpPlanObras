@@ -28,16 +28,33 @@ async function withRLS<T>(tenantId: number, callback: (tx: any) => Promise<T>): 
   });
 }
 
+async function recomputeContratoValorTotalAtual(tx: any, tenantId: number, contratoId: number) {
+  const agg = await tx.obra.aggregate({
+    where: { tenantId, contratoId },
+    _sum: { valorAtual: true },
+  });
+  const soma = agg?._sum?.valorAtual == null ? 0 : Number(agg._sum.valorAtual);
+  const valorTotalAtual = Number.isFinite(soma) ? soma : 0;
+  await tx.contrato.updateMany({
+    where: { tenantId, id: contratoId },
+    data: { valorTotalAtual },
+  });
+  return valorTotalAtual;
+}
+
 export async function createObra(input: CreateObraInput, tenantId: number) {
   return withRLS(tenantId, async (tx) => {
     const contrato = await tx.contrato.findFirst({ where: { tenantId, id: input.contratoId }, select: { id: true } }).catch(() => null);
     if (!contrato) throw new Error('Contrato não encontrado');
-    return tx.obra.create({
+    const created = await tx.obra.create({
       data: {
         ...input,
+        valorAtual: input.valorPrevisto == null ? 0 : input.valorPrevisto,
         tenantId,
       },
     });
+    await recomputeContratoValorTotalAtual(tx, tenantId, Number(created.contratoId));
+    return created;
   });
 }
 
@@ -80,7 +97,7 @@ export async function getObrasResumoFinanceiro(tenantId: number, scope?: Abrange
     const contratoId = typeof filter?.contratoId === 'number' && Number.isInteger(filter.contratoId) && filter.contratoId > 0 ? filter.contratoId : null;
     const obras = await tx.obra.findMany({
       where: { ...scopeWhere(tenantId, scope), ...(contratoId ? { contratoId } : {}) },
-      select: { id: true, valorPrevisto: true },
+      select: { id: true, valorAtual: true },
     });
     const obraIds = obras.map((o: any) => Number(o.id)).filter((id: number) => Number.isFinite(id) && id > 0);
     if (!obraIds.length) return [];
@@ -98,7 +115,7 @@ export async function getObrasResumoFinanceiro(tenantId: number, scope?: Abrange
 
     return obras.map((o: any) => {
       const id = Number(o.id);
-      const valorTotal = o.valorPrevisto == null ? 0 : toNumberOrZero(o.valorPrevisto);
+      const valorTotal = o.valorAtual == null ? 0 : toNumberOrZero(o.valorAtual);
       const valorMedido = medidoByObraId.get(id) ?? 0;
       return { obraId: id, valorTotal, valorMedido };
     });
@@ -133,6 +150,9 @@ export async function updateObra(id: number, input: UpdateObraInput, tenantId: n
     throw new Error("Access denied");
   }
   return withRLS(tenantId, async (tx) => {
+    const current = await tx.obra.findFirst({ where: { id, tenantId }, select: { id: true, contratoId: true } }).catch(() => null);
+    if (!current) throw new Error("Obra not found or access denied");
+
     if ((input as any).contratoId != null) {
       const contrato = await tx.contrato.findFirst({ where: { tenantId, id: (input as any).contratoId }, select: { id: true } }).catch(() => null);
       if (!contrato) throw new Error('Contrato não encontrado');
@@ -150,7 +170,14 @@ export async function updateObra(id: number, input: UpdateObraInput, tenantId: n
     if (count.count === 0) {
         throw new Error("Obra not found or access denied");
     }
-    
+
+    const nextContratoId = (input as any).contratoId != null ? Number((input as any).contratoId) : Number(current.contratoId);
+    const prevContratoId = Number(current.contratoId);
+    if (nextContratoId !== prevContratoId) {
+      await recomputeContratoValorTotalAtual(tx, tenantId, prevContratoId);
+      await recomputeContratoValorTotalAtual(tx, tenantId, nextContratoId);
+    }
+
     return getObraById(id, tenantId, scope);
   });
 }
@@ -160,6 +187,8 @@ export async function deleteObra(id: number, tenantId: number, scope?: Abrangenc
     throw new Error("Access denied");
   }
   return withRLS(tenantId, async (tx) => {
+    const current = await tx.obra.findFirst({ where: { id, tenantId }, select: { id: true, contratoId: true } }).catch(() => null);
+    if (!current) throw new Error("Obra not found or access denied");
     const count = await tx.obra.deleteMany({
       where: { 
           id,
@@ -170,7 +199,7 @@ export async function deleteObra(id: number, tenantId: number, scope?: Abrangenc
     if (count.count === 0) {
         throw new Error("Obra not found or access denied");
     }
-    
+    await recomputeContratoValorTotalAtual(tx, tenantId, Number(current.contratoId));
     return { success: true };
   });
 }
@@ -519,7 +548,7 @@ export async function getOrcamento(obraId: number, tenantId: number) {
   return withRLS(tenantId, async (tx) => {
     const obra = await tx.obra.findFirst({
       where: { id: obraId, tenantId },
-      select: { id: true, name: true, valorPrevisto: true }
+      select: { id: true, name: true, valorPrevisto: true, valorAtual: true }
     });
     if (!obra) throw new Error("Obra not found or access denied");
     const custos = await tx.custo.findMany({
@@ -530,7 +559,7 @@ export async function getOrcamento(obraId: number, tenantId: number) {
     return {
       obra,
       totalGasto,
-      saldo: (obra.valorPrevisto ? Number(obra.valorPrevisto) : 0) - totalGasto,
+      saldo: (obra.valorAtual ? Number(obra.valorAtual) : 0) - totalGasto,
       custos
     };
   });

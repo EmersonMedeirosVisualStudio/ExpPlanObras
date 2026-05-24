@@ -1159,13 +1159,9 @@ export async function aprovarContratoAditivo(tenantId: number, contratoId: numbe
       }
     }
 
-    let nextValores: any = {};
     if (aplicaValor) {
-      const atual = toNumberOrNull(contrato.valorTotalAtual) ?? 0;
       const novoTotal = toNumberOrNull(ad.valorTotalAdicionado);
       if (novoTotal == null || !Number.isFinite(novoTotal) || novoTotal <= 0) throw new Error('valorTotalAdicionado (novo total após aditivo) deve ser > 0');
-      if (novoTotal === atual) throw new Error('O valor total (após aditivo) deve ser diferente do valor atual do contrato');
-      nextValores = { valorTotalAtual: novoTotal };
     }
 
     const updatedContrato = await tx.contrato.update({
@@ -1174,7 +1170,6 @@ export async function aprovarContratoAditivo(tenantId: number, contratoId: numbe
         prazoDias: aplicaPrazo ? (novoPrazo != null ? Math.trunc(novoPrazo) : undefined) : undefined,
         vigenciaAtual: aplicaPrazo ? (novaVigenciaAtual ?? undefined) : undefined,
         planilhaVersao: alterouPlanilhaFinal ? planilhaVersaoNova : undefined,
-        ...nextValores,
       },
     });
 
@@ -2134,16 +2129,6 @@ export async function updateContrato(tenantId: number, id: number, input: Update
       if (totalInicialNext == null || !Number.isFinite(totalInicialNext) || totalInicialNext <= 0) throw new Error('Valor total do contrato deve ser maior que zero');
     }
 
-    let valorTotalAtualNext: number | undefined = undefined;
-    if (input.valorTotalInicial != null) {
-      const hasValorAprovado = await tx.contratoAditivo
-        .findFirst({ where: { tenantId, contratoId: id, status: 'APROVADO', tipo: { in: ['VALOR', 'AMBOS'] } }, select: { id: true } })
-        .catch(() => null);
-      if (!hasValorAprovado) {
-        valorTotalAtualNext = totalInicialNext == null ? undefined : totalInicialNext;
-      }
-    }
-
     const updated = await tx.contrato.update({
       where: { id },
       data: {
@@ -2166,7 +2151,6 @@ export async function updateContrato(tenantId: number, id: number, input: Update
         vigenciaAtual: computedVig.vigenciaAtual ?? undefined,
         valorContratado: input.valorContratado ?? undefined,
         valorTotalInicial: input.valorTotalInicial != null ? (totalInicialNext == null ? undefined : totalInicialNext) : undefined,
-        valorTotalAtual: valorTotalAtualNext,
       },
     });
     return updated;

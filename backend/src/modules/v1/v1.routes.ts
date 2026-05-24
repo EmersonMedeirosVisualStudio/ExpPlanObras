@@ -448,6 +448,37 @@ async function safeExecuteRawUnsafe(tx: any, sql: string, ...params: any[]) {
   }
 }
 
+async function recomputeFinanceiroObraEContratoFromPlanilha(tx: any, input: { tenantId: number; idObra: number; idPlanilha: number }) {
+  const rows = (await tx.$queryRawUnsafe(
+    `
+    SELECT
+      COALESCE(ROUND(SUM(CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(i.valor_parcial, 0) ELSE 0 END)::numeric, 2), 0) AS "valorTotal"
+    FROM tab_planilha_itens i
+    WHERE i.tenant_id = $1 AND i.id_planilha = $2
+    `,
+    input.tenantId,
+    input.idPlanilha
+  )) as any[];
+  const total = rows?.[0]?.valorTotal == null ? 0 : Number(rows[0].valorTotal);
+  const valorAtual = Number.isFinite(total) ? total : 0;
+
+  await tx.obra.updateMany({
+    where: { tenantId: input.tenantId, id: input.idObra },
+    data: { valorAtual },
+  });
+
+  const obraRow = await tx.obra.findFirst({ where: { tenantId: input.tenantId, id: input.idObra }, select: { contratoId: true } }).catch(() => null);
+  const contratoId = obraRow?.contratoId != null ? Number(obraRow.contratoId) : null;
+  if (!contratoId || !Number.isFinite(contratoId) || contratoId <= 0) return { valorAtual, contratoId: null, contratoValorTotalAtual: null };
+
+  const agg = await tx.obra.aggregate({ where: { tenantId: input.tenantId, contratoId }, _sum: { valorAtual: true } });
+  const soma = agg?._sum?.valorAtual == null ? 0 : Number(agg._sum.valorAtual);
+  const contratoValorTotalAtual = Number.isFinite(soma) ? soma : 0;
+
+  await tx.contrato.updateMany({ where: { tenantId: input.tenantId, id: contratoId }, data: { valorTotalAtual: contratoValorTotalAtual } });
+  return { valorAtual, contratoId, contratoValorTotalAtual };
+}
+
 async function ensurePlanilhaOrcamentariaTables(tx: any) {
   await safeExecuteRawUnsafe(tx, `ALTER TABLE IF EXISTS obras_planilhas_versoes RENAME TO tab_planilhas`);
   await tx.$executeRawUnsafe(`
@@ -5679,7 +5710,7 @@ export default async function v1Routes(server: FastifyInstance) {
       const obra = await prisma.obra
         .findFirst({
           where: { tenantId: ctx.tenantId, id: idObra },
-          select: { id: true, status: true, name: true, type: true, valorPrevisto: true, contratoId: true, contrato: { select: { id: true, numeroContrato: true } } },
+          select: { id: true, status: true, name: true, type: true, valorPrevisto: true, valorAtual: true, contratoId: true, contrato: { select: { id: true, numeroContrato: true } } },
         })
         .catch(() => null);
       if (!obra) return fail(reply, 404, 'Obra não encontrada');
@@ -5695,6 +5726,7 @@ export default async function v1Routes(server: FastifyInstance) {
         contratoId: obra.contratoId ?? (obra.contrato?.id ?? null),
         contratoNumero: obra.contrato?.numeroContrato ? String(obra.contrato.numeroContrato) : null,
         valorPrevisto: obra.valorPrevisto == null ? null : Number(obra.valorPrevisto),
+        valorAtual: obra.valorAtual == null ? null : Number(obra.valorAtual),
       };
 
       if (view === 'versoes-min' || view === 'versoes_min') {
@@ -6082,7 +6114,7 @@ export default async function v1Routes(server: FastifyInstance) {
       const obra = await prisma.obra
         .findFirst({
           where: { tenantId: ctx.tenantId, id: idObra },
-          select: { id: true, status: true, name: true, type: true, valorPrevisto: true, contratoId: true, contrato: { select: { id: true, numeroContrato: true } } },
+          select: { id: true, status: true, name: true, type: true, valorPrevisto: true, valorAtual: true, contratoId: true, contrato: { select: { id: true, numeroContrato: true } } },
         })
         .catch(() => null);
       if (!obra) return fail(reply, 404, 'Obra não encontrada');
@@ -6098,6 +6130,7 @@ export default async function v1Routes(server: FastifyInstance) {
         contratoId: obra.contratoId ?? (obra.contrato?.id ?? null),
         contratoNumero: obra.contrato?.numeroContrato ? String(obra.contrato.numeroContrato) : null,
         valorPrevisto: obra.valorPrevisto == null ? null : Number(obra.valorPrevisto),
+        valorAtual: obra.valorAtual == null ? null : Number(obra.valorAtual),
       };
 
       const isMultipart = typeof (request as any).isMultipart === 'function' ? (request as any).isMultipart() : false;
@@ -6478,6 +6511,7 @@ export default async function v1Routes(server: FastifyInstance) {
             );
           }
 
+          await recomputeFinanceiroObraEContratoFromPlanilha(tx, { tenantId: ctx.tenantId, idObra, idPlanilha });
           return { idPlanilha };
         });
 
@@ -6767,6 +6801,17 @@ export default async function v1Routes(server: FastifyInstance) {
             );
           }
 
+          const atualRows = (await tx.$queryRawUnsafe(
+            `SELECT atual FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+            ctx.tenantId,
+            idObra,
+            Number(payload.idPlanilhaTarget)
+          )) as any[];
+          const atual = Boolean(atualRows?.[0]?.atual);
+          if (atual) {
+            await recomputeFinanceiroObraEContratoFromPlanilha(tx, { tenantId: ctx.tenantId, idObra, idPlanilha: Number(payload.idPlanilhaTarget) });
+          }
+
           return { ok: true };
         });
 
@@ -6806,6 +6851,7 @@ export default async function v1Routes(server: FastifyInstance) {
           });
 
           await clonarEstruturaPlanilha(tx, { tenantId: ctx.tenantId, idObra, sourcePlanilhaId, targetPlanilhaId: created.idPlanilha });
+          await recomputeFinanceiroObraEContratoFromPlanilha(tx, { tenantId: ctx.tenantId, idObra, idPlanilha: created.idPlanilha });
           return { idPlanilha: created.idPlanilha, numeroVersao: created.numeroVersao };
         });
 
@@ -6845,6 +6891,7 @@ export default async function v1Routes(server: FastifyInstance) {
             await clonarEstruturaPlanilha(tx, { tenantId: ctx.tenantId, idObra, sourcePlanilhaId: copyFrom, targetPlanilhaId: created.idPlanilha });
           }
 
+          await recomputeFinanceiroObraEContratoFromPlanilha(tx, { tenantId: ctx.tenantId, idObra, idPlanilha: created.idPlanilha });
           return { idPlanilha: created.idPlanilha, numeroVersao: created.numeroVersao };
         });
 
@@ -6958,7 +7005,8 @@ export default async function v1Routes(server: FastifyInstance) {
             idObra,
             idPlanilha
           );
-          return { idPlanilhaAtual: idPlanilha };
+          const financeiro = await recomputeFinanceiroObraEContratoFromPlanilha(tx, { tenantId: ctx.tenantId, idObra, idPlanilha });
+          return { idPlanilhaAtual: idPlanilha, financeiro };
         });
 
         return ok(reply, res, { message: 'Planilha definida como atual' });
@@ -7062,6 +7110,17 @@ export default async function v1Routes(server: FastifyInstance) {
               idObra,
               nextId
             );
+            await recomputeFinanceiroObraEContratoFromPlanilha(tx, { tenantId: ctx.tenantId, idObra, idPlanilha: nextId });
+          } else {
+            await tx.obra.updateMany({ where: { tenantId: ctx.tenantId, id: idObra }, data: { valorAtual: 0 } });
+            const obraRow = await tx.obra.findFirst({ where: { tenantId: ctx.tenantId, id: idObra }, select: { contratoId: true } }).catch(() => null);
+            const contratoId = obraRow?.contratoId != null ? Number(obraRow.contratoId) : null;
+            if (contratoId && Number.isFinite(contratoId) && contratoId > 0) {
+              const agg = await tx.obra.aggregate({ where: { tenantId: ctx.tenantId, contratoId }, _sum: { valorAtual: true } });
+              const soma = agg?._sum?.valorAtual == null ? 0 : Number(agg._sum.valorAtual);
+              const contratoValorTotalAtual = Number.isFinite(soma) ? soma : 0;
+              await tx.contrato.updateMany({ where: { tenantId: ctx.tenantId, id: contratoId }, data: { valorTotalAtual: contratoValorTotalAtual } });
+            }
           }
 
           return {
@@ -7308,6 +7367,17 @@ export default async function v1Routes(server: FastifyInstance) {
               idParametros
             );
           }
+
+          const atualRows = (await tx.$queryRawUnsafe(
+            `SELECT atual FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+            ctx.tenantId,
+            idObra,
+            idPlanilha
+          )) as any[];
+          const atual = Boolean(atualRows?.[0]?.atual);
+          if (atual) {
+            await recomputeFinanceiroObraEContratoFromPlanilha(tx, { tenantId: ctx.tenantId, idObra, idPlanilha });
+          }
         });
 
         return ok(reply, { idObra, obraStatus, obra: obraResumo }, { message: 'Parâmetros atualizados' });
@@ -7502,6 +7572,18 @@ export default async function v1Routes(server: FastifyInstance) {
           );
         }
 
+        await prismaTx(async (tx: any) => {
+          const rows = (await tx.$queryRawUnsafe(
+            `SELECT atual FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+            ctx.tenantId,
+            idObra,
+            idPlanilha
+          )) as any[];
+          const atual = Boolean(rows?.[0]?.atual);
+          if (!atual) return;
+          await recomputeFinanceiroObraEContratoFromPlanilha(tx, { tenantId: ctx.tenantId, idObra, idPlanilha });
+        });
+
         return ok(reply, { ok: true }, { message: 'Linha salva' });
       }
 
@@ -7512,6 +7594,17 @@ export default async function v1Routes(server: FastifyInstance) {
         if (!Number.isFinite(idLinha) || idLinha <= 0) return fail(reply, 422, 'idLinha inválido');
 
         await prisma.$executeRawUnsafe(`DELETE FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2 AND id_planilha_item = $3`, ctx.tenantId, idPlanilha, idLinha);
+        await prismaTx(async (tx: any) => {
+          const rows = (await tx.$queryRawUnsafe(
+            `SELECT atual FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+            ctx.tenantId,
+            idObra,
+            idPlanilha
+          )) as any[];
+          const atual = Boolean(rows?.[0]?.atual);
+          if (!atual) return;
+          await recomputeFinanceiroObraEContratoFromPlanilha(tx, { tenantId: ctx.tenantId, idObra, idPlanilha });
+        });
         return ok(reply, { ok: true }, { message: 'Linha excluída' });
       }
 
@@ -8934,6 +9027,17 @@ export default async function v1Routes(server: FastifyInstance) {
       idPlanilha,
       list
     );
+
+    const atualRows = (await tx.$queryRawUnsafe(
+      `SELECT atual FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+      tenantId,
+      idObra,
+      idPlanilha
+    )) as any[];
+    const atual = Boolean(atualRows?.[0]?.atual);
+    if (atual) {
+      await recomputeFinanceiroObraEContratoFromPlanilha(tx, { tenantId, idObra, idPlanilha });
+    }
 
     return { atualizados: Number(res || 0) };
   }
