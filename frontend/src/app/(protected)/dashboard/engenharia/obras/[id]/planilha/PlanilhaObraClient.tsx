@@ -23,9 +23,7 @@ type VersaoRow = {
   numeroVersao: number;
   nome: string;
   atual: boolean;
-  idFonteDados: number | null;
   idParametros: number | null;
-  fonteNome: string;
   parametrosNome: string;
   valorTotal: number | null;
   totalServicos: number | null;
@@ -63,9 +61,7 @@ type Planilha = {
   numeroVersao: number;
   nome: string;
   atual: boolean;
-  idFonteDados: number | null;
   idParametros: number | null;
-  fonteNome: string;
   parametrosNome: string;
   valorTotal?: number | null;
   totalServicos?: number | null;
@@ -98,15 +94,6 @@ type ComposicaoValidacaoRow = {
 };
 
 type PlanilhaGridColKey = "item" | "comp" | "codigo" | "fonte" | "servicos" | "und" | "quant" | "valorUnitario" | "valorParcial" | "acoes";
-
-type FonteDadosDTO = {
-  idFonteDados: number;
-  nome: string;
-  tipo: string;
-  uf: string;
-  dataBase: string;
-  tipoPreco: string;
-};
 
 type ParametroDTO = {
   idParametros: number;
@@ -551,7 +538,6 @@ export default function PlanilhaObraClient({
     }>;
     missingColumns: string[];
   }>({ file: null, nomeVersao: "", rows: [], missingColumns: [] });
-  const [importFonteId, setImportFonteId] = useState<string>("");
   const [importParametrosId, setImportParametrosId] = useState<string>("");
 
   const [uiPrefs, setUiPrefs] = useState<{
@@ -670,13 +656,11 @@ export default function PlanilhaObraClient({
     if (editingLinhaId && !showAdicionarCard) setShowAdicionarCard(true);
   }, [editingLinhaId, showAdicionarCard]);
 
-  const [fontes, setFontes] = useState<FonteDadosDTO[]>([]);
   const [parametrosCad, setParametrosCad] = useState<ParametroDTO[]>([]);
 
   const [modalNovaPlanilhaOpen, setModalNovaPlanilhaOpen] = useState(false);
   const [modalNovaPlanilhaMode, setModalNovaPlanilhaMode] = useState<"NOVA" | "CLONAR">("NOVA");
   const [novaPlanilhaNome, setNovaPlanilhaNome] = useState("");
-  const [novaPlanilhaFonteId, setNovaPlanilhaFonteId] = useState<string>("");
   const [novaPlanilhaParametrosId, setNovaPlanilhaParametrosId] = useState<string>("");
   const [novaPlanilhaClonarDeId, setNovaPlanilhaClonarDeId] = useState<string>("");
 
@@ -684,13 +668,11 @@ export default function PlanilhaObraClient({
   const [editarPlanilhaTarget, setEditarPlanilhaTarget] = useState<VersaoRow | null>(null);
   const [editarPlanilhaNome, setEditarPlanilhaNome] = useState("");
   const [editarPlanilhaNumeroVersao, setEditarPlanilhaNumeroVersao] = useState<string>("");
-  const [editarPlanilhaFonteId, setEditarPlanilhaFonteId] = useState<string>("");
   const [editarPlanilhaParametrosId, setEditarPlanilhaParametrosId] = useState<string>("");
 
   const [modalClonarPlanilhaOpen, setModalClonarPlanilhaOpen] = useState(false);
   const [clonarTarget, setClonarTarget] = useState<VersaoRow | null>(null);
   const [clonarIncludeParametros, setClonarIncludeParametros] = useState(false);
-  const [clonarIncludeFonte, setClonarIncludeFonte] = useState(false);
 
   const [modalAuditoriaTotaisOpen, setModalAuditoriaTotaisOpen] = useState(false);
   const [auditoriaTotaisLoading, setAuditoriaTotaisLoading] = useState(false);
@@ -699,7 +681,6 @@ export default function PlanilhaObraClient({
 
   useEffect(() => {
     if (!modalNovaPlanilhaOpen && !modalEditarPlanilhaOpen) return;
-    if (!fontes.length) void carregarFontes();
     if (!parametrosCad.length) void carregarParametrosCad();
   }, [modalNovaPlanilhaOpen, modalEditarPlanilhaOpen]);
 
@@ -1234,9 +1215,7 @@ export default function PlanilhaObraClient({
         numeroVersao: Number(v.numeroVersao),
         nome: String(v.nome || ""),
         atual: Boolean(v.atual),
-        idFonteDados: v.idFonteDados == null ? null : Number(v.idFonteDados),
         idParametros: v.idParametros == null ? null : Number(v.idParametros),
-        fonteNome: String(v.fonteNome || "—"),
         parametrosNome: String(v.parametrosNome || "—"),
         valorTotal: v.valorTotal == null ? (mode === "FULL" ? 0 : null) : Number(v.valorTotal),
         totalServicos: v.totalServicos == null ? (mode === "FULL" ? 0 : null) : Number(v.totalServicos || 0),
@@ -1311,26 +1290,6 @@ export default function PlanilhaObraClient({
       setErr(e?.message || "Erro ao salvar item");
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function carregarFontes() {
-    try {
-      const res = await authFetch(`/api/v1/engenharia/fontes-dados`);
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar fontes");
-      const list = Array.isArray(json.data?.fontes) ? (json.data.fontes as any[]) : [];
-      const normalized: FonteDadosDTO[] = list.map((r) => ({
-        idFonteDados: Number(r.idFonteDados),
-        nome: String(r.nome || "").trim(),
-        tipo: String(r.tipo || "").trim(),
-        uf: String(r.uf || "").trim(),
-        dataBase: String(r.dataBase || "").trim(),
-        tipoPreco: String(r.tipoPreco || "").trim(),
-      }));
-      setFontes(normalized);
-    } catch {
-      setFontes([]);
     }
   }
 
@@ -1465,7 +1424,6 @@ export default function PlanilhaObraClient({
     setModalNovaPlanilhaMode(mode);
     setNovaPlanilhaNome(`Versão ${nextVersao}`);
     setNovaPlanilhaClonarDeId("");
-    setNovaPlanilhaFonteId(planilha?.idFonteDados ? String(planilha.idFonteDados) : "");
     setNovaPlanilhaParametrosId(planilha?.idParametros ? String(planilha.idParametros) : "");
     setModalNovaPlanilhaOpen(true);
   }
@@ -1477,21 +1435,15 @@ export default function PlanilhaObraClient({
     if (!sourceId) return;
     const v = versoes.find((x) => Number(x.idPlanilha) === Number(sourceId)) || null;
     if (!v) return;
-    setNovaPlanilhaFonteId(v.idFonteDados != null ? String(v.idFonteDados) : "");
     setNovaPlanilhaParametrosId(v.idParametros != null ? String(v.idParametros) : "");
   }, [modalNovaPlanilhaOpen, modalNovaPlanilhaMode, novaPlanilhaClonarDeId, versoes]);
 
   async function confirmarNovaPlanilha() {
     const nome = String(novaPlanilhaNome || "").trim();
-    const idFonteDados = Number(String(novaPlanilhaFonteId || "").trim() || 0);
     const idParametros = Number(String(novaPlanilhaParametrosId || "").trim() || 0);
     const copyFromPlanilhaId = modalNovaPlanilhaMode === "CLONAR" ? Number(String(novaPlanilhaClonarDeId || "").trim() || 0) : 0;
     if (!nome) {
       setErr("Informe o nome da planilha.");
-      return;
-    }
-    if (!idFonteDados) {
-      setErr("Selecione a Fonte de dados.");
       return;
     }
     if (!idParametros) {
@@ -1503,8 +1455,7 @@ export default function PlanilhaObraClient({
       return;
     }
     const avisoCompartilhado =
-      "Atenção: Fonte de dados e Parâmetros são compartilhados.\n\n" +
-      "- Se você alterar um Serviço/Insumo/Composição da Fonte, muda em TODAS as planilhas que usam essa Fonte.\n" +
+      "Atenção: Parâmetros podem ser compartilhados.\n\n" +
       "- Se você alterar um Parâmetro, muda em TODAS as planilhas que usam esse Parâmetro.\n\n" +
       "Deseja continuar?";
     if (!window.confirm(avisoCompartilhado)) return;
@@ -1518,7 +1469,6 @@ export default function PlanilhaObraClient({
         body: JSON.stringify({
           action: "NOVA_VERSAO",
           nome,
-          idFonteDados,
           idParametros,
           copyFromPlanilhaId: copyFromPlanilhaId ? copyFromPlanilhaId : undefined,
         }),
@@ -1708,7 +1658,6 @@ export default function PlanilhaObraClient({
     if (!sourcePlanilhaId) return;
     setClonarTarget(v);
     setClonarIncludeParametros(false);
-    setClonarIncludeFonte(false);
     setModalClonarPlanilhaOpen(true);
   }
 
@@ -1733,24 +1682,8 @@ export default function PlanilhaObraClient({
       if (!idPlanilhaNew) throw new Error("Planilha clonada inválida");
       if (!numeroVersaoNew) throw new Error("Número da versão da planilha clonada inválido");
 
-      let idFonteDadosFinal = v?.idFonteDados != null ? Number(v.idFonteDados) : 0;
       let idParametrosFinal = v?.idParametros != null ? Number(v.idParametros) : 0;
-      if (!idFonteDadosFinal) throw new Error("Fonte de dados da planilha origem não definida");
       if (!idParametrosFinal) throw new Error("Parâmetros da planilha origem não definidos");
-
-      if (clonarIncludeFonte) {
-        const resFonte = await authFetch(`/api/v1/engenharia/fontes-dados/clonar`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ idFonteDados: idFonteDadosFinal }),
-        });
-        const jsonFonte = await resFonte.json().catch(() => null);
-        if (!resFonte.ok || !jsonFonte?.success) throw new Error(jsonFonte?.message || "Erro ao clonar fonte de dados");
-        const idFonteNew = Number(jsonFonte.data?.idFonteDados || 0);
-        if (!idFonteNew) throw new Error("Fonte clonada inválida");
-        idFonteDadosFinal = idFonteNew;
-        await carregarFontes();
-      }
 
       if (clonarIncludeParametros) {
         const resParam = await authFetch(`/api/v1/engenharia/planilhas/parametros/clonar`, {
@@ -1766,7 +1699,7 @@ export default function PlanilhaObraClient({
         await carregarParametrosCad();
       }
 
-      if (clonarIncludeFonte || clonarIncludeParametros) {
+      if (clonarIncludeParametros) {
         const resEdit = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1775,12 +1708,11 @@ export default function PlanilhaObraClient({
             idPlanilha: idPlanilhaNew,
             numeroVersao: numeroVersaoNew,
             nome,
-            idFonteDados: idFonteDadosFinal,
             idParametros: idParametrosFinal,
           }),
         });
         const jsonEdit = await resEdit.json().catch(() => null);
-        if (!resEdit.ok || !jsonEdit?.success) throw new Error(jsonEdit?.message || "Erro ao vincular fonte/parâmetros clonados");
+        if (!resEdit.ok || !jsonEdit?.success) throw new Error(jsonEdit?.message || "Erro ao vincular parâmetros clonados");
       }
 
       setModalClonarPlanilhaOpen(false);
@@ -1823,7 +1755,6 @@ export default function PlanilhaObraClient({
     setEditarPlanilhaTarget(v);
     setEditarPlanilhaNome(String(v.nome || ""));
     setEditarPlanilhaNumeroVersao(String(v.numeroVersao || ""));
-    setEditarPlanilhaFonteId(v.idFonteDados != null ? String(v.idFonteDados) : "");
     setEditarPlanilhaParametrosId(v.idParametros != null ? String(v.idParametros) : "");
     setModalEditarPlanilhaOpen(true);
   }
@@ -1833,7 +1764,6 @@ export default function PlanilhaObraClient({
     if (!target?.idPlanilha) return;
     const nome = String(editarPlanilhaNome || "").trim();
     const numeroVersao = Number(String(editarPlanilhaNumeroVersao || "").trim() || 0);
-    const idFonteDados = Number(String(editarPlanilhaFonteId || "").trim() || 0);
     const idParametros = Number(String(editarPlanilhaParametrosId || "").trim() || 0);
     if (!nome) {
       setErr("Informe o nome da planilha.");
@@ -1843,17 +1773,12 @@ export default function PlanilhaObraClient({
       setErr("Número de versão inválido.");
       return;
     }
-    if (!idFonteDados) {
-      setErr("Selecione a Fonte de dados.");
-      return;
-    }
     if (!idParametros) {
       setErr("Selecione o Parâmetro.");
       return;
     }
     const avisoCompartilhado =
-      "Atenção: Fonte de dados e Parâmetros são compartilhados.\n\n" +
-      "- Alterar Serviço/Insumo/Composição da Fonte afeta TODAS as planilhas que usam essa Fonte.\n" +
+      "Atenção: Parâmetros podem ser compartilhados.\n\n" +
       "- Alterar Parâmetros afeta TODAS as planilhas que usam esse Parâmetro.\n\n" +
       "Deseja continuar?";
     if (!window.confirm(avisoCompartilhado)) return;
@@ -1869,7 +1794,6 @@ export default function PlanilhaObraClient({
           idPlanilha: target.idPlanilha,
           numeroVersao,
           nome,
-          idFonteDados,
           idParametros,
         }),
       });
@@ -1889,7 +1813,7 @@ export default function PlanilhaObraClient({
   async function excluirPlanilha(v: VersaoRow) {
     if (!v?.idPlanilha) return;
     const msg =
-      "Excluir a planilha inteira?\n\nIsso remove:\n- Linhas/serviços\n- Composições/subcomposições\n- Preços de insumos\n\nAlém disso, se a Fonte de dados e/ou os Parâmetros desta planilha NÃO estiverem compartilhados com outras planilhas, eles também serão excluídos.\n\nEsta ação não pode ser desfeita.";
+      "Excluir a planilha inteira?\n\nIsso remove:\n- Linhas/serviços\n- Composições/subcomposições\n- Preços de insumos\n\nAlém disso, se os Parâmetros desta planilha NÃO estiverem compartilhados com outras planilhas, eles também serão excluídos.\n\nEsta ação não pode ser desfeita.";
     if (!window.confirm(msg)) return;
     try {
       setLoading(true);
@@ -1924,7 +1848,6 @@ export default function PlanilhaObraClient({
       const form = new FormData();
       form.append("action", "IMPORTAR_CSV");
       form.append("nome", String(nomeVersao || `Versão ${Math.max(0, ...versoes.map((v) => v.numeroVersao)) + 1} (CSV)`));
-      form.append("idFonteDados", String(importFonteId || ""));
       form.append("idParametros", String(importParametrosId || ""));
       form.append("file", file);
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, { method: "POST", body: form });
@@ -2007,9 +1930,7 @@ export default function PlanilhaObraClient({
       });
 
       setImportPreview({ file, nomeVersao, rows: mapped, missingColumns });
-      const fonteFromPlanilha = (planilha as any)?.idFonteDados != null ? String((planilha as any).idFonteDados) : "";
       const paramFromPlanilha = (planilha as any)?.idParametros != null ? String((planilha as any).idParametros) : "";
-      setImportFonteId(fonteFromPlanilha || (fontes[0]?.idFonteDados != null ? String(fontes[0].idFonteDados) : ""));
       setImportParametrosId(paramFromPlanilha || (parametrosCad[0]?.idParametros != null ? String(parametrosCad[0].idParametros) : ""));
     } catch (e: any) {
       setImportPreview({ file: null, nomeVersao: "", rows: [], missingColumns: [] });
@@ -2301,8 +2222,7 @@ export default function PlanilhaObraClient({
             </div>
             <div className="p-4 space-y-4">
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                Atenção: Fonte de dados e Parâmetros são compartilhados. Se você alterar Serviço/Insumo/Composição da Fonte, muda em TODAS as planilhas que usam essa Fonte. Se
-                você alterar um Parâmetro, muda em TODAS as planilhas que usam esse Parâmetro.
+                Atenção: Parâmetros podem ser compartilhados. Se você alterar um Parâmetro, muda em TODAS as planilhas que usam esse Parâmetro.
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
@@ -2336,30 +2256,11 @@ export default function PlanilhaObraClient({
                       </option>
                     ))}
                   </select>
-                  <div className="text-xs text-slate-500">Ao clonar, a nova planilha reutiliza o mesmo id de Fonte e o mesmo id de Parâmetros da planilha origem.</div>
+                  <div className="text-xs text-slate-500">Ao clonar, a nova planilha reutiliza o mesmo id de Parâmetros da planilha origem.</div>
                 </label>
               ) : null}
 
               <div className="grid gap-3 md:grid-cols-2">
-                <label className="space-y-1">
-                  <div className="text-sm font-semibold">Fonte de dados</div>
-                  <select
-                    className="input bg-white w-full"
-                    value={novaPlanilhaFonteId}
-                    onChange={(e) => setNovaPlanilhaFonteId(e.target.value)}
-                    disabled={loading || modalNovaPlanilhaMode === "CLONAR"}
-                  >
-                    <option value="">Selecione…</option>
-                    {[...fontes]
-                      .sort((a, b) => Number(a.idFonteDados) - Number(b.idFonteDados))
-                      .map((f) => (
-                        <option key={f.idFonteDados} value={String(f.idFonteDados)}>
-                          {`#${f.idFonteDados} - ${f.nome}`}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-
                 <label className="space-y-1">
                   <div className="text-sm font-semibold">Parâmetro</div>
                   <select
@@ -2420,7 +2321,7 @@ export default function PlanilhaObraClient({
             </div>
             <div className="p-4 space-y-4">
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                Atenção: Fonte de dados e Parâmetros podem ser compartilhados. Alterações na Fonte/Parâmetros podem impactar outras planilhas que usam o mesmo id.
+                Atenção: Parâmetros podem ser compartilhados. Alterações em Parâmetros podem impactar outras planilhas que usam o mesmo id.
               </div>
 
               <div className="space-y-3">
@@ -2443,15 +2344,6 @@ export default function PlanilhaObraClient({
                     <div className="font-semibold">Parâmetros da planilha</div>
                     <div className="text-sm text-slate-700">UF (SINAPI), Data-base, BDI de Serviços (%), BDI Diferenciado (%), Enc. Sociais (%), Desconto (%).</div>
                     <div className="text-xs text-slate-500">Marcado = cria um novo cadastro de Parâmetros com os mesmos valores (não fica compartilhado).</div>
-                  </div>
-                </label>
-
-                <label className="flex items-start gap-3">
-                  <input type="checkbox" checked={clonarIncludeFonte} onChange={(e) => setClonarIncludeFonte(Boolean(e.target.checked))} disabled={loading} />
-                  <div>
-                    <div className="font-semibold">Fonte de dados da planilha</div>
-                    <div className="text-sm text-slate-700">Serviços, composições, insumos.</div>
-                    <div className="text-xs text-slate-500">Marcado = cria uma nova Fonte (catálogo) clonando Serviços/Insumos/Composições.</div>
                   </div>
                 </label>
               </div>
@@ -2568,8 +2460,7 @@ export default function PlanilhaObraClient({
             </div>
             <div className="p-4 space-y-4">
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                Atenção: Fonte de dados e Parâmetros são compartilhados. Se você alterar Serviço/Insumo/Composição da Fonte, muda em TODAS as planilhas que usam essa Fonte. Se
-                você alterar um Parâmetro, muda em TODAS as planilhas que usam esse Parâmetro.
+                Atenção: Parâmetros podem ser compartilhados. Se você alterar um Parâmetro, muda em TODAS as planilhas que usam esse Parâmetro.
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
@@ -2591,21 +2482,7 @@ export default function PlanilhaObraClient({
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
-                <label className="space-y-1">
-                  <div className="text-sm font-semibold">Fonte de dados</div>
-                  <select className="input bg-white w-full" value={editarPlanilhaFonteId} onChange={(e) => setEditarPlanilhaFonteId(e.target.value)} disabled={loading}>
-                    <option value="">Selecione…</option>
-                    {[...fontes]
-                      .sort((a, b) => Number(a.idFonteDados) - Number(b.idFonteDados))
-                      .map((f) => (
-                        <option key={f.idFonteDados} value={String(f.idFonteDados)}>
-                          {`#${f.idFonteDados} - ${f.nome}`}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-
-                <label className="space-y-1">
+                <label className="space-y-1 md:col-span-2">
                   <div className="text-sm font-semibold">Parâmetro</div>
                   <select className="input bg-white w-full" value={editarPlanilhaParametrosId} onChange={(e) => setEditarPlanilhaParametrosId(e.target.value)} disabled={loading}>
                     <option value="">Selecione…</option>
@@ -2630,7 +2507,7 @@ export default function PlanilhaObraClient({
                     await clonarPlanilha(editarPlanilhaTarget);
                   }}
                   disabled={loading || !editarPlanilhaTarget}
-                  title="Clonar esta planilha (duplica itens e preços de insumos; reusa fonte e parâmetros por id)"
+                  title="Clonar esta planilha (duplica itens e preços de insumos; reutiliza parâmetros por id)"
                 >
                   Clonar
                 </button>
@@ -2744,9 +2621,9 @@ export default function PlanilhaObraClient({
                 router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos?${qs.toString()}`);
               }}
               disabled={loading || !effectivePlanilhaId || !planilha}
-              title={!effectivePlanilhaId || !planilha ? "Selecione uma versão da planilha para abrir o catálogo da Fonte" : "Abrir o catálogo de serviços da Fonte de dados vinculada à planilha selecionada"}
+              title={!effectivePlanilhaId || !planilha ? "Selecione uma versão da planilha para abrir os serviços" : "Abrir a tela de serviços da planilha selecionada"}
             >
-              Serviços (catálogo da fonte)
+              Serviços
             </button>
             <button
               className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
@@ -2787,19 +2664,6 @@ export default function PlanilhaObraClient({
             </button>
           </div>
           <div className="flex items-center justify-end gap-2 flex-wrap">
-            <button
-              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-              type="button"
-              onClick={() => {
-                const qs = new URLSearchParams();
-                qs.set("returnTo", selfHref);
-                router.push(`/dashboard/engenharia/fontes-dados?${qs.toString()}`);
-              }}
-              disabled={loading}
-              title="Cadastrar/editar fontes de dados"
-            >
-              Cadastrar Fonte de dados
-            </button>
             <button
               className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
               type="button"
@@ -2878,7 +2742,6 @@ export default function PlanilhaObraClient({
               <tr>
                 <th className="px-3 py-2">Versão</th>
                 <th className="px-3 py-2">Nome</th>
-                <th className="px-3 py-2">Fonte</th>
                 <th className="px-3 py-2">Parâmetros</th>
                 <th className="px-3 py-2 text-right">Serviços</th>
                 <th className="px-3 py-2 text-right">Valor total</th>
@@ -2895,7 +2758,6 @@ export default function PlanilhaObraClient({
                 >
                   <td className="px-3 py-2 font-semibold">v{v.numeroVersao}</td>
                   <td className="px-3 py-2">{v.nome}</td>
-                  <td className="px-3 py-2">{v.fonteNome || "—"}</td>
                   <td className="px-3 py-2">{v.idParametros ? `#${v.idParametros} - ${v.parametrosNome || "—"}` : "—"}</td>
                   <td className="px-3 py-2 text-right">{v.totalServicos == null ? "—" : v.totalServicos}</td>
                   <td className="px-3 py-2 text-right">{v.valorTotal == null ? "—" : moeda(Number(v.valorTotal || 0))}</td>
@@ -2957,7 +2819,7 @@ export default function PlanilhaObraClient({
               ))}
               {!versoes.length ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
                     Nenhuma versão cadastrada.
                   </td>
                 </tr>

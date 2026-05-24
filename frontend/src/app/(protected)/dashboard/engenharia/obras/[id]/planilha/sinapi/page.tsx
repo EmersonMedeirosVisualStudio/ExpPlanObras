@@ -228,8 +228,6 @@ export default function SinapiImportPage() {
   const [planilhaCallerCtx, setPlanilhaCallerCtx] = useState<{
     idPlanilha: number;
     nome: string;
-    idFonteDados: number | null;
-    fonteNome: string;
     idParametros: number | null;
     parametrosNome: string;
   } | null>(null);
@@ -1551,8 +1549,6 @@ export default function SinapiImportPage() {
         setPlanilhaCallerCtx({
           idPlanilha: Number(pick.idPlanilha),
           nome: String(pick.nome || ""),
-          idFonteDados: pick.idFonteDados == null ? null : Number(pick.idFonteDados),
-          fonteNome: String(pick.fonteNome || ""),
           idParametros: pick.idParametros == null ? null : Number(pick.idParametros),
           parametrosNome: String(pick.parametrosNome || ""),
         });
@@ -1609,7 +1605,6 @@ export default function SinapiImportPage() {
           <div className="mt-1 text-sm text-slate-700">
             {planilhaCallerCtx?.idPlanilha ? <div className="font-semibold">{`Planilha: #${planilhaCallerCtx.idPlanilha} - ${planilhaCallerCtx.nome || "—"}`}</div> : null}
             {planilhaCallerCtx?.idParametros ? <div>{`Parâmetros: #${planilhaCallerCtx.idParametros} - ${planilhaCallerCtx.parametrosNome || "—"}`}</div> : null}
-            {planilhaCallerCtx?.idFonteDados ? <div>{`Fonte de dados: #${planilhaCallerCtx.idFonteDados} - ${planilhaCallerCtx.fonteNome || "—"}`}</div> : null}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

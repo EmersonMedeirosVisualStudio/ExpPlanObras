@@ -215,8 +215,6 @@ async function readTextSmart(file: File) {
   const [planilhaParams, setPlanilhaParams] = useState<PlanilhaParams | null>(null);
   const [obraNome, setObraNome] = useState<string>("");
   const [planilhaCtx, setPlanilhaCtx] = useState<{
-    idFonteDados: number | null;
-    fonteNome: string;
     idParametros: number | null;
     parametrosNome: string;
   } | null>(null);
@@ -767,8 +765,6 @@ async function readTextSmart(file: File) {
       setPlanilhaCtx(
         pick
           ? {
-              idFonteDados: pick.idFonteDados == null ? null : Number(pick.idFonteDados),
-              fonteNome: String(pick.fonteNome || ""),
               idParametros: pick.idParametros == null ? null : Number(pick.idParametros),
               parametrosNome: String(pick.parametrosNome || ""),
             }
@@ -2372,7 +2368,6 @@ async function readTextSmart(file: File) {
           <div className="mt-1 text-sm text-slate-700">
             {planilhaInfo?.idPlanilha ? <div className="font-semibold">{`Planilha: #${planilhaInfo.idPlanilha} - ${planilhaInfo.nome || "—"}`}</div> : null}
             {planilhaCtx?.idParametros ? <div>{`Parâmetros: #${planilhaCtx.idParametros} - ${planilhaCtx.parametrosNome || "—"}`}</div> : null}
-            {planilhaCtx?.idFonteDados ? <div>{`Fonte de dados: #${planilhaCtx.idFonteDados} - ${planilhaCtx.fonteNome || "—"}`}</div> : null}
           </div>
         </div>
          <div className="flex items-center gap-2 flex-wrap">

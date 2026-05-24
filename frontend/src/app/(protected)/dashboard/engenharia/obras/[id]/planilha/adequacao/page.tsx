@@ -10,9 +10,7 @@ type VersaoRow = {
   numeroVersao: number;
   nome: string;
   atual: boolean;
-  idFonteDados?: number | null;
   idParametros?: number | null;
-  fonteNome?: string;
   parametrosNome?: string;
   valorTotal?: number | null;
   totalServicos?: number | null;
@@ -49,13 +47,13 @@ type PlanilhaAudit = {
 type AdequacaoDetalhe = {
   obraId: number;
   codigoServico: string;
-  source: { idPlanilha: number; numeroVersao: number; nome: string; idFonteDados: number; idParametros: number | null };
-  target: { idPlanilha: number; numeroVersao: number; nome: string; idFonteDados: number; idParametros: number | null };
+  source: { idPlanilha: number; numeroVersao: number; nome: string; idParametros: number | null };
+  target: { idPlanilha: number; numeroVersao: number; nome: string; idParametros: number | null };
   linhas: {
     source: Array<{ item: string; codigo: string; servicos: string; und: string; quantidade: number | null; valorUnitario: number | null; valorParcial: number | null }>;
     target: Array<{ item: string; codigo: string; servicos: string; und: string; quantidade: number | null; valorUnitario: number | null; valorParcial: number | null }>;
   };
-  catalogo: null | { idFonteDados: number; idServico: number; codigo: string; banco: string; descricao: string; und: string; valorUnitario: number };
+  catalogo: null | { idServico: number; codigo: string; banco: string; descricao: string; und: string; valorUnitario: number };
   composicao: Array<{ tipoItem: string; codigo: string; banco: string; descricao: string; und: string; quantidade: number; valorUnitario: number }>;
 };
 
@@ -375,9 +373,7 @@ export default function AdequacaoPlanilhaPage() {
           numeroVersao: Number(v.numeroVersao),
           nome: String(v.nome || ""),
           atual: Boolean(v.atual),
-          idFonteDados: v?.idFonteDados == null ? null : Number(v.idFonteDados),
           idParametros: v?.idParametros == null ? null : Number(v.idParametros),
-          fonteNome: String(v?.fonteNome || ""),
           parametrosNome: String(v?.parametrosNome || ""),
           valorTotal: v?.valorTotal == null ? null : Number(v.valorTotal),
           totalServicos: v?.totalServicos == null ? null : Number(v.totalServicos),
@@ -1028,9 +1024,7 @@ export default function AdequacaoPlanilhaPage() {
                       <div className="font-semibold">{`Origem: #${detalheData.source.idPlanilha} — v${detalheData.source.numeroVersao}${detalheData.source.nome ? ` — ${detalheData.source.nome}` : ""}`}</div>
                       <div className="font-semibold">{`Destino: #${detalheData.target.idPlanilha} — v${detalheData.target.numeroVersao}${detalheData.target.nome ? ` — ${detalheData.target.nome}` : ""}`}</div>
                       <div className="text-xs text-slate-600">
-                        {`Fonte (origem/destino): #${detalheData.source.idFonteDados || 0} / #${detalheData.target.idFonteDados || 0} • Parâmetros (origem/destino): #${
-                          detalheData.source.idParametros || 0
-                        } / #${detalheData.target.idParametros || 0}`}
+                        {`Parâmetros (origem/destino): #${detalheData.source.idParametros || 0} / #${detalheData.target.idParametros || 0}`}
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -1070,7 +1064,7 @@ export default function AdequacaoPlanilhaPage() {
                             `/dashboard/engenharia/obras/${idObra}/planilha/servicos?planilhaId=${encodeURIComponent(String(detalheData.target.idPlanilha))}`
                           )
                         }
-                        title="Abrir Serviços (catálogo da fonte) da planilha selecionada"
+                        title="Abrir Serviços (catálogo da planilha) da planilha selecionada"
                       >
                         Abrir catálogo
                       </button>
@@ -1151,22 +1145,22 @@ export default function AdequacaoPlanilhaPage() {
 
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="rounded-lg border p-3">
-                      <div className="text-sm font-semibold">Catálogo da fonte (serviço)</div>
+                      <div className="text-sm font-semibold">Catálogo da planilha (serviço)</div>
                       <div className="mt-2 text-sm text-slate-700">
                         {detalheData.catalogo ? (
                           <div className="space-y-1">
                             <div className="font-semibold">{`${detalheData.catalogo.codigo} — ${detalheData.catalogo.descricao || "—"}`}</div>
-                            <div>{`Fonte: #${detalheData.catalogo.idFonteDados} • Banco: ${detalheData.catalogo.banco || "—"} • UND: ${detalheData.catalogo.und || "—"}`}</div>
+                            <div>{`Banco: ${detalheData.catalogo.banco || "—"} • UND: ${detalheData.catalogo.und || "—"}`}</div>
                             <div className="font-semibold">{`Preço catálogo: ${fmtMoney(detalheData.catalogo.valorUnitario || 0)}`}</div>
                           </div>
                         ) : (
-                          <div className="text-slate-600">Serviço não encontrado no catálogo da Fonte.</div>
+                          <div className="text-slate-600">Serviço não encontrado no catálogo da planilha.</div>
                         )}
                       </div>
                     </div>
 
                     <div className="rounded-lg border p-3">
-                      <div className="text-sm font-semibold">Composição e insumos (Fonte)</div>
+                      <div className="text-sm font-semibold">Composição e insumos (catálogo)</div>
                       <div className="mt-2 overflow-auto">
                         <table className="min-w-[900px] w-full text-sm">
                           <thead className="bg-slate-50 text-left text-slate-700">
@@ -1195,7 +1189,7 @@ export default function AdequacaoPlanilhaPage() {
                             {!(detalheData.composicao || []).length ? (
                               <tr>
                                 <td colSpan={7} className="px-3 py-4 text-center text-slate-500">
-                                  Nenhuma composição encontrada para este serviço na Fonte.
+                                  Nenhuma composição encontrada para este serviço no catálogo.
                                 </td>
                               </tr>
                             ) : null}
@@ -1255,7 +1249,6 @@ export default function AdequacaoPlanilhaPage() {
           <div className="mt-1 text-sm text-slate-700">
             {selectedTarget?.idPlanilha ? <div className="font-semibold">{`Planilha: #${selectedTarget.idPlanilha} - ${selectedTarget.nome || "—"}`}</div> : null}
             {selectedTarget?.idParametros ? <div>{`Parâmetros: #${selectedTarget.idParametros} - ${selectedTarget.parametrosNome || "—"}`}</div> : null}
-            {selectedTarget?.idFonteDados ? <div>{`Fonte de dados: #${selectedTarget.idFonteDados} - ${selectedTarget.fonteNome || "—"}`}</div> : null}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

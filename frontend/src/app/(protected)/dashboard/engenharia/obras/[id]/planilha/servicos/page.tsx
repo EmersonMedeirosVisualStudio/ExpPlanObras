@@ -35,9 +35,7 @@ type VersaoRow = {
   numeroVersao: number;
   nome: string;
   atual: boolean;
-  idFonteDados?: number | null;
   idParametros?: number | null;
-  fonteNome?: string;
   parametrosNome?: string;
 };
 
@@ -222,9 +220,7 @@ export default function Page() {
           numeroVersao: Number(v?.numeroVersao || 0),
           nome: String(v?.nome || ""),
           atual: Boolean(v?.atual),
-          idFonteDados: v?.idFonteDados == null ? null : Number(v.idFonteDados),
           idParametros: v?.idParametros == null ? null : Number(v.idParametros),
-          fonteNome: String(v?.fonteNome || ""),
           parametrosNome: String(v?.parametrosNome || ""),
         }))
         .filter((v: VersaoRow) => Number.isFinite(v.idPlanilha) && v.idPlanilha > 0);
@@ -517,13 +513,13 @@ export default function Page() {
         body: JSON.stringify({ codigoServico, descricao, und }),
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao criar serviço no catálogo da Fonte");
-      setOkMsg("Serviço criado/atualizado no catálogo da Fonte.");
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao criar serviço no catálogo da planilha");
+      setOkMsg("Serviço criado/atualizado no catálogo da planilha.");
       setNovoServicoForm({ codigoServico: "", descricao: "", und: "" });
       setShowNovoServicoCard(false);
       await carregarTudo();
     } catch (e: any) {
-      setErr(e?.message || "Erro ao criar serviço no catálogo da Fonte");
+      setErr(e?.message || "Erro ao criar serviço no catálogo da planilha");
     } finally {
       setNovoServicoLoading(false);
     }
@@ -658,11 +654,10 @@ export default function Page() {
             <span>Serviços</span>
           </div>
           <h1 className="text-2xl font-semibold">Serviços</h1>
-          <div className="text-sm text-slate-600">Catálogo técnico de serviços da fonte de dados vinculada à planilha.</div>
+          <div className="text-sm text-slate-600">Catálogo técnico de serviços da planilha selecionada.</div>
           <div className="mt-1 text-sm text-slate-700">
             {selectedVersao?.idPlanilha ? <div className="font-semibold">{`Planilha: #${selectedVersao.idPlanilha} - ${selectedVersao.nome || "—"}`}</div> : null}
             {selectedVersao?.idParametros ? <div>{`Parâmetros: #${selectedVersao.idParametros} - ${selectedVersao.parametrosNome || "—"}`}</div> : null}
-            {selectedVersao?.idFonteDados ? <div>{`Fonte de dados: #${selectedVersao.idFonteDados} - ${selectedVersao.fonteNome || "—"}`}</div> : null}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -685,9 +680,9 @@ export default function Page() {
             type="button"
             onClick={() => router.push(selfHref)}
             disabled={loading}
-            title="Abrir o catálogo de serviços da Fonte de dados vinculada à planilha selecionada"
+            title="Abrir a tela de serviços da planilha selecionada"
           >
-            Serviços (fonte)
+            Serviços
           </button>
           <button
             className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
@@ -738,7 +733,7 @@ export default function Page() {
           type="button"
           onClick={() => setShowNovoServicoCard((v) => !v)}
           disabled={loading}
-          title={showNovoServicoCard ? "Ocultar card de cadastro de serviço" : "Cadastrar um serviço no catálogo da Fonte"}
+          title={showNovoServicoCard ? "Ocultar card de cadastro de serviço" : "Cadastrar um serviço no catálogo da planilha"}
         >
           Novo Serviço
         </button>
@@ -758,7 +753,7 @@ export default function Page() {
         Atenção: alterações aqui são compartilhadas. Se você alterar Serviço/Insumo/Composição da Fonte, muda em TODAS as planilhas que usam essa Fonte. Se você alterar um
         Parâmetro, muda em TODAS as planilhas que usam esse Parâmetro.
         <div className="mt-2">
-          <div className="font-semibold">Para criar um serviço novo no catálogo da Fonte:</div>
+          <div className="font-semibold">Para criar um serviço novo no catálogo da planilha:</div>
           <div className="mt-1">1 - Crie o serviço na Planilha (Adicionar linha);</div>
           <div>2 - Ou através do botão Novo Serviço.</div>
           <div>3 - Crie o serviço direto na composição.</div>
@@ -805,8 +800,8 @@ export default function Page() {
       {showNovoServicoCard ? (
         <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
           <div>
-            <div className="text-lg font-semibold">Novo serviço (catálogo da Fonte)</div>
-            <div className="text-sm text-slate-600">Cria/atualiza um serviço no catálogo da Fonte (compartilhado por todas as planilhas que usam esta Fonte).</div>
+            <div className="text-lg font-semibold">Novo serviço (catálogo da planilha)</div>
+            <div className="text-sm text-slate-600">Cria/atualiza um serviço no catálogo da planilha selecionada.</div>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
             <div className="md:col-span-3 space-y-1">
@@ -1021,9 +1016,9 @@ export default function Page() {
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <div className="text-lg font-semibold">Serviços e composições referenciadas (catálogo da Fonte)</div>
+            <div className="text-lg font-semibold">Serviços e composições referenciadas</div>
             <div className="text-sm text-slate-600">
-              Lista serviços do catálogo da Fonte e também composições auxiliares/referenciadas (usadas indiretamente), marcando: sem composição/não definida e divergente entre total da planilha e total calculado pela composição.
+              Lista serviços do catálogo da planilha e também composições auxiliares/referenciadas (usadas indiretamente), marcando: sem composição/não definida e divergente entre total da planilha e total calculado pela composição.
             </div>
           </div>
           <div className="flex items-center gap-2">

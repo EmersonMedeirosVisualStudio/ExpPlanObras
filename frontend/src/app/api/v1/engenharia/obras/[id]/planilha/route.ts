@@ -9,9 +9,10 @@ import { ensureEngenhariaImportTables } from '@/lib/modules/engenharia-importaca
 export const runtime = 'nodejs';
 
 async function ensureTables() {
+  await db.query(`ALTER TABLE IF EXISTS obras_planilhas_versoes RENAME TO tab_planilhas`).catch(() => null);
   await db.query(
     `
-    CREATE TABLE IF NOT EXISTS obras_planilhas_versoes (
+    CREATE TABLE IF NOT EXISTS tab_planilhas (
       id_planilha BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       tenant_id BIGINT UNSIGNED NOT NULL,
       id_obra BIGINT UNSIGNED NOT NULL,
@@ -40,11 +41,12 @@ async function ensureTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `
   );
-  await db.query(`ALTER TABLE obras_planilhas_versoes ADD COLUMN uf_sinapi VARCHAR(2) NULL`).catch(() => null);
+  await db.query(`ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS uf_sinapi VARCHAR(2) NULL`).catch(() => null);
 
+  await db.query(`ALTER TABLE IF EXISTS obras_planilhas_linhas RENAME TO tab_planilha_itens`).catch(() => null);
   await db.query(
     `
-    CREATE TABLE IF NOT EXISTS obras_planilhas_linhas (
+    CREATE TABLE IF NOT EXISTS tab_planilha_itens (
       id_linha BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       tenant_id BIGINT UNSIGNED NOT NULL,
       id_planilha BIGINT UNSIGNED NOT NULL,
@@ -67,6 +69,10 @@ async function ensureTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `
   );
+
+  // Derived table - keeping it as is or renaming? 
+  // The user didn't specify for this one, but let's keep it for compatibility or rename if it matches others.
+  // Actually, let's keep it but ensure it points to the right source.
 
   await db.query(
     `
@@ -236,7 +242,7 @@ async function getObraStatus(tenantId: number, idObra: number) {
 
 async function ensureMigrationFromLegacy(current: any, idObra: number) {
   const [[exists]]: any = await db.query(
-    `SELECT id_planilha AS idPlanilha FROM obras_planilhas_versoes WHERE tenant_id = ? AND id_obra = ? LIMIT 1`,
+    `SELECT id_planilha AS idPlanilha FROM tab_planilhas WHERE tenant_id = ? AND id_obra = ? LIMIT 1`,
     [current.tenantId, idObra]
   );
   if (exists) return;
@@ -257,7 +263,7 @@ async function ensureMigrationFromLegacy(current: any, idObra: number) {
     await conn.beginTransaction();
     const [ins]: any = await conn.query(
       `
-      INSERT INTO obras_planilhas_versoes
+      INSERT INTO tab_planilhas
         (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador)
       VALUES
         (?,?,1,'Versão 1',1,'MIGRACAO',?)
@@ -270,7 +276,7 @@ async function ensureMigrationFromLegacy(current: any, idObra: number) {
       const r = legacy[i];
       await conn.query(
         `
-        INSERT INTO obras_planilhas_linhas
+        INSERT INTO tab_planilha_itens
           (tenant_id, id_planilha, ordem, item, codigo, fonte, servico, und, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha)
         VALUES
           (?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -306,7 +312,7 @@ async function getPlanilhaAtualId(tenantId: number, idObra: number) {
   const [[row]]: any = await db.query(
     `
     SELECT id_planilha AS idPlanilha
-    FROM obras_planilhas_versoes
+    FROM tab_planilhas
     WHERE tenant_id = ? AND id_obra = ? AND atual = 1
     ORDER BY numero_versao DESC, id_planilha DESC
     LIMIT 1
@@ -328,7 +334,7 @@ async function syncServicosDerivados(conn: any, current: any, idObra: number, id
       quantidade,
       valor_unitario AS valorUnitario,
       valor_parcial AS valorParcial
-    FROM obras_planilhas_linhas
+    FROM tab_planilha_itens
     WHERE tenant_id = ? AND id_planilha = ? AND tipo_linha = 'SERVICO'
     ORDER BY ordem ASC, id_linha ASC
     `,
@@ -401,8 +407,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           v.criado_em AS criadoEm,
           COALESCE(SUM(CASE WHEN l.tipo_linha = 'SERVICO' THEN COALESCE(l.valor_parcial, 0) ELSE 0 END), 0) AS valorTotal,
           SUM(CASE WHEN l.tipo_linha = 'SERVICO' THEN 1 ELSE 0 END) AS totalServicos
-        FROM obras_planilhas_versoes v
-        LEFT JOIN obras_planilhas_linhas l
+        FROM tab_planilhas v
+        LEFT JOIN tab_planilha_itens l
           ON l.tenant_id = v.tenant_id AND l.id_planilha = v.id_planilha
         WHERE v.tenant_id = ? AND v.id_obra = ?
         GROUP BY v.id_planilha, v.numero_versao, v.nome, v.atual, v.origem, v.criado_em
@@ -450,7 +456,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         desconto_sbc AS descontoSbc,
         desconto_sinapi AS descontoSinapi,
         criado_em AS criadoEm
-      FROM obras_planilhas_versoes
+      FROM tab_planilhas
       WHERE tenant_id = ? AND id_obra = ? AND id_planilha = ?
       LIMIT 1
       `,
@@ -473,7 +479,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         valor_parcial AS valorParcial,
         nivel,
         tipo_linha AS tipoLinha
-      FROM obras_planilhas_linhas
+      FROM tab_planilha_itens
       WHERE tenant_id = ? AND id_planilha = ?
       ORDER BY
         CASE
@@ -554,14 +560,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await conn.beginTransaction();
 
     const [[last]]: any = await conn.query(
-      `SELECT MAX(numero_versao) AS maxVersao FROM obras_planilhas_versoes WHERE tenant_id = ? AND id_obra = ?`,
+      `SELECT MAX(numero_versao) AS maxVersao FROM tab_planilhas WHERE tenant_id = ? AND id_obra = ?`,
       [current.tenantId, idObra]
     );
     const nextVersao = Number(last?.maxVersao || 0) + 1;
 
     async function setAtual(idPlanilha: number) {
-      await conn.query(`UPDATE obras_planilhas_versoes SET atual = 0 WHERE tenant_id = ? AND id_obra = ?`, [current.tenantId, idObra]);
-      await conn.query(`UPDATE obras_planilhas_versoes SET atual = 1 WHERE tenant_id = ? AND id_obra = ? AND id_planilha = ?`, [current.tenantId, idObra, idPlanilha]);
+      await conn.query(`UPDATE tab_planilhas SET atual = 0 WHERE tenant_id = ? AND id_obra = ?`, [current.tenantId, idObra]);
+      await conn.query(`UPDATE tab_planilhas SET atual = 1 WHERE tenant_id = ? AND id_obra = ? AND id_planilha = ?`, [current.tenantId, idObra, idPlanilha]);
     }
 
     if (isMultipart) {
@@ -607,7 +613,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       const [insPlan]: any = await conn.query(
         `
-        INSERT INTO obras_planilhas_versoes
+        INSERT INTO tab_planilhas
           (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador)
         VALUES
           (?,?,?,?,1,'CSV',?)
@@ -652,7 +658,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       for (const row of toInsert) {
         await conn.query(
           `
-          INSERT INTO obras_planilhas_linhas
+          INSERT INTO tab_planilha_itens
             (tenant_id, id_planilha, ordem, item, codigo, fonte, servico, und, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha)
           VALUES
             (?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -689,7 +695,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const copyFrom = jsonBody?.copyFromPlanilhaId != null ? Number(jsonBody.copyFromPlanilhaId) : null;
       const [insPlan]: any = await conn.query(
         `
-        INSERT INTO obras_planilhas_versoes
+        INSERT INTO tab_planilhas
           (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador)
         VALUES
           (?,?,?,?,1,'MANUAL',?)
@@ -703,7 +709,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const [origRows]: any = await conn.query(
           `
           SELECT ordem, item, codigo, fonte, servico, und, quantidade, valor_unitario AS valorUnitario, valor_parcial AS valorParcial, nivel, tipo_linha AS tipoLinha
-          FROM obras_planilhas_linhas
+          FROM tab_planilha_itens
           WHERE tenant_id = ? AND id_planilha = ?
           ORDER BY ordem ASC, id_linha ASC
           `,
@@ -712,7 +718,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         for (const r of origRows as any[]) {
           await conn.query(
             `
-            INSERT INTO obras_planilhas_linhas
+            INSERT INTO tab_planilha_itens
               (tenant_id, id_planilha, ordem, item, codigo, fonte, servico, und, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha)
             VALUES
               (?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -752,7 +758,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return fail(422, 'idPlanilha é obrigatório');
       }
       const [[v]]: any = await conn.query(
-        `SELECT atual FROM obras_planilhas_versoes WHERE tenant_id = ? AND id_obra = ? AND id_planilha = ? LIMIT 1`,
+        `SELECT atual FROM tab_planilhas WHERE tenant_id = ? AND id_obra = ? AND id_planilha = ? LIMIT 1`,
         [current.tenantId, idObra, idPlanilha]
       );
       if (!v) {
@@ -768,7 +774,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const ufSinapi = p.ufSinapi ? String(p.ufSinapi).trim().toUpperCase().slice(0, 2) : null;
       await conn.query(
         `
-        UPDATE obras_planilhas_versoes
+        UPDATE tab_planilhas
         SET
           data_base_sbc = ?,
           data_base_sinapi = ?,
@@ -815,7 +821,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return fail(422, 'idPlanilha é obrigatório');
       }
       const [[v]]: any = await conn.query(
-        `SELECT atual FROM obras_planilhas_versoes WHERE tenant_id = ? AND id_obra = ? AND id_planilha = ? LIMIT 1`,
+        `SELECT atual FROM tab_planilhas WHERE tenant_id = ? AND id_obra = ? AND id_planilha = ? LIMIT 1`,
         [current.tenantId, idObra, idPlanilha]
       );
       if (!v) {
@@ -849,7 +855,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (idLinha) {
         await conn.query(
           `
-          UPDATE obras_planilhas_linhas
+          UPDATE tab_planilha_itens
           SET ordem = ?, item = ?, codigo = ?, fonte = ?, servico = ?, und = ?, quantidade = ?, valor_unitario = ?, valor_parcial = ?, nivel = ?, tipo_linha = ?
           WHERE tenant_id = ? AND id_planilha = ? AND id_linha = ?
           `,
@@ -873,7 +879,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       } else {
         await conn.query(
           `
-          INSERT INTO obras_planilhas_linhas
+          INSERT INTO tab_planilha_itens
             (tenant_id, id_planilha, ordem, item, codigo, fonte, servico, und, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha)
           VALUES
             (?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -913,7 +919,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return fail(422, 'idPlanilha e idLinha são obrigatórios');
       }
       const [[v]]: any = await conn.query(
-        `SELECT atual FROM obras_planilhas_versoes WHERE tenant_id = ? AND id_obra = ? AND id_planilha = ? LIMIT 1`,
+        `SELECT atual FROM tab_planilhas WHERE tenant_id = ? AND id_obra = ? AND id_planilha = ? LIMIT 1`,
         [current.tenantId, idObra, idPlanilha]
       );
       if (!v) {
@@ -924,7 +930,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         await conn.rollback();
         return fail(422, 'Não é permitido editar versões obsoletas');
       }
-      await conn.query(`DELETE FROM obras_planilhas_linhas WHERE tenant_id = ? AND id_planilha = ? AND id_linha = ?`, [current.tenantId, idPlanilha, idLinha]);
+      await conn.query(`DELETE FROM tab_planilha_itens WHERE tenant_id = ? AND id_planilha = ? AND id_linha = ?`, [current.tenantId, idPlanilha, idLinha]);
       await syncServicosDerivados(conn, current as any, idObra, idPlanilha);
       await conn.commit();
       return ok({ idObra, idPlanilha });

@@ -424,8 +424,9 @@ function isValidItemPath(item: string) {
 }
 
 async function ensurePlanilhaOrcamentariaTables(tx: any) {
+  await tx.$executeRawUnsafe(`ALTER TABLE IF EXISTS obras_planilhas_versoes RENAME TO tab_planilhas`).catch(() => null);
   await tx.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS obras_planilhas_versoes (
+    CREATE TABLE IF NOT EXISTS tab_planilhas (
       id_planilha BIGSERIAL PRIMARY KEY,
       tenant_id BIGINT NOT NULL,
       id_obra BIGINT NOT NULL,
@@ -433,6 +434,7 @@ async function ensurePlanilhaOrcamentariaTables(tx: any) {
       nome VARCHAR(120) NOT NULL DEFAULT 'Planilha orçamentária',
       atual BOOLEAN NOT NULL DEFAULT TRUE,
       origem VARCHAR(16) NOT NULL DEFAULT 'MANUAL',
+      id_parametros BIGINT NULL,
       data_base_sbc VARCHAR(16) NULL,
       data_base_sinapi VARCHAR(16) NULL,
       uf_sinapi VARCHAR(2) NULL,
@@ -449,10 +451,13 @@ async function ensurePlanilhaOrcamentariaTables(tx: any) {
       id_usuario_criador BIGINT NOT NULL
     )
   `);
-  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_planilhas_versoes_uk_versao ON obras_planilhas_versoes (tenant_id, id_obra, numero_versao)`);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_versoes_idx_atual ON obras_planilhas_versoes (tenant_id, id_obra, atual)`);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_versoes_idx_obra ON obras_planilhas_versoes (tenant_id, id_obra)`);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_versoes ADD COLUMN IF NOT EXISTS uf_sinapi VARCHAR(2) NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS tab_planilhas_uk_versao ON tab_planilhas (tenant_id, id_obra, numero_versao)`).catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_planilhas_idx_atual ON tab_planilhas (tenant_id, id_obra, atual)`).catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_planilhas_idx_obra ON tab_planilhas (tenant_id, id_obra)`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS uf_sinapi VARCHAR(2) NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS id_parametros BIGINT NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_planilhas_idx_parametros ON tab_planilhas (tenant_id, id_parametros)`).catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE OR REPLACE VIEW obras_planilhas_versoes AS SELECT * FROM tab_planilhas`).catch(() => null);
 
   await tx.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS obras_planilhas_linhas (
@@ -484,9 +489,184 @@ async function ensurePlanilhaOrcamentariaTables(tx: any) {
   await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_linhas ALTER COLUMN und TYPE VARCHAR(40)`).catch(() => null);
 }
 
+async function ensurePlanilhaEstruturaUnicaTables(tx: any) {
+  await ensurePlanilhaOrcamentariaTables(tx);
+  await ensurePlanilhaParametrosTables(tx);
+  await ensurePlanilhaServicosTables(tx);
+  await ensurePlanilhaItensTables(tx);
+  await ensurePlanilhaComposicaoTables(tx);
+  await ensureInsumosPrecosTables(tx);
+  await ensurePlanilhaComposicaoPrimitivaTables(tx).catch(() => null);
+}
+
+async function criarVersaoPlanilha(tx: any, input: { tenantId: number; idObra: number; nome: string; origem: string; idParametros: number | null; userId: number }) {
+  const maxRows = (await tx.$queryRawUnsafe(
+    `SELECT COALESCE(MAX(numero_versao),0) AS "maxVersao" FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2`,
+    input.tenantId,
+    input.idObra
+  )) as any[];
+  const nextVersao = Number(maxRows?.[0]?.maxVersao || 0) + 1;
+  const nome = String(input.nome || `Versão ${nextVersao}`).trim().slice(0, 120) || `Versão ${nextVersao}`;
+  const origem = String(input.origem || 'MANUAL').trim().toUpperCase().slice(0, 16) || 'MANUAL';
+
+  const ins = (await tx.$queryRawUnsafe(
+    `
+    INSERT INTO tab_planilhas
+      (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador, id_parametros)
+    VALUES
+      ($1,$2,$3,$4,TRUE,$5,$6,$7)
+    RETURNING id_planilha AS "idPlanilha", numero_versao AS "numeroVersao"
+    `,
+    input.tenantId,
+    input.idObra,
+    nextVersao,
+    nome,
+    origem,
+    input.userId,
+    input.idParametros
+  )) as any[];
+  const idPlanilha = Number(ins?.[0]?.idPlanilha || 0);
+  const numeroVersao = Number(ins?.[0]?.numeroVersao || nextVersao);
+  if (!idPlanilha) throw new Error('Falha ao criar versão de planilha');
+
+  await tx.$executeRawUnsafe(`UPDATE tab_planilhas SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha <> $3`, input.tenantId, input.idObra, idPlanilha);
+  return { idPlanilha, numeroVersao, nome };
+}
+
+async function clonarEstruturaPlanilha(
+  tx: any,
+  input: { tenantId: number; idObra: number; sourcePlanilhaId: number; targetPlanilhaId: number }
+) {
+  await tx.$executeRawUnsafe(
+    `
+    INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
+    SELECT tenant_id, id_obra, $3 AS id_planilha, codigo, fonte, servico, und
+    FROM tab_servicos
+    WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
+    `,
+    input.tenantId,
+    input.idObra,
+    input.targetPlanilhaId,
+    input.sourcePlanilhaId
+  );
+
+  await tx.$executeRawUnsafe(
+    `
+    WITH src AS (
+      SELECT
+        i.ordem,
+        i.item,
+        s.codigo AS codigo_servico,
+        i.quantidade,
+        i.valor_unitario,
+        i.valor_parcial,
+        i.nivel,
+        i.tipo_linha,
+        i.observacao
+      FROM tab_planilha_itens i
+      LEFT JOIN tab_servicos s
+        ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
+      WHERE i.tenant_id = $1 AND i.id_planilha = $2
+    ),
+    dst_serv AS (
+      SELECT id_servico, UPPER(COALESCE(codigo,'')) AS codigo
+      FROM tab_servicos
+      WHERE tenant_id = $1 AND id_obra = $3 AND id_planilha = $4
+    )
+    INSERT INTO tab_planilha_itens
+      (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
+    SELECT
+      $1 AS tenant_id,
+      $4 AS id_planilha,
+      src.ordem,
+      src.item,
+      CASE WHEN src.tipo_linha = 'SERVICO' THEN ds.id_servico ELSE NULL END AS id_servico,
+      src.quantidade,
+      src.valor_unitario,
+      src.valor_parcial,
+      src.nivel,
+      src.tipo_linha,
+      src.observacao
+    FROM src
+    LEFT JOIN dst_serv ds
+      ON ds.codigo = UPPER(COALESCE(src.codigo_servico,''))
+    ORDER BY src.ordem ASC
+    `,
+    input.tenantId,
+    input.sourcePlanilhaId,
+    input.idObra,
+    input.targetPlanilhaId
+  );
+
+  await tx.$executeRawUnsafe(
+    `
+    INSERT INTO tab_insumos
+      (tenant_id, id_obra, id_planilha, codigo_item, tipo, banco, descricao, und, valor_unitario)
+    SELECT
+      tenant_id, id_obra, $3 AS id_planilha, codigo_item, tipo, banco, descricao, und, valor_unitario
+    FROM tab_insumos
+    WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
+    `,
+    input.tenantId,
+    input.idObra,
+    input.targetPlanilhaId,
+    input.sourcePlanilhaId
+  );
+
+  await tx.$executeRawUnsafe(
+    `
+    INSERT INTO tab_composicoes
+      (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo, criado_em, atualizado_em)
+    SELECT
+      tenant_id,
+      id_obra,
+      $3 AS id_planilha,
+      codigo_servico,
+      etapa,
+      tipo_item,
+      codigo_item,
+      banco,
+      descricao,
+      und,
+      quantidade,
+      valor_unitario,
+      perda_percentual,
+      codigo_centro_custo,
+      criado_em,
+      atualizado_em
+    FROM tab_composicoes
+    WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
+    `,
+    input.tenantId,
+    input.idObra,
+    input.targetPlanilhaId,
+    input.sourcePlanilhaId
+  );
+
+  const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
+  const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
+  if (hasPrimitivaTable) {
+    await tx.$executeRawUnsafe(
+      `
+      INSERT INTO obras_planilhas_composicoes_primitivas
+        (tenant_id, id_obra, id_planilha, codigo_servico, descricao_servico, und_servico, itens_json, atualizado_em)
+      SELECT
+        tenant_id, id_obra, $3 AS id_planilha, codigo_servico, descricao_servico, und_servico, itens_json, atualizado_em
+      FROM obras_planilhas_composicoes_primitivas
+      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
+      `,
+      input.tenantId,
+      input.idObra,
+      input.targetPlanilhaId,
+      input.sourcePlanilhaId
+    );
+  }
+}
+
 async function ensurePlanilhaServicosTables(tx: any) {
+  await tx.$executeRawUnsafe(`ALTER TABLE IF EXISTS obras_planilhas_servicos RENAME TO tab_servicos`).catch(() => null);
   await tx.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS obras_planilhas_servicos (
+    CREATE TABLE IF NOT EXISTS tab_servicos (
       id_servico BIGSERIAL PRIMARY KEY,
       tenant_id BIGINT NOT NULL,
       id_obra BIGINT NOT NULL,
@@ -499,49 +679,22 @@ async function ensurePlanilhaServicosTables(tx: any) {
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_planilhas_servicos_uk ON obras_planilhas_servicos (tenant_id, id_obra, id_planilha, codigo)`);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_servicos_idx ON obras_planilhas_servicos (tenant_id, id_obra, id_planilha)`);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_servicos ALTER COLUMN codigo TYPE VARCHAR(80)`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_servicos ALTER COLUMN fonte TYPE VARCHAR(80)`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_servicos ALTER COLUMN servico TYPE VARCHAR(800)`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_servicos ALTER COLUMN und TYPE VARCHAR(40)`).catch(() => null);
+  await tx
+    .$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS tab_servicos_uk ON tab_servicos (tenant_id, id_obra, id_planilha, codigo)`)
+    .catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_servicos_idx ON tab_servicos (tenant_id, id_obra, id_planilha)`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_servicos ALTER COLUMN codigo TYPE VARCHAR(80)`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_servicos ALTER COLUMN fonte TYPE VARCHAR(80)`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_servicos ALTER COLUMN servico TYPE VARCHAR(800)`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_servicos ALTER COLUMN und TYPE VARCHAR(40)`).catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE OR REPLACE VIEW obras_planilhas_servicos AS SELECT * FROM tab_servicos`).catch(() => null);
 }
 
-async function ensureFontesDadosTables(tx: any) {
-  await tx.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS obras_fontes_dados (
-      id_fonte_dados BIGSERIAL PRIMARY KEY,
-      tenant_id BIGINT NOT NULL,
-      tipo VARCHAR(24) NOT NULL,
-      uf VARCHAR(2) NOT NULL DEFAULT '',
-      data_base VARCHAR(16) NOT NULL DEFAULT '',
-      tipo_preco VARCHAR(8) NOT NULL DEFAULT '',
-      descricao VARCHAR(160) NOT NULL DEFAULT '',
-      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN uf SET DEFAULT ''`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN data_base SET DEFAULT ''`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN tipo_preco SET DEFAULT ''`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN descricao SET DEFAULT ''`).catch(() => null);
-  await tx.$executeRawUnsafe(`UPDATE obras_fontes_dados SET uf = '' WHERE uf IS NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`UPDATE obras_fontes_dados SET data_base = '' WHERE data_base IS NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`UPDATE obras_fontes_dados SET tipo_preco = '' WHERE tipo_preco IS NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`UPDATE obras_fontes_dados SET descricao = '' WHERE descricao IS NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN uf SET NOT NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN data_base SET NOT NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN tipo_preco SET NOT NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_fontes_dados ALTER COLUMN descricao SET NOT NULL`).catch(() => null);
-  await tx
-    .$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_fontes_dados_uk ON obras_fontes_dados (tenant_id, tipo, uf, data_base, tipo_preco, descricao)`)
-    .catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_fontes_dados_idx ON obras_fontes_dados (tenant_id, tipo)`);
-}
 
 async function ensurePlanilhaParametrosTables(tx: any) {
+  await tx.$executeRawUnsafe(`ALTER TABLE IF EXISTS obras_planilhas_parametros RENAME TO tab_parametros`).catch(() => null);
   await tx.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS obras_planilhas_parametros (
+    CREATE TABLE IF NOT EXISTS tab_parametros (
       id_parametros BIGSERIAL PRIMARY KEY,
       tenant_id BIGINT NOT NULL,
       nome VARCHAR(160) NULL,
@@ -562,77 +715,19 @@ async function ensurePlanilhaParametrosTables(tx: any) {
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_parametros ADD COLUMN IF NOT EXISTS nome VARCHAR(160) NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_parametros ADD COLUMN IF NOT EXISTS tipo_encargos_sociais VARCHAR(3) NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_planilhas_parametros_uk ON obras_planilhas_parametros (tenant_id, assinatura)`);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_parametros_idx ON obras_planilhas_parametros (tenant_id)`);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_parametros ADD COLUMN IF NOT EXISTS nome VARCHAR(160) NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_parametros ADD COLUMN IF NOT EXISTS tipo_encargos_sociais VARCHAR(3) NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS tab_parametros_uk ON tab_parametros (tenant_id, assinatura)`).catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_parametros_idx ON tab_parametros (tenant_id)`).catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE OR REPLACE VIEW obras_planilhas_parametros AS SELECT * FROM tab_parametros`).catch(() => null);
 }
 
-async function ensureServicosFonteTables(tx: any) {
-  await tx.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS obras_servicos_fonte (
-      id_servico BIGSERIAL PRIMARY KEY,
-      tenant_id BIGINT NOT NULL,
-      id_fonte_dados BIGINT NOT NULL,
-      tipo VARCHAR(24) NULL,
-      codigo VARCHAR(80) NOT NULL,
-      banco VARCHAR(80) NULL,
-      descricao VARCHAR(800) NULL,
-      und VARCHAR(40) NULL,
-      valor_unitario NUMERIC(14,6) NULL,
-      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_servicos_fonte_uk ON obras_servicos_fonte (tenant_id, id_fonte_dados, codigo)`);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_servicos_fonte_idx ON obras_servicos_fonte (tenant_id, id_fonte_dados)`);
-}
 
-async function ensureInsumosFonteTables(tx: any) {
-  await tx.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS obras_insumos_fonte (
-      id_insumo BIGSERIAL PRIMARY KEY,
-      tenant_id BIGINT NOT NULL,
-      id_fonte_dados BIGINT NOT NULL,
-      tipo VARCHAR(24) NULL,
-      codigo VARCHAR(80) NOT NULL,
-      banco VARCHAR(80) NULL,
-      descricao VARCHAR(800) NULL,
-      und VARCHAR(40) NULL,
-      valor_unitario NUMERIC(14,6) NULL,
-      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_insumos_fonte_uk ON obras_insumos_fonte (tenant_id, id_fonte_dados, codigo)`);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_insumos_fonte_idx ON obras_insumos_fonte (tenant_id, id_fonte_dados)`);
-}
-
-async function ensureComposicoesItensFonteTables(tx: any) {
-  await tx.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS obras_composicoes_itens_fonte (
-      id_composicao_item BIGSERIAL PRIMARY KEY,
-      tenant_id BIGINT NOT NULL,
-      id_fonte_dados BIGINT NOT NULL,
-      id_servico_pai BIGINT NOT NULL,
-      tipo_item VARCHAR(24) NOT NULL,
-      id_item BIGINT NOT NULL,
-      quantidade NUMERIC(14,6) NULL,
-      unidade VARCHAR(40) NULL,
-      ordem INT NOT NULL DEFAULT 0,
-      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await tx.$executeRawUnsafe(
-    `CREATE UNIQUE INDEX IF NOT EXISTS obras_composicoes_itens_fonte_uk ON obras_composicoes_itens_fonte (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item)`
-  );
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_composicoes_itens_fonte_idx ON obras_composicoes_itens_fonte (tenant_id, id_fonte_dados, id_servico_pai)`);
-}
 
 async function ensurePlanilhaItensTables(tx: any) {
+  await tx.$executeRawUnsafe(`ALTER TABLE IF EXISTS obras_planilha_itens RENAME TO tab_planilha_itens`).catch(() => null);
   await tx.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS obras_planilha_itens (
+    CREATE TABLE IF NOT EXISTS tab_planilha_itens (
       id_planilha_item BIGSERIAL PRIMARY KEY,
       tenant_id BIGINT NOT NULL,
       id_planilha BIGINT NOT NULL,
@@ -649,22 +744,14 @@ async function ensurePlanilhaItensTables(tx: any) {
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilha_itens_idx_planilha ON obras_planilha_itens (tenant_id, id_planilha, ordem, id_planilha_item)`);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilha_itens_idx_tipo ON obras_planilha_itens (tenant_id, id_planilha, tipo_linha)`);
+  await tx
+    .$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_planilha_itens_idx_planilha ON tab_planilha_itens (tenant_id, id_planilha, ordem, id_planilha_item)`)
+    .catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_planilha_itens_idx_tipo ON tab_planilha_itens (tenant_id, id_planilha, tipo_linha)`).catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE OR REPLACE VIEW obras_planilha_itens AS SELECT * FROM tab_planilha_itens`).catch(() => null);
 }
 
-async function ensurePlanilhaModeloFonteTables(tx: any) {
-  await ensurePlanilhaOrcamentariaTables(tx);
-  await ensureFontesDadosTables(tx);
-  await ensurePlanilhaParametrosTables(tx);
-  await ensureServicosFonteTables(tx);
-  await ensureInsumosFonteTables(tx);
-  await ensureComposicoesItensFonteTables(tx);
-  await ensurePlanilhaItensTables(tx);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_versoes ADD COLUMN IF NOT EXISTS id_fonte_dados BIGINT NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_versoes ADD COLUMN IF NOT EXISTS id_parametros BIGINT NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_versoes_idx_fonte ON obras_planilhas_versoes (tenant_id, id_fonte_dados)`);
-}
+
 
 function buildParametrosAssinatura(p: any) {
   const enc = p.tipoEncargosSociais ? String(p.tipoEncargosSociais).trim().toUpperCase() : '';
@@ -688,32 +775,7 @@ function buildParametrosAssinatura(p: any) {
   return parts.join('|');
 }
 
-async function upsertFonteDados(tx: any, tenantId: number, input: { tipo: string; uf?: string | null; dataBase?: string | null; tipoPreco?: string | null; descricao?: string | null }) {
-  await ensureFontesDadosTables(tx);
-  const tipo = String(input.tipo || '').trim().toUpperCase();
-  const uf = input.uf ? String(input.uf).trim().toUpperCase() : '';
-  const dataBase = input.dataBase ? String(input.dataBase).trim().toUpperCase() : '';
-  const tipoPreco = input.tipoPreco ? String(input.tipoPreco).trim().toUpperCase() : '';
-  const descricao = input.descricao ? String(input.descricao).trim().slice(0, 160) : '';
-  const rows = (await tx.$queryRawUnsafe(
-    `
-    INSERT INTO obras_fontes_dados (tenant_id, tipo, uf, data_base, tipo_preco, descricao)
-    VALUES ($1,$2,$3,$4,$5,$6)
-    ON CONFLICT (tenant_id, tipo, uf, data_base, tipo_preco, descricao)
-    DO UPDATE SET
-      descricao = COALESCE(EXCLUDED.descricao, obras_fontes_dados.descricao),
-      atualizado_em = NOW()
-    RETURNING id_fonte_dados AS "idFonteDados"
-    `,
-    tenantId,
-    tipo,
-    uf,
-    dataBase,
-    tipoPreco,
-    descricao
-  )) as any[];
-  return Number(rows?.[0]?.idFonteDados || 0);
-}
+
 
 async function upsertParametros(tx: any, tenantId: number, p: any) {
   await ensurePlanilhaParametrosTables(tx);
@@ -722,7 +784,7 @@ async function upsertParametros(tx: any, tenantId: number, p: any) {
   const tipoEncargosSociais = p.tipoEncargosSociais ? String(p.tipoEncargosSociais).trim().toUpperCase().slice(0, 3) : null;
   const rows = (await tx.$queryRawUnsafe(
     `
-    INSERT INTO obras_planilhas_parametros
+    INSERT INTO tab_parametros
       (tenant_id, nome, tipo_encargos_sociais, uf_sinapi, data_base_sbc, data_base_sinapi,
        bdi_servicos_sbc, bdi_servicos_sinapi, bdi_diferenciado_sbc, bdi_diferenciado_sinapi,
        enc_sociais_sem_des_sbc, enc_sociais_sem_des_sinapi, desconto_sbc, desconto_sinapi, assinatura)
@@ -730,7 +792,7 @@ async function upsertParametros(tx: any, tenantId: number, p: any) {
       ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
     ON CONFLICT (tenant_id, assinatura)
     DO UPDATE SET
-      nome = COALESCE(NULLIF(EXCLUDED.nome,''), obras_planilhas_parametros.nome),
+      nome = COALESCE(NULLIF(EXCLUDED.nome,''), tab_parametros.nome),
       atualizado_em = NOW()
     RETURNING id_parametros AS "idParametros"
     `,
@@ -753,13 +815,14 @@ async function upsertParametros(tx: any, tenantId: number, p: any) {
   return Number(rows?.[0]?.idParametros || 0);
 }
 
-async function ensurePlanilhaMigratedToModeloFonte(tx: any, tenantId: number, idObra: number, idPlanilha: number) {
-  await ensurePlanilhaModeloFonteTables(tx);
-  const rows = (await tx.$queryRawUnsafe(
+async function ensurePlanilhaMigratedToEstruturaUnica(tx: any, tenantId: number, idObra: number, idPlanilha: number) {
+  await ensurePlanilhaEstruturaUnicaTables(tx);
+
+  const versRows = (await tx.$queryRawUnsafe(
     `
     SELECT
       id_planilha AS "idPlanilha",
-      origem AS "origem",
+      id_parametros AS "idParametros",
       data_base_sbc AS "dataBaseSbc",
       data_base_sinapi AS "dataBaseSinapi",
       uf_sinapi AS "ufSinapi",
@@ -770,10 +833,8 @@ async function ensurePlanilhaMigratedToModeloFonte(tx: any, tenantId: number, id
       enc_sociais_sem_des_sbc AS "encSociaisSemDesSbc",
       enc_sociais_sem_des_sinapi AS "encSociaisSemDesSinapi",
       desconto_sbc AS "descontoSbc",
-      desconto_sinapi AS "descontoSinapi",
-      id_fonte_dados AS "idFonteDados",
-      id_parametros AS "idParametros"
-    FROM obras_planilhas_versoes
+      desconto_sinapi AS "descontoSinapi"
+    FROM tab_planilhas
     WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
     LIMIT 1
     `,
@@ -781,393 +842,219 @@ async function ensurePlanilhaMigratedToModeloFonte(tx: any, tenantId: number, id
     idObra,
     idPlanilha
   )) as any[];
-  const v = rows?.[0] || null;
+  const v = versRows?.[0] || null;
   if (!v) return null;
-
-  const origem = String(v.origem || 'MANUAL').trim().toUpperCase();
-  const paramsObj = {
-    dataBaseSbc: v.dataBaseSbc ?? null,
-    dataBaseSinapi: v.dataBaseSinapi ?? null,
-    ufSinapi: v.ufSinapi ?? null,
-    bdiServicosSbc: v.bdiServicosSbc == null ? null : Number(v.bdiServicosSbc),
-    bdiServicosSinapi: v.bdiServicosSinapi == null ? null : Number(v.bdiServicosSinapi),
-    bdiDiferenciadoSbc: v.bdiDiferenciadoSbc == null ? null : Number(v.bdiDiferenciadoSbc),
-    bdiDiferenciadoSinapi: v.bdiDiferenciadoSinapi == null ? null : Number(v.bdiDiferenciadoSinapi),
-    encSociaisSemDesSbc: v.encSociaisSemDesSbc == null ? null : Number(v.encSociaisSemDesSbc),
-    encSociaisSemDesSinapi: v.encSociaisSemDesSinapi == null ? null : Number(v.encSociaisSemDesSinapi),
-    descontoSbc: v.descontoSbc == null ? null : Number(v.descontoSbc),
-    descontoSinapi: v.descontoSinapi == null ? null : Number(v.descontoSinapi),
-  };
-
-  let idFonteDados = v.idFonteDados != null ? Number(v.idFonteDados) : 0;
-  if (!idFonteDados) {
-    const tipoFonte =
-      origem === 'SINAPI' || paramsObj.dataBaseSinapi ? 'SINAPI' : origem === 'SBC' || paramsObj.dataBaseSbc ? 'SBC' : origem === 'CSV' ? 'CSV' : 'MANUAL';
-    const uf = paramsObj.ufSinapi ? String(paramsObj.ufSinapi).trim().toUpperCase() : '';
-    const dataBase = tipoFonte === 'SINAPI' ? (paramsObj.dataBaseSinapi ? String(paramsObj.dataBaseSinapi) : '') : tipoFonte === 'SBC' ? (paramsObj.dataBaseSbc ? String(paramsObj.dataBaseSbc) : '') : '';
-    const descricao =
-      tipoFonte === 'SINAPI'
-        ? `SINAPI ${uf || 'UF'} ${dataBase || ''}`.trim()
-        : tipoFonte === 'SBC'
-          ? `SBC ${dataBase || ''}`.trim()
-          : tipoFonte === 'CSV'
-            ? 'CSV'
-            : 'MANUAL';
-    idFonteDados = await upsertFonteDados(tx, tenantId, { tipo: tipoFonte, uf, dataBase, tipoPreco: '', descricao });
-    await tx.$executeRawUnsafe(
-      `UPDATE obras_planilhas_versoes SET id_fonte_dados = $4, atualizado_em = NOW() WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
-      tenantId,
-      idObra,
-      idPlanilha,
-      idFonteDados
-    );
-  }
 
   let idParametros = v.idParametros != null ? Number(v.idParametros) : 0;
   if (!idParametros) {
+    const paramsObj = {
+      dataBaseSbc: v.dataBaseSbc ?? null,
+      dataBaseSinapi: v.dataBaseSinapi ?? null,
+      ufSinapi: v.ufSinapi ?? null,
+      bdiServicosSbc: v.bdiServicosSbc == null ? null : Number(v.bdiServicosSbc),
+      bdiServicosSinapi: v.bdiServicosSinapi == null ? null : Number(v.bdiServicosSinapi),
+      bdiDiferenciadoSbc: v.bdiDiferenciadoSbc == null ? null : Number(v.bdiDiferenciadoSbc),
+      bdiDiferenciadoSinapi: v.bdiDiferenciadoSinapi == null ? null : Number(v.bdiDiferenciadoSinapi),
+      encSociaisSemDesSbc: v.encSociaisSemDesSbc == null ? null : Number(v.encSociaisSemDesSbc),
+      encSociaisSemDesSinapi: v.encSociaisSemDesSinapi == null ? null : Number(v.encSociaisSemDesSinapi),
+      descontoSbc: v.descontoSbc == null ? null : Number(v.descontoSbc),
+      descontoSinapi: v.descontoSinapi == null ? null : Number(v.descontoSinapi),
+    };
     idParametros = await upsertParametros(tx, tenantId, paramsObj);
-    await tx.$executeRawUnsafe(
-      `UPDATE obras_planilhas_versoes SET id_parametros = $4, atualizado_em = NOW() WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
-      tenantId,
-      idObra,
-      idPlanilha,
-      idParametros
-    );
+    if (idParametros) {
+      await tx.$executeRawUnsafe(
+        `UPDATE tab_planilhas SET id_parametros = $4, atualizado_em = NOW() WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+        tenantId,
+        idObra,
+        idPlanilha,
+        idParametros
+      );
+    }
   }
 
-  const existingNew = (await tx.$queryRawUnsafe(
-    `SELECT 1 AS ok FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2 LIMIT 1`,
+  const itensExists = (await tx.$queryRawUnsafe(
+    `SELECT 1 AS ok FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2 LIMIT 1`,
     tenantId,
     idPlanilha
   )) as any[];
-  if (!existingNew?.length) {
-    await ensureServicosFonteTables(tx);
-    await ensurePlanilhaItensTables(tx);
-    await tx.$executeRawUnsafe(
-      `
-      WITH src AS (
-        SELECT DISTINCT ON (codigo)
-          UPPER(COALESCE(l.codigo,'')) AS codigo,
-          COALESCE(NULLIF(trim(l.fonte),''), '') AS banco,
-          COALESCE(NULLIF(trim(l.servico),''), '') AS descricao,
-          COALESCE(NULLIF(trim(l.und),''), '') AS und,
-          l.valor_unitario AS valor_unitario,
-          l.atualizado_em AS atualizado_em,
-          l.id_linha AS id_linha
-        FROM obras_planilhas_linhas l
-        WHERE l.tenant_id = $1 AND l.id_planilha = $2 AND l.tipo_linha = 'SERVICO' AND COALESCE(l.codigo,'') <> ''
-        ORDER BY
-          UPPER(COALESCE(l.codigo,'')),
-          (COALESCE(NULLIF(trim(l.servico),''), '') <> '') DESC,
-          (COALESCE(NULLIF(trim(l.und),''), '') <> '') DESC,
-          (COALESCE(NULLIF(trim(l.fonte),''), '') <> '') DESC,
-          atualizado_em DESC NULLS LAST,
-          id_linha DESC
-      )
-      INSERT INTO obras_servicos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-      SELECT
-        $1,
-        $3,
-        'SERVICO',
-        s.codigo,
-        NULLIF(s.banco,''),
-        NULLIF(s.descricao,''),
-        NULLIF(s.und,''),
-        s.valor_unitario
-      FROM src s
-      ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-      DO UPDATE SET
-        banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-        descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-        und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
-        valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
-        atualizado_em = NOW()
-      `,
-      tenantId,
-      idPlanilha,
-      idFonteDados
-    ).catch(() => null);
-
-    await tx.$executeRawUnsafe(
-      `
-      INSERT INTO obras_planilha_itens
-        (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha)
-      SELECT
-        l.tenant_id,
-        l.id_planilha,
-        l.ordem,
-        l.item,
-        CASE
-          WHEN l.tipo_linha = 'SERVICO' AND COALESCE(l.codigo,'') <> '' THEN sf.id_servico
-          ELSE NULL
-        END AS id_servico,
-        l.quantidade,
-        l.valor_unitario,
-        l.valor_parcial,
-        l.nivel,
-        l.tipo_linha
-      FROM obras_planilhas_linhas l
-      LEFT JOIN obras_servicos_fonte sf
-        ON sf.tenant_id = l.tenant_id
-       AND sf.id_fonte_dados = $3
-       AND sf.codigo = UPPER(COALESCE(l.codigo,''))
-      WHERE l.tenant_id = $1 AND l.id_planilha = $2
-      ORDER BY l.id_linha ASC
-      `,
-      tenantId,
-      idPlanilha,
-      idFonteDados
-    ).catch(() => null);
-  }
-
-  await ensurePlanilhaServicosTables(tx);
-  await tx
-    .$executeRawUnsafe(
-      `
-      WITH src AS (
-        SELECT DISTINCT ON (codigo)
-          UPPER(COALESCE(codigo,'')) AS codigo,
-          COALESCE(NULLIF(trim(fonte),''), '') AS banco,
-          COALESCE(NULLIF(trim(servico),''), '') AS descricao,
-          COALESCE(NULLIF(trim(und),''), '') AS und,
-          atualizado_em AS atualizado_em,
-          id_servico AS id_servico
-        FROM obras_planilhas_servicos
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND COALESCE(codigo,'') <> ''
-        ORDER BY
-          UPPER(COALESCE(codigo,'')),
-          (COALESCE(NULLIF(trim(servico),''), '') <> '') DESC,
-          (COALESCE(NULLIF(trim(und),''), '') <> '') DESC,
-          (COALESCE(NULLIF(trim(fonte),''), '') <> '') DESC,
-          atualizado_em DESC NULLS LAST,
-          id_servico DESC
-      )
-      INSERT INTO obras_servicos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und)
-      SELECT
-        $1,
-        $4,
-        'SERVICO',
-        s.codigo,
-        NULLIF(s.banco,''),
-        NULLIF(s.descricao,''),
-        NULLIF(s.und,'')
-      FROM src s
-      ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-      DO UPDATE SET
-        banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-        descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-        und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
-        atualizado_em = NOW()
-      `,
-      tenantId,
-      idObra,
-      idPlanilha,
-      idFonteDados
-    )
-    .catch(() => null);
-
-  const hasPlanilhaComposicoes = (await tx.$queryRawUnsafe(
-    `SELECT 1 AS ok FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+  const svcExists = (await tx.$queryRawUnsafe(
+    `SELECT 1 AS ok FROM tab_servicos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
     tenantId,
     idObra,
     idPlanilha
   )) as any[];
-  if (hasPlanilhaComposicoes?.length) {
-    await ensurePlanilhaComposicaoTables(tx);
-    await ensureInsumosPrecosTables(tx);
-    await ensureServicosFonteTables(tx);
-    await ensureInsumosFonteTables(tx);
-    await ensureComposicoesItensFonteTables(tx);
 
+  const linhasExists = (await tx.$queryRawUnsafe(
+    `SELECT 1 AS ok FROM obras_planilhas_linhas WHERE tenant_id = $1 AND id_planilha = $2 LIMIT 1`,
+    tenantId,
+    idPlanilha
+  )) as any[];
+  if (linhasExists?.[0] && (!svcExists?.[0] || !itensExists?.[0])) {
     await tx
       .$executeRawUnsafe(
         `
         WITH src AS (
-          SELECT
-            UPPER(COALESCE(codigo_item,'')) AS codigo,
-            MAX(COALESCE(NULLIF(trim(banco),''),'')) AS banco,
-            MAX(COALESCE(NULLIF(trim(descricao),''),'')) AS descricao,
-            MAX(COALESCE(NULLIF(trim(und),''),'')) AS und
-          FROM obras_planilhas_composicoes_itens
-          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
-            AND UPPER(COALESCE(tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-            AND COALESCE(codigo_item,'') <> ''
-          GROUP BY UPPER(COALESCE(codigo_item,''))
+          SELECT DISTINCT ON (codigo)
+            UPPER(COALESCE(l.codigo,'')) AS codigo,
+            COALESCE(NULLIF(trim(l.fonte),''), '') AS fonte,
+            COALESCE(NULLIF(trim(l.servico),''), '') AS servico,
+            COALESCE(NULLIF(trim(l.und),''), '') AS und,
+            l.atualizado_em AS atualizado_em,
+            l.id_linha AS id_linha
+          FROM obras_planilhas_linhas l
+          WHERE l.tenant_id = $1 AND l.id_planilha = $2 AND l.tipo_linha = 'SERVICO' AND COALESCE(l.codigo,'') <> ''
+          ORDER BY
+            UPPER(COALESCE(l.codigo,'')),
+            (COALESCE(NULLIF(trim(l.servico),''), '') <> '') DESC,
+            (COALESCE(NULLIF(trim(l.und),''), '') <> '') DESC,
+            (COALESCE(NULLIF(trim(l.fonte),''), '') <> '') DESC,
+            atualizado_em DESC NULLS LAST,
+            id_linha DESC
         )
-        INSERT INTO obras_servicos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und)
-        SELECT $1, $4, 'SERVICO', s.codigo, NULLIF(s.banco,''), NULLIF(s.descricao,''), NULLIF(s.und,'')
-        FROM src s
-        ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-        DO UPDATE SET
-          banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-          descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-          und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
-          atualizado_em = NOW()
-        `,
-        tenantId,
-        idObra,
-        idPlanilha,
-        idFonteDados
-      )
-      .catch(() => null);
-
-    await tx
-      .$executeRawUnsafe(
-        `
-        WITH src AS (
-          SELECT
-            UPPER(COALESCE(codigo_item,'')) AS codigo,
-            MAX(COALESCE(NULLIF(trim(tipo_item),''),'')) AS tipo,
-            MAX(COALESCE(NULLIF(trim(banco),''),'')) AS banco,
-            MAX(COALESCE(NULLIF(trim(descricao),''),'')) AS descricao,
-            MAX(COALESCE(NULLIF(trim(und),''),'')) AS und
-          FROM obras_planilhas_composicoes_itens
-          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
-            AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-            AND COALESCE(codigo_item,'') <> ''
-          GROUP BY UPPER(COALESCE(codigo_item,''))
-        ),
-        precos AS (
-          SELECT
-            UPPER(COALESCE(codigo_item,'')) AS codigo,
-            MAX(valor_unitario) AS valor_unitario
-          FROM obras_insumos_precos
-          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
-          GROUP BY UPPER(COALESCE(codigo_item,''))
-        )
-        INSERT INTO obras_insumos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+        INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
         SELECT
           $1,
-          $4,
-          NULLIF(s.tipo,''),
+          $3,
+          $2,
           s.codigo,
-          NULLIF(s.banco,''),
-          NULLIF(s.descricao,''),
-          NULLIF(s.und,''),
-          p.valor_unitario
+          NULLIF(s.fonte,''),
+          NULLIF(s.servico,''),
+          NULLIF(s.und,'')
         FROM src s
-        LEFT JOIN precos p ON p.codigo = s.codigo
-        ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+        ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
         DO UPDATE SET
-          banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_insumos_fonte.banco),
-          descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_insumos_fonte.descricao),
-          und = COALESCE(NULLIF(EXCLUDED.und,''), obras_insumos_fonte.und),
-          valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_insumos_fonte.valor_unitario),
+          fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
+          servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
+          und = COALESCE(NULLIF(EXCLUDED.und,''), tab_servicos.und),
           atualizado_em = NOW()
         `,
         tenantId,
-        idObra,
         idPlanilha,
-        idFonteDados
+        idObra
       )
       .catch(() => null);
 
-    await tx
-      .$executeRawUnsafe(
-        `
-        WITH base AS (
+    if (!itensExists?.[0]) {
+      await tx
+        .$executeRawUnsafe(
+          `
+          INSERT INTO tab_planilha_itens
+            (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
           SELECT
-            UPPER(COALESCE(codigo_servico,'')) AS codigo_pai,
-            UPPER(COALESCE(codigo_item,'')) AS codigo_item,
-            UPPER(COALESCE(tipo_item,'')) AS tipo_item,
-            quantidade,
-            und AS unidade,
-            id_item AS ordem
-          FROM obras_planilhas_composicoes_itens
-          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
-            AND COALESCE(codigo_servico,'') <> ''
-            AND COALESCE(codigo_item,'') <> ''
-        ),
-        pai AS (
-          SELECT
-            b.*,
-            sp.id_servico AS id_servico_pai
-          FROM base b
-          INNER JOIN obras_servicos_fonte sp
-            ON sp.tenant_id = $1 AND sp.id_fonte_dados = $4 AND sp.codigo = b.codigo_pai
-        ),
-        resolved AS (
-          SELECT
-            p.id_servico_pai,
-            p.tipo_item,
+            l.tenant_id,
+            l.id_planilha,
+            l.ordem,
+            l.item,
             CASE
-              WHEN p.tipo_item IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.id_servico
-              ELSE inf.id_insumo
-            END AS id_item,
-            p.quantidade,
-            p.unidade,
-            COALESCE(p.ordem, 0) AS ordem
-          FROM pai p
-          LEFT JOIN obras_servicos_fonte sf
-            ON sf.tenant_id = $1 AND sf.id_fonte_dados = $4 AND sf.codigo = p.codigo_item AND p.tipo_item IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-          LEFT JOIN obras_insumos_fonte inf
-            ON inf.tenant_id = $1 AND inf.id_fonte_dados = $4 AND inf.codigo = p.codigo_item AND p.tipo_item NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+              WHEN l.tipo_linha = 'SERVICO' AND COALESCE(l.codigo,'') <> '' THEN s.id_servico
+              ELSE NULL
+            END AS id_servico,
+            l.quantidade,
+            l.valor_unitario,
+            l.valor_parcial,
+            l.nivel,
+            l.tipo_linha,
+            NULL
+          FROM obras_planilhas_linhas l
+          LEFT JOIN tab_servicos s
+            ON s.tenant_id = l.tenant_id AND s.id_obra = $3 AND s.id_planilha = $2 AND s.codigo = UPPER(COALESCE(l.codigo,''))
+          WHERE l.tenant_id = $1 AND l.id_planilha = $2
+          ORDER BY l.id_linha ASC
+          `,
+          tenantId,
+          idPlanilha,
+          idObra
         )
-        INSERT INTO obras_composicoes_itens_fonte
-          (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item, quantidade, unidade, ordem)
-        SELECT
-          $1,
-          $4,
-          r.id_servico_pai,
-          r.tipo_item,
-          r.id_item,
-          r.quantidade,
-          r.unidade,
-          r.ordem
-        FROM resolved r
-        WHERE r.id_item IS NOT NULL
-        ON CONFLICT (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item)
-        DO UPDATE SET
-          quantidade = EXCLUDED.quantidade,
-          unidade = EXCLUDED.unidade,
-          ordem = EXCLUDED.ordem,
-          atualizado_em = NOW()
-        `,
-        tenantId,
-        idObra,
-        idPlanilha,
-        idFonteDados
-      )
-      .catch(() => null);
+        .catch(() => null);
+    }
   }
 
-  await ensureComposicoesItensFonteTables(tx);
-  await tx
-    .$executeRawUnsafe(
+  const legacyServicosExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_servicos_fonte') AS "t"`)) as any[];
+  const hasLegacyServicos = Boolean(legacyServicosExists?.[0]?.t);
+  if (hasLegacyServicos) {
+    const dangling = (await tx.$queryRawUnsafe(
       `
-      UPDATE obras_planilha_itens i
-      SET
-        valor_unitario = sf.valor_unitario,
-        valor_parcial = CASE
-          WHEN i.quantidade IS NULL THEN i.valor_parcial
-          ELSE ROUND((COALESCE(i.quantidade,0) * sf.valor_unitario)::numeric, 6)
-        END,
-        atualizado_em = NOW()
-      FROM obras_servicos_fonte sf
-      WHERE i.tenant_id = $1
-        AND i.id_planilha = $2
+      SELECT 1 AS ok
+      FROM tab_planilha_itens i
+      LEFT JOIN tab_servicos s
+        ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
+      WHERE i.tenant_id = $1 AND i.id_planilha = $2
         AND i.tipo_linha = 'SERVICO'
         AND i.id_servico IS NOT NULL
-        AND sf.tenant_id = $1
-        AND sf.id_fonte_dados = $3
-        AND sf.id_servico = i.id_servico
-        AND COALESCE(i.valor_unitario, 0) = 0
-        AND COALESCE(sf.valor_unitario, 0) > 0
-        AND NOT EXISTS (
-          SELECT 1
-          FROM obras_composicoes_itens_fonte ci
-          WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $3 AND ci.id_servico_pai = i.id_servico
-          LIMIT 1
-        )
+        AND s.id_servico IS NULL
+      LIMIT 1
       `,
       tenantId,
-      idPlanilha,
-      idFonteDados
-    )
-    .catch(() => null);
+      idPlanilha
+    )) as any[];
+    if (dangling?.[0]) {
+      await tx
+        .$executeRawUnsafe(
+          `
+          WITH ids AS (
+            SELECT DISTINCT i.id_servico AS legacy_id_servico
+            FROM tab_planilha_itens i
+            WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND i.id_servico IS NOT NULL
+          ),
+          src AS (
+            SELECT
+              sf.id_servico AS legacy_id_servico,
+              UPPER(COALESCE(sf.codigo,'')) AS codigo,
+              COALESCE(NULLIF(trim(sf.banco),''), '') AS fonte,
+              COALESCE(NULLIF(trim(sf.descricao),''), '') AS servico,
+              COALESCE(NULLIF(trim(sf.und),''), '') AS und
+            FROM obras_servicos_fonte sf
+            JOIN ids ON ids.legacy_id_servico = sf.id_servico
+            WHERE sf.tenant_id = $1
+          )
+          INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
+          SELECT $1, $3, $2, s.codigo, NULLIF(s.fonte,''), NULLIF(s.servico,''), NULLIF(s.und,'')
+          FROM src s
+          WHERE COALESCE(s.codigo,'') <> ''
+          ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+          DO UPDATE SET
+            fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
+            servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
+            und = COALESCE(NULLIF(EXCLUDED.und,''), tab_servicos.und),
+            atualizado_em = NOW()
+          `,
+          tenantId,
+          idPlanilha,
+          idObra
+        )
+        .catch(() => null);
 
-  return { idFonteDados, idParametros };
+      await tx
+        .$executeRawUnsafe(
+          `
+          WITH map AS (
+            SELECT
+              i.id_planilha_item AS id_planilha_item,
+              s2.id_servico AS new_id_servico
+            FROM tab_planilha_itens i
+            JOIN obras_servicos_fonte sf
+              ON sf.tenant_id = i.tenant_id AND sf.id_servico = i.id_servico
+            JOIN tab_servicos s2
+              ON s2.tenant_id = i.tenant_id AND s2.id_obra = $3 AND s2.id_planilha = $2 AND s2.codigo = UPPER(COALESCE(sf.codigo,''))
+            WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO'
+          )
+          UPDATE tab_planilha_itens i
+          SET id_servico = map.new_id_servico
+          FROM map
+          WHERE i.id_planilha_item = map.id_planilha_item
+          `,
+          tenantId,
+          idPlanilha,
+          idObra
+        )
+        .catch(() => null);
+    }
+  }
+
+  return { idPlanilha: Number(v.idPlanilha || idPlanilha), idParametros: idParametros ? Number(idParametros) : null };
 }
+
+
 
 async function syncServicosCatalogoFromLinhas(tx: any, tenantId: number, idObra: number, idPlanilha: number) {
   await ensurePlanilhaServicosTables(tx);
@@ -1202,7 +1089,7 @@ async function syncServicosCatalogoFromLinhas(tx: any, tenantId: number, idObra:
         atualizado_em DESC NULLS LAST,
         id_linha DESC
     )
-    INSERT INTO obras_planilhas_servicos
+    INSERT INTO tab_servicos
       (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
     SELECT
       $1 AS tenant_id,
@@ -1215,9 +1102,9 @@ async function syncServicosCatalogoFromLinhas(tx: any, tenantId: number, idObra:
     FROM dedup d
     ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
     DO UPDATE SET
-      fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), obras_planilhas_servicos.fonte),
-      servico = COALESCE(NULLIF(EXCLUDED.servico,''), obras_planilhas_servicos.servico),
-      und = COALESCE(NULLIF(EXCLUDED.und,''), obras_planilhas_servicos.und),
+      fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
+      servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
+      und = COALESCE(NULLIF(EXCLUDED.und,''), tab_servicos.und),
       atualizado_em = NOW()
     `,
     tenantId,
@@ -1238,7 +1125,7 @@ async function syncServicosCatalogoFromComposicoesRefs(tx: any, tenantId: number
         COALESCE(NULLIF(trim(i.und),''), '') AS und,
         i.atualizado_em AS atualizado_em,
         i.id_item AS id_item
-      FROM obras_planilhas_composicoes_itens i
+      FROM tab_composicoes i
       WHERE i.tenant_id = $1
         AND i.id_obra = $2
         AND i.id_planilha = $3
@@ -1260,7 +1147,7 @@ async function syncServicosCatalogoFromComposicoesRefs(tx: any, tenantId: number
         atualizado_em DESC NULLS LAST,
         id_item DESC
     )
-    INSERT INTO obras_planilhas_servicos
+    INSERT INTO tab_servicos
       (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
     SELECT
       $1 AS tenant_id,
@@ -1274,15 +1161,15 @@ async function syncServicosCatalogoFromComposicoesRefs(tx: any, tenantId: number
     ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
     DO UPDATE SET
       fonte = CASE
-        WHEN COALESCE(NULLIF(obras_planilhas_servicos.fonte,''), '') <> '' THEN obras_planilhas_servicos.fonte
+        WHEN COALESCE(NULLIF(tab_servicos.fonte,''), '') <> '' THEN tab_servicos.fonte
         ELSE NULLIF(EXCLUDED.fonte,'')
       END,
       servico = CASE
-        WHEN COALESCE(NULLIF(obras_planilhas_servicos.servico,''), '') <> '' THEN obras_planilhas_servicos.servico
+        WHEN COALESCE(NULLIF(tab_servicos.servico,''), '') <> '' THEN tab_servicos.servico
         ELSE NULLIF(EXCLUDED.servico,'')
       END,
       und = CASE
-        WHEN COALESCE(NULLIF(obras_planilhas_servicos.und,''), '') <> '' THEN obras_planilhas_servicos.und
+        WHEN COALESCE(NULLIF(tab_servicos.und,''), '') <> '' THEN tab_servicos.und
         ELSE NULLIF(EXCLUDED.und,'')
       END,
       atualizado_em = NOW()
@@ -1299,7 +1186,7 @@ async function resolvePlanilhaIdForObra(tx: any, tenantId: number, idObra: numbe
     const ok = (await tx.$queryRawUnsafe(
       `
       SELECT 1 AS ok
-      FROM obras_planilhas_versoes
+      FROM tab_planilhas
       WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
       LIMIT 1
       `,
@@ -1314,7 +1201,7 @@ async function resolvePlanilhaIdForObra(tx: any, tenantId: number, idObra: numbe
   const rows = (await tx.$queryRawUnsafe(
     `
     SELECT id_planilha AS "idPlanilha"
-    FROM obras_planilhas_versoes
+    FROM tab_planilhas
     WHERE tenant_id = $1 AND id_obra = $2
     ORDER BY atual DESC, numero_versao DESC, id_planilha DESC
     LIMIT 1
@@ -1334,7 +1221,7 @@ async function assertPlanilhaServicosCompletos(tx: any, tenantId: number, idObra
       COALESCE(codigo,'') AS codigo,
       COALESCE(servico,'') AS servico,
       COALESCE(und,'') AS und
-    FROM obras_planilhas_servicos
+    FROM tab_servicos
     WHERE tenant_id = $1
       AND id_obra = $2
       AND id_planilha = $3
@@ -1366,7 +1253,7 @@ async function assertServicoExisteECompleto(tx: any, tenantId: number, idObra: n
     SELECT
       COALESCE(servico,'') AS servico,
       COALESCE(und,'') AS und
-    FROM obras_planilhas_servicos
+    FROM tab_servicos
     WHERE tenant_id = $1
       AND id_obra = $2
       AND id_planilha = $3
@@ -1392,9 +1279,11 @@ async function tryUpsertServicoCatalogoFromSinapiBase(tx: any, tenantId: number,
   try {
     const vers = (await tx.$queryRawUnsafe(
       `
-      SELECT data_base_sinapi AS "dataBaseSinapi"
-      FROM obras_planilhas_versoes
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+      SELECT COALESCE(p.data_base_sinapi, v.data_base_sinapi) AS "dataBaseSinapi"
+      FROM tab_planilhas v
+      LEFT JOIN tab_parametros p
+        ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
+      WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
       LIMIT 1
       `,
       tenantId,
@@ -1426,15 +1315,15 @@ async function tryUpsertServicoCatalogoFromSinapiBase(tx: any, tenantId: number,
     await ensurePlanilhaServicosTables(tx);
     await tx.$executeRawUnsafe(
       `
-      INSERT INTO obras_planilhas_servicos
+      INSERT INTO tab_servicos
         (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
       VALUES
         ($1, $2, $3, $4, 'SINAPI', $5, $6)
       ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
       DO UPDATE SET
-        fonte = COALESCE(NULLIF(obras_planilhas_servicos.fonte,''), EXCLUDED.fonte),
-        servico = COALESCE(NULLIF(obras_planilhas_servicos.servico,''), EXCLUDED.servico),
-        und = COALESCE(NULLIF(obras_planilhas_servicos.und,''), EXCLUDED.und),
+        fonte = COALESCE(NULLIF(tab_servicos.fonte,''), EXCLUDED.fonte),
+        servico = COALESCE(NULLIF(tab_servicos.servico,''), EXCLUDED.servico),
+        und = COALESCE(NULLIF(tab_servicos.und,''), EXCLUDED.und),
         atualizado_em = NOW()
       `,
       tenantId,
@@ -1454,8 +1343,8 @@ async function assertComposicoesVinculadasAServicos(tx: any, tenantId: number, i
   const rows = (await tx.$queryRawUnsafe(
     `
     SELECT COALESCE(i.codigo_servico,'') AS codigo
-    FROM obras_planilhas_composicoes_itens i
-    LEFT JOIN obras_planilhas_servicos s
+    FROM tab_composicoes i
+    LEFT JOIN tab_servicos s
       ON s.tenant_id = i.tenant_id
       AND s.id_obra = i.id_obra
       AND s.id_planilha = i.id_planilha
@@ -1479,8 +1368,9 @@ async function assertComposicoesVinculadasAServicos(tx: any, tenantId: number, i
 }
 
 async function ensurePlanilhaComposicaoTables(tx: any) {
+  await tx.$executeRawUnsafe(`ALTER TABLE IF EXISTS obras_planilhas_composicoes_itens RENAME TO tab_composicoes`).catch(() => null);
   await tx.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS obras_planilhas_composicoes_itens (
+    CREATE TABLE IF NOT EXISTS tab_composicoes (
       id_item BIGSERIAL PRIMARY KEY,
       tenant_id BIGINT NOT NULL,
       id_obra BIGINT NOT NULL,
@@ -1500,29 +1390,29 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ADD COLUMN IF NOT EXISTS id_planilha BIGINT NOT NULL DEFAULT 0`).catch(() => null);
-  await tx.$executeRawUnsafe(`DROP INDEX IF EXISTS obras_planilhas_composicoes_itens_uk`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS id_planilha BIGINT NOT NULL DEFAULT 0`).catch(() => null);
+  await tx.$executeRawUnsafe(`DROP INDEX IF EXISTS tab_composicoes_uk`).catch(() => null);
   await tx.$executeRawUnsafe(
-    `CREATE UNIQUE INDEX IF NOT EXISTS obras_planilhas_composicoes_itens_uk ON obras_planilhas_composicoes_itens (tenant_id, id_obra, id_planilha, codigo_servico, COALESCE(etapa,''), tipo_item, codigo_item)`
+    `CREATE UNIQUE INDEX IF NOT EXISTS tab_composicoes_uk ON tab_composicoes (tenant_id, id_obra, id_planilha, codigo_servico, COALESCE(etapa,''), tipo_item, codigo_item)`
   );
   await tx.$executeRawUnsafe(
-    `CREATE INDEX IF NOT EXISTS obras_planilhas_composicoes_itens_idx_servico ON obras_planilhas_composicoes_itens (tenant_id, id_obra, id_planilha, codigo_servico)`
+    `CREATE INDEX IF NOT EXISTS tab_composicoes_idx_servico ON tab_composicoes (tenant_id, id_obra, id_planilha, codigo_servico)`
   );
   await tx.$executeRawUnsafe(
-    `CREATE INDEX IF NOT EXISTS obras_planilhas_composicoes_itens_idx_item ON obras_planilhas_composicoes_itens (tenant_id, id_obra, id_planilha, codigo_item)`
+    `CREATE INDEX IF NOT EXISTS tab_composicoes_idx_item ON tab_composicoes (tenant_id, id_obra, id_planilha, codigo_item)`
   );
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ALTER COLUMN tipo_item TYPE VARCHAR(32)`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ADD COLUMN IF NOT EXISTS banco VARCHAR(60) NULL`).catch(() => null);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_planilhas_composicoes_itens ADD COLUMN IF NOT EXISTS valor_unitario NUMERIC(14,6) NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_composicoes ALTER COLUMN tipo_item TYPE VARCHAR(32)`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS banco VARCHAR(60) NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS valor_unitario NUMERIC(14,6) NULL`).catch(() => null);
 
   await tx
     .$executeRawUnsafe(
       `
-      UPDATE obras_planilhas_composicoes_itens t
+      UPDATE tab_composicoes t
       SET id_planilha = v.id_planilha
       FROM (
         SELECT tenant_id, id_obra, id_planilha
-        FROM obras_planilhas_versoes
+        FROM tab_planilhas
         WHERE atual = TRUE
       ) v
       WHERE t.tenant_id = v.tenant_id
@@ -1531,6 +1421,7 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
       `
     )
     .catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE OR REPLACE VIEW obras_planilhas_composicoes_itens AS SELECT * FROM tab_composicoes`).catch(() => null);
 }
 
 async function ensurePlanilhaComposicaoPrimitivaTables(tx: any) {
@@ -1585,7 +1476,7 @@ async function ensurePlanilhaComposicaoPrimitivaTables(tx: any) {
       SET id_planilha = v.id_planilha
       FROM (
         SELECT tenant_id, id_obra, id_planilha
-        FROM obras_planilhas_versoes
+        FROM tab_planilhas
         WHERE atual = TRUE
       ) v
       WHERE t.tenant_id = v.tenant_id
@@ -1597,30 +1488,39 @@ async function ensurePlanilhaComposicaoPrimitivaTables(tx: any) {
 }
 
 async function ensureInsumosPrecosTables(tx: any) {
+  await tx.$executeRawUnsafe(`ALTER TABLE IF EXISTS obras_insumos_precos RENAME TO tab_insumos`).catch(() => null);
   await tx.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS obras_insumos_precos (
+    CREATE TABLE IF NOT EXISTS tab_insumos (
       id_preco BIGSERIAL PRIMARY KEY,
       tenant_id BIGINT NOT NULL,
       id_obra BIGINT NOT NULL,
       id_planilha BIGINT NOT NULL DEFAULT 0,
       codigo_item VARCHAR(80) NOT NULL,
+      tipo VARCHAR(32) NULL,
+      banco VARCHAR(60) NULL,
+      descricao VARCHAR(255) NULL,
+      und VARCHAR(40) NULL,
       valor_unitario NUMERIC(14,6) NOT NULL,
       criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await tx.$executeRawUnsafe(`ALTER TABLE obras_insumos_precos ADD COLUMN IF NOT EXISTS id_planilha BIGINT NOT NULL DEFAULT 0`).catch(() => null);
-  await tx.$executeRawUnsafe(`DROP INDEX IF EXISTS obras_insumos_precos_uk`).catch(() => null);
-  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS obras_insumos_precos_uk ON obras_insumos_precos (tenant_id, id_obra, id_planilha, codigo_item)`);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_insumos_precos_idx_obra ON obras_insumos_precos (tenant_id, id_obra, id_planilha)`);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS id_planilha BIGINT NOT NULL DEFAULT 0`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS tipo VARCHAR(32) NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS banco VARCHAR(60) NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS descricao VARCHAR(255) NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS und VARCHAR(40) NULL`).catch(() => null);
+  await tx.$executeRawUnsafe(`DROP INDEX IF EXISTS tab_insumos_uk`).catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS tab_insumos_uk ON tab_insumos (tenant_id, id_obra, id_planilha, codigo_item)`).catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS tab_insumos_idx_obra ON tab_insumos (tenant_id, id_obra, id_planilha)`).catch(() => null);
   await tx
     .$executeRawUnsafe(
       `
-      UPDATE obras_insumos_precos t
+      UPDATE tab_insumos t
       SET id_planilha = v.id_planilha
       FROM (
         SELECT tenant_id, id_obra, id_planilha
-        FROM obras_planilhas_versoes
+        FROM tab_planilhas
         WHERE atual = TRUE
       ) v
       WHERE t.tenant_id = v.tenant_id
@@ -1629,6 +1529,58 @@ async function ensureInsumosPrecosTables(tx: any) {
       `
     )
     .catch(() => null);
+
+  await tx
+    .$executeRawUnsafe(
+      `
+      WITH src AS (
+        SELECT DISTINCT ON (tenant_id, id_obra, id_planilha, UPPER(COALESCE(codigo_item,'')))
+          tenant_id,
+          id_obra,
+          id_planilha,
+          UPPER(COALESCE(codigo_item,'')) AS codigo_item,
+          UPPER(COALESCE(tipo_item,'')) AS tipo,
+          NULLIF(COALESCE(banco,''), '') AS banco,
+          NULLIF(COALESCE(descricao,''), '') AS descricao,
+          NULLIF(COALESCE(und,''), '') AS und,
+          atualizado_em,
+          id_item
+        FROM tab_composicoes
+        WHERE COALESCE(codigo_item,'') <> ''
+          AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+        ORDER BY
+          tenant_id,
+          id_obra,
+          id_planilha,
+          UPPER(COALESCE(codigo_item,'')),
+          (COALESCE(NULLIF(trim(descricao),''), '') <> '') DESC,
+          (COALESCE(NULLIF(trim(und),''), '') <> '') DESC,
+          (COALESCE(NULLIF(trim(banco),''), '') <> '') DESC,
+          atualizado_em DESC NULLS LAST,
+          id_item DESC
+      )
+      UPDATE tab_insumos t
+      SET
+        tipo = COALESCE(NULLIF(t.tipo,''), src.tipo),
+        banco = COALESCE(NULLIF(t.banco,''), src.banco),
+        descricao = COALESCE(NULLIF(t.descricao,''), src.descricao),
+        und = COALESCE(NULLIF(t.und,''), src.und),
+        atualizado_em = NOW()
+      FROM src
+      WHERE t.tenant_id = src.tenant_id
+        AND t.id_obra = src.id_obra
+        AND t.id_planilha = src.id_planilha
+        AND UPPER(COALESCE(t.codigo_item,'')) = src.codigo_item
+        AND (
+          COALESCE(NULLIF(t.tipo,''), '') = ''
+          OR COALESCE(NULLIF(t.banco,''), '') = ''
+          OR COALESCE(NULLIF(t.descricao,''), '') = ''
+          OR COALESCE(NULLIF(t.und,''), '') = ''
+        )
+      `
+    )
+    .catch(() => null);
+  await tx.$executeRawUnsafe(`CREATE OR REPLACE VIEW obras_insumos_precos AS SELECT * FROM tab_insumos`).catch(() => null);
 }
 
 async function ensureEmpresaDocumentosLayoutTables(tx: any) {
@@ -5281,307 +5233,6 @@ export default async function v1Routes(server: FastifyInstance) {
     );
   });
 
-  server.get('/engenharia/fontes-dados', async (request, reply) => {
-    const ctx = await requireTenantUser(request, reply);
-    if (!ctx || (ctx as any).success === false) return;
-    await ensureFontesDadosTables(prisma);
-    const rows = (await prisma.$queryRawUnsafe(
-      `
-      SELECT
-        id_fonte_dados AS "idFonteDados",
-        COALESCE(descricao,'') AS "nome",
-        tipo,
-        uf,
-        data_base AS "dataBase",
-        tipo_preco AS "tipoPreco",
-        criado_em AS "criadoEm",
-        atualizado_em AS "atualizadoEm"
-      FROM obras_fontes_dados
-      WHERE tenant_id = $1
-      ORDER BY id_fonte_dados DESC
-      LIMIT 2000
-      `,
-      ctx.tenantId
-    )) as any[];
-    return ok(reply, {
-      fontes: (rows || []).map((r: any) => ({
-        idFonteDados: Number(r.idFonteDados),
-        nome: String(r.nome || '').trim(),
-        tipo: String(r.tipo || '').trim(),
-        uf: String(r.uf || '').trim(),
-        dataBase: String(r.dataBase || '').trim(),
-        tipoPreco: String(r.tipoPreco || '').trim(),
-        criadoEm: r.criadoEm ? new Date(r.criadoEm).toISOString() : null,
-        atualizadoEm: r.atualizadoEm ? new Date(r.atualizadoEm).toISOString() : null,
-      })),
-    });
-  });
-
-  server.get(
-    '/engenharia/fontes-dados/:id/planilhas-afetadas',
-    { schema: { params: z.object({ id: z.coerce.number().int().positive() }) } },
-    async (request, reply) => {
-      const ctx = await requireTenantUser(request, reply);
-      if (!ctx || (ctx as any).success === false) return;
-      const { id } = request.params as any;
-      const idFonteDados = Number(id);
-      await ensurePlanilhaModeloFonteTables(prisma);
-
-      const versoes = (await prisma.$queryRawUnsafe(
-        `
-        SELECT
-          id_obra AS "idObra",
-          id_planilha AS "idPlanilha",
-          numero_versao AS "numeroVersao",
-          COALESCE(nome,'') AS "nome",
-          atual AS "atual"
-        FROM obras_planilhas_versoes
-        WHERE tenant_id = $1 AND id_fonte_dados = $2
-        ORDER BY id_obra ASC, numero_versao DESC, id_planilha DESC
-        `,
-        ctx.tenantId,
-        idFonteDados
-      )) as any[];
-
-      const obraIds = Array.from(new Set((versoes || []).map((v: any) => Number(v?.idObra || 0)).filter((n: number) => Number.isFinite(n) && n > 0)));
-      const obras = obraIds.length
-        ? await prisma.obra.findMany({
-            where: { tenantId: ctx.tenantId, id: { in: obraIds } },
-            select: {
-              id: true,
-              name: true,
-              status: true,
-              contrato: { select: { id: true, numeroContrato: true, status: true } },
-            },
-          })
-        : [];
-      const obraById = new Map<number, any>(obras.map((o: any) => [Number(o.id), o]));
-
-      return ok(reply, {
-        rows: (versoes || []).map((v: any) => {
-          const idObra = Number(v?.idObra || 0);
-          const obra = obraById.get(idObra) || null;
-          return {
-            idObra,
-            obraNome: obra?.name != null ? String(obra.name || '') : '',
-            obraStatus: obra?.status != null ? String(obra.status || '') : '',
-            contratoId: obra?.contrato?.id != null ? Number(obra.contrato.id) : null,
-            contratoNumero: obra?.contrato?.numeroContrato != null ? String(obra.contrato.numeroContrato || '') : null,
-            contratoStatus: obra?.contrato?.status != null ? String(obra.contrato.status || '') : null,
-            idPlanilha: Number(v?.idPlanilha || 0),
-            numeroVersao: Number(v?.numeroVersao || 0),
-            nome: String(v?.nome || ''),
-            atual: Boolean(v?.atual),
-          };
-        }),
-      });
-    }
-  );
-
-  server.post('/engenharia/fontes-dados', async (request, reply) => {
-    const ctx = await requireTenantUser(request, reply);
-    if (!ctx || (ctx as any).success === false) return;
-    const body = z
-      .object({
-        idFonteDados: z.coerce.number().int().positive().optional().nullable(),
-        nome: z.string().min(1).max(160),
-        tipo: z.string().min(1).max(24),
-        uf: z.string().max(2).optional().nullable(),
-        dataBase: z.string().max(16).optional().nullable(),
-        tipoPreco: z.string().max(8).optional().nullable(),
-      })
-      .parse(request.body || {});
-
-    await ensureFontesDadosTables(prisma);
-    const tipo = String(body.tipo || '').trim().toUpperCase();
-    const uf = body.uf ? String(body.uf).trim().toUpperCase() : '';
-    const dataBase = body.dataBase ? String(body.dataBase).trim().toUpperCase() : '';
-    const tipoPreco = body.tipoPreco ? String(body.tipoPreco).trim().toUpperCase() : '';
-    const nome = String(body.nome || '').trim().slice(0, 160);
-
-    if (body.idFonteDados) {
-      const exists = (await prisma.$queryRawUnsafe(
-        `SELECT 1 AS ok FROM obras_fontes_dados WHERE tenant_id = $1 AND id_fonte_dados = $2 LIMIT 1`,
-        ctx.tenantId,
-        Number(body.idFonteDados)
-      )) as any[];
-      if (!exists?.[0]) return fail(reply, 404, 'Fonte não encontrada');
-
-      const dup = (await prisma.$queryRawUnsafe(
-        `
-        SELECT id_fonte_dados AS "idFonteDados"
-        FROM obras_fontes_dados
-        WHERE tenant_id = $1 AND tipo = $2 AND uf = $3 AND data_base = $4 AND tipo_preco = $5 AND descricao = $6 AND id_fonte_dados <> $7
-        LIMIT 1
-        `,
-        ctx.tenantId,
-        tipo,
-        uf,
-        dataBase,
-        tipoPreco,
-        nome,
-        Number(body.idFonteDados)
-      )) as any[];
-      if (dup?.[0]) return fail(reply, 422, `Já existe outra fonte com essa configuração (id #${Number(dup[0].idFonteDados)})`);
-
-      await prisma.$executeRawUnsafe(
-        `
-        UPDATE obras_fontes_dados
-        SET tipo = $3, uf = $4, data_base = $5, tipo_preco = $6, descricao = $7, atualizado_em = NOW()
-        WHERE tenant_id = $1 AND id_fonte_dados = $2
-        `,
-        ctx.tenantId,
-        Number(body.idFonteDados),
-        tipo,
-        uf,
-        dataBase,
-        tipoPreco,
-        nome
-      );
-      return ok(reply, { idFonteDados: Number(body.idFonteDados) }, { message: 'Fonte atualizada' });
-    }
-
-    const idFonteDados = await upsertFonteDados(prisma, ctx.tenantId, { tipo, uf, dataBase, tipoPreco, descricao: nome });
-    return ok(reply, { idFonteDados }, { message: 'Fonte cadastrada' });
-  });
-
-  server.post('/engenharia/fontes-dados/clonar', async (request, reply) => {
-    const ctx = await requireTenantUser(request, reply);
-    if (!ctx || (ctx as any).success === false) return;
-    const body = z
-      .object({
-        idFonteDados: z.coerce.number().int().positive(),
-        nome: z.string().max(160).optional().nullable(),
-      })
-      .parse(request.body || {});
-
-    const created = await prismaTx(async (tx: any) => {
-      await ensureFontesDadosTables(tx);
-      await ensureServicosFonteTables(tx);
-      await ensureInsumosFonteTables(tx);
-      await ensureComposicoesItensFonteTables(tx);
-
-      const srcRows = (await tx.$queryRawUnsafe(
-        `
-        SELECT
-          id_fonte_dados AS "idFonteDados",
-          tipo,
-          uf,
-          data_base AS "dataBase",
-          tipo_preco AS "tipoPreco",
-          COALESCE(descricao,'') AS "nome"
-        FROM obras_fontes_dados
-        WHERE tenant_id = $1 AND id_fonte_dados = $2
-        LIMIT 1
-        `,
-        ctx.tenantId,
-        Number(body.idFonteDados)
-      )) as any[];
-      const src = srcRows?.[0] || null;
-      if (!src) throw new Error('Fonte não encontrada');
-
-      const baseNome = String(body.nome != null ? body.nome : src.nome || '').trim().slice(0, 160);
-      const nome = baseNome || `${String(src.nome || 'Fonte').trim().slice(0, 120)} (Clonada)`;
-
-      const insFonte = (await tx.$queryRawUnsafe(
-        `
-        INSERT INTO obras_fontes_dados (tenant_id, tipo, uf, data_base, tipo_preco, descricao)
-        VALUES ($1,$2,$3,$4,$5,$6)
-        RETURNING id_fonte_dados AS "idFonteDados"
-        `,
-        ctx.tenantId,
-        String(src.tipo || '').trim(),
-        String(src.uf || '').trim(),
-        String(src.dataBase || '').trim(),
-        String(src.tipoPreco || '').trim(),
-        String(nome || '').trim().slice(0, 160)
-      )) as any[];
-      const idFonteDadosNew = Number(insFonte?.[0]?.idFonteDados || 0);
-      if (!idFonteDadosNew) throw new Error('Falha ao clonar fonte');
-
-      await tx.$executeRawUnsafe(
-        `
-        INSERT INTO obras_servicos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-        SELECT tenant_id, $3 AS id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario
-        FROM obras_servicos_fonte
-        WHERE tenant_id = $1 AND id_fonte_dados = $2
-        `,
-        ctx.tenantId,
-        Number(body.idFonteDados),
-        idFonteDadosNew
-      );
-
-      await tx.$executeRawUnsafe(
-        `
-        INSERT INTO obras_insumos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-        SELECT tenant_id, $3 AS id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario
-        FROM obras_insumos_fonte
-        WHERE tenant_id = $1 AND id_fonte_dados = $2
-        `,
-        ctx.tenantId,
-        Number(body.idFonteDados),
-        idFonteDadosNew
-      );
-
-      await tx.$executeRawUnsafe(
-        `
-        WITH serv_map AS (
-          SELECT old.id_servico AS old_id, nw.id_servico AS new_id
-          FROM obras_servicos_fonte old
-          INNER JOIN obras_servicos_fonte nw
-            ON nw.tenant_id = old.tenant_id
-           AND nw.id_fonte_dados = $3
-           AND nw.codigo = old.codigo
-          WHERE old.tenant_id = $1 AND old.id_fonte_dados = $2
-        ),
-        ins_map AS (
-          SELECT old.id_insumo AS old_id, nw.id_insumo AS new_id
-          FROM obras_insumos_fonte old
-          INNER JOIN obras_insumos_fonte nw
-            ON nw.tenant_id = old.tenant_id
-           AND nw.id_fonte_dados = $3
-           AND nw.codigo = old.codigo
-          WHERE old.tenant_id = $1 AND old.id_fonte_dados = $2
-        )
-        INSERT INTO obras_composicoes_itens_fonte (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item, quantidade, unidade, ordem)
-        SELECT
-          c.tenant_id,
-          $3 AS id_fonte_dados,
-          sp.new_id AS id_servico_pai,
-          c.tipo_item,
-          CASE
-            WHEN c.tipo_item IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN si.new_id
-            ELSE ii.new_id
-          END AS id_item,
-          c.quantidade,
-          c.unidade,
-          c.ordem
-        FROM obras_composicoes_itens_fonte c
-        INNER JOIN serv_map sp
-          ON sp.old_id = c.id_servico_pai
-        LEFT JOIN serv_map si
-          ON si.old_id = c.id_item AND c.tipo_item IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-        LEFT JOIN ins_map ii
-          ON ii.old_id = c.id_item AND c.tipo_item NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-        WHERE c.tenant_id = $1
-          AND c.id_fonte_dados = $2
-          AND (
-            (c.tipo_item IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') AND si.new_id IS NOT NULL)
-            OR
-            (c.tipo_item NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') AND ii.new_id IS NOT NULL)
-          )
-        `,
-        ctx.tenantId,
-        Number(body.idFonteDados),
-        idFonteDadosNew
-      );
-
-      return { idFonteDados: idFonteDadosNew };
-    });
-
-    return ok(reply, created, { message: 'Fonte clonada' });
-  });
-
   server.get('/engenharia/planilhas/parametros', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
@@ -5606,7 +5257,7 @@ export default async function v1Routes(server: FastifyInstance) {
         assinatura AS "assinatura",
         criado_em AS "criadoEm",
         atualizado_em AS "atualizadoEm"
-      FROM obras_planilhas_parametros
+      FROM tab_parametros
       WHERE tenant_id = $1
       ORDER BY id_parametros DESC
       LIMIT 2000
@@ -5645,7 +5296,7 @@ export default async function v1Routes(server: FastifyInstance) {
       if (!ctx || (ctx as any).success === false) return;
       const { id } = request.params as any;
       const idParametros = Number(id);
-      await ensurePlanilhaModeloFonteTables(prisma);
+      await ensurePlanilhaEstruturaUnicaTables(prisma);
 
       const versoes = (await prisma.$queryRawUnsafe(
         `
@@ -5655,7 +5306,7 @@ export default async function v1Routes(server: FastifyInstance) {
           numero_versao AS "numeroVersao",
           COALESCE(nome,'') AS "nome",
           atual AS "atual"
-        FROM obras_planilhas_versoes
+        FROM tab_planilhas
         WHERE tenant_id = $1 AND id_parametros = $2
         ORDER BY id_obra ASC, numero_versao DESC, id_planilha DESC
         `,
@@ -5741,16 +5392,29 @@ export default async function v1Routes(server: FastifyInstance) {
     const assinatura = buildParametrosAssinatura(payload);
     if (body.idParametros) {
       const exists = (await prisma.$queryRawUnsafe(
-        `SELECT 1 AS ok FROM obras_planilhas_parametros WHERE tenant_id = $1 AND id_parametros = $2 LIMIT 1`,
+        `SELECT 1 AS ok FROM tab_parametros WHERE tenant_id = $1 AND id_parametros = $2 LIMIT 1`,
         ctx.tenantId,
         Number(body.idParametros)
       )) as any[];
       if (!exists?.[0]) return fail(reply, 404, 'Parâmetro não encontrado');
 
+        const used = (await prisma.$queryRawUnsafe(
+          `SELECT 1 AS ok FROM tab_planilhas WHERE tenant_id = $1 AND id_parametros = $2 LIMIT 1`,
+          ctx.tenantId,
+          Number(body.idParametros)
+        )) as any[];
+        if (used?.[0]) {
+          return fail(
+            reply,
+            422,
+            'Parâmetro está vinculado a uma ou mais planilhas. Para manter histórico e evitar impacto em outras versões, clone o parâmetro e vincule o novo id na planilha.'
+          );
+        }
+
       const dup = (await prisma.$queryRawUnsafe(
         `
         SELECT id_parametros AS "idParametros"
-        FROM obras_planilhas_parametros
+        FROM tab_parametros
         WHERE tenant_id = $1 AND assinatura = $2 AND id_parametros <> $3
         LIMIT 1
         `,
@@ -5762,7 +5426,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
       await prisma.$executeRawUnsafe(
         `
-        UPDATE obras_planilhas_parametros
+        UPDATE tab_parametros
         SET
           nome = $3,
           tipo_encargos_sociais = $4,
@@ -5836,7 +5500,7 @@ export default async function v1Routes(server: FastifyInstance) {
           desconto_sbc AS "descontoSbc",
           desconto_sinapi AS "descontoSinapi",
           assinatura AS "assinatura"
-        FROM obras_planilhas_parametros
+        FROM tab_parametros
         WHERE tenant_id = $1 AND id_parametros = $2
         LIMIT 1
         `,
@@ -5852,7 +5516,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
       const ins = (await tx.$queryRawUnsafe(
         `
-        INSERT INTO obras_planilhas_parametros
+        INSERT INTO tab_parametros
           (tenant_id, nome, tipo_encargos_sociais, uf_sinapi, data_base_sbc, data_base_sinapi,
            bdi_servicos_sbc, bdi_servicos_sinapi, bdi_diferenciado_sbc, bdi_diferenciado_sinapi,
            enc_sociais_sem_des_sbc, enc_sociais_sem_des_sinapi, desconto_sbc, desconto_sinapi, assinatura)
@@ -5903,7 +5567,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const obraNomeById = new Map<number, string>();
     for (const o of obras) obraNomeById.set(Number(o.id), String(o.name || ''));
 
-    await ensurePlanilhaModeloFonteTables(prisma);
+    await ensurePlanilhaEstruturaUnicaTables(prisma);
     const rows = (await prisma.$queryRawUnsafe(
       `
       SELECT
@@ -5912,9 +5576,8 @@ export default async function v1Routes(server: FastifyInstance) {
         numero_versao AS "numeroVersao",
         nome,
         atual,
-        id_fonte_dados AS "idFonteDados",
         id_parametros AS "idParametros"
-      FROM obras_planilhas_versoes
+      FROM tab_planilhas
       WHERE tenant_id = $1 AND id_obra = ANY($2::bigint[])
       ORDER BY id_obra ASC, numero_versao DESC, id_planilha DESC
       `,
@@ -5931,7 +5594,6 @@ export default async function v1Routes(server: FastifyInstance) {
         numeroVersao: Number(v?.numeroVersao || 0),
         nome: String(v?.nome || ''),
         atual: Boolean(v?.atual),
-        idFonteDados: v?.idFonteDados == null ? null : Number(v.idFonteDados),
         idParametros: v?.idParametros == null ? null : Number(v.idParametros),
       };
     });
@@ -6002,7 +5664,7 @@ export default async function v1Routes(server: FastifyInstance) {
         .catch(() => null);
       if (!obra) return fail(reply, 404, 'Obra não encontrada');
 
-      await ensurePlanilhaModeloFonteTables(prisma);
+      await ensurePlanilhaEstruturaUnicaTables(prisma);
 
       const obraStatus = obra.status ? String(obra.status) : null;
       const obraResumo = {
@@ -6023,9 +5685,8 @@ export default async function v1Routes(server: FastifyInstance) {
             v.numero_versao AS "numeroVersao",
             v.nome AS "nome",
             v.atual AS "atual",
-            v.id_fonte_dados AS "idFonteDados",
             v.id_parametros AS "idParametros"
-          FROM obras_planilhas_versoes v
+          FROM tab_planilhas v
           WHERE v.tenant_id = $1 AND v.id_obra = $2
           ORDER BY v.numero_versao DESC, v.id_planilha DESC
           `,
@@ -6042,9 +5703,7 @@ export default async function v1Routes(server: FastifyInstance) {
             numeroVersao: Number(r.numeroVersao),
             nome: String(r.nome || ''),
             atual: Boolean(r.atual),
-            idFonteDados: r.idFonteDados == null ? null : Number(r.idFonteDados),
             idParametros: r.idParametros == null ? null : Number(r.idParametros),
-            fonteNome: '',
             parametrosNome: '',
             valorTotal: 0,
             totalServicos: 0,
@@ -6060,14 +5719,10 @@ export default async function v1Routes(server: FastifyInstance) {
             v.numero_versao AS "numeroVersao",
             v.nome AS "nome",
             v.atual AS "atual",
-            v.id_fonte_dados AS "idFonteDados",
             v.id_parametros AS "idParametros",
-            COALESCE(f.descricao,'') AS "fonteNome",
             COALESCE(p.nome,'') AS "parametrosNome"
-          FROM obras_planilhas_versoes v
-          LEFT JOIN obras_fontes_dados f
-            ON f.tenant_id = v.tenant_id AND f.id_fonte_dados = v.id_fonte_dados
-          LEFT JOIN obras_planilhas_parametros p
+          FROM tab_planilhas v
+          LEFT JOIN tab_parametros p
             ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
           WHERE v.tenant_id = $1 AND v.id_obra = $2
           ORDER BY v.numero_versao DESC, v.id_planilha DESC
@@ -6085,9 +5740,7 @@ export default async function v1Routes(server: FastifyInstance) {
             numeroVersao: Number(r.numeroVersao),
             nome: String(r.nome || ''),
             atual: Boolean(r.atual),
-            idFonteDados: r.idFonteDados == null ? null : Number(r.idFonteDados),
             idParametros: r.idParametros == null ? null : Number(r.idParametros),
-            fonteNome: String(r.fonteNome || ''),
             parametrosNome: String(r.parametrosNome || ''),
             valorTotal: 0,
             totalServicos: 0,
@@ -6107,8 +5760,8 @@ export default async function v1Routes(server: FastifyInstance) {
             COALESCE(SUM(CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(i.valor_parcial, 0) ELSE 0 END), 0) AS "valorTotalDb",
             COALESCE(ROUND(SUM(CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(i.valor_parcial, 0) ELSE 0 END)::numeric, 2), 0) AS "valorTotalRound2",
             COALESCE(SUM(CASE WHEN i.tipo_linha = 'SERVICO' THEN ROUND(COALESCE(i.valor_parcial, 0)::numeric, 2) ELSE 0 END), 0) AS "valorTotalSomatorioLinhasRound2"
-          FROM obras_planilhas_versoes v
-          LEFT JOIN obras_planilha_itens i
+          FROM tab_planilhas v
+          LEFT JOIN tab_planilha_itens i
             ON i.tenant_id = v.tenant_id AND i.id_planilha = v.id_planilha
           WHERE v.tenant_id = $1 AND v.id_obra = $2
           GROUP BY v.id_planilha, v.numero_versao, v.nome, v.atual
@@ -6143,24 +5796,6 @@ export default async function v1Routes(server: FastifyInstance) {
       }
 
       if (view === 'versoes') {
-        const ids = (await prisma.$queryRawUnsafe(
-          `
-          SELECT id_planilha AS "idPlanilha"
-          FROM obras_planilhas_versoes
-          WHERE tenant_id = $1 AND id_obra = $2
-          ORDER BY numero_versao DESC, id_planilha DESC
-          `,
-          ctx.tenantId,
-          idObra
-        )) as any[];
-        for (const r of ids || []) {
-          const pid = r?.idPlanilha ? Number(r.idPlanilha) : 0;
-          if (!pid) continue;
-          try {
-            await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, pid);
-          } catch {}
-        }
-
         const rows = (await prisma.$queryRawUnsafe(
           `
           SELECT
@@ -6168,12 +5803,7 @@ export default async function v1Routes(server: FastifyInstance) {
             v.numero_versao AS "numeroVersao",
             v.nome AS "nome",
             v.atual AS "atual",
-            v.id_fonte_dados AS "idFonteDados",
             v.id_parametros AS "idParametros",
-            f.descricao AS "fonteDescricao",
-            f.tipo AS "fonteTipo",
-            f.uf AS "fonteUf",
-            f.data_base AS "fonteDataBase",
             p.uf_sinapi AS "pUfSinapi",
             p.data_base_sbc AS "pDataBaseSbc",
             p.data_base_sinapi AS "pDataBaseSinapi",
@@ -6181,33 +5811,20 @@ export default async function v1Routes(server: FastifyInstance) {
             p.bdi_servicos_sinapi AS "pBdiServicosSinapi",
             COALESCE(SUM(CASE WHEN l.tipo_linha = 'SERVICO' THEN COALESCE(l.valor_parcial, 0) ELSE 0 END), 0) AS "valorTotal",
             SUM(CASE WHEN l.tipo_linha = 'SERVICO' THEN 1 ELSE 0 END) AS "totalServicos"
-          FROM obras_planilhas_versoes v
-          LEFT JOIN obras_fontes_dados f
-            ON f.tenant_id = v.tenant_id AND f.id_fonte_dados = v.id_fonte_dados
-          LEFT JOIN obras_planilhas_parametros p
+          FROM tab_planilhas v
+          LEFT JOIN tab_parametros p
             ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
-          LEFT JOIN obras_planilha_itens l
+          LEFT JOIN tab_planilha_itens l
             ON l.tenant_id = v.tenant_id AND l.id_planilha = v.id_planilha
           WHERE v.tenant_id = $1 AND v.id_obra = $2
           GROUP BY
-            v.id_planilha, v.numero_versao, v.nome, v.atual, v.id_fonte_dados, v.id_parametros,
-            f.descricao, f.tipo, f.uf, f.data_base,
+            v.id_planilha, v.numero_versao, v.nome, v.atual, v.id_parametros,
             p.uf_sinapi, p.data_base_sbc, p.data_base_sinapi, p.bdi_servicos_sbc, p.bdi_servicos_sinapi
           ORDER BY v.numero_versao DESC, v.id_planilha DESC
           `,
           ctx.tenantId,
           idObra
         )) as any[];
-
-        function formatFonteNome(row: any) {
-          const descr = row?.fonteDescricao != null ? String(row.fonteDescricao || '').trim() : '';
-          if (descr) return descr;
-          const tipo = row?.fonteTipo != null ? String(row.fonteTipo || '').trim() : '';
-          const uf = row?.fonteUf != null ? String(row.fonteUf || '').trim() : '';
-          const db = row?.fonteDataBase != null ? String(row.fonteDataBase || '').trim() : '';
-          const parts = [tipo, uf, db].filter(Boolean);
-          return parts.length ? parts.join(' ') : 'A definir';
-        }
 
         function formatParametrosNome(row: any) {
           const uf = row?.pUfSinapi != null ? String(row.pUfSinapi || '').trim().toUpperCase() : '';
@@ -6232,9 +5849,7 @@ export default async function v1Routes(server: FastifyInstance) {
             numeroVersao: Number(r.numeroVersao),
             nome: String(r.nome || ''),
             atual: Boolean(r.atual),
-            idFonteDados: r.idFonteDados == null ? null : Number(r.idFonteDados),
             idParametros: r.idParametros == null ? null : Number(r.idParametros),
-            fonteNome: formatFonteNome(r),
             parametrosNome: formatParametrosNome(r),
             valorTotal: r.valorTotal == null ? 0 : Number(r.valorTotal),
             totalServicos: Number(r.totalServicos || 0),
@@ -6248,7 +5863,7 @@ export default async function v1Routes(server: FastifyInstance) {
         const rows = (await prisma.$queryRawUnsafe(
           `
           SELECT id_planilha AS "idPlanilha"
-          FROM obras_planilhas_versoes
+          FROM tab_planilhas
           WHERE tenant_id = $1 AND id_obra = $2 AND atual = TRUE
           ORDER BY numero_versao DESC, id_planilha DESC
           LIMIT 1
@@ -6269,10 +5884,9 @@ export default async function v1Routes(server: FastifyInstance) {
           nome,
           atual,
           origem,
-          id_fonte_dados AS "idFonteDados",
           id_parametros AS "idParametros",
           criado_em AS "criadoEm"
-        FROM obras_planilhas_versoes
+        FROM tab_planilhas
         WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
         LIMIT 1
         `,
@@ -6283,9 +5897,7 @@ export default async function v1Routes(server: FastifyInstance) {
       const v = versoes?.[0] || null;
       if (!v) return ok(reply, { idObra, obraStatus, obra: obraResumo, planilha: null });
 
-      const mig = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
-      const idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : (v.idFonteDados ? Number(v.idFonteDados) : 0);
-      const idParametros = mig?.idParametros ? Number(mig.idParametros) : (v.idParametros ? Number(v.idParametros) : 0);
+      const idParametros = v.idParametros ? Number(v.idParametros) : 0;
 
       const parametrosRows = idParametros
         ? ((await prisma.$queryRawUnsafe(
@@ -6302,7 +5914,7 @@ export default async function v1Routes(server: FastifyInstance) {
             enc_sociais_sem_des_sinapi AS "encSociaisSemDesSinapi",
             desconto_sbc AS "descontoSbc",
             desconto_sinapi AS "descontoSinapi"
-          FROM obras_planilhas_parametros
+          FROM tab_parametros
           WHERE tenant_id = $1 AND id_parametros = $2
           LIMIT 1
           `,
@@ -6318,18 +5930,18 @@ export default async function v1Routes(server: FastifyInstance) {
           i.id_planilha_item AS "idLinha",
           ordem,
           item,
-          COALESCE(sf.codigo,'') AS codigo,
-          COALESCE(sf.banco,'') AS fonte,
-          CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(sf.descricao,'') ELSE COALESCE(i.observacao,'') END AS servico,
-          COALESCE(sf.und,'') AS und,
+          COALESCE(s.codigo,'') AS codigo,
+          COALESCE(s.fonte,'') AS fonte,
+          CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(s.servico,'') ELSE COALESCE(i.observacao,'') END AS servico,
+          COALESCE(s.und,'') AS und,
           quantidade,
           i.valor_unitario AS "valorUnitario",
           i.valor_parcial AS "valorParcial",
           nivel,
           i.tipo_linha AS "tipoLinha"
-        FROM obras_planilha_itens i
-        LEFT JOIN obras_servicos_fonte sf
-          ON sf.tenant_id = i.tenant_id AND sf.id_servico = i.id_servico
+        FROM tab_planilha_itens i
+        LEFT JOIN tab_servicos s
+          ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
         WHERE i.tenant_id = $1 AND i.id_planilha = $2
         ORDER BY
           CASE
@@ -6350,7 +5962,7 @@ export default async function v1Routes(server: FastifyInstance) {
         SELECT
           COALESCE(SUM(CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(i.valor_parcial, 0) ELSE 0 END), 0) AS "valorTotal",
           SUM(CASE WHEN i.tipo_linha = 'SERVICO' THEN 1 ELSE 0 END)::int AS "totalServicos"
-        FROM obras_planilha_itens i
+        FROM tab_planilha_itens i
         WHERE i.tenant_id = $1 AND i.id_planilha = $2
         `,
         ctx.tenantId,
@@ -6360,20 +5972,21 @@ export default async function v1Routes(server: FastifyInstance) {
       const valorTotal = totals?.valorTotal == null ? 0 : Number(totals.valorTotal);
       const totalServicos = totals?.totalServicos == null ? 0 : Number(totals.totalServicos);
 
-      const servicosPlanilha = includeCatalog && idFonteDados
+      const servicosPlanilha = includeCatalog
         ? ((await prisma.$queryRawUnsafe(
         `
         SELECT
           UPPER(COALESCE(codigo,'')) AS codigo,
-          COALESCE(banco,'') AS fonte,
-          COALESCE(descricao,'') AS servico,
+          COALESCE(fonte,'') AS fonte,
+          COALESCE(servico,'') AS servico,
           COALESCE(und,'') AS und
-        FROM obras_servicos_fonte
-        WHERE tenant_id = $1 AND id_fonte_dados = $2
+        FROM tab_servicos
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
         ORDER BY UPPER(COALESCE(codigo,''))
         `,
         ctx.tenantId,
-        idFonteDados
+        idObra,
+        idPlanilha
       )) as any[])
         : [];
 
@@ -6387,6 +6000,7 @@ export default async function v1Routes(server: FastifyInstance) {
           nome: String(v.nome || ''),
           atual: Boolean(v.atual),
           origem: String(v.origem || 'MANUAL'),
+          idParametros: idParametros || null,
           criadoEm: v.criadoEm ? new Date(v.criadoEm).toISOString() : '',
           valorTotal,
           totalServicos,
@@ -6453,7 +6067,7 @@ export default async function v1Routes(server: FastifyInstance) {
         .catch(() => null);
       if (!obra) return fail(reply, 404, 'Obra não encontrada');
 
-      await ensurePlanilhaModeloFonteTables(prisma);
+      await ensurePlanilhaEstruturaUnicaTables(prisma);
 
       const obraStatus = obra.status ? String(obra.status) : null;
       const obraResumo = {
@@ -6472,6 +6086,8 @@ export default async function v1Routes(server: FastifyInstance) {
         const parts = (request as any).parts();
         let action = '';
         let idPlanilhaRaw = '';
+        let nomeRaw = '';
+        let idParametrosRaw = '';
         let modoImportacaoRaw = '';
         let selectedRowIndexesRaw = '';
         let catalogDupPolicyRaw = '';
@@ -6485,6 +6101,8 @@ export default async function v1Routes(server: FastifyInstance) {
           const field = String(part.fieldname || '');
           if (field === 'action') action = String(part.value || '').trim().toUpperCase();
           if (field === 'idPlanilha') idPlanilhaRaw = String(part.value || '').trim();
+          if (field === 'nome') nomeRaw = String(part.value || '').trim();
+          if (field === 'idParametros') idParametrosRaw = String(part.value || '').trim();
           if (field === 'modoImportacao') modoImportacaoRaw = String(part.value || '').trim().toUpperCase();
           if (field === 'selectedRowIndexes') selectedRowIndexesRaw = String(part.value || '').trim();
           if (field === 'catalogDupPolicy') catalogDupPolicyRaw = String(part.value || '').trim().toUpperCase();
@@ -6493,8 +6111,12 @@ export default async function v1Routes(server: FastifyInstance) {
 
         if (action !== 'IMPORTAR_CSV') return fail(reply, 422, 'Ação inválida');
         if (!fileBuffer) return fail(reply, 422, 'Arquivo CSV é obrigatório (campo "file")');
-        const idPlanilhaTarget = Number(idPlanilhaRaw || NaN);
-        if (!Number.isFinite(idPlanilhaTarget) || idPlanilhaTarget <= 0) return fail(reply, 422, 'Selecione uma planilha destino válida para importar o CSV');
+        const idPlanilhaTarget = idPlanilhaRaw ? Number(idPlanilhaRaw || NaN) : 0;
+        if (idPlanilhaTarget && (!Number.isFinite(idPlanilhaTarget) || idPlanilhaTarget <= 0)) return fail(reply, 422, 'idPlanilha inválido');
+        const idParametros = idParametrosRaw ? Number(idParametrosRaw || NaN) : 0;
+        if (!idPlanilhaTarget) {
+          if (!Number.isFinite(idParametros) || idParametros <= 0) return fail(reply, 422, 'Selecione o Parâmetro (idParametros) para importar CSV em uma nova versão');
+        }
         const modoImportacao = modoImportacaoRaw === 'REPLACE' ? 'REPLACE' : 'APPEND';
         const catalogDupPolicy = catalogDupPolicyRaw === 'KEEP' || catalogDupPolicyRaw === 'OVERWRITE' ? (catalogDupPolicyRaw as any) : ('FILL' as const);
         const skipExistingLinesParsed =
@@ -6627,31 +6249,64 @@ export default async function v1Routes(server: FastifyInstance) {
         const preparedOkBase = prepared.filter((p): p is Extract<(typeof prepared)[number], { ok: true }> => p.ok);
 
         const created = await prismaTx(async (tx: any) => {
-          await ensurePlanilhaModeloFonteTables(tx);
-          const versaoRows = (await tx.$queryRawUnsafe(
-            `
-            SELECT id_planilha AS "idPlanilha", id_fonte_dados AS "idFonteDados", id_parametros AS "idParametros"
-            FROM obras_planilhas_versoes
-            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
-            LIMIT 1
-            `,
-            ctx.tenantId,
-            idObra,
-            idPlanilhaTarget
-          )) as any[];
-          const v = versaoRows?.[0] || null;
-          if (!v) throw new Error('Planilha destino não encontrada');
-          const idPlanilha = Number(v.idPlanilha || 0);
-          const idFonteDados = v.idFonteDados != null ? Number(v.idFonteDados) : 0;
-          const idParametros = v.idParametros != null ? Number(v.idParametros) : 0;
-          if (!idFonteDados) throw new Error('Fonte de dados da planilha destino não definida');
-          if (!idParametros) throw new Error('Parâmetros da planilha destino não definidos');
+          await ensurePlanilhaEstruturaUnicaTables(tx);
+
+          let idPlanilha = idPlanilhaTarget;
+          const nomeVersao = nomeRaw ? String(nomeRaw || '').trim().slice(0, 120) : '';
+
+          if (!idPlanilha) {
+            if (!idParametros) throw new Error('Selecione o Parâmetro');
+            const paramOk = (await tx.$queryRawUnsafe(
+              `SELECT 1 AS ok FROM tab_parametros WHERE tenant_id = $1 AND id_parametros = $2 LIMIT 1`,
+              ctx.tenantId,
+              idParametros
+            )) as any[];
+            if (!paramOk?.[0]?.ok) throw new Error('Parâmetro não encontrado');
+
+            const maxRows = (await tx.$queryRawUnsafe(
+              `SELECT COALESCE(MAX(numero_versao),0) AS "maxVersao" FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2`,
+              ctx.tenantId,
+              idObra
+            )) as any[];
+            const nextVersao = Number(maxRows?.[0]?.maxVersao || 0) + 1;
+            const nome = nomeVersao || `Versão ${nextVersao} (CSV)`;
+
+            const ins = (await tx.$queryRawUnsafe(
+              `
+              INSERT INTO tab_planilhas
+                (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador, id_parametros)
+              VALUES
+                ($1,$2,$3,$4,TRUE,'CSV',$5,$6)
+              RETURNING id_planilha AS "idPlanilha"
+              `,
+              ctx.tenantId,
+              idObra,
+              nextVersao,
+              nome,
+              ctx.userId,
+              idParametros
+            )) as any[];
+            idPlanilha = Number(ins?.[0]?.idPlanilha || 0);
+            if (!idPlanilha) throw new Error('Falha ao criar a versão (CSV)');
+            await tx.$executeRawUnsafe(`UPDATE tab_planilhas SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha <> $3`, ctx.tenantId, idObra, idPlanilha);
+
+            await tx.$executeRawUnsafe(`DELETE FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, idPlanilha);
+            await tx.$executeRawUnsafe(`DELETE FROM tab_servicos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`, ctx.tenantId, idObra, idPlanilha);
+          } else {
+            const exists = (await tx.$queryRawUnsafe(
+              `SELECT 1 AS ok FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+              ctx.tenantId,
+              idObra,
+              idPlanilha
+            )) as any[];
+            if (!exists?.[0]?.ok) throw new Error('Planilha destino não encontrada');
+          }
 
           if (modoImportacao === 'REPLACE') {
-            await tx.$executeRawUnsafe(`DELETE FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, idPlanilha);
+            await tx.$executeRawUnsafe(`DELETE FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, idPlanilha);
           }
           const maxOrdRows = (await tx.$queryRawUnsafe(
-            `SELECT COALESCE(MAX(ordem),0) AS "maxOrd" FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`,
+            `SELECT COALESCE(MAX(ordem),0) AS "maxOrd" FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`,
             ctx.tenantId,
             idPlanilha
           )) as any[];
@@ -6664,14 +6319,14 @@ export default async function v1Routes(server: FastifyInstance) {
               `
               SELECT
                 COALESCE(i.item,'') AS item,
-                COALESCE(sf.codigo,'') AS codigo,
+                COALESCE(s.codigo,'') AS codigo,
                 COALESCE(i.quantidade,0) AS quantidade,
                 COALESCE(i.valor_unitario,0) AS "valorUnitario",
                 COALESCE(i.observacao,'') AS observacao,
                 i.tipo_linha AS "tipoLinha"
-              FROM obras_planilha_itens i
-              LEFT JOIN obras_servicos_fonte sf
-                ON sf.tenant_id = i.tenant_id AND sf.id_servico = i.id_servico
+              FROM tab_planilha_itens i
+              LEFT JOIN tab_servicos s
+                ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
               WHERE i.tenant_id = $1 AND i.id_planilha = $2
               `,
               ctx.tenantId,
@@ -6711,138 +6366,47 @@ export default async function v1Routes(server: FastifyInstance) {
             if (!preparedOk.length) throw new Error('Nenhuma linha nova para importar (todas eram repetidas na planilha)');
           }
 
-          const svcMap = new Map<string, { codigo: string; banco: string; descricao: string; und: string; valorUnitario: number | null }>();
+          const svcMap = new Map<string, { codigo: string; fonte: string; servico: string; und: string }>();
           for (const r of preparedOk) {
             if (r.tipoLinha !== 'SERVICO') continue;
             const codigo = String(r.codigo || '').trim().toUpperCase();
             if (!codigo) continue;
             const prev = svcMap.get(codigo);
-            const banco = String(r.fonte || '').trim();
-            const descricao = String(r.servico || '').trim();
+            const fonte = String(r.fonte || '').trim();
+            const servico = String(r.servico || '').trim();
             const und = String(r.und || '').trim();
-            const valorUnitario = r.valorUnitario == null ? null : Number(r.valorUnitario);
-            if (!prev) {
-              svcMap.set(codigo, { codigo, banco, descricao, und, valorUnitario });
-              continue;
-            }
-            svcMap.set(codigo, {
-              codigo,
-              banco: prev.banco || banco,
-              descricao: prev.descricao || descricao,
-              und: prev.und || und,
-              valorUnitario: prev.valorUnitario ?? valorUnitario,
-            });
+            if (!prev) svcMap.set(codigo, { codigo, fonte, servico, und });
+            else
+              svcMap.set(codigo, {
+                codigo,
+                fonte: prev.fonte || fonte,
+                servico: prev.servico || servico,
+                und: prev.und || und,
+              });
           }
 
           const svcRows = Array.from(svcMap.values());
           if (cadastrarServicosFaltantes && svcRows.length) {
-            const svcChunk = 450;
-            for (let start = 0; start < svcRows.length; start += svcChunk) {
-              const chunk = svcRows.slice(start, start + svcChunk);
-              const params: any[] = [];
-              let p = 1;
-              const values = chunk
-                .map((s) => {
-                  const base = [
-                    ctx.tenantId,
-                    idFonteDados,
-                    'SERVICO',
-                    s.codigo,
-                    s.banco || null,
-                    s.descricao || null,
-                    s.und || null,
-                    s.valorUnitario,
-                  ];
-                  for (const v of base) params.push(v);
-                  const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
-                  return `(${placeholders})`;
-                })
-                .join(',');
-              if (catalogDupPolicy === 'KEEP') {
-                await tx.$executeRawUnsafe(
-                  `
-                  INSERT INTO obras_servicos_fonte
-                    (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-                  VALUES
-                    ${values}
-                  ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-                  DO NOTHING
-                  `,
-                  ...params
-                );
-              } else if (catalogDupPolicy === 'OVERWRITE') {
-                await tx.$executeRawUnsafe(
-                  `
-                  INSERT INTO obras_servicos_fonte
-                    (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-                  VALUES
-                    ${values}
-                  ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-                  DO UPDATE SET
-                    banco = CASE WHEN EXCLUDED.banco IS NOT NULL AND EXCLUDED.banco <> '' THEN EXCLUDED.banco ELSE obras_servicos_fonte.banco END,
-                    descricao = CASE WHEN EXCLUDED.descricao IS NOT NULL AND EXCLUDED.descricao <> '' THEN EXCLUDED.descricao ELSE obras_servicos_fonte.descricao END,
-                    und = CASE WHEN EXCLUDED.und IS NOT NULL AND EXCLUDED.und <> '' THEN EXCLUDED.und ELSE obras_servicos_fonte.und END,
-                    valor_unitario = CASE WHEN EXCLUDED.valor_unitario IS NOT NULL THEN EXCLUDED.valor_unitario ELSE obras_servicos_fonte.valor_unitario END,
-                    atualizado_em = NOW()
-                  `,
-                  ...params
-                );
-              } else {
-                await tx.$executeRawUnsafe(
-                  `
-                  INSERT INTO obras_servicos_fonte
-                    (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-                  VALUES
-                    ${values}
-                  ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-                  DO UPDATE SET
-                    banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-                    descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-                    und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
-                    valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
-                    atualizado_em = NOW()
-                  `,
-                  ...params
-                );
-              }
-            }
-          }
-
-          if (!cadastrarServicosFaltantes) {
-            const codes = svcRows.map((s) => s.codigo).filter(Boolean);
-            if (codes.length) {
-              const missingCodes: string[] = [];
-              const chunkSize = 600;
-              for (let start = 0; start < codes.length; start += chunkSize) {
-                const chunk = codes.slice(start, start + chunkSize);
-                const params: any[] = [];
-                let p = 3;
-                const values = chunk
-                  .map((c) => {
-                    params.push(String(c || '').trim().toUpperCase());
-                    return `($${p++})`;
-                  })
-                  .join(',');
-                const rows = (await tx.$queryRawUnsafe(
-                  `
-                  WITH v(codigo) AS (VALUES ${values})
-                  SELECT v.codigo AS codigo
-                  FROM v
-                  WHERE NOT EXISTS (
-                    SELECT 1 FROM obras_servicos_fonte sf
-                    WHERE sf.tenant_id = $1 AND sf.id_fonte_dados = $2 AND sf.codigo = v.codigo
-                  )
-                  `,
-                  ctx.tenantId,
-                  idFonteDados,
-                  ...params
-                )) as any[];
-                for (const r of rows || []) {
-                  const c = String(r?.codigo || '').trim().toUpperCase();
-                  if (c) missingCodes.push(c);
-                }
-              }
-              if (missingCodes.length) throw new Error(`Serviços não encontrados na Fonte de dados (#${idFonteDados}): ${missingCodes.slice(0, 30).join(', ')}${missingCodes.length > 30 ? '…' : ''}`);
+            for (const s of svcRows) {
+              await tx.$executeRawUnsafe(
+                `
+                INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
+                VALUES ($1,$2,$3,$4,$5,$6,$7)
+                ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+                DO UPDATE SET
+                  fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
+                  servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
+                  und = COALESCE(NULLIF(EXCLUDED.und,''), tab_servicos.und),
+                  atualizado_em = NOW()
+                `,
+                ctx.tenantId,
+                idObra,
+                idPlanilha,
+                s.codigo,
+                s.fonte || null,
+                s.servico || null,
+                s.und || null
+              );
             }
           }
 
@@ -6850,10 +6414,11 @@ export default async function v1Routes(server: FastifyInstance) {
           for (let start = 0; start < preparedOk.length; start += chunkSize) {
             const chunk = preparedOk.slice(start, start + chunkSize);
             const params: any[] = [];
-            let p = 5;
+            let p = 4;
             const values = chunk
-              .map((r) => {
-                const base = [r.ordem, r.item, r.codigo, r.quantidade, r.valorUnitario, r.valorParcial, r.nivel, r.tipoLinha, r.servico];
+              .map((r: any, idx: number) => {
+                const ordem = baseOrd + start + idx + 1;
+                const base = [ordem, r.item, r.codigo, r.quantidade, r.valorUnitario, r.valorParcial, r.nivel, r.tipoLinha, r.servico];
                 for (const v of base) params.push(v);
                 const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
                 return `(${placeholders})`;
@@ -6865,15 +6430,15 @@ export default async function v1Routes(server: FastifyInstance) {
               WITH v(ordem, item, codigo, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao) AS (
                 VALUES ${values}
               )
-              INSERT INTO obras_planilha_itens
+              INSERT INTO tab_planilha_itens
                 (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
               SELECT
                 $1 AS tenant_id,
                 $2 AS id_planilha,
-                v.ordem + $4 AS ordem,
+                v.ordem,
                 v.item,
                 CASE
-                  WHEN v.tipo_linha = 'SERVICO' AND COALESCE(v.codigo,'') <> '' THEN sf.id_servico
+                  WHEN v.tipo_linha = 'SERVICO' AND COALESCE(v.codigo,'') <> '' THEN s.id_servico
                   ELSE NULL
                 END AS id_servico,
                 CASE WHEN v.tipo_linha = 'SERVICO' THEN v.quantidade ELSE NULL END AS quantidade,
@@ -6883,13 +6448,12 @@ export default async function v1Routes(server: FastifyInstance) {
                 v.tipo_linha,
                 NULLIF(v.observacao,'') AS observacao
               FROM v
-              LEFT JOIN obras_servicos_fonte sf
-                ON sf.tenant_id = $1 AND sf.id_fonte_dados = $3 AND sf.codigo = UPPER(COALESCE(v.codigo,''))
+              LEFT JOIN tab_servicos s
+                ON s.tenant_id = $1 AND s.id_obra = $3 AND s.id_planilha = $2 AND UPPER(COALESCE(s.codigo,'')) = UPPER(COALESCE(v.codigo,''))
               `,
               ctx.tenantId,
               idPlanilha,
-              idFonteDados,
-              baseOrd,
+              idObra,
               ...params
             );
           }
@@ -6934,12 +6498,12 @@ export default async function v1Routes(server: FastifyInstance) {
         const cadastrarServicosFaltantes = true;
 
         const created = await prismaTx(async (tx: any) => {
-          await ensurePlanilhaModeloFonteTables(tx);
+          await ensurePlanilhaEstruturaUnicaTables(tx);
 
           const targetRows = (await tx.$queryRawUnsafe(
             `
-            SELECT id_planilha AS "idPlanilha", id_fonte_dados AS "idFonteDados", id_parametros AS "idParametros"
-            FROM obras_planilhas_versoes
+            SELECT id_planilha AS "idPlanilha"
+            FROM tab_planilhas
             WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
             LIMIT 1
             `,
@@ -6949,13 +6513,11 @@ export default async function v1Routes(server: FastifyInstance) {
           )) as any[];
           const target = targetRows?.[0] || null;
           if (!target) throw new Error('Planilha destino não encontrada');
-          const idFonteDados = target.idFonteDados != null ? Number(target.idFonteDados) : 0;
-          if (!idFonteDados) throw new Error('Fonte de dados da planilha destino não definida');
 
           const sourceOk = (await tx.$queryRawUnsafe(
             `
-            SELECT id_obra AS "idObra", id_fonte_dados AS "idFonteDados"
-            FROM obras_planilhas_versoes
+            SELECT id_obra AS "idObra"
+            FROM tab_planilhas
             WHERE tenant_id = $1 AND id_planilha = $2
             LIMIT 1
             `,
@@ -6967,14 +6529,25 @@ export default async function v1Routes(server: FastifyInstance) {
           const idObraSource = Number(src?.idObra || 0);
           if (!idObraSource) throw new Error('Planilha origem inválida');
           if (!canAccessObraId(idObraSource, scope)) throw new Error('Sem acesso à obra da planilha origem');
-          const idFonteDadosSource = src.idFonteDados != null ? Number(src.idFonteDados) : 0;
-          const effectiveCatalogDupPolicy = catalogDupPolicy;
 
           if (modoImportacao === 'REPLACE') {
-            await tx.$executeRawUnsafe(`DELETE FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, Number(payload.idPlanilhaTarget));
+            await tx.$executeRawUnsafe(`DELETE FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, Number(payload.idPlanilhaTarget));
+            await tx.$executeRawUnsafe(
+              `DELETE FROM tab_servicos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+              ctx.tenantId,
+              idObra,
+              Number(payload.idPlanilhaTarget)
+            );
+            await tx.$executeRawUnsafe(
+              `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+              ctx.tenantId,
+              idObra,
+              Number(payload.idPlanilhaTarget)
+            );
+            await tx.$executeRawUnsafe(`DELETE FROM tab_insumos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`, ctx.tenantId, idObra, Number(payload.idPlanilhaTarget));
           }
           const maxOrdRows = (await tx.$queryRawUnsafe(
-            `SELECT COALESCE(MAX(ordem),0) AS "maxOrd" FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`,
+            `SELECT COALESCE(MAX(ordem),0) AS "maxOrd" FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`,
             ctx.tenantId,
             Number(payload.idPlanilhaTarget)
           )) as any[];
@@ -7054,14 +6627,14 @@ export default async function v1Routes(server: FastifyInstance) {
               `
               SELECT
                 COALESCE(i.item,'') AS item,
-                COALESCE(sf.codigo,'') AS codigo,
+                COALESCE(s.codigo,'') AS codigo,
                 COALESCE(i.quantidade,0) AS quantidade,
                 COALESCE(i.valor_unitario,0) AS "valorUnitario",
                 COALESCE(i.observacao,'') AS observacao,
                 i.tipo_linha AS "tipoLinha"
-              FROM obras_planilha_itens i
-              LEFT JOIN obras_servicos_fonte sf
-                ON sf.tenant_id = i.tenant_id AND sf.id_servico = i.id_servico
+              FROM tab_planilha_itens i
+              LEFT JOIN tab_servicos s
+                ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
               WHERE i.tenant_id = $1 AND i.id_planilha = $2
               `,
               ctx.tenantId,
@@ -7101,482 +6674,27 @@ export default async function v1Routes(server: FastifyInstance) {
 
           const svcRows = Array.from(svcMap.values());
           if (cadastrarServicosFaltantes && svcRows.length) {
-            const svcChunk = 450;
-            for (let start = 0; start < svcRows.length; start += svcChunk) {
-              const chunk = svcRows.slice(start, start + svcChunk);
-              const params: any[] = [];
-              let p = 1;
-              const values = chunk
-                .map((s) => {
-                  const base = [
-                    ctx.tenantId,
-                    idFonteDados,
-                    'SERVICO',
-                    s.codigo,
-                    s.banco || null,
-                    s.descricao || null,
-                    s.und || null,
-                    s.valorUnitario,
-                  ];
-                  for (const v of base) params.push(v);
-                  const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
-                  return `(${placeholders})`;
-                })
-                .join(',');
-              if (effectiveCatalogDupPolicy === 'KEEP') {
-                await tx.$executeRawUnsafe(
-                  `
-                  INSERT INTO obras_servicos_fonte
-                    (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-                  VALUES
-                    ${values}
-                  ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-                  DO NOTHING
-                  `,
-                  ...params
-                );
-              } else if (effectiveCatalogDupPolicy === 'OVERWRITE') {
-                await tx.$executeRawUnsafe(
-                  `
-                  INSERT INTO obras_servicos_fonte
-                    (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-                  VALUES
-                    ${values}
-                  ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-                  DO UPDATE SET
-                    banco = CASE WHEN EXCLUDED.banco IS NOT NULL AND EXCLUDED.banco <> '' THEN EXCLUDED.banco ELSE obras_servicos_fonte.banco END,
-                    descricao = CASE WHEN EXCLUDED.descricao IS NOT NULL AND EXCLUDED.descricao <> '' THEN EXCLUDED.descricao ELSE obras_servicos_fonte.descricao END,
-                    und = CASE WHEN EXCLUDED.und IS NOT NULL AND EXCLUDED.und <> '' THEN EXCLUDED.und ELSE obras_servicos_fonte.und END,
-                    valor_unitario = CASE WHEN EXCLUDED.valor_unitario IS NOT NULL THEN EXCLUDED.valor_unitario ELSE obras_servicos_fonte.valor_unitario END,
-                    atualizado_em = NOW()
-                  `,
-                  ...params
-                );
-              } else {
-                await tx.$executeRawUnsafe(
-                  `
-                  INSERT INTO obras_servicos_fonte
-                    (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-                  VALUES
-                    ${values}
-                  ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-                  DO UPDATE SET
-                    banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-                    descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-                    und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
-                    valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
-                    atualizado_em = NOW()
-                  `,
-                  ...params
-                );
-              }
-            }
-          } else {
-            const codes = svcRows.map((s) => s.codigo).filter(Boolean);
-            if (codes.length) {
-              const missingCodes: string[] = [];
-              const chunkSize = 600;
-              for (let start = 0; start < codes.length; start += chunkSize) {
-                const chunk = codes.slice(start, start + chunkSize);
-                const params: any[] = [];
-                let p = 3;
-                const values = chunk
-                  .map((c) => {
-                    params.push(String(c || '').trim().toUpperCase());
-                    return `($${p++})`;
-                  })
-                  .join(',');
-                const rows = (await tx.$queryRawUnsafe(
-                  `
-                  WITH v(codigo) AS (VALUES ${values})
-                  SELECT v.codigo AS codigo
-                  FROM v
-                  WHERE NOT EXISTS (
-                    SELECT 1 FROM obras_servicos_fonte sf
-                    WHERE sf.tenant_id = $1 AND sf.id_fonte_dados = $2 AND sf.codigo = v.codigo
-                  )
-                  `,
-                  ctx.tenantId,
-                  idFonteDados,
-                  ...params
-                )) as any[];
-                for (const r of rows || []) {
-                  const c = String(r?.codigo || '').trim().toUpperCase();
-                  if (c) missingCodes.push(c);
-                }
-              }
-              if (missingCodes.length) throw new Error(`Serviços não encontrados na Fonte de dados (#${idFonteDados}): ${missingCodes.slice(0, 30).join(', ')}${missingCodes.length > 30 ? '…' : ''}`);
-            }
-          }
-
-          if (idFonteDadosSource && idFonteDadosSource !== idFonteDados && svcRows.length) {
-            const visited = new Set<string>();
-            const queue: string[] = svcRows.map((s) => String(s.codigo || '').trim().toUpperCase()).filter(Boolean);
-            const affectedServicoIds: number[] = [];
-
-            while (queue.length) {
-              const currentCode = String(queue.shift() || '').trim().toUpperCase();
-              if (!currentCode || visited.has(currentCode)) continue;
-              visited.add(currentCode);
-
-              const srcSvcRows = (await tx.$queryRawUnsafe(
-                `
-                SELECT
-                  id_servico AS "idServico",
-                  COALESCE(banco,'') AS banco,
-                  COALESCE(descricao,'') AS descricao,
-                  COALESCE(und,'') AS und,
-                  valor_unitario AS "valorUnitario"
-                FROM obras_servicos_fonte
-                WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
-                LIMIT 1
-                `,
-                ctx.tenantId,
-                idFonteDadosSource,
-                currentCode
-              )) as any[];
-              const srcSvc = srcSvcRows?.[0] || null;
-              const idServicoPaiSrc = srcSvc?.idServico ? Number(srcSvc.idServico) : 0;
-              if (!idServicoPaiSrc) continue;
-
-              const dstSvcRows = (await tx.$queryRawUnsafe(
-                `
-                INSERT INTO obras_servicos_fonte
-                  (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-                VALUES
-                  ($1,$2,'SERVICO',$3,$4,$5,$6,$7)
-                ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-                DO UPDATE SET
-                  banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-                  descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-                  und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
-                  valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
-                  atualizado_em = NOW()
-                RETURNING id_servico AS "idServico"
-                `,
-                ctx.tenantId,
-                idFonteDados,
-                currentCode,
-                String(srcSvc?.banco || '') || null,
-                String(srcSvc?.descricao || '') || null,
-                String(srcSvc?.und || '') || null,
-                srcSvc?.valorUnitario == null ? null : Number(srcSvc.valorUnitario)
-              )) as any[];
-              const idServicoPaiDst = dstSvcRows?.[0]?.idServico ? Number(dstSvcRows[0].idServico) : 0;
-              if (!idServicoPaiDst) continue;
-
-              const srcHas = (await tx.$queryRawUnsafe(
-                `
-                SELECT 1 AS ok
-                FROM obras_composicoes_itens_fonte
-                WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3
-                LIMIT 1
-                `,
-                ctx.tenantId,
-                idFonteDadosSource,
-                idServicoPaiSrc
-              )) as any[];
-              const srcHasComp = Boolean(srcHas?.[0]?.ok);
-              if (!srcHasComp) continue;
-
-              const dstHas = (await tx.$queryRawUnsafe(
-                `
-                SELECT 1 AS ok
-                FROM obras_composicoes_itens_fonte
-                WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3
-                LIMIT 1
-                `,
-                ctx.tenantId,
-                idFonteDados,
-                idServicoPaiDst
-              )) as any[];
-              const dstAlreadyHas = Boolean(dstHas?.[0]?.ok);
-
-              const items = (await tx.$queryRawUnsafe(
-                `
-                SELECT
-                  id_composicao_item AS "idComposicaoItem",
-                  COALESCE(tipo_item,'') AS "tipoItem",
-                  id_item AS "idItem",
-                  quantidade AS "quantidade",
-                  COALESCE(unidade,'') AS "unidade",
-                  ordem AS "ordem"
-                FROM obras_composicoes_itens_fonte
-                WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3
-                ORDER BY ordem ASC, id_composicao_item ASC
-                `,
-                ctx.tenantId,
-                idFonteDadosSource,
-                idServicoPaiSrc
-              )) as any[];
-
-              for (const it of items || []) {
-                const tipoItem = String(it?.tipoItem || '').trim().toUpperCase();
-                const idItemSrc = it?.idItem ? Number(it.idItem) : 0;
-                if (!idItemSrc) continue;
-                if (tipoItem === 'COMPOSICAO' || tipoItem === 'COMPOSICAO_AUXILIAR') {
-                  const childRows = (await tx.$queryRawUnsafe(
-                    `
-                    SELECT
-                      COALESCE(codigo,'') AS codigo,
-                      COALESCE(banco,'') AS banco,
-                      COALESCE(descricao,'') AS descricao,
-                      COALESCE(und,'') AS und,
-                      valor_unitario AS "valorUnitario"
-                    FROM obras_servicos_fonte
-                    WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico = $3
-                    LIMIT 1
-                    `,
-                    ctx.tenantId,
-                    idFonteDadosSource,
-                    idItemSrc
-                  )) as any[];
-                  const child = childRows?.[0] || null;
-                  const childCode = String(child?.codigo || '').trim().toUpperCase();
-                  if (childCode) queue.push(childCode);
-                  if (!childCode) continue;
-                  await tx.$queryRawUnsafe(
-                    `
-                    INSERT INTO obras_servicos_fonte
-                      (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-                    VALUES
-                      ($1,$2,NULL,$3,$4,$5,$6,$7)
-                    ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-                    DO UPDATE SET
-                      banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-                      descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-                      und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
-                      valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
-                      atualizado_em = NOW()
-                    `,
-                    ctx.tenantId,
-                    idFonteDados,
-                    childCode,
-                    String(child?.banco || '') || null,
-                    String(child?.descricao || '') || null,
-                    String(child?.und || '') || null,
-                    child?.valorUnitario == null ? null : Number(child.valorUnitario)
-                  );
-                } else {
-                  const insRows = (await tx.$queryRawUnsafe(
-                    `
-                    SELECT
-                      COALESCE(tipo,'') AS tipo,
-                      COALESCE(codigo,'') AS codigo,
-                      COALESCE(banco,'') AS banco,
-                      COALESCE(descricao,'') AS descricao,
-                      COALESCE(und,'') AS und,
-                      valor_unitario AS "valorUnitario"
-                    FROM obras_insumos_fonte
-                    WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_insumo = $3
-                    LIMIT 1
-                    `,
-                    ctx.tenantId,
-                    idFonteDadosSource,
-                    idItemSrc
-                  )) as any[];
-                  const ins = insRows?.[0] || null;
-                  const insCode = String(ins?.codigo || '').trim().toUpperCase();
-                  if (!insCode) continue;
-                  await tx.$queryRawUnsafe(
-                    `
-                    INSERT INTO obras_insumos_fonte
-                      (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-                    VALUES
-                      ($1,$2,$3,$4,$5,$6,$7,$8)
-                    ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-                    DO UPDATE SET
-                      tipo = COALESCE(NULLIF(EXCLUDED.tipo,''), obras_insumos_fonte.tipo),
-                      banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_insumos_fonte.banco),
-                      descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_insumos_fonte.descricao),
-                      und = COALESCE(NULLIF(EXCLUDED.und,''), obras_insumos_fonte.und),
-                      valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_insumos_fonte.valor_unitario),
-                      atualizado_em = NOW()
-                    `,
-                    ctx.tenantId,
-                    idFonteDados,
-                    String(ins?.tipo || '') || null,
-                    insCode,
-                    String(ins?.banco || '') || null,
-                    String(ins?.descricao || '') || null,
-                    String(ins?.und || '') || null,
-                    ins?.valorUnitario == null ? null : Number(ins.valorUnitario)
-                  );
-                }
-              }
-
-              if (!dstAlreadyHas) {
-                await tx.$executeRawUnsafe(
-                  `DELETE FROM obras_composicoes_itens_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3`,
-                  ctx.tenantId,
-                  idFonteDados,
-                  idServicoPaiDst
-                );
-                for (const it of items || []) {
-                  const tipoItem = String(it?.tipoItem || '').trim().toUpperCase();
-                  const idItemSrc = it?.idItem ? Number(it.idItem) : 0;
-                  if (!idItemSrc) continue;
-                  let idItemDst = 0;
-                  if (tipoItem === 'COMPOSICAO' || tipoItem === 'COMPOSICAO_AUXILIAR') {
-                    const childRows = (await tx.$queryRawUnsafe(
-                      `
-                      SELECT COALESCE(codigo,'') AS codigo
-                      FROM obras_servicos_fonte
-                      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico = $3
-                      LIMIT 1
-                      `,
-                      ctx.tenantId,
-                      idFonteDadosSource,
-                      idItemSrc
-                    )) as any[];
-                    const childCode = String(childRows?.[0]?.codigo || '').trim().toUpperCase();
-                    if (!childCode) continue;
-                    const idRows = (await tx.$queryRawUnsafe(
-                      `
-                      SELECT id_servico AS "id"
-                      FROM obras_servicos_fonte
-                      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
-                      LIMIT 1
-                      `,
-                      ctx.tenantId,
-                      idFonteDados,
-                      childCode
-                    )) as any[];
-                    idItemDst = idRows?.[0]?.id ? Number(idRows[0].id) : 0;
-                  } else {
-                    const insRows = (await tx.$queryRawUnsafe(
-                      `
-                      SELECT COALESCE(codigo,'') AS codigo
-                      FROM obras_insumos_fonte
-                      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_insumo = $3
-                      LIMIT 1
-                      `,
-                      ctx.tenantId,
-                      idFonteDadosSource,
-                      idItemSrc
-                    )) as any[];
-                    const insCode = String(insRows?.[0]?.codigo || '').trim().toUpperCase();
-                    if (!insCode) continue;
-                    const idRows = (await tx.$queryRawUnsafe(
-                      `
-                      SELECT id_insumo AS "id"
-                      FROM obras_insumos_fonte
-                      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
-                      LIMIT 1
-                      `,
-                      ctx.tenantId,
-                      idFonteDados,
-                      insCode
-                    )) as any[];
-                    idItemDst = idRows?.[0]?.id ? Number(idRows[0].id) : 0;
-                  }
-                  if (!idItemDst) continue;
-                  await tx.$executeRawUnsafe(
-                    `
-                    INSERT INTO obras_composicoes_itens_fonte
-                      (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item, quantidade, unidade, ordem)
-                    VALUES
-                      ($1,$2,$3,$4,$5,$6,$7,$8)
-                    ON CONFLICT (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item)
-                    DO UPDATE SET
-                      quantidade = EXCLUDED.quantidade,
-                      unidade = EXCLUDED.unidade,
-                      ordem = EXCLUDED.ordem,
-                      atualizado_em = NOW()
-                    `,
-                    ctx.tenantId,
-                    idFonteDados,
-                    idServicoPaiDst,
-                    tipoItem.slice(0, 24) || 'INSUMO',
-                    idItemDst,
-                    it?.quantidade == null ? null : toDec(it.quantidade),
-                    String(it?.unidade || '') || null,
-                    it?.ordem == null ? 0 : Number(it.ordem)
-                  );
-                }
-                affectedServicoIds.push(idServicoPaiDst);
-              }
-            }
-
-            const uniqIds = Array.from(new Set(affectedServicoIds)).filter((n) => Number.isFinite(n) && n > 0);
-            for (const idServicoPai of uniqIds) {
+            for (const s of svcRows) {
+              const codigo = String(s?.codigo || '').trim().toUpperCase();
+              if (!codigo) continue;
               await tx.$executeRawUnsafe(
                 `
-                WITH base AS (
-                  SELECT
-                    COUNT(ci.id_composicao_item) AS qtd,
-                    COALESCE(SUM(
-                      COALESCE(ci.quantidade,0)
-                      * COALESCE(
-                        CASE
-                          WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                          ELSE inf.valor_unitario
-                        END,
-                        0
-                      )
-                    ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')), 0) AS total_base,
-                    COALESCE(SUM(
-                      COALESCE(ci.quantidade,0)
-                      * COALESCE(
-                        CASE
-                          WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                          ELSE inf.valor_unitario
-                        END,
-                        0
-                      )
-                    ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA'), 0) AS total_mao_base
-                  FROM obras_composicoes_itens_fonte ci
-                  LEFT JOIN obras_servicos_fonte sf
-                    ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
-                    AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-                  LEFT JOIN obras_insumos_fonte inf
-                    ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
-                    AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-                  WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $2 AND ci.id_servico_pai = $3
-                ),
-                plans AS (
-                  SELECT
-                    v.id_planilha AS id_planilha,
-                    COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
-                    COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
-                  FROM obras_planilhas_versoes v
-                  LEFT JOIN obras_planilhas_parametros p
-                    ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
-                  WHERE v.tenant_id = $1 AND v.id_fonte_dados = $2
-                ),
-                calc AS (
-                  SELECT
-                    id_planilha,
-                    CASE
-                      WHEN (SELECT qtd FROM base) > 0 THEN
-                        (
-                          (
-                            ((SELECT total_base FROM base) - (SELECT total_mao_base FROM base))
-                            + (SELECT total_mao_base FROM base) * (1 + (ls / 100.0))
-                          )
-                          * (1 + (bdi / 100.0))
-                        )
-                      ELSE 0
-                    END AS valor_unitario
-                  FROM plans
-                )
-                UPDATE obras_planilha_itens i
-                SET
-                  valor_unitario = ROUND(calc.valor_unitario::numeric, 6),
-                  valor_parcial = CASE
-                    WHEN i.quantidade IS NULL THEN i.valor_parcial
-                    ELSE ROUND((COALESCE(i.quantidade,0) * calc.valor_unitario)::numeric, 6)
-                  END,
+                INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
+                VALUES ($1,$2,$3,$4,$5,$6,$7)
+                ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+                DO UPDATE SET
+                  fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
+                  servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
+                  und = COALESCE(NULLIF(EXCLUDED.und,''), tab_servicos.und),
                   atualizado_em = NOW()
-                FROM calc
-                WHERE i.tenant_id = $1
-                  AND i.id_planilha = calc.id_planilha
-                  AND i.tipo_linha = 'SERVICO'
-                  AND i.id_servico = $3
                 `,
                 ctx.tenantId,
-                idFonteDados,
-                idServicoPai
+                idObra,
+                Number(payload.idPlanilhaTarget),
+                codigo,
+                String((s as any)?.banco || '') || null,
+                String((s as any)?.descricao || '') || null,
+                String((s as any)?.und || '') || null
               );
             }
           }
@@ -7601,7 +6719,7 @@ export default async function v1Routes(server: FastifyInstance) {
               WITH v(ordem, item, codigo, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao) AS (
                 VALUES ${values}
               )
-              INSERT INTO obras_planilha_itens
+              INSERT INTO tab_planilha_itens
                 (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
               SELECT
                 $1 AS tenant_id,
@@ -7609,7 +6727,7 @@ export default async function v1Routes(server: FastifyInstance) {
                 v.ordem,
                 v.item,
                 CASE
-                  WHEN v.tipo_linha = 'SERVICO' AND COALESCE(v.codigo,'') <> '' THEN sf.id_servico
+                  WHEN v.tipo_linha = 'SERVICO' AND COALESCE(v.codigo,'') <> '' THEN s.id_servico
                   ELSE NULL
                 END AS id_servico,
                 CASE WHEN v.tipo_linha = 'SERVICO' THEN v.quantidade ELSE NULL END AS quantidade,
@@ -7619,12 +6737,12 @@ export default async function v1Routes(server: FastifyInstance) {
                 v.tipo_linha,
                 NULLIF(v.observacao,'') AS observacao
               FROM v
-              LEFT JOIN obras_servicos_fonte sf
-                ON sf.tenant_id = $1 AND sf.id_fonte_dados = $3 AND sf.codigo = UPPER(COALESCE(v.codigo,''))
+              LEFT JOIN tab_servicos s
+                ON s.tenant_id = $1 AND s.id_obra = $3 AND s.id_planilha = $2 AND UPPER(COALESCE(s.codigo,'')) = UPPER(COALESCE(v.codigo,''))
               `,
               ctx.tenantId,
               Number(payload.idPlanilhaTarget),
-              idFonteDados,
+              idObra,
               ...params
             );
           }
@@ -7640,128 +6758,35 @@ export default async function v1Routes(server: FastifyInstance) {
           const sourcePlanilhaId = body.sourcePlanilhaId != null ? Number(body.sourcePlanilhaId) : NaN;
           if (!Number.isFinite(sourcePlanilhaId) || sourcePlanilhaId <= 0) throw new Error('sourcePlanilhaId inválido');
 
-          await ensurePlanilhaModeloFonteTables(tx);
-          await ensureInsumosPrecosTables(tx);
-          await ensurePlanilhaComposicaoTables(tx);
-          const migSrc = await ensurePlanilhaMigratedToModeloFonte(tx, ctx.tenantId, idObra, sourcePlanilhaId);
-          if (!migSrc?.idFonteDados) throw new Error('Fonte de dados da planilha origem não definida');
+          await ensurePlanilhaEstruturaUnicaTables(tx);
 
-          const maxRows = (await tx.$queryRawUnsafe(
-            `SELECT COALESCE(MAX(numero_versao),0) AS "maxVersao" FROM obras_planilhas_versoes WHERE tenant_id = $1 AND id_obra = $2`,
-            ctx.tenantId,
-            idObra
-          )) as any[];
-          const nextVersao = Number(maxRows?.[0]?.maxVersao || 0) + 1;
-          const nome = String(body.nome || `Versão ${nextVersao}`).trim() || `Versão ${nextVersao}`;
-
-          const ins = (await tx.$queryRawUnsafe(
+          const srcRows = (await tx.$queryRawUnsafe(
             `
-            INSERT INTO obras_planilhas_versoes
-              (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador, id_fonte_dados, id_parametros)
-            VALUES
-              ($1,$2,$3,$4,TRUE,'DUPLICADA',$5,$6,$7)
-            RETURNING id_planilha AS "idPlanilha"
+            SELECT id_parametros AS "idParametros"
+            FROM tab_planilhas
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+            LIMIT 1
             `,
             ctx.tenantId,
             idObra,
-            nextVersao,
+            sourcePlanilhaId
+          )) as any[];
+          const src = srcRows?.[0] || null;
+          if (!src) throw new Error('Planilha origem não encontrada');
+          const idParametros = src.idParametros == null ? null : Number(src.idParametros);
+
+          const nome = String(body.nome || '').trim() || `Versão (Clonada)`;
+          const created = await criarVersaoPlanilha(tx, {
+            tenantId: ctx.tenantId,
+            idObra,
             nome,
-            ctx.userId,
-            Number(migSrc.idFonteDados),
-            Number(migSrc.idParametros || 0) || null
-          )) as any[];
-          const idPlanilha = Number(ins?.[0]?.idPlanilha || 0);
+            origem: 'DUPLICADA',
+            idParametros,
+            userId: ctx.userId,
+          });
 
-          await tx.$executeRawUnsafe(`UPDATE obras_planilhas_versoes SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2`, ctx.tenantId, idObra);
-          await tx.$executeRawUnsafe(
-            `UPDATE obras_planilhas_versoes SET atual = TRUE WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
-            ctx.tenantId,
-            idObra,
-            idPlanilha
-          );
-
-          await tx.$executeRawUnsafe(
-            `
-            INSERT INTO obras_planilha_itens
-              (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
-            SELECT
-              $1 AS tenant_id,
-              $2 AS id_planilha,
-              ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao
-            FROM obras_planilha_itens
-            WHERE tenant_id = $1 AND id_planilha = $3
-            ORDER BY ordem ASC, id_planilha_item ASC
-            `,
-            ctx.tenantId,
-            idPlanilha,
-            sourcePlanilhaId
-          );
-
-          await tx.$executeRawUnsafe(
-            `
-            INSERT INTO obras_insumos_precos
-              (tenant_id, id_obra, id_planilha, codigo_item, valor_unitario)
-            SELECT
-              tenant_id, id_obra, $3 AS id_planilha, codigo_item, valor_unitario
-            FROM obras_insumos_precos
-            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
-            `,
-            ctx.tenantId,
-            idObra,
-            idPlanilha,
-            sourcePlanilhaId
-          );
-
-          await tx.$executeRawUnsafe(
-            `
-            INSERT INTO obras_planilhas_composicoes_itens
-              (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo, criado_em, atualizado_em)
-            SELECT
-              tenant_id,
-              id_obra,
-              $3 AS id_planilha,
-              codigo_servico,
-              etapa,
-              tipo_item,
-              codigo_item,
-              banco,
-              descricao,
-              und,
-              quantidade,
-              valor_unitario,
-              perda_percentual,
-              codigo_centro_custo,
-              criado_em,
-              atualizado_em
-            FROM obras_planilhas_composicoes_itens
-            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
-            `,
-            ctx.tenantId,
-            idObra,
-            idPlanilha,
-            sourcePlanilhaId
-          );
-
-          const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
-          const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
-          if (hasPrimitivaTable) {
-            await tx.$executeRawUnsafe(
-              `
-              INSERT INTO obras_planilhas_composicoes_primitivas
-                (tenant_id, id_obra, id_planilha, codigo_servico, descricao_servico, und_servico, itens_json, atualizado_em)
-              SELECT
-                tenant_id, id_obra, $3 AS id_planilha, codigo_servico, descricao_servico, und_servico, itens_json, atualizado_em
-              FROM obras_planilhas_composicoes_primitivas
-              WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
-              `,
-              ctx.tenantId,
-              idObra,
-              idPlanilha,
-              sourcePlanilhaId
-            );
-          }
-
-          return { idPlanilha, numeroVersao: nextVersao };
+          await clonarEstruturaPlanilha(tx, { tenantId: ctx.tenantId, idObra, sourcePlanilhaId, targetPlanilhaId: created.idPlanilha });
+          return { idPlanilha: created.idPlanilha, numeroVersao: created.numeroVersao };
         });
 
         return ok(reply, { idObra, idPlanilha: created.idPlanilha, numeroVersao: created.numeroVersao }, { message: 'Planilha duplicada' });
@@ -7769,155 +6794,38 @@ export default async function v1Routes(server: FastifyInstance) {
 
       if (action === 'NOVA_VERSAO') {
         const created = await prismaTx(async (tx: any) => {
-          await ensurePlanilhaModeloFonteTables(tx);
-          const maxRows = (await tx.$queryRawUnsafe(
-            `SELECT COALESCE(MAX(numero_versao),0) AS "maxVersao" FROM obras_planilhas_versoes WHERE tenant_id = $1 AND id_obra = $2`,
-            ctx.tenantId,
-            idObra
-          )) as any[];
-          const nextVersao = Number(maxRows?.[0]?.maxVersao || 0) + 1;
-          const nome = String(body.nome || `Versão ${nextVersao}`).trim() || `Versão ${nextVersao}`;
           const copyFrom = body.copyFromPlanilhaId != null ? Number(body.copyFromPlanilhaId) : null;
-
-          let idFonteDados: number | null = null;
           let idParametros: number | null = null;
           if (copyFrom && Number.isFinite(copyFrom) && copyFrom > 0) {
-            const mig = await ensurePlanilhaMigratedToModeloFonte(tx, ctx.tenantId, idObra, copyFrom);
-            idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : null;
-            idParametros = mig?.idParametros ? Number(mig.idParametros) : null;
-            if (!idFonteDados) throw new Error('Fonte de dados da planilha origem não definida');
+            const mig = await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, copyFrom);
+            idParametros = mig?.idParametros != null ? Number(mig.idParametros) : null;
           } else {
-            const reqFonte = body.idFonteDados != null ? Number(body.idFonteDados) : NaN;
             const reqParametros = body.idParametros != null ? Number(body.idParametros) : NaN;
-            if (!Number.isFinite(reqFonte) || reqFonte <= 0) throw new Error('Selecione a Fonte de dados');
             if (!Number.isFinite(reqParametros) || reqParametros <= 0) throw new Error('Selecione o Parâmetro');
-            const fonteOk = (await tx.$queryRawUnsafe(
-              `SELECT 1 AS ok FROM obras_fontes_dados WHERE tenant_id = $1 AND id_fonte_dados = $2 LIMIT 1`,
-              ctx.tenantId,
-              reqFonte
-            )) as any[];
-            if (!fonteOk?.[0]) throw new Error('Fonte de dados não encontrada');
             const paramOk = (await tx.$queryRawUnsafe(
-              `SELECT 1 AS ok FROM obras_planilhas_parametros WHERE tenant_id = $1 AND id_parametros = $2 LIMIT 1`,
+              `SELECT 1 AS ok FROM tab_parametros WHERE tenant_id = $1 AND id_parametros = $2 LIMIT 1`,
               ctx.tenantId,
               reqParametros
             )) as any[];
             if (!paramOk?.[0]) throw new Error('Parâmetro não encontrado');
-            idFonteDados = reqFonte;
             idParametros = reqParametros;
           }
 
-          const ins = (await tx.$queryRawUnsafe(
-            `
-            INSERT INTO obras_planilhas_versoes
-              (tenant_id, id_obra, numero_versao, nome, atual, origem, id_usuario_criador, id_fonte_dados, id_parametros)
-            VALUES
-              ($1,$2,$3,$4,TRUE,'MANUAL',$5,$6,$7)
-            RETURNING id_planilha AS "idPlanilha"
-            `,
-            ctx.tenantId,
+          const nome = String(body.nome || '').trim() || 'Planilha orçamentária';
+          const created = await criarVersaoPlanilha(tx, {
+            tenantId: ctx.tenantId,
             idObra,
-            nextVersao,
             nome,
-            ctx.userId,
-            idFonteDados,
-            idParametros
-          )) as any[];
-          const idPlanilha = Number(ins?.[0]?.idPlanilha || 0);
-          await tx.$executeRawUnsafe(`UPDATE obras_planilhas_versoes SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2`, ctx.tenantId, idObra);
-          await tx.$executeRawUnsafe(
-            `UPDATE obras_planilhas_versoes SET atual = TRUE WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
-            ctx.tenantId,
-            idObra,
-            idPlanilha
-          );
+            origem: 'MANUAL',
+            idParametros,
+            userId: ctx.userId,
+          });
 
           if (copyFrom && Number.isFinite(copyFrom) && copyFrom > 0) {
-            await ensureInsumosPrecosTables(tx);
-            await ensurePlanilhaComposicaoTables(tx);
-            await tx.$executeRawUnsafe(
-              `
-              INSERT INTO obras_planilha_itens
-                (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
-              SELECT
-                $1 AS tenant_id,
-                $2 AS id_planilha,
-                ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao
-              FROM obras_planilha_itens
-              WHERE tenant_id = $1 AND id_planilha = $3
-              ORDER BY ordem ASC, id_planilha_item ASC
-              `,
-              ctx.tenantId,
-              idPlanilha,
-              copyFrom
-            );
-
-            await tx.$executeRawUnsafe(
-              `
-              INSERT INTO obras_insumos_precos
-                (tenant_id, id_obra, id_planilha, codigo_item, valor_unitario)
-              SELECT
-                tenant_id, id_obra, $3 AS id_planilha, codigo_item, valor_unitario
-              FROM obras_insumos_precos
-              WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
-              `,
-              ctx.tenantId,
-              idObra,
-              idPlanilha,
-              copyFrom
-            );
-
-            await tx.$executeRawUnsafe(
-              `
-              INSERT INTO obras_planilhas_composicoes_itens
-                (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo, criado_em, atualizado_em)
-              SELECT
-                tenant_id,
-                id_obra,
-                $3 AS id_planilha,
-                codigo_servico,
-                etapa,
-                tipo_item,
-                codigo_item,
-                banco,
-                descricao,
-                und,
-                quantidade,
-                valor_unitario,
-                perda_percentual,
-                codigo_centro_custo,
-                criado_em,
-                atualizado_em
-              FROM obras_planilhas_composicoes_itens
-              WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
-              `,
-              ctx.tenantId,
-              idObra,
-              idPlanilha,
-              copyFrom
-            );
-
-            const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
-            const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
-            if (hasPrimitivaTable) {
-              await tx.$executeRawUnsafe(
-                `
-                INSERT INTO obras_planilhas_composicoes_primitivas
-                  (tenant_id, id_obra, id_planilha, codigo_servico, descricao_servico, und_servico, itens_json, atualizado_em)
-                SELECT
-                  tenant_id, id_obra, $3 AS id_planilha, codigo_servico, descricao_servico, und_servico, itens_json, atualizado_em
-                FROM obras_planilhas_composicoes_primitivas
-                WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
-                `,
-                ctx.tenantId,
-                idObra,
-                idPlanilha,
-                copyFrom
-              );
-            }
+            await clonarEstruturaPlanilha(tx, { tenantId: ctx.tenantId, idObra, sourcePlanilhaId: copyFrom, targetPlanilhaId: created.idPlanilha });
           }
 
-          return { idPlanilha, numeroVersao: nextVersao };
+          return { idPlanilha: created.idPlanilha, numeroVersao: created.numeroVersao };
         });
 
         return ok(reply, { idObra, idPlanilha: created.idPlanilha, numeroVersao: created.numeroVersao }, { message: 'Nova versão criada' });
@@ -7929,7 +6837,6 @@ export default async function v1Routes(server: FastifyInstance) {
         const numeroVersao = body.numeroVersao != null && String(body.numeroVersao).trim() !== '' ? Number(body.numeroVersao) : null;
         const nome = body.nome != null ? String(body.nome).trim().slice(0, 120) : null;
         const origem = body.origem != null ? String(body.origem).trim().toUpperCase() : null;
-        const idFonteDados = body.idFonteDados != null && String(body.idFonteDados).trim() !== '' ? Number(body.idFonteDados) : null;
         const idParametros = body.idParametros != null && String(body.idParametros).trim() !== '' ? Number(body.idParametros) : null;
         const allowedOrigem = new Set(['MANUAL', 'CSV', 'MIGRACAO', 'DUPLICADA']);
         if (origem != null && !allowedOrigem.has(origem)) return fail(reply, 422, 'origem inválida');
@@ -7937,15 +6844,15 @@ export default async function v1Routes(server: FastifyInstance) {
           return fail(reply, 422, 'numeroVersao inválido');
         }
         if (nome != null && !nome) return fail(reply, 422, 'nome inválido');
-        if (idFonteDados != null && (!Number.isFinite(idFonteDados) || idFonteDados <= 0)) return fail(reply, 422, 'idFonteDados inválido');
         if (idParametros != null && (!Number.isFinite(idParametros) || idParametros <= 0)) return fail(reply, 422, 'idParametros inválido');
-        if (numeroVersao == null && nome == null && origem == null && idFonteDados == null && idParametros == null) return ok(reply, { ok: true }, { message: 'Nada para alterar' });
+        if (numeroVersao == null && nome == null && origem == null && idParametros == null) return ok(reply, { ok: true }, { message: 'Nada para alterar' });
 
         const updated = await prismaTx(async (tx: any) => {
+          await ensurePlanilhaEstruturaUnicaTables(tx);
           const exists = (await tx.$queryRawUnsafe(
             `
             SELECT id_planilha AS "idPlanilha"
-            FROM obras_planilhas_versoes
+            FROM tab_planilhas
             WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
             LIMIT 1
             `,
@@ -7955,17 +6862,9 @@ export default async function v1Routes(server: FastifyInstance) {
           )) as any[];
           if (!exists?.[0]) throw new Error('Planilha não encontrada');
 
-          if (idFonteDados != null) {
-            const fonteOk = (await tx.$queryRawUnsafe(
-              `SELECT 1 AS ok FROM obras_fontes_dados WHERE tenant_id = $1 AND id_fonte_dados = $2 LIMIT 1`,
-              ctx.tenantId,
-              idFonteDados
-            )) as any[];
-            if (!fonteOk?.[0]) throw new Error('Fonte de dados não encontrada');
-          }
           if (idParametros != null) {
             const paramOk = (await tx.$queryRawUnsafe(
-              `SELECT 1 AS ok FROM obras_planilhas_parametros WHERE tenant_id = $1 AND id_parametros = $2 LIMIT 1`,
+              `SELECT 1 AS ok FROM tab_parametros WHERE tenant_id = $1 AND id_parametros = $2 LIMIT 1`,
               ctx.tenantId,
               idParametros
             )) as any[];
@@ -7976,7 +6875,7 @@ export default async function v1Routes(server: FastifyInstance) {
             const dup = (await tx.$queryRawUnsafe(
               `
               SELECT 1
-              FROM obras_planilhas_versoes
+              FROM tab_planilhas
               WHERE tenant_id = $1 AND id_obra = $2 AND numero_versao = $3 AND id_planilha <> $4
               LIMIT 1
               `,
@@ -7990,13 +6889,12 @@ export default async function v1Routes(server: FastifyInstance) {
 
           await tx.$executeRawUnsafe(
             `
-            UPDATE obras_planilhas_versoes
+            UPDATE tab_planilhas
             SET
               numero_versao = COALESCE($4, numero_versao),
               nome = COALESCE($5, nome),
               origem = COALESCE($6, origem),
-              id_fonte_dados = COALESCE($7, id_fonte_dados),
-              id_parametros = COALESCE($8, id_parametros),
+              id_parametros = COALESCE($7, id_parametros),
               atualizado_em = NOW()
             WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
             `,
@@ -8006,7 +6904,6 @@ export default async function v1Routes(server: FastifyInstance) {
             numeroVersao,
             nome,
             origem,
-            idFonteDados,
             idParametros
           );
           return { ok: true };
@@ -8020,10 +6917,11 @@ export default async function v1Routes(server: FastifyInstance) {
         if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
 
         const res = await prismaTx(async (tx: any) => {
+          await ensurePlanilhaEstruturaUnicaTables(tx);
           const exists = (await tx.$queryRawUnsafe(
             `
             SELECT id_planilha AS "idPlanilha"
-            FROM obras_planilhas_versoes
+            FROM tab_planilhas
             WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
             LIMIT 1
             `,
@@ -8033,9 +6931,9 @@ export default async function v1Routes(server: FastifyInstance) {
           )) as any[];
           if (!exists?.[0]) throw new Error('Planilha não encontrada');
 
-          await tx.$executeRawUnsafe(`UPDATE obras_planilhas_versoes SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2`, ctx.tenantId, idObra);
+          await tx.$executeRawUnsafe(`UPDATE tab_planilhas SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2`, ctx.tenantId, idObra);
           await tx.$executeRawUnsafe(
-            `UPDATE obras_planilhas_versoes SET atual = TRUE WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+            `UPDATE tab_planilhas SET atual = TRUE WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
             ctx.tenantId,
             idObra,
             idPlanilha
@@ -8051,15 +6949,12 @@ export default async function v1Routes(server: FastifyInstance) {
         if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
 
         const res = await prismaTx(async (tx: any) => {
-          await ensurePlanilhaModeloFonteTables(tx);
-          await ensurePlanilhaServicosTables(tx);
-          await ensurePlanilhaComposicaoTables(tx);
-          await ensureInsumosPrecosTables(tx);
+          await ensurePlanilhaEstruturaUnicaTables(tx);
 
           const exists = (await tx.$queryRawUnsafe(
             `
-            SELECT atual, id_fonte_dados AS "idFonteDados", id_parametros AS "idParametros"
-            FROM obras_planilhas_versoes
+            SELECT atual, id_parametros AS "idParametros"
+            FROM tab_planilhas
             WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
             LIMIT 1
             `,
@@ -8069,26 +6964,7 @@ export default async function v1Routes(server: FastifyInstance) {
           )) as any[];
           const row = exists?.[0] || null;
           if (!row) throw new Error('Planilha não encontrada');
-          const idFonteDados = row.idFonteDados == null ? null : Number(row.idFonteDados);
           const idParametros = row.idParametros == null ? null : Number(row.idParametros);
-
-          const fonteCompartilhada = idFonteDados
-            ? Boolean(
-                (
-                  (await tx.$queryRawUnsafe(
-                    `
-                    SELECT 1
-                    FROM obras_planilhas_versoes
-                    WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_planilha <> $3
-                    LIMIT 1
-                    `,
-                    ctx.tenantId,
-                    idFonteDados,
-                    idPlanilha
-                  )) as any[]
-                )?.[0]
-              )
-            : false;
 
           const parametrosCompartilhados = idParametros
             ? Boolean(
@@ -8096,7 +6972,7 @@ export default async function v1Routes(server: FastifyInstance) {
                   (await tx.$queryRawUnsafe(
                     `
                     SELECT 1
-                    FROM obras_planilhas_versoes
+                    FROM tab_planilhas
                     WHERE tenant_id = $1 AND id_parametros = $2 AND id_planilha <> $3
                     LIMIT 1
                     `,
@@ -8108,20 +6984,20 @@ export default async function v1Routes(server: FastifyInstance) {
               )
             : false;
 
-          await tx.$executeRawUnsafe(`DELETE FROM obras_planilhas_linhas WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, idPlanilha);
           await tx.$executeRawUnsafe(
-            `DELETE FROM obras_planilhas_servicos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+            `DELETE FROM tab_servicos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
             ctx.tenantId,
             idObra,
             idPlanilha
           );
           await tx.$executeRawUnsafe(
-            `DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+            `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
             ctx.tenantId,
             idObra,
             idPlanilha
           );
-          await tx.$executeRawUnsafe(`DELETE FROM obras_insumos_precos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`, ctx.tenantId, idObra, idPlanilha);
+          await tx.$executeRawUnsafe(`DELETE FROM tab_insumos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`, ctx.tenantId, idObra, idPlanilha);
+          await tx.$executeRawUnsafe(`DELETE FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, idPlanilha);
 
           const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
           const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
@@ -8135,7 +7011,7 @@ export default async function v1Routes(server: FastifyInstance) {
           }
 
           await tx.$executeRawUnsafe(
-            `DELETE FROM obras_planilhas_versoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+            `DELETE FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
             ctx.tenantId,
             idObra,
             idPlanilha
@@ -8143,24 +7019,13 @@ export default async function v1Routes(server: FastifyInstance) {
 
           if (idParametros && !parametrosCompartilhados) {
             await ensurePlanilhaParametrosTables(tx);
-            await tx.$executeRawUnsafe(`DELETE FROM obras_planilhas_parametros WHERE tenant_id = $1 AND id_parametros = $2`, ctx.tenantId, idParametros);
-          }
-
-          if (idFonteDados && !fonteCompartilhada) {
-            await ensureComposicoesItensFonteTables(tx);
-            await ensureInsumosFonteTables(tx);
-            await ensureServicosFonteTables(tx);
-            await ensureFontesDadosTables(tx);
-            await tx.$executeRawUnsafe(`DELETE FROM obras_composicoes_itens_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2`, ctx.tenantId, idFonteDados);
-            await tx.$executeRawUnsafe(`DELETE FROM obras_insumos_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2`, ctx.tenantId, idFonteDados);
-            await tx.$executeRawUnsafe(`DELETE FROM obras_servicos_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2`, ctx.tenantId, idFonteDados);
-            await tx.$executeRawUnsafe(`DELETE FROM obras_fontes_dados WHERE tenant_id = $1 AND id_fonte_dados = $2`, ctx.tenantId, idFonteDados);
+            await tx.$executeRawUnsafe(`DELETE FROM tab_parametros WHERE tenant_id = $1 AND id_parametros = $2`, ctx.tenantId, idParametros);
           }
 
           const remaining = (await tx.$queryRawUnsafe(
             `
             SELECT id_planilha AS "idPlanilha"
-            FROM obras_planilhas_versoes
+            FROM tab_planilhas
             WHERE tenant_id = $1 AND id_obra = $2
             ORDER BY atual DESC, numero_versao DESC, id_planilha DESC
             LIMIT 1
@@ -8170,9 +7035,9 @@ export default async function v1Routes(server: FastifyInstance) {
           )) as any[];
           const nextId = remaining?.[0]?.idPlanilha ? Number(remaining[0].idPlanilha) : null;
           if (nextId) {
-            await tx.$executeRawUnsafe(`UPDATE obras_planilhas_versoes SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2`, ctx.tenantId, idObra);
+            await tx.$executeRawUnsafe(`UPDATE tab_planilhas SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2`, ctx.tenantId, idObra);
             await tx.$executeRawUnsafe(
-              `UPDATE obras_planilhas_versoes SET atual = TRUE WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+              `UPDATE tab_planilhas SET atual = TRUE WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
               ctx.tenantId,
               idObra,
               nextId
@@ -8184,7 +7049,7 @@ export default async function v1Routes(server: FastifyInstance) {
             idPlanilhaAtual: nextId,
             deleted: {
               parametros: idParametros && !parametrosCompartilhados ? idParametros : null,
-              fonteDados: idFonteDados && !fonteCompartilhada ? idFonteDados : null,
+              fonteDados: null,
             },
           };
         });
@@ -8199,91 +7064,120 @@ export default async function v1Routes(server: FastifyInstance) {
         const dataBaseSbc = p.dataBaseSbc ? String(p.dataBaseSbc).trim().slice(0, 16) : null;
         const dataBaseSinapi = p.dataBaseSinapi ? String(p.dataBaseSinapi).trim().slice(0, 16) : null;
         const ufSinapi = p.ufSinapi ? String(p.ufSinapi).trim().toUpperCase().slice(0, 2) : null;
+        const bdiServicosSbc = p.bdiServicosSbc == null || p.bdiServicosSbc === '' ? null : toDec(p.bdiServicosSbc);
+        const bdiServicosSinapi = p.bdiServicosSinapi == null || p.bdiServicosSinapi === '' ? null : toDec(p.bdiServicosSinapi);
+        const bdiDiferenciadoSbc = p.bdiDiferenciadoSbc == null || p.bdiDiferenciadoSbc === '' ? null : toDec(p.bdiDiferenciadoSbc);
+        const bdiDiferenciadoSinapi = p.bdiDiferenciadoSinapi == null || p.bdiDiferenciadoSinapi === '' ? null : toDec(p.bdiDiferenciadoSinapi);
+        const encSociaisSemDesSbc = p.encSociaisSemDesSbc == null || p.encSociaisSemDesSbc === '' ? null : toDec(p.encSociaisSemDesSbc);
+        const encSociaisSemDesSinapi = p.encSociaisSemDesSinapi == null || p.encSociaisSemDesSinapi === '' ? null : toDec(p.encSociaisSemDesSinapi);
+        const descontoSbc = p.descontoSbc == null || p.descontoSbc === '' ? null : toDec(p.descontoSbc);
+        const descontoSinapi = p.descontoSinapi == null || p.descontoSinapi === '' ? null : toDec(p.descontoSinapi);
 
         if (dataBaseSinapi && !ufSinapi) return fail(reply, 422, 'UF (SINAPI) é obrigatória quando Data-base SINAPI está preenchida');
 
         await prismaTx(async (tx: any) => {
+          await ensurePlanilhaEstruturaUnicaTables(tx);
+
           const idParametros = await upsertParametros(tx, ctx.tenantId, {
             dataBaseSbc,
             dataBaseSinapi,
             ufSinapi,
-            bdiServicosSbc: p.bdiServicosSbc == null || p.bdiServicosSbc === '' ? null : toDec(p.bdiServicosSbc),
-            bdiServicosSinapi: p.bdiServicosSinapi == null || p.bdiServicosSinapi === '' ? null : toDec(p.bdiServicosSinapi),
-            bdiDiferenciadoSbc: p.bdiDiferenciadoSbc == null || p.bdiDiferenciadoSbc === '' ? null : toDec(p.bdiDiferenciadoSbc),
-            bdiDiferenciadoSinapi: p.bdiDiferenciadoSinapi == null || p.bdiDiferenciadoSinapi === '' ? null : toDec(p.bdiDiferenciadoSinapi),
-            encSociaisSemDesSbc: p.encSociaisSemDesSbc == null || p.encSociaisSemDesSbc === '' ? null : toDec(p.encSociaisSemDesSbc),
-            encSociaisSemDesSinapi: p.encSociaisSemDesSinapi == null || p.encSociaisSemDesSinapi === '' ? null : toDec(p.encSociaisSemDesSinapi),
-            descontoSbc: p.descontoSbc == null || p.descontoSbc === '' ? null : toDec(p.descontoSbc),
-            descontoSinapi: p.descontoSinapi == null || p.descontoSinapi === '' ? null : toDec(p.descontoSinapi),
+            bdiServicosSbc,
+            bdiServicosSinapi,
+            bdiDiferenciadoSbc,
+            bdiDiferenciadoSinapi,
+            encSociaisSemDesSbc,
+            encSociaisSemDesSinapi,
+            descontoSbc,
+            descontoSinapi,
           });
 
           await tx.$executeRawUnsafe(
-            `UPDATE obras_planilhas_versoes SET id_parametros = $4, atualizado_em = NOW() WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+            `
+            UPDATE tab_planilhas
+            SET
+              id_parametros = $4,
+              data_base_sbc = $5,
+              data_base_sinapi = $6,
+              uf_sinapi = $7,
+              bdi_servicos_sbc = $8,
+              bdi_servicos_sinapi = $9,
+              bdi_diferenciado_sbc = $10,
+              bdi_diferenciado_sinapi = $11,
+              enc_sociais_sem_des_sbc = $12,
+              enc_sociais_sem_des_sinapi = $13,
+              desconto_sbc = $14,
+              desconto_sinapi = $15,
+              atualizado_em = NOW()
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+            `,
             ctx.tenantId,
             idObra,
             idPlanilha,
-            idParametros
+            idParametros,
+            dataBaseSbc,
+            dataBaseSinapi,
+            ufSinapi,
+            bdiServicosSbc,
+            bdiServicosSinapi,
+            bdiDiferenciadoSbc,
+            bdiDiferenciadoSinapi,
+            encSociaisSemDesSbc,
+            encSociaisSemDesSinapi,
+            descontoSbc,
+            descontoSinapi
           );
-
-          await ensurePlanilhaModeloFonteTables(tx);
-
           await tx.$executeRawUnsafe(
             `
             WITH plans AS (
               SELECT
                 v.id_planilha AS id_planilha,
-                v.id_fonte_dados AS id_fonte_dados,
+                v.id_obra AS id_obra,
                 COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
                 COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
-              FROM obras_planilhas_versoes v
-              LEFT JOIN obras_planilhas_parametros p
+              FROM tab_planilhas v
+              LEFT JOIN tab_parametros p
                 ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
-              WHERE v.tenant_id = $1 AND v.id_parametros = $2 AND v.id_fonte_dados IS NOT NULL
+              WHERE v.tenant_id = $1 AND v.id_parametros = $2
             ),
             serv AS (
               SELECT DISTINCT
                 i.id_planilha AS id_planilha,
                 i.id_servico AS id_servico
-              FROM obras_planilha_itens i
+              FROM tab_planilha_itens i
               JOIN plans pl ON pl.id_planilha = i.id_planilha
               WHERE i.tenant_id = $1 AND i.tipo_linha = 'SERVICO' AND i.id_servico IS NOT NULL
             ),
-            comp AS (
+            serv_codes AS (
               SELECT
                 s.id_planilha AS id_planilha,
                 s.id_servico AS id_servico,
-                COUNT(ci.id_composicao_item) AS qtd,
+                UPPER(COALESCE(ts.codigo,'')) AS codigo_servico
+              FROM serv s
+              JOIN tab_servicos ts
+                ON ts.tenant_id = $1 AND ts.id_servico = s.id_servico
+            ),
+            comp AS (
+              SELECT
+                sc.id_planilha AS id_planilha,
+                sc.id_servico AS id_servico,
+                COUNT(ci.id_item) AS qtd,
                 SUM(
                   COALESCE(ci.quantidade,0)
-                  * COALESCE(
-                    CASE
-                      WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                      ELSE inf.valor_unitario
-                    END,
-                    0
-                  )
+                  * COALESCE(ci.valor_unitario, 0)
                 ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
                 SUM(
                   COALESCE(ci.quantidade,0)
-                  * COALESCE(
-                    CASE
-                      WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                      ELSE inf.valor_unitario
-                    END,
-                    0
-                  )
+                  * COALESCE(ci.valor_unitario, 0)
                 ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
-              FROM serv s
-              JOIN plans pl ON pl.id_planilha = s.id_planilha
-              LEFT JOIN obras_composicoes_itens_fonte ci
-                ON ci.tenant_id = $1 AND ci.id_fonte_dados = pl.id_fonte_dados AND ci.id_servico_pai = s.id_servico
-              LEFT JOIN obras_servicos_fonte sf
-                ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
-                AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-              LEFT JOIN obras_insumos_fonte inf
-                ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
-                AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-              GROUP BY s.id_planilha, s.id_servico
+              FROM serv_codes sc
+              JOIN plans pl ON pl.id_planilha = sc.id_planilha
+              LEFT JOIN tab_composicoes ci
+                ON ci.tenant_id = $1
+                AND ci.id_obra = pl.id_obra
+                AND ci.id_planilha = sc.id_planilha
+                AND UPPER(COALESCE(ci.codigo_servico,'')) = sc.codigo_servico
+              GROUP BY sc.id_planilha, sc.id_servico
             ),
             calc AS (
               SELECT
@@ -8303,7 +7197,7 @@ export default async function v1Routes(server: FastifyInstance) {
               FROM plans pl
               JOIN comp c ON c.id_planilha = pl.id_planilha
             )
-            UPDATE obras_planilha_itens i
+            UPDATE tab_planilha_itens i
             SET
               valor_unitario = COALESCE(ROUND(calc.valor_unitario::numeric, 6), i.valor_unitario),
               valor_parcial = CASE
@@ -8337,7 +7231,7 @@ export default async function v1Routes(server: FastifyInstance) {
                   v.id_obra AS id_obra,
                   COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
                   COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
-                FROM obras_planilhas_versoes v
+                FROM tab_planilhas v
                 LEFT JOIN obras_planilhas_parametros p
                   ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
                 WHERE v.tenant_id = $1 AND v.id_parametros = $2
@@ -8350,7 +7244,7 @@ export default async function v1Routes(server: FastifyInstance) {
                   COUNT(*) AS qtd,
                   SUM(COALESCE(i.quantidade,0) * COALESCE(i.valor_unitario,0)) FILTER (WHERE COALESCE(i.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
                   SUM(COALESCE(i.quantidade,0) * COALESCE(i.valor_unitario,0)) FILTER (WHERE COALESCE(i.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
-                FROM obras_planilhas_composicoes_itens i
+                FROM tab_composicoes i
                 JOIN plans pl ON pl.id_planilha = i.id_planilha AND pl.id_obra = i.id_obra
                 WHERE i.tenant_id = $1
                 GROUP BY i.id_planilha, i.id_obra, UPPER(COALESCE(i.codigo_servico,''))
@@ -8374,20 +7268,21 @@ export default async function v1Routes(server: FastifyInstance) {
                 LEFT JOIN comp c ON c.id_planilha = pl.id_planilha AND c.id_obra = pl.id_obra
                 WHERE c.codigo IS NOT NULL AND c.codigo <> ''
               )
-              UPDATE obras_planilhas_linhas l
+              UPDATE tab_planilha_itens i
               SET
-                valor_unitario = COALESCE(ROUND(calc.valor_unitario::numeric, 6), l.valor_unitario),
+                valor_unitario = COALESCE(ROUND(calc.valor_unitario::numeric, 6), i.valor_unitario),
                 valor_parcial = CASE
-                  WHEN calc.valor_unitario IS NULL THEN l.valor_parcial
-                  WHEN l.quantidade IS NULL THEN l.valor_parcial
-                  ELSE ROUND((COALESCE(l.quantidade,0) * calc.valor_unitario)::numeric, 6)
+                  WHEN calc.valor_unitario IS NULL THEN i.valor_parcial
+                  WHEN i.quantidade IS NULL THEN i.valor_parcial
+                  ELSE ROUND((COALESCE(i.quantidade,0) * calc.valor_unitario)::numeric, 6)
                 END,
                 atualizado_em = NOW()
               FROM calc
-              WHERE l.tenant_id = $1
-                AND l.id_planilha = calc.id_planilha
-                AND l.tipo_linha = 'SERVICO'
-                AND UPPER(COALESCE(l.codigo,'')) = calc.codigo
+              LEFT JOIN tab_servicos s ON s.tenant_id = $1 AND s.id_planilha = calc.id_planilha AND UPPER(COALESCE(s.codigo,'')) = calc.codigo
+              WHERE i.tenant_id = $1
+                AND i.id_planilha = calc.id_planilha
+                AND i.tipo_linha = 'SERVICO'
+                AND i.id_servico = s.id_servico
               `,
               ctx.tenantId,
               idParametros
@@ -8418,35 +7313,35 @@ export default async function v1Routes(server: FastifyInstance) {
         let valorParcial =
           valorParcialBody != null ? valorParcialBody : quantidade != null && valorUnitario != null ? Number((quantidade * valorUnitario).toFixed(6)) : null;
 
-        const mig = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
-        const idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : 0;
+        await ensurePlanilhaEstruturaUnicaTables(prisma);
+        await prismaTx(async (tx: any) => {
+          await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
+        });
+
         let idServico: number | null = null;
         if (tipoLinha === 'SERVICO' && codigo) {
-          if (!idFonteDados) return fail(reply, 422, 'Fonte de dados da planilha não definida');
-          await ensureServicosFonteTables(prisma);
           const code = String(codigo || '').trim().toUpperCase();
           const upserted = (await prisma.$queryRawUnsafe(
             `
-            INSERT INTO obras_servicos_fonte
-              (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
+            INSERT INTO tab_servicos
+              (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
             VALUES
-              ($1,$2,'SERVICO',$3,$4,$5,$6,$7)
-            ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+              ($1,$2,$3,$4,$5,$6,$7)
+            ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
             DO UPDATE SET
-              banco = COALESCE(NULLIF(obras_servicos_fonte.banco,''), EXCLUDED.banco),
-              descricao = COALESCE(NULLIF(obras_servicos_fonte.descricao,''), EXCLUDED.descricao),
-              und = COALESCE(NULLIF(obras_servicos_fonte.und,''), EXCLUDED.und),
-              valor_unitario = COALESCE(obras_servicos_fonte.valor_unitario, EXCLUDED.valor_unitario),
+              fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
+              servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
+              und = COALESCE(NULLIF(EXCLUDED.und,''), tab_servicos.und),
               atualizado_em = NOW()
             RETURNING id_servico AS "idServico"
             `,
             ctx.tenantId,
-            idFonteDados,
+            idObra,
+            idPlanilha,
             code,
             fonteLinha || null,
             servicoLinha || null,
             undLinha || null,
-            valorUnitario
           )) as any[];
           idServico = upserted?.[0]?.idServico ? Number(upserted[0].idServico) : null;
         }
@@ -8461,49 +7356,32 @@ export default async function v1Routes(server: FastifyInstance) {
         }
 
         if (tipoLinha === 'SERVICO' && codigo) {
+          const code = String(codigo || '').trim().toUpperCase();
           const rows = (await prisma.$queryRawUnsafe(
             `
             WITH planilha_params AS (
               SELECT
                 COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
                 COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
-              FROM obras_planilhas_versoes v
-              LEFT JOIN obras_planilhas_parametros p
+              FROM tab_planilhas v
+              LEFT JOIN tab_parametros p
                 ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
               WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
               LIMIT 1
             ),
             comp AS (
               SELECT
-                COUNT(ci.id_composicao_item) AS qtd,
+                COUNT(ci.id_item) AS qtd,
                 SUM(
                   COALESCE(ci.quantidade,0)
-                  * COALESCE(
-                    CASE
-                      WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                      ELSE inf.valor_unitario
-                    END,
-                    0
-                  )
+                  * COALESCE(ci.valor_unitario, 0)
                 ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
                 SUM(
                   COALESCE(ci.quantidade,0)
-                  * COALESCE(
-                    CASE
-                      WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                      ELSE inf.valor_unitario
-                    END,
-                    0
-                  )
+                  * COALESCE(ci.valor_unitario, 0)
                 ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
-              FROM obras_composicoes_itens_fonte ci
-              LEFT JOIN obras_servicos_fonte sf
-                ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
-                AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-              LEFT JOIN obras_insumos_fonte inf
-                ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
-                AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-              WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $4 AND ci.id_servico_pai = $5
+              FROM tab_composicoes ci
+              WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3 AND UPPER(COALESCE(ci.codigo_servico,'')) = $4
             )
             SELECT
               (SELECT bdi FROM planilha_params) AS bdi,
@@ -8515,8 +7393,7 @@ export default async function v1Routes(server: FastifyInstance) {
             ctx.tenantId,
             idObra,
             idPlanilha,
-            idFonteDados,
-            idServico
+            code
           )) as any[];
 
           const row = rows?.[0] || null;
@@ -8532,19 +7409,21 @@ export default async function v1Routes(server: FastifyInstance) {
           } else {
             const cur = valorUnitario == null ? null : Number(valorUnitario);
             if (cur == null || !(cur > 0)) {
-              const vuRows = (await prisma.$queryRawUnsafe(
-                `
-                SELECT valor_unitario AS "valorUnitario"
-                FROM obras_servicos_fonte
-                WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico = $3
-                LIMIT 1
-                `,
-                ctx.tenantId,
-                idFonteDados,
-                idServico
-              )) as any[];
-              const vu = vuRows?.[0]?.valorUnitario == null ? null : Number(vuRows[0].valorUnitario);
-              if (vu != null && Number.isFinite(vu) && vu > 0) valorUnitario = toDec(vu);
+              if (idLinha && Number.isFinite(idLinha) && idLinha > 0) {
+                const vuRows = (await prisma.$queryRawUnsafe(
+                  `
+                  SELECT valor_unitario AS "valorUnitario"
+                  FROM tab_planilha_itens
+                  WHERE tenant_id = $1 AND id_planilha = $2 AND id_planilha_item = $3
+                  LIMIT 1
+                  `,
+                  ctx.tenantId,
+                  idPlanilha,
+                  idLinha
+                )) as any[];
+                const vu = vuRows?.[0]?.valorUnitario == null ? null : Number(vuRows[0].valorUnitario);
+                if (vu != null && Number.isFinite(vu) && vu > 0) valorUnitario = toDec(vu);
+              }
             }
           }
           valorParcial = quantidade != null && valorUnitario != null ? Number((Number(quantidade) * Number(valorUnitario)).toFixed(6)) : null;
@@ -8554,7 +7433,7 @@ export default async function v1Routes(server: FastifyInstance) {
         if (idLinha && Number.isFinite(idLinha) && idLinha > 0) {
           await prisma.$executeRawUnsafe(
             `
-            UPDATE obras_planilha_itens
+            UPDATE tab_planilha_itens
             SET
               ordem = $4,
               item = $5,
@@ -8584,7 +7463,7 @@ export default async function v1Routes(server: FastifyInstance) {
         } else {
           await prisma.$executeRawUnsafe(
             `
-            INSERT INTO obras_planilha_itens
+            INSERT INTO tab_planilha_itens
               (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
             VALUES
               ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
@@ -8612,7 +7491,7 @@ export default async function v1Routes(server: FastifyInstance) {
         if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
         if (!Number.isFinite(idLinha) || idLinha <= 0) return fail(reply, 422, 'idLinha inválido');
 
-        await prisma.$executeRawUnsafe(`DELETE FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2 AND id_planilha_item = $3`, ctx.tenantId, idPlanilha, idLinha);
+        await prisma.$executeRawUnsafe(`DELETE FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2 AND id_planilha_item = $3`, ctx.tenantId, idPlanilha, idLinha);
         return ok(reply, { ok: true }, { message: 'Linha excluída' });
       }
 
@@ -8633,11 +7512,9 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaModeloFonteTables(prisma);
+    await ensurePlanilhaOrcamentariaTables(prisma);
+    await ensurePlanilhaComposicaoTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
-    const mig = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
-    const idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : 0;
-    if (!idFonteDados) return ok(reply, { codigoServico, hasComposicao: false, valorUnitario: 0 });
 
     const rows = (await prisma.$queryRawUnsafe(
       `
@@ -8645,45 +7522,25 @@ export default async function v1Routes(server: FastifyInstance) {
         SELECT
           COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
           COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
-        FROM obras_planilhas_versoes v
-        LEFT JOIN obras_planilhas_parametros p
+        FROM tab_planilhas v
+        LEFT JOIN tab_parametros p
           ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
         WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
         LIMIT 1
       ),
       comp AS (
         SELECT
-          COUNT(ci.id_composicao_item) AS qtd,
+          COUNT(ci.id_item) AS qtd,
           SUM(
             COALESCE(ci.quantidade,0)
-            * COALESCE(
-              CASE
-                WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                ELSE inf.valor_unitario
-              END,
-              0
-            )
+            * COALESCE(ci.valor_unitario, 0)
           ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
           SUM(
             COALESCE(ci.quantidade,0)
-            * COALESCE(
-              CASE
-                WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                ELSE inf.valor_unitario
-              END,
-              0
-            )
+            * COALESCE(ci.valor_unitario, 0)
           ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
-        FROM obras_servicos_fonte sp
-        LEFT JOIN obras_composicoes_itens_fonte ci
-          ON ci.tenant_id = sp.tenant_id AND ci.id_fonte_dados = sp.id_fonte_dados AND ci.id_servico_pai = sp.id_servico
-        LEFT JOIN obras_servicos_fonte sf
-          ON sf.tenant_id = sp.tenant_id AND sf.id_fonte_dados = sp.id_fonte_dados AND sf.id_servico = ci.id_item
-          AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-        LEFT JOIN obras_insumos_fonte inf
-          ON inf.tenant_id = sp.tenant_id AND inf.id_fonte_dados = sp.id_fonte_dados AND inf.id_insumo = ci.id_item
-          AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-        WHERE sp.tenant_id = $1 AND sp.id_fonte_dados = $4 AND UPPER(COALESCE(sp.codigo,'')) = $5
+        FROM tab_composicoes ci
+        WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3 AND UPPER(COALESCE(ci.codigo_servico,'')) = $4
       )
       SELECT
         (SELECT bdi FROM planilha_params) AS bdi,
@@ -8695,7 +7552,6 @@ export default async function v1Routes(server: FastifyInstance) {
       ctx.tenantId,
       idObra,
       idPlanilha,
-      idFonteDados,
       codigoServico
     )) as any[];
 
@@ -8725,44 +7581,40 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaModeloFonteTables(prisma);
+    await ensurePlanilhaServicosTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
-    const mig = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
-    const idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : 0;
-    if (!idFonteDados) return fail(reply, 422, 'Fonte de dados da planilha não definida');
 
     const rows = (await prisma.$queryRawUnsafe(
       `
       SELECT
         id_servico AS "idServico",
-        COALESCE(banco,'') AS fonte,
-        COALESCE(descricao,'') AS servico,
+        COALESCE(fonte,'') AS fonte,
+        COALESCE(servico,'') AS servico,
         COALESCE(und,'') AS und
-      FROM obras_servicos_fonte
-      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
+      FROM tab_servicos
+      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4
       ORDER BY id_servico ASC
       LIMIT 1
       `,
       ctx.tenantId,
-      idFonteDados,
+      idObra,
+      idPlanilha,
       codigoServico
     )) as any[];
     const r = rows?.[0] || null;
 
-    const idServico = r?.idServico ? Number(r.idServico) : 0;
-    const existsLinha = idServico
-      ? ((await prisma.$queryRawUnsafe(
-        `
-        SELECT 1 AS ok
-        FROM obras_planilha_itens
-        WHERE tenant_id = $1 AND id_planilha = $2 AND tipo_linha = 'SERVICO' AND id_servico = $3
-        LIMIT 1
-        `,
-        ctx.tenantId,
-        idPlanilha,
-        idServico
-      )) as any[])
-      : [];
+    const existsLinha = (await prisma.$queryRawUnsafe(
+      `
+      SELECT 1 AS ok
+      FROM tab_planilha_itens i
+      LEFT JOIN tab_servicos s ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
+      WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND UPPER(COALESCE(s.codigo,'')) = $3
+      LIMIT 1
+      `,
+      ctx.tenantId,
+      idPlanilha,
+      codigoServico
+    )) as any[];
 
     return ok(reply, {
       planilhaId: idPlanilha,
@@ -8801,26 +7653,24 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!descricao) return fail(reply, 422, 'Descrição do serviço é obrigatória');
     if (!und) return fail(reply, 422, 'UND do serviço é obrigatória');
 
-    await ensurePlanilhaModeloFonteTables(prisma);
-    await ensureServicosFonteTables(prisma);
+    await ensurePlanilhaServicosTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, body.planilhaId ?? q.planilhaId);
-    const mig = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
-    const idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : 0;
-    if (!idFonteDados) return fail(reply, 422, 'Fonte de dados da planilha não definida');
 
     const rows = (await prisma.$queryRawUnsafe(
       `
-      INSERT INTO obras_servicos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und)
-      VALUES ($1,$2,'SERVICO',$3,$4,$5,$6)
-      ON CONFLICT (tenant_id, id_fonte_dados, codigo) DO UPDATE
+      INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
+      VALUES ($1,$2,$3,$4,$5,$6,$7)
+      ON CONFLICT (tenant_id, id_obra, id_planilha, codigo) DO UPDATE
       SET
-        banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-        descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-        und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und)
+        fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
+        servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
+        und = COALESCE(NULLIF(EXCLUDED.und,''), tab_servicos.und),
+        atualizado_em = NOW()
       RETURNING id_servico AS "idServico"
       `,
       ctx.tenantId,
-      idFonteDados,
+      idObra,
+      idPlanilha,
       codigoServico,
       banco,
       descricao,
@@ -8828,7 +7678,7 @@ export default async function v1Routes(server: FastifyInstance) {
     )) as any[];
     const idServico = rows?.[0]?.idServico ? Number(rows[0].idServico) : 0;
 
-    return ok(reply, { idServico, codigoServico }, { message: 'Serviço salvo no catálogo da Fonte' });
+    return ok(reply, { idServico, codigoServico }, { message: 'Serviço salvo' });
   });
 
   server.get('/engenharia/obras/:id/planilha/sinapi/servicos/:codigo/meta', async (request, reply) => {
@@ -8844,15 +7694,18 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaOrcamentariaTables(prisma);
+    await ensurePlanilhaEstruturaUnicaTables(prisma);
     await ensureSinapiBaseTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
+    await prismaTx(async (tx: any) => {
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
+    });
 
     const vers = (await prisma.$queryRawUnsafe(
       `
       SELECT p.data_base_sinapi AS "dataBaseSinapi"
-      FROM obras_planilhas_versoes v
-      LEFT JOIN obras_planilhas_parametros p
+      FROM tab_planilhas v
+      LEFT JOIN tab_parametros p
         ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
       WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
       LIMIT 1
@@ -8888,26 +7741,24 @@ export default async function v1Routes(server: FastifyInstance) {
     }
 
     if (!descricao || !und) {
-      const mig = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
-      const idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : 0;
-      const l = idFonteDados
-        ? ((await prisma.$queryRawUnsafe(
-          `
-          SELECT descricao AS "servico", und AS "und"
-          FROM obras_servicos_fonte
-          WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
-          ORDER BY id_servico DESC
-          LIMIT 1
-          `,
-          ctx.tenantId,
-          idFonteDados,
-          codigoServico
-        )) as any[])
-        : [];
+      await ensurePlanilhaServicosTables(prisma);
+      const l = (await prisma.$queryRawUnsafe(
+        `
+        SELECT servico AS "servico", und AS "und", fonte AS "fonte"
+        FROM tab_servicos
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4
+        ORDER BY id_servico DESC
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        codigoServico
+      )) as any[];
       if (l?.[0]) {
         if (!descricao) descricao = l[0].servico == null ? null : String(l[0].servico || '').trim();
         if (!und) und = l[0].und == null ? null : String(l[0].und || '').trim();
-        if (!fonte) fonte = 'PLANILHA';
+        if (!fonte) fonte = l[0].fonte != null ? String(l[0].fonte || '').trim() || 'PLANILHA' : 'PLANILHA';
       }
     }
 
@@ -8927,17 +7778,19 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaModeloFonteTables(prisma);
+    await ensurePlanilhaEstruturaUnicaTables(prisma);
     await ensureSinapiBaseTables(prisma);
     await ensurePlanilhaComposicaoTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
-    await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
+    await prismaTx(async (tx: any) => {
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
+    });
 
     const vers = (await prisma.$queryRawUnsafe(
       `
       SELECT p.data_base_sinapi AS "dataBaseSinapi"
-      FROM obras_planilhas_versoes v
-      LEFT JOIN obras_planilhas_parametros p
+      FROM tab_planilhas v
+      LEFT JOIN tab_parametros p
         ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
       WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
       LIMIT 1
@@ -8980,7 +7833,7 @@ export default async function v1Routes(server: FastifyInstance) {
       const rows = (await prisma.$queryRawUnsafe(
         `
         SELECT banco, descricao, und
-        FROM obras_planilhas_composicoes_itens
+        FROM tab_composicoes
         WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
           AND UPPER(COALESCE(codigo_item,'')) = $4
           AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
@@ -9012,29 +7865,30 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
     const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
-    await ensurePlanilhaModeloFonteTables(prisma);
+    await ensurePlanilhaEstruturaUnicaTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
-    const mig = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
-    const idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : 0;
-    if (!idFonteDados) return ok(reply, { codes: [], orfas: [], orfasCount: 0 });
+    await prismaTx(async (tx: any) => {
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
+    });
     const rows = (await prisma.$queryRawUnsafe(
       `
       SELECT
-        DISTINCT UPPER(COALESCE(sf.codigo,'')) AS "codigoServico"
-      FROM obras_planilha_itens i
-      INNER JOIN obras_servicos_fonte sf
-        ON sf.tenant_id = i.tenant_id AND sf.id_servico = i.id_servico
-      INNER JOIN obras_composicoes_itens_fonte ci
-        ON ci.tenant_id = sf.tenant_id AND ci.id_fonte_dados = sf.id_fonte_dados AND ci.id_servico_pai = sf.id_servico
+        DISTINCT UPPER(COALESCE(s.codigo,'')) AS "codigoServico"
+      FROM tab_planilha_itens i
+      INNER JOIN tab_servicos s
+        ON s.tenant_id = i.tenant_id AND s.id_planilha = i.id_planilha AND s.id_servico = i.id_servico
+        AND s.id_obra = $3
+      INNER JOIN tab_composicoes ci
+        ON ci.tenant_id = s.tenant_id AND ci.id_obra = s.id_obra AND ci.id_planilha = s.id_planilha
+        AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
       WHERE i.tenant_id = $1
         AND i.id_planilha = $2
         AND i.tipo_linha = 'SERVICO'
         AND i.id_servico IS NOT NULL
-        AND sf.id_fonte_dados = $3
       `,
       ctx.tenantId,
       idPlanilha,
-      idFonteDados
+      idObra
     )) as any[];
     const codes = (rows || []).map((r: any) => String(r.codigoServico || '').trim()).filter(Boolean);
     return ok(reply, { codes, orfas: [], orfasCount: 0 });
@@ -9050,10 +7904,47 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
     const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
-    await ensurePlanilhaModeloFonteTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
-    await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
-    return ok(reply, { planilhaId: idPlanilha, total: 0, codes: [], blankCount: 0 });
+    await ensurePlanilhaServicosTables(prisma);
+    await ensurePlanilhaComposicaoTables(prisma);
+
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      WITH comps AS (
+        SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS codigo
+        FROM tab_composicoes
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+      ),
+      servs AS (
+        SELECT DISTINCT UPPER(COALESCE(codigo,'')) AS codigo
+        FROM tab_servicos
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+      )
+      SELECT c.codigo AS "codigo"
+      FROM comps c
+      LEFT JOIN servs s ON s.codigo = c.codigo
+      WHERE c.codigo <> '' AND s.codigo IS NULL
+      ORDER BY c.codigo
+      `,
+      ctx.tenantId,
+      idObra,
+      idPlanilha
+    )) as any[];
+
+    const blank = (await prisma.$queryRawUnsafe(
+      `
+      SELECT COUNT(*)::int AS "cnt"
+      FROM tab_composicoes
+      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND COALESCE(codigo_servico,'') = ''
+      `,
+      ctx.tenantId,
+      idObra,
+      idPlanilha
+    )) as any[];
+
+    const codes = (rows || []).map((r: any) => String(r.codigo || '').trim()).filter(Boolean);
+    const blankCount = blank?.[0]?.cnt == null ? 0 : Number(blank[0].cnt);
+    return ok(reply, { planilhaId: idPlanilha, total: codes.length, codes, blankCount });
   });
 
   server.get('/engenharia/obras/:id/planilha/composicoes/referencias', async (request, reply) => {
@@ -9066,31 +7957,24 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
     const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
-    await ensurePlanilhaModeloFonteTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
-    const mig = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
-    const idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : 0;
-    if (!idFonteDados) return ok(reply, { referencias: [] });
+    await ensurePlanilhaComposicaoTables(prisma);
     const rows = (await prisma.$queryRawUnsafe(
       `
       WITH refs AS (
         SELECT DISTINCT
-          UPPER(COALESCE(sf.codigo,'')) AS codigo,
+          UPPER(COALESCE(ci.codigo_item,'')) AS codigo,
           MAX(ci.tipo_item) AS tipo
-        FROM obras_composicoes_itens_fonte ci
-        JOIN obras_servicos_fonte sf
-          ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
-        WHERE ci.tenant_id = $1
-          AND ci.id_fonte_dados = $2
+        FROM tab_composicoes ci
+        WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
           AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-        GROUP BY UPPER(COALESCE(sf.codigo,''))
+          AND COALESCE(ci.codigo_item,'') <> ''
+        GROUP BY UPPER(COALESCE(ci.codigo_item,''))
       ),
       defs AS (
-        SELECT DISTINCT UPPER(COALESCE(sp.codigo,'')) AS codigo
-        FROM obras_composicoes_itens_fonte ci
-        JOIN obras_servicos_fonte sp
-          ON sp.tenant_id = ci.tenant_id AND sp.id_fonte_dados = ci.id_fonte_dados AND sp.id_servico = ci.id_servico_pai
-        WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $2
+        SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS codigo
+        FROM tab_composicoes
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND COALESCE(codigo_servico,'') <> ''
       )
       SELECT
         r.codigo AS "codigo",
@@ -9101,7 +7985,8 @@ export default async function v1Routes(server: FastifyInstance) {
       ORDER BY r.codigo
       `,
       ctx.tenantId,
-      idFonteDados
+      idObra,
+      idPlanilha
     )) as any[];
     return ok(reply, {
       referencias: (rows || []).map((r: any) => ({
@@ -9122,12 +8007,11 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaModeloFonteTables(prisma);
+    await ensurePlanilhaOrcamentariaTables(prisma);
+    await ensurePlanilhaServicosTables(prisma);
+    await ensurePlanilhaComposicaoTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
     if (!idPlanilha) return ok(reply, { planilhaId: null, bdiPercent: 0, lsPercent: 0, rows: [] });
-    const mig = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
-    const idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : 0;
-    if (!idFonteDados) return ok(reply, { planilhaId: idPlanilha, bdiPercent: 0, lsPercent: 0, rows: [] });
 
     const rows = (await prisma.$queryRawUnsafe(
       `
@@ -9135,81 +8019,42 @@ export default async function v1Routes(server: FastifyInstance) {
         SELECT
           COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
           COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
-        FROM obras_planilhas_versoes v
-        LEFT JOIN obras_planilhas_parametros p
+        FROM tab_planilhas v
+        LEFT JOIN tab_parametros p
           ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
         WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
         LIMIT 1
       ),
-      servicos_fonte AS (
-        SELECT
-          sf.id_servico AS id_servico,
-          UPPER(COALESCE(sf.codigo,'')) AS codigo_servico,
-          COALESCE(sf.banco,'') AS fonte,
-          COALESCE(sf.descricao, '') AS servico
-        FROM obras_servicos_fonte sf
-        WHERE sf.tenant_id = $1
-          AND sf.id_fonte_dados = $4
-          AND COALESCE(sf.tipo,'SERVICO') = 'SERVICO'
-      ),
       planilha_servicos AS (
         SELECT
-          i.id_servico AS id_servico,
+          UPPER(COALESCE(s.codigo,'')) AS codigo_servico,
           COALESCE(MIN(i.item) FILTER (WHERE COALESCE(i.item,'') <> ''), '') AS item,
           SUM(COALESCE(i.valor_parcial, 0)) AS total_planilha
-        FROM obras_planilha_itens i
-        WHERE i.tenant_id = $1
-          AND i.id_planilha = $3
-          AND i.tipo_linha = 'SERVICO'
-          AND i.id_servico IS NOT NULL
-        GROUP BY i.id_servico
+        FROM tab_planilha_itens i
+        LEFT JOIN tab_servicos s ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
+        WHERE i.tenant_id = $1 AND i.id_planilha = $3 AND i.tipo_linha = 'SERVICO'
+        GROUP BY UPPER(COALESCE(s.codigo,''))
       ),
       base AS (
         SELECT
-          sf.id_servico AS id_servico,
-          sf.codigo_servico AS codigo_servico,
-          sf.fonte AS fonte,
-          sf.servico AS servico,
+          UPPER(COALESCE(s.codigo,'')) AS codigo_servico,
+          COALESCE(s.fonte,'') AS fonte,
+          COALESCE(s.servico,'') AS servico,
           COALESCE(ps.item,'') AS item,
           COALESCE(ps.total_planilha, 0) AS total_planilha
-        FROM servicos_fonte sf
-        LEFT JOIN planilha_servicos ps
-          ON ps.id_servico = sf.id_servico
+        FROM tab_servicos s
+        LEFT JOIN planilha_servicos ps ON ps.codigo_servico = UPPER(COALESCE(s.codigo,''))
+        WHERE s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3
       ),
       comps AS (
         SELECT
-          b.id_servico AS id_servico,
-          COUNT(ci.id_composicao_item) AS qtd_itens,
-          SUM(
-            COALESCE(ci.quantidade,0)
-            * COALESCE(
-              CASE
-                WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sfilho.valor_unitario
-                ELSE inf.valor_unitario
-              END,
-              0
-            )
-          ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
-          SUM(
-            COALESCE(ci.quantidade,0)
-            * COALESCE(
-              CASE
-                WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sfilho.valor_unitario
-                ELSE inf.valor_unitario
-              END,
-              0
-            )
-          ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
-        FROM base b
-        LEFT JOIN obras_composicoes_itens_fonte ci
-          ON ci.tenant_id = $1 AND ci.id_fonte_dados = $4 AND ci.id_servico_pai = b.id_servico
-        LEFT JOIN obras_servicos_fonte sfilho
-          ON sfilho.tenant_id = $1 AND sfilho.id_fonte_dados = $4 AND sfilho.id_servico = ci.id_item
-          AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-        LEFT JOIN obras_insumos_fonte inf
-          ON inf.tenant_id = $1 AND inf.id_fonte_dados = $4 AND inf.id_insumo = ci.id_item
-          AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-        GROUP BY b.id_servico
+          UPPER(COALESCE(ci.codigo_servico,'')) AS codigo_servico,
+          COUNT(ci.id_item) AS qtd_itens,
+          SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
+          SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
+        FROM tab_composicoes ci
+        WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+        GROUP BY UPPER(COALESCE(ci.codigo_servico,''))
       )
       SELECT
         b.codigo_servico AS "codigoServico",
@@ -9223,13 +8068,12 @@ export default async function v1Routes(server: FastifyInstance) {
         (SELECT bdi FROM planilha_params) AS "bdiPercent",
         (SELECT ls FROM planilha_params) AS "lsPercent"
       FROM base b
-      LEFT JOIN comps c ON c.id_servico = b.id_servico
+      LEFT JOIN comps c ON c.codigo_servico = b.codigo_servico
       ORDER BY b.codigo_servico
       `,
       ctx.tenantId,
       idObra,
-      idPlanilha,
-      idFonteDados
+      idPlanilha
     )) as any[];
 
     const bdiPercent = rows?.[0]?.bdiPercent == null ? 0 : Number(rows[0].bdiPercent);
@@ -9292,608 +8136,288 @@ export default async function v1Routes(server: FastifyInstance) {
     if (sourcePlanilhaId === targetPlanilhaId) return fail(reply, 422, 'Planilha origem e destino não podem ser iguais');
     if (insumosPrecoMode !== 'MANTER' && insumosPrecoMode !== 'SUBSTITUIR') return fail(reply, 422, 'insumosPrecoMode inválido');
 
-    await ensurePlanilhaModeloFonteTables(prisma);
-    const migSrc = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, sourcePlanilhaId);
-    const migDst = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, targetPlanilhaId);
-    const idFonteDadosSrc = migSrc?.idFonteDados ? Number(migSrc.idFonteDados) : 0;
-    const idFonteDadosDst = migDst?.idFonteDados ? Number(migDst.idFonteDados) : 0;
-    if (!idFonteDadosSrc || !idFonteDadosDst) return fail(reply, 422, 'Fonte de dados não definida em uma das planilhas');
+    await ensurePlanilhaOrcamentariaTables(prisma);
+    await ensurePlanilhaServicosTables(prisma);
+    await ensurePlanilhaComposicaoTables(prisma);
+    await ensureInsumosPrecosTables(prisma);
 
-    const srcSvcRows = (await prisma.$queryRawUnsafe(
+    const srcMetaRows = (await prisma.$queryRawUnsafe(
       `
-      SELECT
-        id_servico AS "idServico",
-        COALESCE(banco,'') AS banco,
-        COALESCE(descricao,'') AS descricao,
-        COALESCE(und,'') AS und,
-        valor_unitario AS "valorUnitario"
-      FROM obras_servicos_fonte
-      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
+      SELECT COALESCE(fonte,'') AS fonte, COALESCE(servico,'') AS servico, COALESCE(und,'') AS und
+      FROM tab_servicos
+      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4
+      ORDER BY id_servico DESC
       LIMIT 1
       `,
       ctx.tenantId,
-      idFonteDadosSrc,
+      idObra,
+      sourcePlanilhaId,
       codigoServico
     )) as any[];
-    const srcSvc = srcSvcRows?.[0] || null;
-    const idServicoSrc = srcSvc?.idServico ? Number(srcSvc.idServico) : 0;
-    if (!idServicoSrc) return fail(reply, 422, 'Serviço não encontrado no catálogo da Fonte origem');
+    const srcMeta = srcMetaRows?.[0] || null;
 
-    const dstSvcRows = (await prisma.$queryRawUnsafe(
+    const srcLinhaRows = (await prisma.$queryRawUnsafe(
       `
-      INSERT INTO obras_servicos_fonte
-        (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-      VALUES
-        ($1,$2,'SERVICO',$3,$4,$5,$6,$7)
-      ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-      DO UPDATE SET
-        banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-        descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-        und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
-        valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
-        atualizado_em = NOW()
-      RETURNING id_servico AS "idServico"
-      `,
-      ctx.tenantId,
-      idFonteDadosDst,
-      codigoServico,
-      String(srcSvc?.banco || '') || null,
-      String(srcSvc?.descricao || '') || null,
-      String(srcSvc?.und || '') || null,
-      srcSvc?.valorUnitario == null ? null : Number(srcSvc.valorUnitario)
-    )) as any[];
-    const idServicoDst = dstSvcRows?.[0]?.idServico ? Number(dstSvcRows[0].idServico) : 0;
-    if (!idServicoDst) return fail(reply, 422, 'Falha ao criar/obter serviço no catálogo da Fonte destino');
-
-    const srcHasCompRows = (await prisma.$queryRawUnsafe(
-      `
-      SELECT 1 AS ok
-      FROM obras_composicoes_itens_fonte
-      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3
-      LIMIT 1
-      `,
-      ctx.tenantId,
-      idFonteDadosSrc,
-      idServicoSrc
-    )) as any[];
-    const srcHasComposicao = Boolean(srcHasCompRows?.[0]?.ok);
-
-    const dstHasCompRows = (await prisma.$queryRawUnsafe(
-      `
-      SELECT 1 AS ok
-      FROM obras_composicoes_itens_fonte
-      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3
-      LIMIT 1
-      `,
-      ctx.tenantId,
-      idFonteDadosDst,
-      idServicoDst
-    )) as any[];
-    const existsComposicaoTarget = Boolean(dstHasCompRows?.[0]?.ok);
-
-    const srcLinha = (await prisma.$queryRawUnsafe(
-      `
-      SELECT
-        id_planilha_item AS "idLinha",
-        ordem,
-        item,
-        quantidade,
-        nivel
-      FROM obras_planilha_itens
-      WHERE tenant_id = $1 AND id_planilha = $2 AND tipo_linha = 'SERVICO' AND id_servico = $3
-      ORDER BY id_planilha_item ASC
+      SELECT COALESCE(i.item,'') AS item, COALESCE(i.quantidade,0) AS quantidade, COALESCE(i.valor_unitario,0) AS valor_unitario
+      FROM tab_planilha_itens i
+      LEFT JOIN tab_servicos s ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
+      WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND UPPER(COALESCE(s.codigo,'')) = $3
+      ORDER BY i.id_linha DESC
       LIMIT 1
       `,
       ctx.tenantId,
       sourcePlanilhaId,
-      idServicoSrc
+      codigoServico
     )) as any[];
-    const src = srcLinha?.[0] || null;
-    if (!src) return fail(reply, 422, 'O serviço não existe como linha na planilha origem');
+    const srcLinha = srcLinhaRows?.[0] || null;
 
-    const dstLinha = (await prisma.$queryRawUnsafe(
+    const dstSvcExists = (await prisma.$queryRawUnsafe(
+      `SELECT 1 AS ok FROM tab_servicos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4 LIMIT 1`,
+      ctx.tenantId,
+      idObra,
+      targetPlanilhaId,
+      codigoServico
+    )) as any[];
+    const existsServicoTarget = Boolean(dstSvcExists?.[0]?.ok);
+
+    const dstCompExists = (await prisma.$queryRawUnsafe(
+      `SELECT 1 AS ok FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4 LIMIT 1`,
+      ctx.tenantId,
+      idObra,
+      targetPlanilhaId,
+      codigoServico
+    )) as any[];
+    const existsComposicaoTarget = Boolean(dstCompExists?.[0]?.ok);
+
+    const dstLinhaRows = (await prisma.$queryRawUnsafe(
       `
-      SELECT
-        id_planilha_item AS "idLinha"
-      FROM obras_planilha_itens
-      WHERE tenant_id = $1 AND id_planilha = $2 AND tipo_linha = 'SERVICO' AND id_servico = $3
-      ORDER BY id_planilha_item ASC
+      SELECT COALESCE(i.valor_unitario,0) AS valor_unitario
+      FROM tab_planilha_itens i
+      LEFT JOIN tab_servicos s ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
+      WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND UPPER(COALESCE(s.codigo,'')) = $3
+      ORDER BY i.id_linha DESC
       LIMIT 1
       `,
       ctx.tenantId,
       targetPlanilhaId,
-      idServicoDst
+      codigoServico
     )) as any[];
-    const dst = dstLinha?.[0] || null;
+    const dstLinha = dstLinhaRows?.[0] || null;
+
+    const diffs = [
+      {
+        codigo: codigoServico,
+        valorOrig: srcLinha?.valor_unitario == null ? 0 : Number(srcLinha.valor_unitario),
+        valorDest: dstLinha?.valor_unitario == null ? 0 : Number(dstLinha.valor_unitario),
+      },
+    ];
 
     if (dryRun) {
-      return ok(reply, {
-        codigoServico,
-        sourcePlanilhaId,
-        targetPlanilhaId,
-        existsServicoTarget: Boolean(dst?.idLinha),
-        existsComposicaoTarget,
-        diffs: [],
-      });
-    }
-
-    if (dst?.idLinha && !replaceServico) {
-      return fail(reply, 409, `Serviço ${codigoServico} já existe na planilha destino. Marque "Substituir serviço" para continuar.`);
+      return ok(reply, { existsServicoTarget, existsComposicaoTarget, diffs });
     }
 
     await prismaTx(async (tx: any) => {
-      if (idFonteDadosSrc !== idFonteDadosDst && srcHasComposicao && (replaceComposicao || !existsComposicaoTarget)) {
-        const visited = new Set<string>();
-        const queue: string[] = [codigoServico];
-        const affectedServicoIds: number[] = [];
+      await ensurePlanilhaServicosTables(tx);
+      await ensurePlanilhaComposicaoTables(tx);
+      await ensureInsumosPrecosTables(tx);
 
-        while (queue.length) {
-          const currentCode = String(queue.shift() || '').trim().toUpperCase();
-          if (!currentCode || visited.has(currentCode)) continue;
-          visited.add(currentCode);
-
-          const srcSvcRows = (await tx.$queryRawUnsafe(
-            `
-            SELECT
-              id_servico AS "idServico",
-              COALESCE(banco,'') AS banco,
-              COALESCE(descricao,'') AS descricao,
-              COALESCE(und,'') AS und,
-              valor_unitario AS "valorUnitario"
-            FROM obras_servicos_fonte
-            WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
-            LIMIT 1
-            `,
-            ctx.tenantId,
-            idFonteDadosSrc,
-            currentCode
-          )) as any[];
-          const srcSvc = srcSvcRows?.[0] || null;
-          const idServicoPaiSrc = srcSvc?.idServico ? Number(srcSvc.idServico) : 0;
-          if (!idServicoPaiSrc) continue;
-
-          const dstSvcRows = (await tx.$queryRawUnsafe(
-            `
-            INSERT INTO obras_servicos_fonte
-              (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-            VALUES
-              ($1,$2,'SERVICO',$3,$4,$5,$6,$7)
-            ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-            DO UPDATE SET
-              banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-              descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-              und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
-              valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
-              atualizado_em = NOW()
-            RETURNING id_servico AS "idServico"
-            `,
-            ctx.tenantId,
-            idFonteDadosDst,
-            currentCode,
-            String(srcSvc?.banco || '') || null,
-            String(srcSvc?.descricao || '') || null,
-            String(srcSvc?.und || '') || null,
-            srcSvc?.valorUnitario == null ? null : Number(srcSvc.valorUnitario)
-          )) as any[];
-          const idServicoPaiDst = dstSvcRows?.[0]?.idServico ? Number(dstSvcRows[0].idServico) : 0;
-          if (!idServicoPaiDst) continue;
-
-          const dstHas = (await tx.$queryRawUnsafe(
-            `
-            SELECT 1 AS ok
-            FROM obras_composicoes_itens_fonte
-            WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3
-            LIMIT 1
-            `,
-            ctx.tenantId,
-            idFonteDadosDst,
-            idServicoPaiDst
-          )) as any[];
-          const dstAlreadyHas = Boolean(dstHas?.[0]?.ok);
-          if (dstAlreadyHas && !replaceComposicao) continue;
-
-          const items = (await tx.$queryRawUnsafe(
-            `
-            SELECT
-              id_composicao_item AS "idComposicaoItem",
-              COALESCE(tipo_item,'') AS "tipoItem",
-              id_item AS "idItem",
-              quantidade AS "quantidade",
-              COALESCE(unidade,'') AS "unidade",
-              ordem AS "ordem"
-            FROM obras_composicoes_itens_fonte
-            WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3
-            ORDER BY ordem ASC, id_composicao_item ASC
-            `,
-            ctx.tenantId,
-            idFonteDadosSrc,
-            idServicoPaiSrc
-          )) as any[];
-
-          for (const it of items || []) {
-            const tipoItem = String(it?.tipoItem || '').trim().toUpperCase();
-            const idItemSrc = it?.idItem ? Number(it.idItem) : 0;
-            if (!idItemSrc) continue;
-            if (tipoItem === 'COMPOSICAO' || tipoItem === 'COMPOSICAO_AUXILIAR') {
-              const childRows = (await tx.$queryRawUnsafe(
-                `
-                SELECT
-                  COALESCE(codigo,'') AS codigo,
-                  COALESCE(banco,'') AS banco,
-                  COALESCE(descricao,'') AS descricao,
-                  COALESCE(und,'') AS und,
-                  valor_unitario AS "valorUnitario"
-                FROM obras_servicos_fonte
-                WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico = $3
-                LIMIT 1
-                `,
-                ctx.tenantId,
-                idFonteDadosSrc,
-                idItemSrc
-              )) as any[];
-              const child = childRows?.[0] || null;
-              const childCode = String(child?.codigo || '').trim().toUpperCase();
-              if (childCode) queue.push(childCode);
-
-              await tx.$queryRawUnsafe(
-                `
-                INSERT INTO obras_servicos_fonte
-                  (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-                VALUES
-                  ($1,$2,NULL,$3,$4,$5,$6,$7)
-                ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-                DO UPDATE SET
-                  banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-                  descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-                  und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
-                  valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_servicos_fonte.valor_unitario),
-                  atualizado_em = NOW()
-                `,
-                ctx.tenantId,
-                idFonteDadosDst,
-                childCode,
-                String(child?.banco || '') || null,
-                String(child?.descricao || '') || null,
-                String(child?.und || '') || null,
-                child?.valorUnitario == null ? null : Number(child.valorUnitario)
-              );
-            } else {
-              const insRows = (await tx.$queryRawUnsafe(
-                `
-                SELECT
-                  COALESCE(tipo,'') AS tipo,
-                  COALESCE(codigo,'') AS codigo,
-                  COALESCE(banco,'') AS banco,
-                  COALESCE(descricao,'') AS descricao,
-                  COALESCE(und,'') AS und,
-                  valor_unitario AS "valorUnitario"
-                FROM obras_insumos_fonte
-                WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_insumo = $3
-                LIMIT 1
-                `,
-                ctx.tenantId,
-                idFonteDadosSrc,
-                idItemSrc
-              )) as any[];
-              const ins = insRows?.[0] || null;
-              const insCode = String(ins?.codigo || '').trim().toUpperCase();
-              if (!insCode) continue;
-              await tx.$queryRawUnsafe(
-                `
-                INSERT INTO obras_insumos_fonte
-                  (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-                VALUES
-                  ($1,$2,$3,$4,$5,$6,$7,$8)
-                ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-                DO UPDATE SET
-                  tipo = COALESCE(NULLIF(EXCLUDED.tipo,''), obras_insumos_fonte.tipo),
-                  banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_insumos_fonte.banco),
-                  descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_insumos_fonte.descricao),
-                  und = COALESCE(NULLIF(EXCLUDED.und,''), obras_insumos_fonte.und),
-                  valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_insumos_fonte.valor_unitario),
-                  atualizado_em = NOW()
-                `,
-                ctx.tenantId,
-                idFonteDadosDst,
-                String(ins?.tipo || '') || null,
-                insCode,
-                String(ins?.banco || '') || null,
-                String(ins?.descricao || '') || null,
-                String(ins?.und || '') || null,
-                ins?.valorUnitario == null ? null : Number(ins.valorUnitario)
-              );
-            }
-          }
-
-          await tx.$executeRawUnsafe(
-            `DELETE FROM obras_composicoes_itens_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3`,
-            ctx.tenantId,
-            idFonteDadosDst,
-            idServicoPaiDst
-          );
-          for (const it of items || []) {
-            const tipoItem = String(it?.tipoItem || '').trim().toUpperCase();
-            const idItemSrc = it?.idItem ? Number(it.idItem) : 0;
-            if (!idItemSrc) continue;
-            let idItemDst = 0;
-            if (tipoItem === 'COMPOSICAO' || tipoItem === 'COMPOSICAO_AUXILIAR') {
-              const childRows = (await tx.$queryRawUnsafe(
-                `
-                  SELECT COALESCE(codigo,'') AS codigo
-                  FROM obras_servicos_fonte
-                  WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico = $3
-                  LIMIT 1
-                  `,
-                ctx.tenantId,
-                idFonteDadosSrc,
-                idItemSrc
-              )) as any[];
-              const childCode = String(childRows?.[0]?.codigo || '').trim().toUpperCase();
-              if (!childCode) continue;
-              const idRows = (await tx.$queryRawUnsafe(
-                `
-                  SELECT id_servico AS "id"
-                  FROM obras_servicos_fonte
-                  WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
-                  LIMIT 1
-                  `,
-                ctx.tenantId,
-                idFonteDadosDst,
-                childCode
-              )) as any[];
-              idItemDst = idRows?.[0]?.id ? Number(idRows[0].id) : 0;
-            } else {
-              const insRows = (await tx.$queryRawUnsafe(
-                `
-                  SELECT COALESCE(codigo,'') AS codigo
-                  FROM obras_insumos_fonte
-                  WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_insumo = $3
-                  LIMIT 1
-                  `,
-                ctx.tenantId,
-                idFonteDadosSrc,
-                idItemSrc
-              )) as any[];
-              const insCode = String(insRows?.[0]?.codigo || '').trim().toUpperCase();
-              if (!insCode) continue;
-              const idRows = (await tx.$queryRawUnsafe(
-                `
-                  SELECT id_insumo AS "id"
-                  FROM obras_insumos_fonte
-                  WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
-                  LIMIT 1
-                  `,
-                ctx.tenantId,
-                idFonteDadosDst,
-                insCode
-              )) as any[];
-              idItemDst = idRows?.[0]?.id ? Number(idRows[0].id) : 0;
-            }
-
-            if (!idItemDst) continue;
-            await tx.$executeRawUnsafe(
-              `
-                INSERT INTO obras_composicoes_itens_fonte
-                  (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item, quantidade, unidade, ordem)
-                VALUES
-                  ($1,$2,$3,$4,$5,$6,$7,$8)
-                ON CONFLICT (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item)
-                DO UPDATE SET
-                  quantidade = EXCLUDED.quantidade,
-                  unidade = EXCLUDED.unidade,
-                  ordem = EXCLUDED.ordem,
-                  atualizado_em = NOW()
-                `,
-              ctx.tenantId,
-              idFonteDadosDst,
-              idServicoPaiDst,
-              tipoItem.slice(0, 24) || 'INSUMO',
-              idItemDst,
-              it?.quantidade == null ? null : toDec(it.quantidade),
-              String(it?.unidade || '') || null,
-              it?.ordem == null ? 0 : Number(it.ordem)
-            );
-          }
-          affectedServicoIds.push(idServicoPaiDst);
-        }
-
-        const uniqIds = Array.from(new Set(affectedServicoIds)).filter((n) => Number.isFinite(n) && n > 0);
-        for (const idServicoPai of uniqIds) {
-          await tx.$executeRawUnsafe(
-            `
-            WITH base AS (
-              SELECT
-                COUNT(ci.id_composicao_item) AS qtd,
-                COALESCE(SUM(
-                  COALESCE(ci.quantidade,0)
-                  * COALESCE(
-                    CASE
-                      WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                      ELSE inf.valor_unitario
-                    END,
-                    0
-                  )
-                ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')), 0) AS total_base,
-                COALESCE(SUM(
-                  COALESCE(ci.quantidade,0)
-                  * COALESCE(
-                    CASE
-                      WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                      ELSE inf.valor_unitario
-                    END,
-                    0
-                  )
-                ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA'), 0) AS total_mao_base
-              FROM obras_composicoes_itens_fonte ci
-              LEFT JOIN obras_servicos_fonte sf
-                ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
-                AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-              LEFT JOIN obras_insumos_fonte inf
-                ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
-                AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-              WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $2 AND ci.id_servico_pai = $3
-            ),
-            plans AS (
-              SELECT
-                v.id_planilha AS id_planilha,
-                COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
-                COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
-              FROM obras_planilhas_versoes v
-              LEFT JOIN obras_planilhas_parametros p
-                ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
-              WHERE v.tenant_id = $1 AND v.id_fonte_dados = $2
-            ),
-            calc AS (
-              SELECT
-                id_planilha,
-                CASE
-                  WHEN (SELECT qtd FROM base) > 0 THEN
-                    (
-                      (
-                        ((SELECT total_base FROM base) - (SELECT total_mao_base FROM base))
-                        + (SELECT total_mao_base FROM base) * (1 + (ls / 100.0))
-                      )
-                      * (1 + (bdi / 100.0))
-                    )
-                  ELSE 0
-                END AS valor_unitario
-              FROM plans
-            )
-            UPDATE obras_planilha_itens i
-            SET
-              valor_unitario = ROUND(calc.valor_unitario::numeric, 6),
-              valor_parcial = CASE
-                WHEN i.quantidade IS NULL THEN i.valor_parcial
-                ELSE ROUND((COALESCE(i.quantidade,0) * calc.valor_unitario)::numeric, 6)
-              END,
-              atualizado_em = NOW()
-            FROM calc
-            WHERE i.tenant_id = $1
-              AND i.id_planilha = calc.id_planilha
-              AND i.tipo_linha = 'SERVICO'
-              AND i.id_servico = $3
-            `,
-            ctx.tenantId,
-            idFonteDadosDst,
-            idServicoPai
-          );
-        }
-      }
-
-      if (!dst?.idLinha) {
-        const maxOrd = (await tx.$queryRawUnsafe(
-          `SELECT COALESCE(MAX(ordem),0)::int AS "maxOrd" FROM obras_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`,
-          ctx.tenantId,
-          targetPlanilhaId
-        )) as any[];
-        const ordem = Number(maxOrd?.[0]?.maxOrd || 0) + 1;
+      if (!existsServicoTarget || replaceServico) {
         await tx.$executeRawUnsafe(
           `
-          INSERT INTO obras_planilha_itens
-            (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
-          VALUES
-            ($1,$2,$3,$4,$5,$6,NULL,NULL,$7,'SERVICO',NULL)
+          INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
+          VALUES ($1,$2,$3,$4,$5,$6,$7)
+          ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+          DO UPDATE SET
+            fonte = EXCLUDED.fonte,
+            servico = EXCLUDED.servico,
+            und = EXCLUDED.und,
+            atualizado_em = NOW()
           `,
           ctx.tenantId,
+          idObra,
           targetPlanilhaId,
-          ordem,
-          src.item,
-          idServicoDst,
-          src.quantidade,
-          Number(src.nivel || 0)
-        );
-      } else {
-        await tx.$executeRawUnsafe(
-          `
-          UPDATE obras_planilha_itens
-          SET item = $4, quantidade = $5, nivel = $6, atualizado_em = NOW()
-          WHERE tenant_id = $1 AND id_planilha = $2 AND id_planilha_item = $3
-          `,
-          ctx.tenantId,
-          targetPlanilhaId,
-          Number(dst.idLinha),
-          src.item,
-          src.quantidade,
-          Number(src.nivel || 0)
+          codigoServico,
+          srcMeta?.fonte != null ? String(srcMeta.fonte || '').trim() || null : null,
+          srcMeta?.servico != null ? String(srcMeta.servico || '').trim() || null : null,
+          srcMeta?.und != null ? String(srcMeta.und || '').trim() || null : null
         );
       }
 
-      await tx.$executeRawUnsafe(
-        `
-        WITH planilha_params AS (
-          SELECT
-            COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
-            COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
-          FROM obras_planilhas_versoes v
-          LEFT JOIN obras_planilhas_parametros p
-            ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
-          WHERE v.tenant_id = $1 AND v.id_planilha = $2
+      if (replaceServico && srcLinha) {
+        const tgtRow = (await tx.$queryRawUnsafe(
+          `
+          SELECT i.id_linha AS "idLinha"
+          FROM tab_planilha_itens i
+          LEFT JOIN tab_servicos s ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
+          WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND UPPER(COALESCE(s.codigo,'')) = $3
+          ORDER BY i.id_linha DESC
           LIMIT 1
-        ),
-        base AS (
-          SELECT
-            COUNT(ci.id_composicao_item) AS qtd,
-            COALESCE(SUM(
-              COALESCE(ci.quantidade,0)
-              * COALESCE(
-                CASE
-                  WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                  ELSE inf.valor_unitario
-                END,
-                0
-              )
-            ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')), 0) AS total_base,
-            COALESCE(SUM(
-              COALESCE(ci.quantidade,0)
-              * COALESCE(
-                CASE
-                  WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                  ELSE inf.valor_unitario
-                END,
-                0
-              )
-            ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA'), 0) AS total_mao_base
-          FROM obras_composicoes_itens_fonte ci
-          LEFT JOIN obras_servicos_fonte sf
-            ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
-            AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-          LEFT JOIN obras_insumos_fonte inf
-            ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
-            AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-          WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $3 AND ci.id_servico_pai = $4
-        ),
-        calc AS (
-          SELECT
-            CASE
-              WHEN (SELECT qtd FROM base) > 0 THEN
-                (
-                  (
-                    ((SELECT total_base FROM base) - (SELECT total_mao_base FROM base))
-                    + (SELECT total_mao_base FROM base) * (1 + ((SELECT ls FROM planilha_params) / 100.0))
-                  )
-                  * (1 + ((SELECT bdi FROM planilha_params) / 100.0))
-                )
-              ELSE 0
-            END AS valor_unitario
-        )
-        UPDATE obras_planilha_itens i
-        SET
-          valor_unitario = ROUND((SELECT valor_unitario FROM calc)::numeric, 6),
-          valor_parcial = CASE
-            WHEN i.quantidade IS NULL THEN i.valor_parcial
-            ELSE ROUND((COALESCE(i.quantidade,0) * (SELECT valor_unitario FROM calc))::numeric, 6)
-          END,
-          atualizado_em = NOW()
-        WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND i.id_servico = $4
+          `,
+          ctx.tenantId,
+          targetPlanilhaId,
+          codigoServico
+        )) as any[];
+        const idLinhaTgt = tgtRow?.[0]?.idLinha ? Number(tgtRow[0].idLinha) : 0;
+        if (idLinhaTgt) {
+          await tx.$executeRawUnsafe(
+            `
+            UPDATE tab_planilha_itens
+            SET item = $4, quantidade = $5, atualizado_em = NOW()
+            WHERE tenant_id = $1 AND id_planilha = $2 AND id_linha = $3
+            `,
+            ctx.tenantId,
+            targetPlanilhaId,
+            idLinhaTgt,
+            String(srcLinha.item || '').trim() || null,
+            srcLinha.quantidade == null ? null : Number(srcLinha.quantidade)
+          );
+        } else {
+          const maxOrd = (await tx.$queryRawUnsafe(
+            `SELECT COALESCE(MAX(ordem),0)::int AS "m" FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`,
+            ctx.tenantId,
+            targetPlanilhaId
+          )) as any[];
+          const ordem = maxOrd?.[0]?.m == null ? 0 : Number(maxOrd[0].m);
+
+          const svcIdRows = (await tx.$queryRawUnsafe(
+            `SELECT id_servico FROM tab_servicos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo) = $4 LIMIT 1`,
+            ctx.tenantId,
+            idObra,
+            targetPlanilhaId,
+            codigoServico
+          )) as any[];
+          const targetSvcId = svcIdRows?.[0]?.id_servico;
+
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO tab_planilha_itens
+              (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha)
+            VALUES
+              ($1,$2,$3,$4,$5,$6,0,0,0,'SERVICO')
+            `,
+            ctx.tenantId,
+            targetPlanilhaId,
+            ordem + 1,
+            String(srcLinha.item || '').trim() || null,
+            targetSvcId,
+            srcLinha.quantidade == null ? null : Number(srcLinha.quantidade)
+          );
+        }
+      }
+
+      const srcComp = (await tx.$queryRawUnsafe(
+        `
+        SELECT etapa, tipo_item AS "tipoItem", codigo_item AS "codigoItem", banco, descricao, und, quantidade, valor_unitario AS "valorUnitario", perda_percentual AS "perdaPercentual", codigo_centro_custo AS "codigoCentroCusto"
+        FROM tab_composicoes
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
+        ORDER BY COALESCE(etapa,''), tipo_item, codigo_item, id_item
         `,
         ctx.tenantId,
-        targetPlanilhaId,
-        idFonteDadosDst,
-        idServicoDst
-      );
+        idObra,
+        sourcePlanilhaId,
+        codigoServico
+      )) as any[];
+
+      if (replaceComposicao || !existsComposicaoTarget) {
+        await tx.$executeRawUnsafe(
+          `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4`,
+          ctx.tenantId,
+          idObra,
+          targetPlanilhaId,
+          codigoServico
+        );
+        for (const r of srcComp || []) {
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO tab_composicoes
+              (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo)
+            VALUES
+              ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+            `,
+            ctx.tenantId,
+            idObra,
+            targetPlanilhaId,
+            codigoServico,
+            r.etapa == null ? null : String(r.etapa || '').trim() || null,
+            r.tipoItem == null ? null : String(r.tipoItem || '').trim(),
+            r.codigoItem == null ? null : String(r.codigoItem || '').trim(),
+            r.banco == null ? null : String(r.banco || '').trim() || null,
+            r.descricao == null ? null : String(r.descricao || '').trim() || null,
+            r.und == null ? null : String(r.und || '').trim() || null,
+            r.quantidade == null ? null : toDec(r.quantidade),
+            r.valorUnitario == null ? null : toDec(r.valorUnitario),
+            r.perdaPercentual == null ? null : toDec(r.perdaPercentual),
+            r.codigoCentroCusto == null ? null : String(r.codigoCentroCusto || '').trim() || null
+          );
+        }
+      }
+
+      if (insumosPrecoMode === 'SUBSTITUIR' && (srcComp || []).length) {
+        const insCodes = Array.from(
+          new Set(
+            (srcComp || [])
+              .filter((r: any) => {
+                const tipoKey = normalizeHeader(String(r?.tipoItem || ''));
+                return tipoKey !== 'composicao' && tipoKey !== 'composicao_auxiliar';
+              })
+              .map((r: any) => String(r?.codigoItem || '').trim().toUpperCase())
+              .filter(Boolean)
+          )
+        );
+        if (insCodes.length) {
+          const srcPrices = (await tx.$queryRawUnsafe(
+            `
+            SELECT
+              UPPER(COALESCE(codigo_item,'')) AS codigo,
+              valor_unitario AS "valorUnitario",
+              COALESCE(NULLIF(trim(tipo),''),'') AS tipo,
+              COALESCE(NULLIF(trim(banco),''),'') AS banco,
+              COALESCE(NULLIF(trim(descricao),''),'') AS descricao,
+              COALESCE(NULLIF(trim(und),''),'') AS und
+            FROM tab_insumos
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_item,'')) = ANY($4::text[])
+            `,
+            ctx.tenantId,
+            idObra,
+            sourcePlanilhaId,
+            insCodes
+          )) as any[];
+          for (const p of srcPrices || []) {
+            const c = String(p?.codigo || '').trim().toUpperCase();
+            if (!c) continue;
+            await tx.$executeRawUnsafe(
+              `
+              INSERT INTO tab_insumos (tenant_id, id_obra, id_planilha, codigo_item, tipo, banco, descricao, und, valor_unitario)
+              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+              ON CONFLICT (tenant_id, id_obra, id_planilha, codigo_item)
+              DO UPDATE SET
+                tipo = COALESCE(NULLIF(tab_insumos.tipo,''), NULLIF(EXCLUDED.tipo,'')),
+                banco = COALESCE(NULLIF(tab_insumos.banco,''), NULLIF(EXCLUDED.banco,'')),
+                descricao = COALESCE(NULLIF(tab_insumos.descricao,''), NULLIF(EXCLUDED.descricao,'')),
+                und = COALESCE(NULLIF(tab_insumos.und,''), NULLIF(EXCLUDED.und,'')),
+                valor_unitario = EXCLUDED.valor_unitario,
+                atualizado_em = NOW()
+              `,
+              ctx.tenantId,
+              idObra,
+              targetPlanilhaId,
+              c,
+              String(p?.tipo || '').trim().toUpperCase().slice(0, 32) || null,
+              String(p?.banco || '').trim().slice(0, 60) || null,
+              String(p?.descricao || '').trim().slice(0, 255) || null,
+              String(p?.und || '').trim().slice(0, 40) || null,
+              p?.valorUnitario == null ? toDec(0) : toDec(p.valorUnitario)
+            );
+          }
+        }
+      }
+
+      const cascata = await coletarCodigosCascata(tx, ctx.tenantId, idObra, targetPlanilhaId, [codigoServico]);
+      await recalcularFixacaoCascata(tx, ctx.tenantId, idObra, targetPlanilhaId, [codigoServico]);
+      await atualizarServicosPlanilhaPorCodigos(tx, ctx.tenantId, idObra, targetPlanilhaId, cascata);
     });
 
-    return ok(reply, { codigoServico, sourcePlanilhaId, targetPlanilhaId }, { message: 'Serviço copiado' });
+    return ok(reply, { existsServicoTarget, existsComposicaoTarget, diffs });
   });
 
   server.post('/engenharia/obras/:id/planilha/composicoes/importar-csv', async (request, reply) => {
@@ -9906,11 +8430,11 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaModeloFonteTables(prisma);
+    await ensurePlanilhaEstruturaUnicaTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
-    const mig = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
-    const idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : 0;
-    if (!idFonteDados) return fail(reply, 422, 'Fonte de dados da planilha não definida');
+    await prismaTx(async (tx: any) => {
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
+    });
     const isMultipart = typeof (request as any).isMultipart === 'function' ? (request as any).isMultipart() : false;
     if (!isMultipart) return fail(reply, 422, 'Envie multipart/form-data com arquivo no campo "file"');
 
@@ -9999,19 +8523,19 @@ export default async function v1Routes(server: FastifyInstance) {
         )
         SELECT c.codigo AS "codigo"
         FROM codes c
-        LEFT JOIN obras_servicos_fonte sf
-          ON sf.tenant_id = $1 AND sf.id_fonte_dados = $4 AND UPPER(COALESCE(sf.codigo,'')) = c.codigo
-        WHERE sf.id_servico IS NULL
+        LEFT JOIN tab_servicos s
+          ON s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $4 AND UPPER(COALESCE(s.codigo,'')) = c.codigo
+        WHERE s.id_servico IS NULL
         ORDER BY c.codigo
         LIMIT 1
         `,
         ctx.tenantId,
         idObra,
         codigos,
-        idFonteDados
+        idPlanilha
       )) as any[];
       const r = bad?.[0] || null;
-      if (r) return fail(reply, 422, `Não é permitido importar composição para serviço inexistente na Fonte. Serviço: ${String(r.codigo || '').trim().toUpperCase()}`);
+      if (r) return fail(reply, 422, `Não é permitido importar composição para serviço inexistente na planilha. Serviço: ${String(r.codigo || '').trim().toUpperCase()}`);
     }
 
     const grouped = new Map<string, typeof preparedOk>();
@@ -10021,219 +8545,133 @@ export default async function v1Routes(server: FastifyInstance) {
       grouped.get(code)!.push(row);
     }
 
-    const affectedServicoIds: number[] = [];
+    const insumoCodes = Array.from(
+      new Set(
+        preparedOk
+          .filter((r) => {
+            const t = normalizeHeader(String(r?.tipoItem || ''));
+            return t !== 'composicao' && t !== 'composicao_auxiliar';
+          })
+          .map((r) => String(r?.codigoItem || '').trim().toUpperCase())
+          .filter(Boolean)
+      )
+    );
+
     await prismaTx(async (tx: any) => {
-      for (const [codigo, itens] of grouped.entries()) {
-        const paiRows = (await tx.$queryRawUnsafe(
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
+
+      const priceByCodigo = new Map<string, number>();
+      if (insumoCodes.length) {
+        const priceRows = (await tx.$queryRawUnsafe(
           `
-          SELECT id_servico AS "idServico"
-          FROM obras_servicos_fonte
-          WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
-          LIMIT 1
+          SELECT UPPER(COALESCE(codigo_item,'')) AS codigo, valor_unitario AS "valorUnitario"
+          FROM tab_insumos
+          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_item,'')) = ANY($4::text[])
           `,
           ctx.tenantId,
-          idFonteDados,
-          codigo
+          idObra,
+          idPlanilha,
+          insumoCodes
         )) as any[];
-        const idServicoPai = paiRows?.[0]?.idServico ? Number(paiRows[0].idServico) : 0;
-        if (!idServicoPai) throw new Error(`Serviço não encontrado na Fonte: ${codigo}`);
-        affectedServicoIds.push(idServicoPai);
+        for (const r of priceRows || []) {
+          const c = String(r?.codigo || '').trim().toUpperCase();
+          const vu = r?.valorUnitario == null ? null : Number(r.valorUnitario);
+          if (c && vu != null && Number.isFinite(vu)) priceByCodigo.set(c, vu);
+        }
+      }
 
+      for (const [codigoServico, itens] of grouped.entries()) {
         await tx.$executeRawUnsafe(
-          `DELETE FROM obras_composicoes_itens_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3`,
+          `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4`,
           ctx.tenantId,
-          idFonteDados,
-          idServicoPai
+          idObra,
+          idPlanilha,
+          codigoServico
         );
 
-        for (let idx = 0; idx < itens.length; idx++) {
-          const r = itens[idx];
+        for (const r of itens) {
           const tipoItemRaw = String(r.tipoItem || '').trim().toUpperCase();
           const tipoKey = normalizeHeader(tipoItemRaw);
           const isComp = tipoKey === 'composicao' || tipoKey === 'composicao_auxiliar';
           const codigoItem = String(r.codigoItem || '').trim().toUpperCase();
           if (!codigoItem) continue;
 
-          let idItem = 0;
-          if (isComp) {
-            const rows = (await tx.$queryRawUnsafe(
+          if (!isComp && r.valorUnitario != null && Number.isFinite(Number(r.valorUnitario))) {
+            await tx.$executeRawUnsafe(
               `
-              INSERT INTO obras_servicos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-              VALUES ($1,$2,NULL,$3,$4,$5,$6,NULL)
-              ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+              INSERT INTO tab_insumos (tenant_id, id_obra, id_planilha, codigo_item, tipo, banco, descricao, und, valor_unitario)
+              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+              ON CONFLICT (tenant_id, id_obra, id_planilha, codigo_item)
               DO UPDATE SET
-                banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-                descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-                und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
+                tipo = COALESCE(NULLIF(tab_insumos.tipo,''), NULLIF(EXCLUDED.tipo,'')),
+                banco = COALESCE(NULLIF(tab_insumos.banco,''), NULLIF(EXCLUDED.banco,'')),
+                descricao = COALESCE(NULLIF(tab_insumos.descricao,''), NULLIF(EXCLUDED.descricao,'')),
+                und = COALESCE(NULLIF(tab_insumos.und,''), NULLIF(EXCLUDED.und,'')),
+                valor_unitario = EXCLUDED.valor_unitario,
                 atualizado_em = NOW()
-              RETURNING id_servico AS "idItem"
               `,
               ctx.tenantId,
-              idFonteDados,
+              idObra,
+              idPlanilha,
               codigoItem,
-              r.banco,
-              r.descricao,
-              r.und
-            )) as any[];
-            idItem = rows?.[0]?.idItem ? Number(rows[0].idItem) : 0;
-          } else {
-            const rows = (await tx.$queryRawUnsafe(
-              `
-              INSERT INTO obras_insumos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-              VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-              ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-              DO UPDATE SET
-                tipo = COALESCE(NULLIF(EXCLUDED.tipo,''), obras_insumos_fonte.tipo),
-                banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_insumos_fonte.banco),
-                descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_insumos_fonte.descricao),
-                und = COALESCE(NULLIF(EXCLUDED.und,''), obras_insumos_fonte.und),
-                valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_insumos_fonte.valor_unitario),
-                atualizado_em = NOW()
-              RETURNING id_insumo AS "idItem"
-              `,
-              ctx.tenantId,
-              idFonteDados,
-              tipoItemRaw.slice(0, 24) || null,
-              codigoItem,
-              r.banco,
-              r.descricao,
-              r.und,
-              r.valorUnitario
-            )) as any[];
-            idItem = rows?.[0]?.idItem ? Number(rows[0].idItem) : 0;
+              tipoItemRaw.slice(0, 32) || null,
+              r.banco == null ? null : String(r.banco || '').trim() || null,
+              r.descricao == null ? null : String(r.descricao || '').trim() || null,
+              r.und == null ? null : String(r.und || '').trim() || null,
+              toDec(r.valorUnitario)
+            );
+            priceByCodigo.set(codigoItem, Number(r.valorUnitario));
           }
 
-          if (!idItem) continue;
+          const valorUnitarioResolved = isComp ? null : r.valorUnitario != null ? Number(r.valorUnitario) : priceByCodigo.get(codigoItem) ?? null;
+
           await tx.$executeRawUnsafe(
             `
-            INSERT INTO obras_composicoes_itens_fonte
-              (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item, quantidade, unidade, ordem)
+            INSERT INTO tab_composicoes
+              (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo)
             VALUES
-              ($1,$2,$3,$4,$5,$6,$7,$8)
-            ON CONFLICT (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item)
-            DO UPDATE SET
-              quantidade = EXCLUDED.quantidade,
-              unidade = EXCLUDED.unidade,
-              ordem = EXCLUDED.ordem,
-              atualizado_em = NOW()
+              ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
             `,
             ctx.tenantId,
-            idFonteDados,
-            idServicoPai,
-            tipoItemRaw.slice(0, 24) || 'INSUMO',
-            idItem,
-            r.quantidade,
-            r.und,
-            idx
+            idObra,
+            idPlanilha,
+            codigoServico,
+            r.etapa == null ? null : String(r.etapa || '').trim() || null,
+            tipoItemRaw.slice(0, 32) || 'INSUMO',
+            codigoItem,
+            r.banco == null ? null : String(r.banco || '').trim() || null,
+            r.descricao == null ? null : String(r.descricao || '').trim() || null,
+            r.und == null ? null : String(r.und || '').trim() || null,
+            r.quantidade == null ? toDec(0) : toDec(r.quantidade),
+            valorUnitarioResolved == null ? null : toDec(valorUnitarioResolved),
+            r.perda == null ? toDec(0) : toDec(r.perda),
+            r.codigoCentroCusto == null ? null : String(r.codigoCentroCusto || '').trim() || null
           );
         }
       }
 
-      const uniqIds = Array.from(new Set(affectedServicoIds)).filter((n) => Number.isFinite(n) && n > 0);
-      for (const idServicoPai of uniqIds) {
-        await tx.$executeRawUnsafe(
-          `
-          WITH base AS (
-            SELECT
-              COUNT(ci.id_composicao_item) AS qtd,
-              COALESCE(SUM(
-                COALESCE(ci.quantidade,0)
-                * COALESCE(
-                  CASE
-                    WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                    ELSE inf.valor_unitario
-                  END,
-                  0
-                )
-              ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')), 0) AS total_base,
-              COALESCE(SUM(
-                COALESCE(ci.quantidade,0)
-                * COALESCE(
-                  CASE
-                    WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                    ELSE inf.valor_unitario
-                  END,
-                  0
-                )
-              ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA'), 0) AS total_mao_base
-            FROM obras_composicoes_itens_fonte ci
-            LEFT JOIN obras_servicos_fonte sf
-              ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
-              AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-            LEFT JOIN obras_insumos_fonte inf
-              ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
-              AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-            WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $2 AND ci.id_servico_pai = $3
-          ),
-          plans AS (
-            SELECT
-              v.id_planilha AS id_planilha,
-              COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
-              COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
-            FROM obras_planilhas_versoes v
-            LEFT JOIN obras_planilhas_parametros p
-              ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
-            WHERE v.tenant_id = $1 AND v.id_fonte_dados = $2
-          ),
-          calc AS (
-            SELECT
-              id_planilha,
-              CASE
-                WHEN (SELECT qtd FROM base) > 0 THEN
-                  (
-                    (
-                      ((SELECT total_base FROM base) - (SELECT total_mao_base FROM base))
-                      + (SELECT total_mao_base FROM base) * (1 + (ls / 100.0))
-                    )
-                    * (1 + (bdi / 100.0))
-                  )
-                ELSE NULL
-              END AS valor_unitario
-            FROM plans
-          )
-          UPDATE obras_planilha_itens i
-          SET
-            valor_unitario = COALESCE(ROUND(calc.valor_unitario::numeric, 6), i.valor_unitario),
-            valor_parcial = CASE
-              WHEN calc.valor_unitario IS NULL THEN i.valor_parcial
-              WHEN i.quantidade IS NULL THEN i.valor_parcial
-              ELSE ROUND((COALESCE(i.quantidade,0) * calc.valor_unitario)::numeric, 6)
-            END,
-            atualizado_em = NOW()
-          FROM calc
-          WHERE i.tenant_id = $1
-            AND i.id_planilha = calc.id_planilha
-            AND i.tipo_linha = 'SERVICO'
-            AND i.id_servico = $3
-          `,
-          ctx.tenantId,
-          idFonteDados,
-          idServicoPai
-        );
-      }
+      const cascata = await coletarCodigosCascata(tx, ctx.tenantId, idObra, idPlanilha, codigos);
+      await recalcularFixacaoCascata(tx, ctx.tenantId, idObra, idPlanilha, codigos);
+      await atualizarServicosPlanilhaPorCodigos(tx, ctx.tenantId, idObra, idPlanilha, cascata);
 
       const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
       const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
       if (hasPrimitivaTable && codigos.length) {
         await tx.$executeRawUnsafe(
           `
-          DELETE FROM obras_planilhas_composicoes_primitivas p
-          USING obras_planilhas_versoes v
-          WHERE p.tenant_id = $1
-            AND v.tenant_id = p.tenant_id
-            AND v.id_obra = p.id_obra
-            AND v.id_planilha = p.id_planilha
-            AND v.id_fonte_dados = $2
-            AND UPPER(COALESCE(p.codigo_servico,'')) = ANY($3::text[])
+          DELETE FROM obras_planilhas_composicoes_primitivas
+          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+            AND UPPER(COALESCE(codigo_servico,'')) = ANY($4::text[])
           `,
           ctx.tenantId,
-          idFonteDados,
+          idObra,
+          idPlanilha,
           codigos
         );
       }
     });
 
-    return ok(reply, { upserted: preparedOk.length }, { message: 'Composições importadas (Fonte)' });
+    return ok(reply, { upserted: preparedOk.length }, { message: 'Composições importadas' });
   });
 
   async function carregarItensComposicaoObra(tx: any, tenantId: number, idObra: number, idPlanilha: number, codigoServico: string) {
@@ -10246,7 +8684,7 @@ export default async function v1Routes(server: FastifyInstance) {
         UPPER(COALESCE(codigo_item,'')) AS "codigoItem",
         quantidade AS "quantidade",
         valor_unitario AS "valorUnitario"
-      FROM obras_planilhas_composicoes_itens
+      FROM tab_composicoes
       WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
       ORDER BY COALESCE(etapa,''), tipo_item, codigo_item, id_item
       `,
@@ -10329,7 +8767,7 @@ export default async function v1Routes(server: FastifyInstance) {
       if (Number.isFinite(atual as number) && Math.abs(Number(atual) - Number(valorRef)) <= 0.000001) continue;
       await tx.$executeRawUnsafe(
         `
-        UPDATE obras_planilhas_composicoes_itens
+        UPDATE tab_composicoes
         SET valor_unitario = $5, atualizado_em = NOW()
         WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND id_item = $4
         `,
@@ -10351,7 +8789,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const rows = (await tx.$queryRawUnsafe(
       `
       SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS "codigoServico"
-      FROM obras_planilhas_composicoes_itens
+      FROM tab_composicoes
       WHERE tenant_id = $1
         AND id_obra = $2
         AND id_planilha = $3
@@ -10412,7 +8850,7 @@ export default async function v1Routes(server: FastifyInstance) {
         SELECT
           COALESCE(bdi_servicos_sinapi, bdi_servicos_sbc, 0) AS bdi,
           COALESCE(enc_sociais_sem_des_sinapi, enc_sociais_sem_des_sbc, 0) AS ls
-        FROM obras_planilhas_versoes
+        FROM tab_planilhas
         WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
         LIMIT 1
       ),
@@ -10426,7 +8864,7 @@ export default async function v1Routes(server: FastifyInstance) {
           COUNT(*) AS qtd,
           SUM(COALESCE(quantidade,0) * COALESCE(valor_unitario,0)) FILTER (WHERE COALESCE(tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
           SUM(COALESCE(quantidade,0) * COALESCE(valor_unitario,0)) FILTER (WHERE COALESCE(tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
-        FROM obras_planilhas_composicoes_itens
+        FROM tab_composicoes
         WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = ANY($4::text[])
         GROUP BY UPPER(COALESCE(codigo_servico,''))
       ),
@@ -10439,7 +8877,7 @@ export default async function v1Routes(server: FastifyInstance) {
         FROM codes c
         LEFT JOIN comp ON comp.codigo = c.codigo
       )
-      UPDATE obras_planilhas_linhas l
+      UPDATE tab_planilha_itens i
       SET
         valor_unitario = CASE
           WHEN calc.qtd > 0 THEN
@@ -10453,8 +8891,8 @@ export default async function v1Routes(server: FastifyInstance) {
           ELSE 0
         END,
         valor_parcial = CASE
-          WHEN l.quantidade IS NULL THEN l.valor_parcial
-          ELSE ROUND((COALESCE(l.quantidade,0) * CASE
+          WHEN i.quantidade IS NULL THEN i.valor_parcial
+          ELSE ROUND((COALESCE(i.quantidade,0) * CASE
             WHEN calc.qtd > 0 THEN
               (
                 ((calc.total_base - calc.total_mao_base) + calc.total_mao_base * (1 + (SELECT ls FROM params) / 100.0))
@@ -10465,10 +8903,11 @@ export default async function v1Routes(server: FastifyInstance) {
         END,
         atualizado_em = NOW()
       FROM calc
-      WHERE l.tenant_id = $1
-        AND l.id_planilha = $3
-        AND l.tipo_linha = 'SERVICO'
-        AND UPPER(COALESCE(l.codigo,'')) = calc.codigo
+      LEFT JOIN tab_servicos s ON s.tenant_id = $1 AND s.id_planilha = $3 AND UPPER(COALESCE(s.codigo,'')) = calc.codigo
+      WHERE i.tenant_id = $1
+        AND i.id_planilha = $3
+        AND i.tipo_linha = 'SERVICO'
+        AND i.id_servico = s.id_servico
       `,
       tenantId,
       idObra,
@@ -10490,80 +8929,30 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaModeloFonteTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
-    const mig = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
-    const idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : 0;
-    if (!idFonteDados) return ok(reply, { codigoComposicao: codigoServico, itens: [] });
-    const paiRows = (await prisma.$queryRawUnsafe(
-      `
-      SELECT id_servico AS "idServico"
-      FROM obras_servicos_fonte
-      WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
-      LIMIT 1
-      `,
-      ctx.tenantId,
-      idFonteDados,
-      codigoServico
-    )) as any[];
-    const idServicoPai = paiRows?.[0]?.idServico ? Number(paiRows[0].idServico) : 0;
-    if (!idServicoPai) return ok(reply, { codigoComposicao: codigoServico, itens: [] });
+    await ensurePlanilhaComposicaoTables(prisma);
     const rows = (await prisma.$queryRawUnsafe(
       `
       SELECT
-        ci.id_composicao_item AS "idItemBase",
-        ''::text AS "etapa",
-        ci.tipo_item AS "tipoItem",
-        COALESCE(
-          CASE
-            WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.codigo
-            ELSE inf.codigo
-          END,
-          ''
-        ) AS "codigoItem",
-        COALESCE(
-          CASE
-            WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.banco
-            ELSE inf.banco
-          END,
-          ''
-        ) AS "banco",
-        COALESCE(
-          CASE
-            WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.descricao
-            ELSE inf.descricao
-          END,
-          ''
-        ) AS "descricao",
-        COALESCE(
-          CASE
-            WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.und
-            ELSE inf.und
-          END,
-          ''
-        ) AS "und",
-        ci.quantidade AS "quantidade",
-        (
-          CASE
-            WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-            ELSE inf.valor_unitario
-          END
-        ) AS "valorUnitario",
-        0::numeric AS "perdaPercentual",
-        NULL::text AS "codigoCentroCusto"
-      FROM obras_composicoes_itens_fonte ci
-      LEFT JOIN obras_servicos_fonte sf
-        ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
-        AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-      LEFT JOIN obras_insumos_fonte inf
-        ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
-        AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-      WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $2 AND ci.id_servico_pai = $3
-      ORDER BY ci.ordem ASC, ci.id_composicao_item ASC
+        i.id_item AS "idItemBase",
+        COALESCE(i.etapa,'') AS "etapa",
+        COALESCE(i.tipo_item,'') AS "tipoItem",
+        COALESCE(i.codigo_item,'') AS "codigoItem",
+        COALESCE(i.banco,'') AS "banco",
+        COALESCE(i.descricao,'') AS "descricao",
+        COALESCE(i.und,'') AS "und",
+        i.quantidade AS "quantidade",
+        i.valor_unitario AS "valorUnitario",
+        i.perda_percentual AS "perdaPercentual",
+        i.codigo_centro_custo AS "codigoCentroCusto"
+      FROM tab_composicoes i
+      WHERE i.tenant_id = $1 AND i.id_obra = $2 AND i.id_planilha = $3 AND UPPER(COALESCE(i.codigo_servico,'')) = $4
+      ORDER BY COALESCE(i.etapa,'') ASC, i.id_item ASC
       `,
       ctx.tenantId,
-      idFonteDados,
-      idServicoPai
+      idObra,
+      idPlanilha,
+      codigoServico
     )) as any[];
 
     return ok(reply, {
@@ -10587,22 +8976,23 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaModeloFonteTables(prisma);
+    await ensurePlanilhaOrcamentariaTables(prisma);
+    await ensurePlanilhaServicosTables(prisma);
+    await ensurePlanilhaComposicaoTables(prisma);
+    await ensureInsumosPrecosTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
-    const mig = await ensurePlanilhaMigratedToModeloFonte(prisma, ctx.tenantId, idObra, idPlanilha);
-    const idFonteDados = mig?.idFonteDados ? Number(mig.idFonteDados) : 0;
-    if (!idFonteDados) return fail(reply, 422, 'Fonte de dados da planilha não definida');
     const body = (request.body || {}) as any;
 
     if (Array.isArray(body.itens)) {
       const itens = body.itens as any[];
       await prismaTx(async (tx: any) => {
-        await ensurePlanilhaModeloFonteTables(tx);
+        await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
+
         const vers = (await tx.$queryRawUnsafe(
           `
           SELECT COALESCE(p.data_base_sinapi,'') AS "dataBaseSinapi"
-          FROM obras_planilhas_versoes v
-          LEFT JOIN obras_planilhas_parametros p
+          FROM tab_planilhas v
+          LEFT JOIN tab_parametros p
             ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
           WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
           LIMIT 1
@@ -10613,56 +9003,38 @@ export default async function v1Routes(server: FastifyInstance) {
         )) as any[];
         const dataBaseSinapi = vers?.[0]?.dataBaseSinapi == null ? '' : String(vers[0].dataBaseSinapi || '').trim();
 
-        const paiRows = (await tx.$queryRawUnsafe(
-          `
-          SELECT id_servico AS "idServico"
-          FROM obras_servicos_fonte
-          WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = $3
-          LIMIT 1
-          `,
-          ctx.tenantId,
-          idFonteDados,
-          codigoServico
-        )) as any[];
-        let idServicoPai = paiRows?.[0]?.idServico ? Number(paiRows[0].idServico) : 0;
-
         if (body.servico && typeof body.servico === 'object') {
           const sDesc = String(body.servico.descricao || '').trim();
-          const sUnd = String(body.servico.und || '').trim();
-          const sBanco = String(body.servico.banco || '').trim() || null;
-          if (sDesc && sUnd) {
-            const upsertPai = (await tx.$queryRawUnsafe(
+          const sUnd = String(body.servico.und || '').trim().toUpperCase();
+          const sBanco = String(body.servico.banco || '').trim().toUpperCase();
+          if (sDesc || sUnd || sBanco) {
+            await tx.$executeRawUnsafe(
               `
-              INSERT INTO obras_servicos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-              VALUES ($1,$2,NULL,$3,$4,$5,$6,NULL)
-              ON CONFLICT (tenant_id, id_fonte_dados, codigo)
+              INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
+              VALUES ($1,$2,$3,$4,$5,$6,$7)
+              ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
               DO UPDATE SET
-                banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-                descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-                und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
+                fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
+                servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
+                und = COALESCE(NULLIF(EXCLUDED.und,''), tab_servicos.und),
                 atualizado_em = NOW()
-              RETURNING id_servico AS "idItem"
               `,
               ctx.tenantId,
-              idFonteDados,
+              idObra,
+              idPlanilha,
               codigoServico,
-              sBanco,
-              sDesc,
-              sUnd
-            )) as any[];
-            if (upsertPai?.[0]?.idItem) {
-              idServicoPai = Number(upsertPai[0].idItem);
-            }
+              sBanco || null,
+              sDesc || null,
+              sUnd || null
+            );
           }
         }
-
-        if (!idServicoPai) throw new Error('Serviço não encontrado na fonte de dados e os dados do serviço não foram fornecidos para criação.');
-
         await tx.$executeRawUnsafe(
-          `DELETE FROM obras_composicoes_itens_fonte WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico_pai = $3`,
+          `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4`,
           ctx.tenantId,
-          idFonteDados,
-          idServicoPai
+          idObra,
+          idPlanilha,
+          codigoServico
         );
 
         const normalized = itens
@@ -10759,293 +9131,83 @@ export default async function v1Routes(server: FastifyInstance) {
             if (tipoKey === 'composicao' || tipoKey === 'composicao_auxiliar') r.valorUnitario = null;
           }
         }
-
-        for (let idx = 0; idx < normalized.length; idx++) {
-          const r = normalized[idx];
+        for (const r of normalized) {
           const tipoItemRaw = String(r.tipoItem || '').trim().toUpperCase();
-          const tipoItem = tipoItemRaw.slice(0, 24);
+          const codigoItem = String(r.codigoItem || '').trim().toUpperCase();
+          if (!codigoItem) continue;
+          await tx.$executeRawUnsafe(
+            `
+            INSERT INTO tab_composicoes
+              (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo)
+            VALUES
+              ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+            `,
+            ctx.tenantId,
+            idObra,
+            idPlanilha,
+            codigoServico,
+            null,
+            tipoItemRaw.slice(0, 32) || 'INSUMO',
+            codigoItem,
+            r.banco || null,
+            r.descricao || null,
+            r.und || null,
+            r.quantidade,
+            r.valorUnitario,
+            toDec(0),
+            null
+          );
+
           const tipoKey = normalizeHeader(tipoItemRaw);
           const isComp = tipoKey === 'composicao' || tipoKey === 'composicao_auxiliar';
-          const code = String(r.codigoItem || '').trim().toUpperCase();
-          if (!code) continue;
-
-          let idItem = 0;
-          if (isComp) {
-            const rows = (await tx.$queryRawUnsafe(
-              `
-              INSERT INTO obras_servicos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-              VALUES ($1,$2,NULL,$3,$4,$5,$6,NULL)
-              ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-              DO UPDATE SET
-                banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_servicos_fonte.banco),
-                descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_servicos_fonte.descricao),
-                und = COALESCE(NULLIF(EXCLUDED.und,''), obras_servicos_fonte.und),
-                atualizado_em = NOW()
-              RETURNING id_servico AS "idItem"
-              `,
-              ctx.tenantId,
-              idFonteDados,
-              code,
-              r.banco,
-              r.descricao,
-              r.und
-            )) as any[];
-            idItem = rows?.[0]?.idItem ? Number(rows[0].idItem) : 0;
-          } else {
-            const rows = (await tx.$queryRawUnsafe(
-              `
-              INSERT INTO obras_insumos_fonte (tenant_id, id_fonte_dados, tipo, codigo, banco, descricao, und, valor_unitario)
-              VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-              ON CONFLICT (tenant_id, id_fonte_dados, codigo)
-              DO UPDATE SET
-                tipo = COALESCE(NULLIF(EXCLUDED.tipo,''), obras_insumos_fonte.tipo),
-                banco = COALESCE(NULLIF(EXCLUDED.banco,''), obras_insumos_fonte.banco),
-                descricao = COALESCE(NULLIF(EXCLUDED.descricao,''), obras_insumos_fonte.descricao),
-                und = COALESCE(NULLIF(EXCLUDED.und,''), obras_insumos_fonte.und),
-                valor_unitario = COALESCE(EXCLUDED.valor_unitario, obras_insumos_fonte.valor_unitario),
-                atualizado_em = NOW()
-              RETURNING id_insumo AS "idItem"
-              `,
-              ctx.tenantId,
-              idFonteDados,
-              tipoItem || null,
-              code,
-              r.banco,
-              r.descricao,
-              r.und,
-              r.valorUnitario
-            )) as any[];
-            idItem = rows?.[0]?.idItem ? Number(rows[0].idItem) : 0;
-          }
-
-          if (!idItem) continue;
-          await tx.$executeRawUnsafe(
-            `
-            INSERT INTO obras_composicoes_itens_fonte
-              (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item, quantidade, unidade, ordem)
-            VALUES
-              ($1,$2,$3,$4,$5,$6,$7,$8)
-            ON CONFLICT (tenant_id, id_fonte_dados, id_servico_pai, tipo_item, id_item)
-            DO UPDATE SET
-              quantidade = EXCLUDED.quantidade,
-              unidade = EXCLUDED.unidade,
-              ordem = EXCLUDED.ordem,
-              atualizado_em = NOW()
-            `,
-            ctx.tenantId,
-            idFonteDados,
-            idServicoPai,
-            tipoItemRaw.slice(0, 24) || 'INSUMO',
-            idItem,
-            r.quantidade,
-            r.und,
-            idx
-          );
-        }
-
-        const changedInsumoCodes = Array.from(
-          new Set(
-            normalized
-              .filter((r) => {
-                const tipoKey = normalizeHeader(String(r.tipoItem || ''));
-                const isComp = tipoKey === 'composicao' || tipoKey === 'composicao_auxiliar';
-                const code = String(r.codigoItem || '').trim().toUpperCase();
-                return !isComp && code && r.valorUnitario != null;
-              })
-              .map((r) => String(r.codigoItem || '').trim().toUpperCase())
-          )
-        );
-
-        const affectedServicos = new Set<number>([idServicoPai]);
-        if (changedInsumoCodes.length) {
-          const insRows = (await tx.$queryRawUnsafe(
-            `
-            SELECT id_insumo AS "idInsumo"
-            FROM obras_insumos_fonte
-            WHERE tenant_id = $1 AND id_fonte_dados = $2 AND UPPER(COALESCE(codigo,'')) = ANY($3::text[])
-            `,
-            ctx.tenantId,
-            idFonteDados,
-            changedInsumoCodes
-          )) as any[];
-          const insumoIds = (insRows || [])
-            .map((r: any) => (r?.idInsumo == null ? 0 : Number(r.idInsumo)))
-            .filter((n: number) => Number.isFinite(n) && n > 0);
-
-          if (insumoIds.length) {
-            const impacted = (await tx.$queryRawUnsafe(
-              `
-              WITH RECURSIVE impacted AS (
-                SELECT DISTINCT ci.id_servico_pai AS id_servico
-                FROM obras_composicoes_itens_fonte ci
-                WHERE ci.tenant_id = $1
-                  AND ci.id_fonte_dados = $2
-                  AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-                  AND ci.id_item = ANY($3::bigint[])
-                UNION
-                SELECT DISTINCT ci.id_servico_pai
-                FROM obras_composicoes_itens_fonte ci
-                INNER JOIN impacted i ON i.id_servico = ci.id_item
-                WHERE ci.tenant_id = $1
-                  AND ci.id_fonte_dados = $2
-                  AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-              )
-              SELECT DISTINCT id_servico AS "idServico" FROM impacted
-              `,
-              ctx.tenantId,
-              idFonteDados,
-              insumoIds
-            )) as any[];
-            for (const r of impacted || []) {
-              const n = r?.idServico == null ? 0 : Number(r.idServico);
-              if (Number.isFinite(n) && n > 0) affectedServicos.add(n);
-            }
-          }
-        }
-
-        const affectedServicosList = Array.from(affectedServicos).filter((n) => Number.isFinite(n) && n > 0);
-        if (affectedServicosList.length) {
-          await tx.$executeRawUnsafe(
-            `
-            WITH roots AS (
-              SELECT UNNEST($3::bigint[])::bigint AS id_servico
-            ),
-            walk AS (
-              SELECT
-                ci.id_servico_pai AS root_servico,
-                ci.tipo_item AS tipo_item,
-                ci.id_item AS id_item,
-                COALESCE(ci.quantidade,0)::numeric AS coef,
-                ARRAY[ci.id_servico_pai]::bigint[] AS path
-              FROM obras_composicoes_itens_fonte ci
-              WHERE ci.tenant_id = $1
-                AND ci.id_fonte_dados = $2
-                AND ci.id_servico_pai = ANY($3::bigint[])
-              UNION ALL
-              SELECT
-                w.root_servico,
-                ci.tipo_item,
-                ci.id_item,
-                (w.coef * COALESCE(ci.quantidade,0))::numeric AS coef,
-                w.path || ci.id_servico_pai
-              FROM walk w
-              INNER JOIN obras_composicoes_itens_fonte ci
-                ON ci.tenant_id = $1
-               AND ci.id_fonte_dados = $2
-               AND ci.id_servico_pai = w.id_item
-              WHERE COALESCE(w.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-                AND NOT (ci.id_servico_pai = ANY(w.path))
-            ),
-            leaf AS (
-              SELECT w.root_servico, w.tipo_item, w.id_item, w.coef
-              FROM walk w
-              WHERE COALESCE(w.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-            ),
-            agg AS (
-              SELECT
-                l.root_servico AS id_servico,
-                COUNT(*)::int AS qtd,
-                COALESCE(SUM(l.coef * COALESCE(inf.valor_unitario,0)),0) AS total_base,
-                COALESCE(SUM(l.coef * COALESCE(inf.valor_unitario,0)) FILTER (WHERE COALESCE(l.tipo_item,'') = 'MAO_DE_OBRA'),0) AS total_mao_base
-              FROM leaf l
-              LEFT JOIN obras_insumos_fonte inf
-                ON inf.tenant_id = $1 AND inf.id_fonte_dados = $2 AND inf.id_insumo = l.id_item
-              GROUP BY l.root_servico
-            ),
-            base AS (
-              SELECT
-                r.id_servico,
-                COALESCE(a.qtd,0) AS qtd,
-                COALESCE(a.total_base,0) AS total_base,
-                COALESCE(a.total_mao_base,0) AS total_mao_base
-              FROM roots r
-              LEFT JOIN agg a ON a.id_servico = r.id_servico
-            ),
-            plans AS (
-              SELECT
-                v.id_planilha AS id_planilha,
-                COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
-                COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
-              FROM obras_planilhas_versoes v
-              LEFT JOIN obras_planilhas_parametros p
-                ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
-              WHERE v.tenant_id = $1 AND v.id_fonte_dados = $2
-            ),
-            calc AS (
-              SELECT
-                pl.id_planilha,
-                b.id_servico,
-                CASE
-                  WHEN b.qtd > 0 THEN
-                    (
-                      (
-                        (b.total_base - b.total_mao_base)
-                        + b.total_mao_base * (1 + (pl.ls / 100.0))
-                      )
-                      * (1 + (pl.bdi / 100.0))
-                    )
-                  ELSE 0
-                END AS valor_unitario
-              FROM plans pl
-              CROSS JOIN base b
-            )
-            UPDATE obras_planilha_itens i
-            SET
-              valor_unitario = ROUND(calc.valor_unitario::numeric, 6),
-              valor_parcial = CASE
-                WHEN i.quantidade IS NULL THEN i.valor_parcial
-                ELSE ROUND((COALESCE(i.quantidade,0) * calc.valor_unitario)::numeric, 6)
-              END,
-              atualizado_em = NOW()
-            FROM calc
-            WHERE i.tenant_id = $1
-              AND i.id_planilha = calc.id_planilha
-              AND i.tipo_linha = 'SERVICO'
-              AND i.id_servico = calc.id_servico
-            `,
-            ctx.tenantId,
-            idFonteDados,
-            affectedServicosList
-          );
-        }
-
-        const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
-        const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
-        if (hasPrimitivaTable) {
-          const svcRows = (await tx.$queryRawUnsafe(
-            `
-            SELECT UPPER(COALESCE(codigo,'')) AS "codigo"
-            FROM obras_servicos_fonte
-            WHERE tenant_id = $1 AND id_fonte_dados = $2 AND id_servico = ANY($3::bigint[])
-            `,
-            ctx.tenantId,
-            idFonteDados,
-            affectedServicosList.length ? affectedServicosList : [idServicoPai]
-          )) as any[];
-          const codes = (svcRows || [])
-            .map((r: any) => String(r?.codigo || '').trim().toUpperCase())
-            .filter(Boolean);
-          if (codes.length) {
+          if (!isComp && r.valorUnitario != null) {
             await tx.$executeRawUnsafe(
               `
-              DELETE FROM obras_planilhas_composicoes_primitivas p
-              USING obras_planilhas_versoes v
-              WHERE p.tenant_id = $1
-                AND v.tenant_id = p.tenant_id
-                AND v.id_planilha = p.id_planilha
-                AND v.id_obra = p.id_obra
-                AND v.id_fonte_dados = $2
-                AND UPPER(COALESCE(p.codigo_servico,'')) = ANY($3::text[])
+              INSERT INTO tab_insumos (tenant_id, id_obra, id_planilha, codigo_item, tipo, banco, descricao, und, valor_unitario)
+              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+              ON CONFLICT (tenant_id, id_obra, id_planilha, codigo_item)
+              DO UPDATE SET
+                tipo = COALESCE(NULLIF(tab_insumos.tipo,''), NULLIF(EXCLUDED.tipo,'')),
+                banco = COALESCE(NULLIF(tab_insumos.banco,''), NULLIF(EXCLUDED.banco,'')),
+                descricao = COALESCE(NULLIF(tab_insumos.descricao,''), NULLIF(EXCLUDED.descricao,'')),
+                und = COALESCE(NULLIF(tab_insumos.und,''), NULLIF(EXCLUDED.und,'')),
+                valor_unitario = EXCLUDED.valor_unitario,
+                atualizado_em = NOW()
               `,
               ctx.tenantId,
-              idFonteDados,
-              codes
+              idObra,
+              idPlanilha,
+              codigoItem,
+              tipoItemRaw.slice(0, 32) || null,
+              r.banco || null,
+              r.descricao || null,
+              r.und || null,
+              r.valorUnitario
             );
           }
         }
+
+        const cascata = await coletarCodigosCascata(tx, ctx.tenantId, idObra, idPlanilha, [codigoServico]);
+        await recalcularFixacaoCascata(tx, ctx.tenantId, idObra, idPlanilha, [codigoServico]);
+        await atualizarServicosPlanilhaPorCodigos(tx, ctx.tenantId, idObra, idPlanilha, cascata);
+
+        const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
+        const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
+        if (hasPrimitivaTable && cascata.length) {
+          await tx.$executeRawUnsafe(
+            `
+            DELETE FROM obras_planilhas_composicoes_primitivas
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = ANY($4::text[])
+            `,
+            ctx.tenantId,
+            idObra,
+            idPlanilha,
+            cascata
+          );
+        }
       });
 
-      return ok(reply, { ok: true }, { message: 'Composição atualizada' });
+      return ok(reply, { ok: true }, { message: 'Composição salva' });
     }
 
     if (Array.isArray(body.updates)) {
@@ -11065,10 +9227,6 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaOrcamentariaTables(prisma);
-    await ensurePlanilhaComposicaoTables(prisma);
-    await ensurePlanilhaComposicaoPrimitivaTables(prisma);
-
     const q = z
       .object({
         refresh: z.string().optional().nullable(),
@@ -11076,165 +9234,174 @@ export default async function v1Routes(server: FastifyInstance) {
       })
       .parse(request.query || {});
     const refresh = ['1', 'true', 'yes', 'sim'].includes(String(q.refresh || '').trim().toLowerCase());
-    const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
 
-    const loadMetaFromPlanilha = async (tx: any) => {
-      const row = (await tx.$queryRawUnsafe(
-        `
-        SELECT COALESCE(servico,'') AS "servico", COALESCE(und,'') AS "und"
-        FROM obras_planilhas_linhas
-        WHERE tenant_id = $1
-          AND id_planilha = $2
-          AND tipo_linha = 'SERVICO'
-          AND UPPER(COALESCE(codigo,'')) = $3
-        ORDER BY id_linha DESC
-        LIMIT 1
-        `,
-        ctx.tenantId,
-        idPlanilha,
-        codigoServico
-      )) as any[];
-      const serv = row?.[0]?.servico != null ? String(row[0].servico || '').trim() : '';
-      const und = row?.[0]?.und != null ? String(row[0].und || '').trim() : '';
-      return { descricaoServico: serv || null, undServico: und || null };
-    };
+    const data = await prismaTx(async (tx: any) => {
+      const idPlanilha = await resolvePlanilhaIdForObra(tx, ctx.tenantId, idObra, q.planilhaId);
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
 
-    const readCached = async (tx: any) => {
-      const rows = (await tx.$queryRawUnsafe(
-        `
-        SELECT descricao_servico AS "descricaoServico", und_servico AS "undServico", itens_json AS "itensJson", atualizado_em AS "updatedAt"
-        FROM obras_planilhas_composicoes_primitivas
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
-        ORDER BY id_primitiva DESC
-        LIMIT 1
-        `,
-        ctx.tenantId,
-        idObra,
-        idPlanilha,
-        codigoServico
-      )) as any[];
-      const r = rows?.[0] || null;
-      if (!r) return null;
-      const itens = Array.isArray(r.itensJson) ? r.itensJson : Array.isArray(r.itens_json) ? r.itens_json : r.itensJson || r.itens_json;
-      return {
-        meta: {
-          descricaoServico: r.descricaoServico == null ? null : String(r.descricaoServico || '').trim() || null,
-          undServico: r.undServico == null ? null : String(r.undServico || '').trim() || null,
-          updatedAt: r.updatedAt == null ? null : new Date(r.updatedAt).toISOString(),
-        },
-        rows: Array.isArray(itens) ? itens : [],
-      };
-    };
-
-    const computeAndSave = async (tx: any) => {
-      const meta = await loadMetaFromPlanilha(tx);
-      const stack = new Set<string>();
-      const out = new Map<string, { tipoItem: string; codigoItem: string; banco: string; descricao: string; und: string; quantidade: number; valorUnitario: number }>();
-
-      const loadItens = async (code: string) => {
-        const rows = (await tx.$queryRawUnsafe(
+      const loadMetaFromPlanilha = async () => {
+        const row = (await tx.$queryRawUnsafe(
           `
-          SELECT
-            tipo_item AS "tipoItem",
-            codigo_item AS "codigoItem",
-            COALESCE(banco,'') AS "banco",
-            COALESCE(descricao,'') AS "descricao",
-            COALESCE(und,'') AS "und",
-            quantidade AS "quantidade",
-            valor_unitario AS "valorUnitario"
-          FROM obras_planilhas_composicoes_itens
-          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
-          ORDER BY COALESCE(etapa,''), tipo_item, codigo_item, id_item
+          SELECT COALESCE(servico,'') AS "servico", COALESCE(und,'') AS "und"
+          FROM tab_servicos
+          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4
+          ORDER BY id_servico DESC
+          LIMIT 1
           `,
           ctx.tenantId,
           idObra,
           idPlanilha,
-          String(code || '').trim().toUpperCase()
+          codigoServico
         )) as any[];
-        return (rows || []).map((r: any) => ({
-          tipoItem: String(r.tipoItem || '').trim(),
-          codigoItem: String(r.codigoItem || '').trim().toUpperCase(),
-          banco: String(r.banco || '').trim(),
-          descricao: String(r.descricao || '').trim(),
-          und: String(r.und || '').trim(),
-          quantidade: r.quantidade == null ? 0 : Number(r.quantidade),
-          valorUnitario: r.valorUnitario == null ? 0 : Number(r.valorUnitario),
-        }));
+        const serv = row?.[0]?.servico != null ? String(row[0].servico || '').trim() : '';
+        const und = row?.[0]?.und != null ? String(row[0].und || '').trim() : '';
+        return { descricaoServico: serv || null, undServico: und || null };
       };
 
-      const expand = async (code: string, mult: number) => {
-        const k = String(code || '').trim().toUpperCase();
-        if (!k) return;
-        if (stack.has(k)) return;
-        stack.add(k);
-        const itens = await loadItens(k);
-        for (const it of itens) {
-          const tipoRaw = String(it.tipoItem || '').trim();
-          const tipoKey = normalizeHeader(tipoRaw);
-          const childCode = String(it.codigoItem || '').trim().toUpperCase();
-          const q = Number(it.quantidade || 0);
-          const qty = (Number.isFinite(q) ? q : 0) * mult;
-          const vu = Number.isFinite(Number(it.valorUnitario || 0)) ? Number(it.valorUnitario || 0) : 0;
-          if (tipoKey.includes('composicao')) {
-            if (childCode && qty > 0) await expand(childCode, qty);
-            continue;
-          }
-          const key = [tipoRaw, childCode, String(it.und || '').trim().toUpperCase(), String(it.banco || '').trim().toUpperCase(), String(vu)].join('|');
-          const cur = out.get(key);
-          if (!cur) {
-            out.set(key, {
-              tipoItem: tipoRaw,
-              codigoItem: childCode,
-              banco: it.banco,
-              descricao: it.descricao,
-              und: it.und,
-              quantidade: qty,
-              valorUnitario: vu,
-            });
-          } else {
-            out.set(key, { ...cur, quantidade: Number(cur.quantidade || 0) + qty });
-          }
-        }
-        stack.delete(k);
+      const readCached = async () => {
+        const rows = (await tx.$queryRawUnsafe(
+          `
+          SELECT descricao_servico AS "descricaoServico", und_servico AS "undServico", itens_json AS "itensJson", atualizado_em AS "updatedAt"
+          FROM obras_planilhas_composicoes_primitivas
+          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
+          ORDER BY id_primitiva DESC
+          LIMIT 1
+          `,
+          ctx.tenantId,
+          idObra,
+          idPlanilha,
+          codigoServico
+        )) as any[];
+        const r = rows?.[0] || null;
+        if (!r) return null;
+        const itens = Array.isArray(r.itensJson) ? r.itensJson : Array.isArray(r.itens_json) ? r.itens_json : r.itensJson || r.itens_json;
+        return {
+          meta: {
+            descricaoServico: r.descricaoServico == null ? null : String(r.descricaoServico || '').trim() || null,
+            undServico: r.undServico == null ? null : String(r.undServico || '').trim() || null,
+            updatedAt: r.updatedAt == null ? null : new Date(r.updatedAt).toISOString(),
+          },
+          rows: Array.isArray(itens) ? itens : [],
+        };
       };
 
-      await expand(codigoServico, 1);
-      const rows = Array.from(out.values())
-        .map((r) => ({
-          ...r,
-          quantidade: Number((Number(r.quantidade || 0)).toFixed(6)),
-          valorUnitario: Number((Number(r.valorUnitario || 0)).toFixed(6)),
-          total: Number(((Number(r.quantidade || 0)) * (Number(r.valorUnitario || 0))).toFixed(2)),
-        }))
-        .sort((a, b) => String(a.tipoItem).localeCompare(String(b.tipoItem)) || String(a.codigoItem).localeCompare(String(b.codigoItem)));
+      const computeAndSave = async () => {
+        const meta = await loadMetaFromPlanilha();
+        const stack = new Set<string>();
+        const out = new Map<
+          string,
+          { tipoItem: string; codigoItem: string; banco: string; descricao: string; und: string; quantidade: number; valorUnitario: number }
+        >();
 
-      await tx.$executeRawUnsafe(
-        `
-        INSERT INTO obras_planilhas_composicoes_primitivas (tenant_id, id_obra, id_planilha, codigo_servico, descricao_servico, und_servico, itens_json, atualizado_em)
-        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW())
-        ON CONFLICT (tenant_id, id_obra, id_planilha, codigo_servico)
-        DO UPDATE SET descricao_servico = EXCLUDED.descricao_servico, und_servico = EXCLUDED.und_servico, itens_json = EXCLUDED.itens_json, atualizado_em = NOW()
-        `,
-        ctx.tenantId,
-        idObra,
-        idPlanilha,
-        codigoServico,
-        meta.descricaoServico,
-        meta.undServico,
-        JSON.stringify(rows)
-      );
+        const loadItens = async (code: string) => {
+          const rows = (await tx.$queryRawUnsafe(
+            `
+            SELECT
+              tipo_item AS "tipoItem",
+              codigo_item AS "codigoItem",
+              COALESCE(banco,'') AS "banco",
+              COALESCE(descricao,'') AS "descricao",
+              COALESCE(und,'') AS "und",
+              quantidade AS "quantidade",
+              valor_unitario AS "valorUnitario"
+            FROM tab_composicoes
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
+            ORDER BY COALESCE(etapa,''), tipo_item, codigo_item, id_item
+            `,
+            ctx.tenantId,
+            idObra,
+            idPlanilha,
+            String(code || '').trim().toUpperCase()
+          )) as any[];
+          return (rows || []).map((r: any) => ({
+            tipoItem: String(r.tipoItem || '').trim(),
+            codigoItem: String(r.codigoItem || '').trim().toUpperCase(),
+            banco: String(r.banco || '').trim(),
+            descricao: String(r.descricao || '').trim(),
+            und: String(r.und || '').trim(),
+            quantidade: r.quantidade == null ? 0 : Number(r.quantidade),
+            valorUnitario: r.valorUnitario == null ? 0 : Number(r.valorUnitario),
+          }));
+        };
 
-      const cached = await readCached(tx);
-      if (cached) return cached;
-      return { meta: { ...meta, updatedAt: new Date().toISOString() }, rows };
-    };
+        const expand = async (code: string, mult: number) => {
+          const k = String(code || '').trim().toUpperCase();
+          if (!k) return;
+          if (stack.has(k)) return;
+          stack.add(k);
+          const itens = await loadItens(k);
+          for (const it of itens) {
+            const tipoRaw = String(it.tipoItem || '').trim();
+            const tipoKey = normalizeHeader(tipoRaw);
+            const childCode = String(it.codigoItem || '').trim().toUpperCase();
+            const q = Number(it.quantidade || 0);
+            const qty = (Number.isFinite(q) ? q : 0) * mult;
+            const vu = Number.isFinite(Number(it.valorUnitario || 0)) ? Number(it.valorUnitario || 0) : 0;
+            if (tipoKey.includes('composicao')) {
+              if (childCode && qty > 0) await expand(childCode, qty);
+              continue;
+            }
+            const key = [
+              tipoRaw,
+              childCode,
+              String(it.und || '').trim().toUpperCase(),
+              String(it.banco || '').trim().toUpperCase(),
+              String(vu),
+            ].join('|');
+            const cur = out.get(key);
+            if (!cur) {
+              out.set(key, {
+                tipoItem: tipoRaw,
+                codigoItem: childCode,
+                banco: it.banco,
+                descricao: it.descricao,
+                und: it.und,
+                quantidade: qty,
+                valorUnitario: vu,
+              });
+            } else {
+              out.set(key, { ...cur, quantidade: Number(cur.quantidade || 0) + qty });
+            }
+          }
+          stack.delete(k);
+        };
 
-    const data = await prismaTx(async (tx: any) => {
+        await expand(codigoServico, 1);
+        const rows = Array.from(out.values())
+          .map((r) => ({
+            ...r,
+            quantidade: Number(Number(r.quantidade || 0).toFixed(6)),
+            valorUnitario: Number(Number(r.valorUnitario || 0).toFixed(6)),
+            total: Number((Number(r.quantidade || 0) * Number(r.valorUnitario || 0)).toFixed(2)),
+          }))
+          .sort((a, b) => String(a.tipoItem).localeCompare(String(b.tipoItem)) || String(a.codigoItem).localeCompare(String(b.codigoItem)));
+
+        await tx.$executeRawUnsafe(
+          `
+          INSERT INTO obras_planilhas_composicoes_primitivas (tenant_id, id_obra, id_planilha, codigo_servico, descricao_servico, und_servico, itens_json, atualizado_em)
+          VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW())
+          ON CONFLICT (tenant_id, id_obra, id_planilha, codigo_servico)
+          DO UPDATE SET descricao_servico = EXCLUDED.descricao_servico, und_servico = EXCLUDED.und_servico, itens_json = EXCLUDED.itens_json, atualizado_em = NOW()
+          `,
+          ctx.tenantId,
+          idObra,
+          idPlanilha,
+          codigoServico,
+          meta.descricaoServico,
+          meta.undServico,
+          JSON.stringify(rows)
+        );
+
+        const cached = await readCached();
+        if (cached) return cached;
+        return { meta: { ...meta, updatedAt: new Date().toISOString() }, rows };
+      };
+
       if (!refresh) {
-        const cached = await readCached(tx);
+        const cached = await readCached();
         if (cached) return cached;
       }
-      return computeAndSave(tx);
+      return computeAndSave();
     });
 
     return ok(reply, data, { message: refresh ? 'Composição primitiva atualizada' : 'Composição primitiva carregada' });
@@ -11250,21 +9417,11 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaOrcamentariaTables(prisma);
-    await ensurePlanilhaComposicaoTables(prisma);
     const q = z
       .object({
         planilhaId: z.coerce.number().int().positive().optional().nullable(),
       })
       .parse(request.query || {});
-    const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
-    await syncServicosCatalogoFromLinhas(prisma, ctx.tenantId, idObra, idPlanilha);
-    await syncServicosCatalogoFromComposicoesRefs(prisma, ctx.tenantId, idObra, idPlanilha);
-    try {
-      await assertServicoExisteECompleto(prisma, ctx.tenantId, idObra, idPlanilha, codigoServico);
-    } catch (e: any) {
-      return fail(reply, 422, e?.message || 'Serviço inválido');
-    }
     const isMultipart = typeof (request as any).isMultipart === 'function' ? (request as any).isMultipart() : false;
     if (!isMultipart) return fail(reply, 422, 'Envie multipart/form-data com arquivo no campo "file"');
 
@@ -11341,8 +9498,11 @@ export default async function v1Routes(server: FastifyInstance) {
     const preparedOk = prepared.filter((p): p is Extract<(typeof prepared)[number], { ok: true }> => p.ok);
 
     await prismaTx(async (tx: any) => {
+      const idPlanilha = await resolvePlanilhaIdForObra(tx, ctx.tenantId, idObra, q.planilhaId);
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
+
       await tx.$executeRawUnsafe(
-        `DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4`,
+        `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4`,
         ctx.tenantId,
         idObra,
         idPlanilha,
@@ -11380,12 +9540,31 @@ export default async function v1Routes(server: FastifyInstance) {
 
         await tx.$executeRawUnsafe(
           `
-          INSERT INTO obras_planilhas_composicoes_itens
+          INSERT INTO tab_composicoes
             (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo)
           VALUES
             ${values}
           `,
           ...params
+        );
+      }
+
+      const cascata = await coletarCodigosCascata(tx, ctx.tenantId, idObra, idPlanilha, [codigoServico]);
+      await recalcularFixacaoCascata(tx, ctx.tenantId, idObra, idPlanilha, [codigoServico]);
+      await atualizarServicosPlanilhaPorCodigos(tx, ctx.tenantId, idObra, idPlanilha, cascata);
+
+      const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
+      const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
+      if (hasPrimitivaTable && cascata.length) {
+        await tx.$executeRawUnsafe(
+          `
+          DELETE FROM obras_planilhas_composicoes_primitivas
+          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = ANY($4::text[])
+          `,
+          ctx.tenantId,
+          idObra,
+          idPlanilha,
+          cascata
         );
       }
     });
@@ -11402,9 +9581,6 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaOrcamentariaTables(prisma);
-    await ensurePlanilhaServicosTables(prisma);
-    await ensurePlanilhaComposicaoTables(prisma);
     await ensureSinapiBaseTables(prisma);
 
     const parseNumber = (v: any) => {
@@ -11812,27 +9988,34 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!parsedCodes.length) return fail(reply, 422, 'Nenhuma composição foi identificada na aba. Verifique a aba, UF e estrutura.');
 
     const requestedPid = requestedPlanilhaId != null ? Number(requestedPlanilhaId) : NaN;
-    const planilhaId = await resolvePlanilhaIdForObra(
-      prisma,
-      ctx.tenantId,
-      obraId,
-      Number.isFinite(requestedPid) && requestedPid > 0 ? requestedPid : null
-    );
+    const planilhaId = await prismaTx(async (tx: any) => {
+      const pId = await resolvePlanilhaIdForObra(
+        tx,
+        ctx.tenantId,
+        obraId,
+        Number.isFinite(requestedPid) && requestedPid > 0 ? requestedPid : null
+      );
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, obraId, pId);
+      return pId;
+    });
+
     const vers = (await prisma.$queryRawUnsafe(
       `
       SELECT
-        data_base_sbc AS "dataBaseSbc",
-        data_base_sinapi AS "dataBaseSinapi",
-        bdi_servicos_sbc AS "bdiServicosSbc",
-        bdi_servicos_sinapi AS "bdiServicosSinapi",
-        bdi_diferenciado_sbc AS "bdiDiferenciadoSbc",
-        bdi_diferenciado_sinapi AS "bdiDiferenciadoSinapi",
-        enc_sociais_sem_des_sbc AS "encSociaisSemDesSbc",
-        enc_sociais_sem_des_sinapi AS "encSociaisSemDesSinapi",
-        desconto_sbc AS "descontoSbc",
-        desconto_sinapi AS "descontoSinapi"
-      FROM obras_planilhas_versoes
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+        COALESCE(p.data_base_sbc, v.data_base_sbc) AS "dataBaseSbc",
+        COALESCE(p.data_base_sinapi, v.data_base_sinapi) AS "dataBaseSinapi",
+        COALESCE(p.bdi_servicos_sbc, v.bdi_servicos_sbc) AS "bdiServicosSbc",
+        COALESCE(p.bdi_servicos_sinapi, v.bdi_servicos_sinapi) AS "bdiServicosSinapi",
+        COALESCE(p.bdi_diferenciado_sbc, v.bdi_diferenciado_sbc) AS "bdiDiferenciadoSbc",
+        COALESCE(p.bdi_diferenciado_sinapi, v.bdi_diferenciado_sinapi) AS "bdiDiferenciadoSinapi",
+        COALESCE(p.enc_sociais_sem_des_sbc, v.enc_sociais_sem_des_sbc) AS "encSociaisSemDesSbc",
+        COALESCE(p.enc_sociais_sem_des_sinapi, v.enc_sociais_sem_des_sinapi) AS "encSociaisSemDesSinapi",
+        COALESCE(p.desconto_sbc, v.desconto_sbc) AS "descontoSbc",
+        COALESCE(p.desconto_sinapi, v.desconto_sinapi) AS "descontoSinapi"
+      FROM tab_planilhas v
+      LEFT JOIN tab_parametros p
+        ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
+      WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
       LIMIT 1
       `,
       ctx.tenantId,
@@ -11882,9 +10065,10 @@ export default async function v1Routes(server: FastifyInstance) {
     } else if (!importAllParsed) {
       const serv = (await prisma.$queryRawUnsafe(
         `
-        SELECT DISTINCT UPPER(COALESCE(codigo,'')) AS codigo
-        FROM obras_planilhas_linhas
-        WHERE tenant_id = $1 AND id_planilha = $2 AND tipo_linha = 'SERVICO' AND COALESCE(codigo,'') <> ''
+        SELECT DISTINCT UPPER(COALESCE(s.codigo,'')) AS codigo
+        FROM tab_planilha_itens i
+        LEFT JOIN tab_servicos s ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
+        WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND COALESCE(s.codigo,'') <> ''
         `,
         ctx.tenantId,
         planilhaId
@@ -11896,7 +10080,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const existingRows = (await prisma.$queryRawUnsafe(
       `
       SELECT DISTINCT UPPER(codigo_servico) AS codigo
-      FROM obras_planilhas_composicoes_itens
+      FROM tab_composicoes
       WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
       `,
       ctx.tenantId,
@@ -12305,14 +10489,14 @@ export default async function v1Routes(server: FastifyInstance) {
         const entry = comps.get(code);
         const itens = entry?.itens || [];
         if (!itens.length) continue;
-      if (mode === 'UPSERT') {
-        await tx.$executeRawUnsafe(
-          `DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4`,
-          ctx.tenantId,
-          obraId,
-          planilhaId,
-          code
-        );
+        if (mode === 'UPSERT') {
+          await tx.$executeRawUnsafe(
+            `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4`,
+            ctx.tenantId,
+            obraId,
+            planilhaId,
+            code
+          );
         }
 
         const chunkSize = 500;
@@ -12324,17 +10508,33 @@ export default async function v1Routes(server: FastifyInstance) {
             const ins = !isCompItem ? insumosMap.get(String(codigoItem || '').trim().toUpperCase()) : null;
             const compRef = isCompItem ? comps.get(String(codigoItem || '').trim().toUpperCase()) : null;
             return {
-            etapa: '',
-            tipoItem,
-            codigoItem,
-            banco: banco || null,
-            descricao: isCompItem ? (compRef?.descricao ? String(compRef.descricao).trim().slice(0, 255) : null) : ins?.descricao ? String(ins.descricao).trim().slice(0, 255) : r.descricao ? String(r.descricao).trim().slice(0, 255) : null,
-            und: isCompItem ? (compRef?.und ? String(compRef.und).trim().slice(0, 40) : null) : ins?.und ? String(ins.und).trim().slice(0, 40) : r.und ? String(r.und).trim().slice(0, 40) : null,
-            quantidade: r.quantidade == null ? null : toDec(r.quantidade),
-            valorUnitario: isCompItem ? null : ins?.preco == null ? null : toDec(ins.preco),
-            perda: 0,
-            codigoCentroCusto: null,
-          };
+              etapa: '',
+              tipoItem,
+              codigoItem,
+              banco: banco || null,
+              descricao: isCompItem
+                ? compRef?.descricao
+                  ? String(compRef.descricao).trim().slice(0, 255)
+                  : null
+                : ins?.descricao
+                  ? String(ins.descricao).trim().slice(0, 255)
+                  : r.descricao
+                    ? String(r.descricao).trim().slice(0, 255)
+                    : null,
+              und: isCompItem
+                ? compRef?.und
+                  ? String(compRef.und).trim().slice(0, 40)
+                  : null
+                : ins?.und
+                  ? String(ins.und).trim().slice(0, 40)
+                  : r.und
+                    ? String(r.und).trim().slice(0, 40)
+                    : null,
+              quantidade: r.quantidade == null ? null : toDec(r.quantidade),
+              valorUnitario: isCompItem ? null : ins?.preco == null ? null : toDec(ins.preco),
+              perda: 0,
+              codigoCentroCusto: null,
+            };
           })
           .filter((i) => i.codigoItem && i.quantidade != null);
 
@@ -12344,7 +10544,22 @@ export default async function v1Routes(server: FastifyInstance) {
           let p = 1;
           const values = chunk
             .map((r) => {
-              const base = [ctx.tenantId, obraId, planilhaId, code, r.etapa, r.tipoItem, r.codigoItem, r.banco, r.descricao, r.und, r.quantidade, r.valorUnitario, r.perda, r.codigoCentroCusto];
+              const base = [
+                ctx.tenantId,
+                obraId,
+                planilhaId,
+                code,
+                r.etapa,
+                r.tipoItem,
+                r.codigoItem,
+                r.banco,
+                r.descricao,
+                r.und,
+                r.quantidade,
+                r.valorUnitario,
+                r.perda,
+                r.codigoCentroCusto,
+              ];
               for (const v of base) params.push(v);
               const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
               return `(${placeholders})`;
@@ -12353,7 +10568,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
           await tx.$executeRawUnsafe(
             `
-            INSERT INTO obras_planilhas_composicoes_itens
+            INSERT INTO tab_composicoes
               (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo)
             VALUES
               ${values}
@@ -12373,6 +10588,27 @@ export default async function v1Routes(server: FastifyInstance) {
           importedItens += chunk.length;
         }
         importedComposicoes++;
+      }
+
+      if (toImport.length) {
+        const cascata = await coletarCodigosCascata(tx, ctx.tenantId, obraId, planilhaId, toImport);
+        await recalcularFixacaoCascata(tx, ctx.tenantId, obraId, planilhaId, toImport);
+        await atualizarServicosPlanilhaPorCodigos(tx, ctx.tenantId, obraId, planilhaId, cascata);
+
+        const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
+        const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
+        if (hasPrimitivaTable && cascata.length) {
+          await tx.$executeRawUnsafe(
+            `
+            DELETE FROM obras_planilhas_composicoes_primitivas
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = ANY($4::text[])
+            `,
+            ctx.tenantId,
+            obraId,
+            planilhaId,
+            cascata
+          );
+        }
       }
     });
 
@@ -12404,10 +10640,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaOrcamentariaTables(prisma);
-    await ensurePlanilhaComposicaoTables(prisma);
     await ensureSinapiBaseTables(prisma);
-    await ensurePlanilhaServicosTables(prisma);
 
     const body = (request.body || {}) as any;
     const parsed = z
@@ -12466,22 +10699,28 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!uf) return fail(reply, 422, 'UF é obrigatória');
     if (!codigoServico) return fail(reply, 422, 'codigoServico é obrigatório');
 
-    const planilhaId = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, obraId, parsed.planilhaId);
+    const planilhaId = await prismaTx(async (tx: any) => {
+      const pId = await resolvePlanilhaIdForObra(tx, ctx.tenantId, obraId, parsed.planilhaId);
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, obraId, pId);
+      return pId;
+    });
     const vers = (await prisma.$queryRawUnsafe(
       `
       SELECT
-        data_base_sbc AS "dataBaseSbc",
-        data_base_sinapi AS "dataBaseSinapi",
-        bdi_servicos_sbc AS "bdiServicosSbc",
-        bdi_servicos_sinapi AS "bdiServicosSinapi",
-        bdi_diferenciado_sbc AS "bdiDiferenciadoSbc",
-        bdi_diferenciado_sinapi AS "bdiDiferenciadoSinapi",
-        enc_sociais_sem_des_sbc AS "encSociaisSemDesSbc",
-        enc_sociais_sem_des_sinapi AS "encSociaisSemDesSinapi",
-        desconto_sbc AS "descontoSbc",
-        desconto_sinapi AS "descontoSinapi"
-      FROM obras_planilhas_versoes
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+        COALESCE(p.data_base_sbc, v.data_base_sbc) AS "dataBaseSbc",
+        COALESCE(p.data_base_sinapi, v.data_base_sinapi) AS "dataBaseSinapi",
+        COALESCE(p.bdi_servicos_sbc, v.bdi_servicos_sbc) AS "bdiServicosSbc",
+        COALESCE(p.bdi_servicos_sinapi, v.bdi_servicos_sinapi) AS "bdiServicosSinapi",
+        COALESCE(p.bdi_diferenciado_sbc, v.bdi_diferenciado_sbc) AS "bdiDiferenciadoSbc",
+        COALESCE(p.bdi_diferenciado_sinapi, v.bdi_diferenciado_sinapi) AS "bdiDiferenciadoSinapi",
+        COALESCE(p.enc_sociais_sem_des_sbc, v.enc_sociais_sem_des_sbc) AS "encSociaisSemDesSbc",
+        COALESCE(p.enc_sociais_sem_des_sinapi, v.enc_sociais_sem_des_sinapi) AS "encSociaisSemDesSinapi",
+        COALESCE(p.desconto_sbc, v.desconto_sbc) AS "descontoSbc",
+        COALESCE(p.desconto_sinapi, v.desconto_sinapi) AS "descontoSinapi"
+      FROM tab_planilhas v
+      LEFT JOIN tab_parametros p
+        ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
+      WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
       LIMIT 1
       `,
       ctx.tenantId,
@@ -12686,7 +10925,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
       if (mode === 'UPSERT') {
         await tx.$executeRawUnsafe(
-          `DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4`,
+          `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4`,
           ctx.tenantId,
           obraId,
           planilhaId,
@@ -12717,7 +10956,22 @@ export default async function v1Routes(server: FastifyInstance) {
           let p = 1;
           const values = chunk
             .map((r) => {
-              const base = [ctx.tenantId, obraId, planilhaId, codigoServico, r.etapa, r.tipoItem, r.codigoItem, r.banco, r.descricao, r.und, r.quantidade, r.valorUnitario, r.perda, r.codigoCentroCusto];
+              const base = [
+                ctx.tenantId,
+                obraId,
+                planilhaId,
+                codigoServico,
+                r.etapa,
+                r.tipoItem,
+                r.codigoItem,
+                r.banco,
+                r.descricao,
+                r.und,
+                r.quantidade,
+                r.valorUnitario,
+                r.perda,
+                r.codigoCentroCusto,
+              ];
               for (const v of base) params.push(v);
               const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
               return `(${placeholders})`;
@@ -12726,7 +10980,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
           await tx.$executeRawUnsafe(
             `
-            INSERT INTO obras_planilhas_composicoes_itens
+            INSERT INTO tab_composicoes
               (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo)
             VALUES
               ${values}
@@ -12744,6 +10998,25 @@ export default async function v1Routes(server: FastifyInstance) {
             ...params
           );
           importedItens += chunk.length;
+        }
+
+        const cascata = await coletarCodigosCascata(tx, ctx.tenantId, obraId, planilhaId, [codigoServico]);
+        await recalcularFixacaoCascata(tx, ctx.tenantId, obraId, planilhaId, [codigoServico]);
+        await atualizarServicosPlanilhaPorCodigos(tx, ctx.tenantId, obraId, planilhaId, cascata);
+
+        const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
+        const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
+        if (hasPrimitivaTable && cascata.length) {
+          await tx.$executeRawUnsafe(
+            `
+            DELETE FROM obras_planilhas_composicoes_primitivas
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = ANY($4::text[])
+            `,
+            ctx.tenantId,
+            obraId,
+            planilhaId,
+            cascata
+          );
         }
       }
 
@@ -13024,9 +11297,11 @@ export default async function v1Routes(server: FastifyInstance) {
     const planilhaId = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, obraId, parsed.planilhaId);
     const vers = (await prisma.$queryRawUnsafe(
       `
-      SELECT data_base_sinapi AS "dataBaseSinapi"
-      FROM obras_planilhas_versoes
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+      SELECT COALESCE(p.data_base_sinapi, v.data_base_sinapi) AS "dataBaseSinapi"
+      FROM tab_planilhas v
+      LEFT JOIN tab_parametros p
+        ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
+      WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
       LIMIT 1
       `,
       ctx.tenantId,
@@ -13068,15 +11343,15 @@ export default async function v1Routes(server: FastifyInstance) {
 
     await prisma.$executeRawUnsafe(
       `
-      INSERT INTO obras_planilhas_servicos
+      INSERT INTO tab_servicos
         (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
       VALUES
         ($1, $2, $3, $4, 'SINAPI', $5, $6)
       ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
       DO UPDATE SET
-        fonte = COALESCE(NULLIF(obras_planilhas_servicos.fonte,''), EXCLUDED.fonte),
-        servico = COALESCE(NULLIF(obras_planilhas_servicos.servico,''), EXCLUDED.servico),
-        und = COALESCE(NULLIF(obras_planilhas_servicos.und,''), EXCLUDED.und),
+        fonte = COALESCE(NULLIF(tab_servicos.fonte,''), EXCLUDED.fonte),
+        servico = COALESCE(NULLIF(tab_servicos.servico,''), EXCLUDED.servico),
+        und = COALESCE(NULLIF(tab_servicos.und,''), EXCLUDED.und),
         atualizado_em = NOW()
       `,
       ctx.tenantId,
@@ -13180,7 +11455,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const existing = (await prisma.$queryRawUnsafe(
       `
       SELECT 1 AS ok
-      FROM obras_planilhas_composicoes_itens
+      FROM tab_composicoes
       WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
       LIMIT 1
       `,
@@ -13303,7 +11578,7 @@ export default async function v1Routes(server: FastifyInstance) {
       const itensRef = (await tx.$queryRawUnsafe(
         `
         SELECT id_item AS "idItem", UPPER(COALESCE(codigo_item,'')) AS "codigoItem", valor_unitario AS "valorUnitario"
-        FROM obras_planilhas_composicoes_itens
+        FROM tab_composicoes
         WHERE tenant_id = $1
           AND id_obra = $2
           AND id_planilha = $3
@@ -13333,7 +11608,7 @@ export default async function v1Routes(server: FastifyInstance) {
         if (totalRef == null) continue;
         await tx.$executeRawUnsafe(
           `
-          UPDATE obras_planilhas_composicoes_itens
+          UPDATE tab_composicoes
           SET valor_unitario = $5, atualizado_em = NOW()
           WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND id_item = $4
           `,
@@ -13350,7 +11625,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
     let importedItens = 0;
     await prismaTx(async (tx) => {
-      await ensureInsumosPrecosTables(tx);
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, obraId, planilhaId);
 
       const desiredInsumoPrices = new Map<string, number>();
       for (const r of normalized) {
@@ -13369,7 +11644,7 @@ export default async function v1Routes(server: FastifyInstance) {
           ? ((await tx.$queryRawUnsafe(
               `
               SELECT UPPER(COALESCE(codigo_item,'')) AS "codigoItem", valor_unitario AS "valorUnitario"
-              FROM obras_insumos_precos
+              FROM tab_insumos
               WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_item,'')) = ANY($4::text[])
               `,
               ctx.tenantId,
@@ -13420,7 +11695,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
           await tx.$executeRawUnsafe(
             `
-            INSERT INTO obras_insumos_precos
+            INSERT INTO tab_insumos
               (tenant_id, id_obra, id_planilha, codigo_item, valor_unitario)
             VALUES
               ${values}
@@ -13453,7 +11728,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
           await tx.$executeRawUnsafe(
             `
-            UPDATE obras_planilhas_composicoes_itens i
+            UPDATE tab_composicoes i
             SET valor_unitario = v.valor_unitario, atualizado_em = NOW()
             FROM (VALUES ${values}) AS v(codigo_item, valor_unitario)
             WHERE i.tenant_id = $1
@@ -13469,7 +11744,7 @@ export default async function v1Routes(server: FastifyInstance) {
         const affected = (await tx.$queryRawUnsafe(
           `
           SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS "codigoServico"
-          FROM obras_planilhas_composicoes_itens
+          FROM tab_composicoes
           WHERE tenant_id = $1
             AND id_obra = $2
             AND id_planilha = $3
@@ -13495,7 +11770,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
       if (mode === 'UPSERT') {
         await tx.$executeRawUnsafe(
-          `DELETE FROM obras_planilhas_composicoes_itens WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4`,
+          `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4`,
           ctx.tenantId,
           obraId,
           planilhaId,
@@ -13544,7 +11819,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
           await tx.$executeRawUnsafe(
             `
-            INSERT INTO obras_planilhas_composicoes_itens
+            INSERT INTO tab_composicoes
               (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo)
             VALUES
               ${values}
@@ -13953,7 +12228,7 @@ export default async function v1Routes(server: FastifyInstance) {
           MAX(COALESCE(ci.valor_unitario, 0)) AS max_valor_unitario,
           SUM(s.quant_servico * ci.quantidade * (1 + (ci.perda_percentual / 100.0))) AS quantidade_total
         FROM servicos s
-        JOIN obras_planilhas_composicoes_itens ci
+        JOIN tab_composicoes ci
           ON ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3 AND UPPER(ci.codigo_servico) = s.codigo_servico
         WHERE COALESCE(ci.tipo_item,'INSUMO') NOT IN ('COMPOSICAO', 'COMPOSICAO_AUXILIAR')
           AND COALESCE(ci.codigo_item,'') <> ''
@@ -13966,7 +12241,7 @@ export default async function v1Routes(server: FastifyInstance) {
         COALESCE(p.valor_unitario, i.max_valor_unitario, 0) AS "valorUnitario",
         i.quantidade_total AS "quantidadeTotal"
       FROM insumos i
-      LEFT JOIN obras_insumos_precos p
+      LEFT JOIN tab_insumos p
         ON p.tenant_id = $1 AND p.id_obra = $2 AND p.id_planilha = $3 AND UPPER(COALESCE(p.codigo_item,'')) = i.codigo_item
       ORDER BY i.codigo_item
       `,
@@ -14012,8 +12287,8 @@ export default async function v1Routes(server: FastifyInstance) {
         COALESCE(p.valor_unitario, 0) AS "valorUnitario",
         MAX(COALESCE(i.descricao,'')) AS "descricao",
         MAX(COALESCE(i.und,'')) AS "und"
-      FROM obras_insumos_precos p
-      LEFT JOIN obras_planilhas_composicoes_itens i
+      FROM tab_insumos p
+      LEFT JOIN tab_composicoes i
         ON i.tenant_id = p.tenant_id
         AND i.id_obra = p.id_obra
         AND i.id_planilha = p.id_planilha
@@ -14063,7 +12338,10 @@ export default async function v1Routes(server: FastifyInstance) {
       const scope = (request.user as any)?.abrangencia as any;
       if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-      await ensurePlanilhaModeloFonteTables(prisma);
+      await prismaTx(async (tx: any) => {
+        await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, sourcePlanilhaId);
+        await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, targetPlanilhaId);
+      });
 
       const versoes = (await prisma.$queryRawUnsafe(
         `
@@ -14071,9 +12349,8 @@ export default async function v1Routes(server: FastifyInstance) {
           id_planilha AS "idPlanilha",
           numero_versao AS "numeroVersao",
           nome,
-          id_fonte_dados AS "idFonteDados",
           id_parametros AS "idParametros"
-        FROM obras_planilhas_versoes
+        FROM tab_planilhas
         WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha IN ($3, $4)
         `,
         ctx.tenantId,
@@ -14104,19 +12381,19 @@ export default async function v1Routes(server: FastifyInstance) {
           SELECT
             COALESCE(i.item,'') AS item,
             i.tipo_linha AS "tipoLinha",
-            COALESCE(sf.codigo,'') AS codigo,
+            COALESCE(s.codigo,'') AS codigo,
             CASE
-              WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(NULLIF(sf.descricao,''), COALESCE(i.observacao,''), '')
+              WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(NULLIF(s.servico,''), COALESCE(i.observacao,''), '')
               ELSE COALESCE(i.observacao,'')
             END AS servicos,
-            COALESCE(sf.und,'') AS und,
+            COALESCE(s.und,'') AS und,
             i.quantidade AS quantidade,
             i.valor_unitario AS "valorUnitario",
             i.valor_parcial AS "valorParcial",
             COALESCE(i.nivel,0) AS nivel
-          FROM obras_planilha_itens i
-          LEFT JOIN obras_servicos_fonte sf
-            ON sf.tenant_id = i.tenant_id AND sf.id_servico = i.id_servico
+          FROM tab_planilha_itens i
+          LEFT JOIN tab_servicos s
+            ON s.tenant_id = i.tenant_id AND s.id_planilha = i.id_planilha AND s.id_servico = i.id_servico
           WHERE i.tenant_id = $1 AND i.id_planilha = $2
           `,
           ctx.tenantId,
@@ -14347,10 +12624,10 @@ export default async function v1Routes(server: FastifyInstance) {
       if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
       if (!codigoServico) return fail(reply, 422, 'Código do serviço inválido');
 
-      await ensurePlanilhaModeloFonteTables(prisma);
-      await ensureServicosFonteTables(prisma);
-      await ensureInsumosFonteTables(prisma);
-      await ensureComposicoesItensFonteTables(prisma);
+      await prismaTx(async (tx: any) => {
+        await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, sourcePlanilhaId);
+        await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, targetPlanilhaId);
+      });
 
       const versoes = (await prisma.$queryRawUnsafe(
         `
@@ -14358,9 +12635,8 @@ export default async function v1Routes(server: FastifyInstance) {
           id_planilha AS "idPlanilha",
           numero_versao AS "numeroVersao",
           nome,
-          id_fonte_dados AS "idFonteDados",
           id_parametros AS "idParametros"
-        FROM obras_planilhas_versoes
+        FROM tab_planilhas
         WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha IN ($3, $4)
         `,
         ctx.tenantId,
@@ -14373,31 +12649,27 @@ export default async function v1Routes(server: FastifyInstance) {
       if (!srcMeta) return fail(reply, 404, 'Planilha origem não encontrada');
       if (!dstMeta) return fail(reply, 404, 'Planilha destino não encontrada');
 
-      const idFonteDadosSrc = srcMeta.idFonteDados != null ? Number(srcMeta.idFonteDados) : 0;
-      const idFonteDadosDst = dstMeta.idFonteDados != null ? Number(dstMeta.idFonteDados) : 0;
-      const idFonteDados = idFonteDadosDst || idFonteDadosSrc || 0;
-
       const linhaRows = (await prisma.$queryRawUnsafe(
         `
         SELECT
           i.id_planilha AS "idPlanilha",
           COALESCE(i.item,'') AS item,
-          COALESCE(sf.codigo,'') AS codigo,
+          COALESCE(s.codigo,'') AS codigo,
           CASE
-            WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(NULLIF(sf.descricao,''), COALESCE(i.observacao,''), '')
+            WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(NULLIF(s.servico,''), COALESCE(i.observacao,''), '')
             ELSE COALESCE(i.observacao,'')
           END AS servicos,
-          COALESCE(sf.und,'') AS und,
+          COALESCE(s.und,'') AS und,
           i.quantidade AS quantidade,
           i.valor_unitario AS "valorUnitario",
           i.valor_parcial AS "valorParcial"
-        FROM obras_planilha_itens i
-        LEFT JOIN obras_servicos_fonte sf
-          ON sf.tenant_id = i.tenant_id AND sf.id_servico = i.id_servico
+        FROM tab_planilha_itens i
+        LEFT JOIN tab_servicos s
+          ON s.tenant_id = i.tenant_id AND s.id_planilha = i.id_planilha AND s.id_servico = i.id_servico
         WHERE i.tenant_id = $1
           AND i.id_planilha IN ($2, $3)
           AND i.tipo_linha = 'SERVICO'
-          AND sf.codigo = $4
+          AND UPPER(COALESCE(s.codigo,'')) = $4
           AND ($5::text IS NULL OR COALESCE(i.item,'') = $5::text)
         ORDER BY COALESCE(i.item,'') ASC, i.id_planilha_item ASC
         `,
@@ -14431,97 +12703,117 @@ export default async function v1Routes(server: FastifyInstance) {
           valorParcial: r.valorParcial == null ? null : Number(r.valorParcial),
         }));
 
-      const svcRows = idFonteDados
-        ? ((await prisma.$queryRawUnsafe(
-            `
-            SELECT
-              id_servico AS "idServico",
-              codigo,
-              COALESCE(NULLIF(trim(banco),''),'') AS banco,
-              COALESCE(NULLIF(trim(descricao),''),'') AS descricao,
-              COALESCE(NULLIF(trim(und),''),'') AS und,
-              valor_unitario AS "valorUnitario"
-            FROM obras_servicos_fonte
-            WHERE tenant_id = $1 AND id_fonte_dados = $2 AND codigo = $3
-            LIMIT 1
-            `,
-            ctx.tenantId,
-            idFonteDados,
-            codigoServico
-          )) as any[])
-        : [];
-      const svc = svcRows?.[0] || null;
-      const idServico = svc?.idServico != null ? Number(svc.idServico) : 0;
+      const planilhaCatalogoId = targetPlanilhaId || sourcePlanilhaId;
+      const svcTry1 = (await prisma.$queryRawUnsafe(
+        `
+        SELECT
+          s.id_servico AS "idServico",
+          s.codigo,
+          COALESCE(NULLIF(trim(s.fonte),''),'') AS banco,
+          COALESCE(NULLIF(trim(s.servico),''),'') AS descricao,
+          COALESCE(NULLIF(trim(s.und),''),'') AS und,
+          COALESCE(MAX(i.valor_unitario), 0) AS "valorUnitario"
+        FROM tab_servicos s
+        LEFT JOIN tab_planilha_itens i
+          ON i.tenant_id = s.tenant_id
+          AND i.id_planilha = s.id_planilha
+          AND i.id_servico = s.id_servico
+          AND i.tipo_linha = 'SERVICO'
+        WHERE s.tenant_id = $1
+          AND s.id_obra = $2
+          AND s.id_planilha = $3
+          AND UPPER(COALESCE(s.codigo,'')) = $4
+        GROUP BY s.id_servico, s.codigo, s.fonte, s.servico, s.und
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        idObra,
+        planilhaCatalogoId,
+        codigoServico
+      )) as any[];
+      const svcTry2 =
+        !svcTry1?.[0] && planilhaCatalogoId !== sourcePlanilhaId
+          ? ((await prisma.$queryRawUnsafe(
+              `
+              SELECT
+                s.id_servico AS "idServico",
+                s.codigo,
+                COALESCE(NULLIF(trim(s.fonte),''),'') AS banco,
+                COALESCE(NULLIF(trim(s.servico),''),'') AS descricao,
+                COALESCE(NULLIF(trim(s.und),''),'') AS und,
+                COALESCE(MAX(i.valor_unitario), 0) AS "valorUnitario"
+              FROM tab_servicos s
+              LEFT JOIN tab_planilha_itens i
+                ON i.tenant_id = s.tenant_id
+                AND i.id_planilha = s.id_planilha
+                AND i.id_servico = s.id_servico
+                AND i.tipo_linha = 'SERVICO'
+              WHERE s.tenant_id = $1
+                AND s.id_obra = $2
+                AND s.id_planilha = $3
+                AND UPPER(COALESCE(s.codigo,'')) = $4
+              GROUP BY s.id_servico, s.codigo, s.fonte, s.servico, s.und
+              LIMIT 1
+              `,
+              ctx.tenantId,
+              idObra,
+              sourcePlanilhaId,
+              codigoServico
+            )) as any[])
+          : [];
+      const svc = svcTry1?.[0] || svcTry2?.[0] || null;
 
-      const compRows = idFonteDados && idServico
-        ? ((await prisma.$queryRawUnsafe(
-            `
-            SELECT
-              ci.tipo_item AS "tipoItem",
-              ci.quantidade AS quantidade,
-              COALESCE(NULLIF(trim(ci.unidade),''),'') AS undItem,
-              COALESCE(
-                CASE
-                  WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.codigo
-                  ELSE inf.codigo
-                END,
-                ''
-              ) AS codigo,
-              COALESCE(
-                CASE
-                  WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN COALESCE(NULLIF(trim(sf.banco),''),'')
-                  ELSE COALESCE(NULLIF(trim(inf.banco),''),'')
-                END,
-                ''
-              ) AS banco,
-              COALESCE(
-                CASE
-                  WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN COALESCE(NULLIF(trim(sf.descricao),''),'')
-                  ELSE COALESCE(NULLIF(trim(inf.descricao),''),'')
-                END,
-                ''
-              ) AS descricao,
-              COALESCE(
-                CASE
-                  WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN COALESCE(NULLIF(trim(sf.und),''),'')
-                  ELSE COALESCE(NULLIF(trim(inf.und),''),'')
-                END,
-                ''
-              ) AS und,
-              COALESCE(
-                CASE
-                  WHEN COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN sf.valor_unitario
-                  ELSE inf.valor_unitario
-                END,
-                0
-              ) AS "valorUnitario",
-              ci.ordem AS ordem
-            FROM obras_composicoes_itens_fonte ci
-            LEFT JOIN obras_servicos_fonte sf
-              ON sf.tenant_id = ci.tenant_id AND sf.id_fonte_dados = ci.id_fonte_dados AND sf.id_servico = ci.id_item
-              AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-            LEFT JOIN obras_insumos_fonte inf
-              ON inf.tenant_id = ci.tenant_id AND inf.id_fonte_dados = ci.id_fonte_dados AND inf.id_insumo = ci.id_item
-              AND COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-            WHERE ci.tenant_id = $1 AND ci.id_fonte_dados = $2 AND ci.id_servico_pai = $3
-            ORDER BY COALESCE(ci.ordem,0) ASC, ci.id_composicao_item ASC
-            `,
-            ctx.tenantId,
-            idFonteDados,
-            idServico
-          )) as any[])
-        : [];
+      const compTry1 = (await prisma.$queryRawUnsafe(
+        `
+        SELECT
+          tipo_item AS "tipoItem",
+          codigo_item AS codigo,
+          COALESCE(NULLIF(trim(banco),''),'') AS banco,
+          COALESCE(NULLIF(trim(descricao),''),'') AS descricao,
+          COALESCE(NULLIF(trim(und),''),'') AS und,
+          quantidade AS quantidade,
+          COALESCE(valor_unitario, 0) AS "valorUnitario"
+        FROM tab_composicoes
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
+        ORDER BY id_item ASC
+        `,
+        ctx.tenantId,
+        idObra,
+        planilhaCatalogoId,
+        codigoServico
+      )) as any[];
+      const compRows =
+        !compTry1?.length && planilhaCatalogoId !== sourcePlanilhaId
+          ? ((await prisma.$queryRawUnsafe(
+              `
+              SELECT
+                tipo_item AS "tipoItem",
+                codigo_item AS codigo,
+                COALESCE(NULLIF(trim(banco),''),'') AS banco,
+                COALESCE(NULLIF(trim(descricao),''),'') AS descricao,
+                COALESCE(NULLIF(trim(und),''),'') AS und,
+                quantidade AS quantidade,
+                COALESCE(valor_unitario, 0) AS "valorUnitario"
+              FROM tab_composicoes
+              WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
+              ORDER BY id_item ASC
+              `,
+              ctx.tenantId,
+              idObra,
+              sourcePlanilhaId,
+              codigoServico
+            )) as any[])
+          : compTry1;
 
       return ok(reply, {
         obraId: idObra,
         codigoServico,
-        source: { idPlanilha: sourcePlanilhaId, numeroVersao: Number(srcMeta.numeroVersao || 0), nome: String(srcMeta.nome || ''), idFonteDados: idFonteDadosSrc, idParametros: srcMeta.idParametros != null ? Number(srcMeta.idParametros) : null },
-        target: { idPlanilha: targetPlanilhaId, numeroVersao: Number(dstMeta.numeroVersao || 0), nome: String(dstMeta.nome || ''), idFonteDados: idFonteDadosDst, idParametros: dstMeta.idParametros != null ? Number(dstMeta.idParametros) : null },
+        source: { idPlanilha: sourcePlanilhaId, numeroVersao: Number(srcMeta.numeroVersao || 0), nome: String(srcMeta.nome || ''), idParametros: srcMeta.idParametros != null ? Number(srcMeta.idParametros) : null },
+        target: { idPlanilha: targetPlanilhaId, numeroVersao: Number(dstMeta.numeroVersao || 0), nome: String(dstMeta.nome || ''), idParametros: dstMeta.idParametros != null ? Number(dstMeta.idParametros) : null },
         linhas: { source: srcLinhas, target: dstLinhas },
         catalogo: svc
           ? {
-              idFonteDados,
-              idServico,
+              idServico: svc.idServico != null ? Number(svc.idServico) : 0,
               codigo: String(svc.codigo || '').trim().toUpperCase(),
               banco: String(svc.banco || '').trim(),
               descricao: String(svc.descricao || '').trim(),
@@ -14558,68 +12850,93 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaOrcamentariaTables(prisma);
-    await ensurePlanilhaComposicaoTables(prisma);
-    await ensureInsumosPrecosTables(prisma);
-    const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
-
-    const codigoItem = String(body.codigoItem || '').trim().toUpperCase();
-    const valorUnitario = Number(body.valorUnitario);
-    if (!codigoItem) return fail(reply, 422, 'Código do insumo inválido');
-    if (!Number.isFinite(valorUnitario) || valorUnitario < 0) return fail(reply, 422, 'Valor unitário inválido');
-
-    const pairs = (await prisma.$queryRawUnsafe(
-      `
-      SELECT DISTINCT
-        COALESCE(NULLIF(trim(descricao),''),'') AS descricao,
-        COALESCE(NULLIF(trim(und),''),'') AS und
-      FROM obras_planilhas_composicoes_itens
-      WHERE tenant_id = $1
-        AND id_obra = $2
-        AND id_planilha = $3
-        AND UPPER(COALESCE(codigo_item,'')) = $4
-        AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-        AND (COALESCE(NULLIF(trim(descricao),''),'') <> '' OR COALESCE(NULLIF(trim(und),''),'') <> '')
-      `,
-      ctx.tenantId,
-      idObra,
-      idPlanilha,
-      codigoItem
-    )) as any[];
-    const uniq = (pairs || [])
-      .map((r: any) => `${String(r.descricao || '').trim()}||${String(r.und || '').trim()}`)
-      .filter(Boolean);
-    const uniqSet = new Set<string>(uniq);
-    if (uniqSet.size > 1) {
-      return fail(reply, 422, `Insumo ${codigoItem} está com descrição e/ou unidade divergente nas composições. Corrija antes de alterar o preço (descrição/unidade precisam ser únicas).`);
-    }
-
-    const iniciais = (await prisma.$queryRawUnsafe(
-      `
-      SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS codigo
-      FROM obras_planilhas_composicoes_itens
-      WHERE tenant_id = $1
-        AND id_obra = $2
-        AND id_planilha = $3
-        AND UPPER(COALESCE(codigo_item,'')) = $4
-        AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-      `,
-      ctx.tenantId,
-      idObra,
-      idPlanilha,
-      codigoItem
-    )) as any[];
-    const codigosIniciais = (iniciais || []).map((r: any) => String(r.codigo || '').trim().toUpperCase()).filter(Boolean);
-
     await prismaTx(async (tx: any) => {
+      const idPlanilha = await resolvePlanilhaIdForObra(tx, ctx.tenantId, idObra, q.planilhaId);
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
+
+      const codigoItem = String(body.codigoItem || '').trim().toUpperCase();
+      const valorUnitario = Number(body.valorUnitario);
+      if (!codigoItem) return fail(reply, 422, 'Código do insumo inválido');
+      if (!Number.isFinite(valorUnitario) || valorUnitario < 0) return fail(reply, 422, 'Valor unitário inválido');
+
+      const pairs = (await tx.$queryRawUnsafe(
+        `
+        SELECT DISTINCT
+          COALESCE(NULLIF(trim(descricao),''),'') AS descricao,
+          COALESCE(NULLIF(trim(und),''),'') AS und
+        FROM tab_composicoes
+        WHERE tenant_id = $1
+          AND id_obra = $2
+          AND id_planilha = $3
+          AND UPPER(COALESCE(codigo_item,'')) = $4
+          AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+          AND (COALESCE(NULLIF(trim(descricao),''),'') <> '' OR COALESCE(NULLIF(trim(und),''),'') <> '')
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        codigoItem
+      )) as any[];
+      const uniq = (pairs || [])
+        .map((r: any) => `${String(r.descricao || '').trim()}||${String(r.und || '').trim()}`)
+        .filter(Boolean);
+      const uniqSet = new Set<string>(uniq);
+      if (uniqSet.size > 1) {
+        throw new Error(`Insumo ${codigoItem} está com descrição e/ou unidade divergente nas composições. Corrija antes de alterar o preço (descrição/unidade precisam ser únicas).`);
+      }
+
+      const iniciais = (await tx.$queryRawUnsafe(
+        `
+        SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS codigo
+        FROM tab_composicoes
+        WHERE tenant_id = $1
+          AND id_obra = $2
+          AND id_planilha = $3
+          AND UPPER(COALESCE(codigo_item,'')) = $4
+          AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        codigoItem
+      )) as any[];
+      const codigosIniciais = (iniciais || []).map((r: any) => String(r.codigo || '').trim().toUpperCase()).filter(Boolean);
+
+      const metaRow = (await tx.$queryRawUnsafe(
+        `
+        SELECT
+          UPPER(COALESCE(tipo_item,'')) AS tipo,
+          COALESCE(NULLIF(trim(banco),''),'') AS banco,
+          COALESCE(NULLIF(trim(descricao),''),'') AS descricao,
+          COALESCE(NULLIF(trim(und),''),'') AS und
+        FROM tab_composicoes
+        WHERE tenant_id = $1
+          AND id_obra = $2
+          AND id_planilha = $3
+          AND UPPER(COALESCE(codigo_item,'')) = $4
+          AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+        ORDER BY id_item DESC
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        codigoItem
+      )) as any[];
+      const meta = metaRow?.[0] || {};
+
       await tx.$executeRawUnsafe(
         `
-        INSERT INTO obras_insumos_precos
-          (tenant_id, id_obra, id_planilha, codigo_item, valor_unitario)
+        INSERT INTO tab_insumos
+          (tenant_id, id_obra, id_planilha, codigo_item, tipo, banco, descricao, und, valor_unitario)
         VALUES
-          ($1, $2, $3, $4, $5)
+          ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT (tenant_id, id_obra, id_planilha, codigo_item)
         DO UPDATE SET
+          tipo = COALESCE(NULLIF(tab_insumos.tipo,''), NULLIF(EXCLUDED.tipo,'')),
+          banco = COALESCE(NULLIF(tab_insumos.banco,''), NULLIF(EXCLUDED.banco,'')),
+          descricao = COALESCE(NULLIF(tab_insumos.descricao,''), NULLIF(EXCLUDED.descricao,'')),
+          und = COALESCE(NULLIF(tab_insumos.und,''), NULLIF(EXCLUDED.und,'')),
           valor_unitario = EXCLUDED.valor_unitario,
           atualizado_em = NOW()
         `,
@@ -14627,12 +12944,16 @@ export default async function v1Routes(server: FastifyInstance) {
         idObra,
         idPlanilha,
         codigoItem,
+        meta?.tipo ? String(meta.tipo || '').trim().toUpperCase().slice(0, 32) : null,
+        meta?.banco ? String(meta.banco || '').trim().slice(0, 60) : null,
+        meta?.descricao ? String(meta.descricao || '').trim().slice(0, 255) : null,
+        meta?.und ? String(meta.und || '').trim().slice(0, 40) : null,
         toDec(valorUnitario)
       );
 
       await tx.$executeRawUnsafe(
         `
-        UPDATE obras_planilhas_composicoes_itens
+        UPDATE tab_composicoes
         SET valor_unitario = $5, atualizado_em = NOW()
         WHERE tenant_id = $1
           AND id_obra = $2
@@ -14650,9 +12971,11 @@ export default async function v1Routes(server: FastifyInstance) {
       const cascata = await coletarCodigosCascata(tx, ctx.tenantId, idObra, idPlanilha, codigosIniciais);
       await recalcularFixacaoCascata(tx, ctx.tenantId, idObra, idPlanilha, cascata);
       await atualizarServicosPlanilhaPorCodigos(tx, ctx.tenantId, idObra, idPlanilha, cascata);
+
+      return { codigoItem, valorUnitario };
     });
 
-    return ok(reply, { codigoItem, valorUnitario }, { message: 'Preço do insumo atualizado e propagado em cascata' });
+    return ok(reply, { ok: true }, { message: 'Preço do insumo atualizado e propagado em cascata' });
   });
 
   server.post('/engenharia/obras/:id/planilha/insumos/precos/importar-csv', async (request, reply) => {

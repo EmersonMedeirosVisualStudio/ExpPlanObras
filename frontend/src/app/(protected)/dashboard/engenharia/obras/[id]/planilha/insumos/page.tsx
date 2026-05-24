@@ -10,9 +10,7 @@ type VersaoInfo = {
   numeroVersao: number;
   nome: string;
   atual: boolean;
-  idFonteDados: number | null;
   idParametros: number | null;
-  fonteNome: string;
   parametrosNome: string;
 };
 
@@ -84,9 +82,7 @@ export default function Page() {
           numeroVersao: Number(v?.numeroVersao || 0),
           nome: String(v?.nome || ""),
           atual: Boolean(v?.atual),
-          idFonteDados: v?.idFonteDados == null ? null : Number(v.idFonteDados),
           idParametros: v?.idParametros == null ? null : Number(v.idParametros),
-          fonteNome: String(v?.fonteNome || ""),
           parametrosNome: String(v?.parametrosNome || ""),
         }))
         .filter((v: VersaoInfo) => Number.isFinite(v.idPlanilha) && v.idPlanilha > 0);
@@ -246,7 +242,6 @@ export default function Page() {
           <div className="mt-1 text-sm text-slate-700">
             {selectedVersao?.idPlanilha ? <div className="font-semibold">{`Planilha: #${selectedVersao.idPlanilha} - ${selectedVersao.nome || "—"}`}</div> : null}
             {selectedVersao?.idParametros ? <div>{`Parâmetros: #${selectedVersao.idParametros} - ${selectedVersao.parametrosNome || "—"}`}</div> : null}
-            {selectedVersao?.idFonteDados ? <div>{`Fonte de dados: #${selectedVersao.idFonteDados} - ${selectedVersao.fonteNome || "—"}`}</div> : null}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

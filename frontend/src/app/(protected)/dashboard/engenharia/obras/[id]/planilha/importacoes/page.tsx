@@ -10,9 +10,7 @@ type VersaoRow = {
   numeroVersao: number;
   nome: string;
   atual: boolean;
-  idFonteDados: number | null;
   idParametros: number | null;
-  fonteNome: string;
   parametrosNome: string;
   idObra?: number | null;
   obraNome?: string | null;
@@ -258,9 +256,7 @@ export default function PlanilhaImportacoesPage() {
         numeroVersao: Number(v.numeroVersao),
         nome: String(v.nome || ""),
         atual: Boolean(v.atual),
-        idFonteDados: v.idFonteDados == null ? null : Number(v.idFonteDados),
         idParametros: v.idParametros == null ? null : Number(v.idParametros),
-        fonteNome: String(v.fonteNome || ""),
         parametrosNome: String(v.parametrosNome || ""),
         idObra: v.idObra == null ? null : Number(v.idObra),
         obraNome: v.obraNome == null ? null : String(v.obraNome || ""),
@@ -288,9 +284,7 @@ export default function PlanilhaImportacoesPage() {
         numeroVersao: Number(v.numeroVersao),
         nome: String(v.nome || ""),
         atual: Boolean(v.atual),
-        idFonteDados: v.idFonteDados == null ? null : Number(v.idFonteDados),
         idParametros: v.idParametros == null ? null : Number(v.idParametros),
-        fonteNome: String(v.fonteNome || ""),
         parametrosNome: String(v.parametrosNome || ""),
         idObra: v.idObra == null ? null : Number(v.idObra),
         obraNome: v.obraNome == null ? null : String(v.obraNome || ""),
@@ -407,7 +401,7 @@ export default function PlanilhaImportacoesPage() {
       const warnings: string[] = [];
       if (csvMode === "REPLACE") warnings.push("Você escolheu SUBSTITUIR: todas as linhas da planilha destino serão apagadas antes de importar.");
       if (csvCatalogDupPolicy === "OVERWRITE")
-        warnings.push("Você escolheu SOBRESCREVER na Fonte: serviços com o mesmo código serão atualizados na Fonte de dados (cadastro compartilhado) e isso pode impactar outras planilhas.");
+        warnings.push("Você escolheu SOBRESCREVER no catálogo: serviços com o mesmo código serão atualizados no catálogo da planilha destino.");
       if (warnings.length) {
         const ok = window.confirm(`${warnings.join("\n\n")}\n\nDeseja continuar?`);
         if (!ok) return;
@@ -714,9 +708,9 @@ export default function PlanilhaImportacoesPage() {
           <label className="space-y-1">
             <div
               className="text-xs text-slate-500"
-              title="Define o que acontece com o CADASTRO da Fonte de dados (serviços/códigos). Isso pode impactar outras planilhas que usam a mesma Fonte."
+              title="Define o que acontece com o catálogo de serviços (códigos) da planilha destino."
             >
-              Repetidos na Fonte
+              Repetidos no catálogo
             </div>
             <select
               className="input bg-white w-full"
@@ -737,7 +731,7 @@ export default function PlanilhaImportacoesPage() {
             <div className="font-semibold">Atenção</div>
             {csvMode === "REPLACE" ? <div>- Substituir apaga todas as linhas da planilha destino antes de importar.</div> : null}
             {csvCatalogDupPolicy === "OVERWRITE" ? (
-              <div>- Sobrescrever altera a Fonte de dados (cadastro compartilhado) e pode impactar outras planilhas que usam a mesma Fonte.</div>
+              <div>- Sobrescrever altera o catálogo de serviços da planilha destino.</div>
             ) : null}
           </div>
         ) : null}
@@ -793,10 +787,10 @@ export default function PlanilhaImportacoesPage() {
             <div className="rounded-lg border bg-slate-50 p-3 text-sm text-slate-700">
               <div className="font-semibold">Como o sistema trata repetidos</div>
               <div>
-                - Fonte de dados (SERVICOS_FONTE): a regra depende de <span className="font-semibold">Repetidos na Fonte</span> (manter / completar / sobrescrever).
+                - Catálogo de serviços (TAB_SERVICOS): a regra depende de <span className="font-semibold">Repetidos no catálogo</span> (manter / completar / sobrescrever).
               </div>
-              <div>- Se um serviço do CSV não existir no catálogo da Fonte, ele é criado automaticamente ao importar (usando o código).</div>
-            <div>- Linhas na planilha (SERVICOS_LINHAS): no modo Complementar o sistema evita inserir duplicatas idênticas (Item/Código/Quant/Valor).</div>
+              <div>- Se um serviço do CSV não existir no catálogo da planilha destino, ele é criado automaticamente ao importar (usando o código).</div>
+            <div>- Linhas na planilha (TAB_PLANILHA_ITENS): no modo Complementar o sistema evita inserir duplicatas idênticas (Item/Código/Quant/Valor).</div>
               <div>- Composições/insumos não são importados por esta tela; são tratados nas telas Serviços/SINAPI/Insumos.</div>
             </div>
             <div className="overflow-auto rounded-lg border">

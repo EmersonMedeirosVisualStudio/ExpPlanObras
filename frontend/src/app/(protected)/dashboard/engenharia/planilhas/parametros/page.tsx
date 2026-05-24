@@ -327,20 +327,6 @@ export default function ParametrosPage() {
           >
             Planilha
           </button>
-          <button
-            className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
-            type="button"
-            onClick={() => {
-              const qs = new URLSearchParams();
-              if (safeReturnTo) qs.set("returnTo", safeReturnTo);
-              const tail = qs.toString();
-              router.push(`/dashboard/engenharia/fontes-dados${tail ? `?${tail}` : ""}`);
-            }}
-            disabled={loading}
-            title="Abrir Fontes de Dados"
-          >
-            Fonte de Dados
-          </button>
           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={carregar} disabled={loading}>
             Atualizar
           </button>

@@ -1688,46 +1688,40 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
   - Coluna **Ações** (na lista de versões): **Editar** e **Excluir planilha**.
   - Coluna **Atual**: botão **Definir atual** para marcar uma planilha como a versão atual da obra.
 - Lista de versões (card **Versões cadastradas**): exibe, para cada versão:
-  - **Fonte** (nome da fonte de dados utilizada pela versão);
   - **Parâmetros** (nome resumido dos parâmetros aplicados: data-base/UF/BDI);
   - **Serviços** (quantidade de itens do tipo Serviço na planilha);
   - **Valor total** (soma dos valores parciais dos itens de serviço).
 - Edição por versão selecionada: após selecionar uma versão, o usuário pode **editar a planilha** (linhas) diretamente na versão selecionada.
-  - O card **Parâmetros da planilha** é **somente leitura**: ele apenas mostra qual parâmetro está vinculado naquela versão.
-  - Para trocar a Fonte/Parâmetro vinculados, use **Editar** na lista de versões.
-  - Para cadastrar/editar Fonte e Parâmetros (cadastros compartilhados), use as telas **Engenharia → Fontes de dados** e **Engenharia → Planilhas → Parâmetros** (acessadas pelos botões no canto superior direito).
+  - O card **Parâmetros da planilha** é **somente leitura**: ele mostra o **snapshot** de parâmetros vinculado naquela versão (**#id**).
+  - Para trocar o parâmetro vinculado, use **Editar** na lista de versões.
+  - Regra de segurança: ao trocar Parâmetros de uma versão, o sistema cria/vincula um **novo id** (snapshot) para não alterar o histórico de outras versões.
+  - Para cadastrar/clonar Parâmetros (biblioteca), use **Engenharia → Planilhas → Parâmetros**.
 - Clonagem (com dependências): no card **Versões cadastradas**, a ação **Clonar** cria uma nova versão copiando:
   - itens da planilha (itens, subitens e serviços utilizados na planilha);
+  - catálogo de serviços da planilha;
+  - composições vinculadas aos serviços da planilha;
   - preços de insumos da planilha.
-  - Importante: **não clona composição**. A composição é cadastrada na **Fonte de dados** (compartilhada) e é a mesma para todas as planilhas que usam a mesma Fonte.
-  - Importante: a clonagem **não clona** a Fonte nem os Parâmetros; ela apenas copia os **ids** (reuso). Alterações na Fonte/Parâmetros afetam todas as planilhas que usam o mesmo id.
+  - Importante: por padrão, a clonagem **reusa** o mesmo **id de Parâmetros** (não clona). Se você quiser manter versões totalmente independentes, use **Clonar Parâmetros** para gerar um novo id e vincular à nova versão.
 
 #### Nova planilha x Clonar (Duplicar versão)
 
 - **Nova planilha**: abre uma janela para criar uma versão nova. O usuário deve escolher:
-  - **Fonte de dados** (#id - nome);
   - **Parâmetro** (#id - nome).
   A versão nova pode ser criada **vazia** (sem itens) ou com opção de **Clonar de outra planilha**.
 - **Clonar (Duplicar versão)**: cria uma versão nova, define como **Atual**, e duplica:
   - **itens** da planilha (estrutura e quantidades);
+  - **catálogo de serviços** e **composições**;
   - **preços de insumos** da planilha.
-  Reusa (não clona) os mesmos **ids** de **Fonte de dados** e **Parâmetros**.
+  Reusa (não clona) o mesmo **id de Parâmetros** (a menos que você opte por clonar).
 
-#### Como cadastrar Fonte de dados e Parâmetros (para uso na planilha)
+#### Como cadastrar Parâmetros (para uso na planilha)
 
 ETAPA 1 — Onde acessar
 - Acesse **Engenharia → Obras → Obra selecionada → Planilha orçamentária**
 
 ETAPA 2 — O que clicar
 - No canto superior direito, abaixo do botão **Voltar**, clique em:
-  - **Cadastrar Fonte de dados** (abre a tela de cadastro/edição de fontes)
   - **Cadastrar Parâmetro** (abre a tela de cadastro/edição de parâmetros)
-
-ETAPA 3 — O que preencher (Fonte de dados)
-- Nome: exemplo “SINAPI SP 2024-01” (ou um nome interno da sua empresa)
-- Tipo: SINAPI / SBC / MANUAL
-- UF e Data-base (quando aplicável)
-- Clique em **Salvar**
 
 ETAPA 3 — O que preencher (Parâmetros)
 - Nome: exemplo “SINAPI SP 2024-01 • BDI 20% • LS 0%”
@@ -1736,37 +1730,36 @@ ETAPA 3 — O que preencher (Parâmetros)
 
 ETAPA 4 — O que esperar
 - Ao salvar, a lista passa a exibir o registro como **#id - nome**.
-- Ao editar um registro, você escolhe a linha na lista e clica em **Editar**, ajusta os campos e clica em **Salvar**.
-- Aviso importante: Fonte e Parâmetros são **compartilhados**. Alterações nestes cadastros impactam todas as planilhas que usam o mesmo id e disparam **recálculo automático** dos valores vinculados.
+- Para manter histórico do orçamento, o sistema evita alterações em parâmetros que já estejam vinculados a versões de planilha. Quando precisar mudar valores (BDI/LS/UF/Data-base/Desconto), use **Clonar** para gerar um novo id e depois vincule esse id na versão desejada.
 
 ETAPA 5 — Como validar
 - Volte no card **Versões cadastradas** e:
   - clique em **Nova planilha**
-  - selecione **Fonte** e **Parâmetro** (em formato **#id - nome**)
-  - confirme e veja se as colunas **Fonte** e **Parâmetros** aparecem preenchidas na versão criada
+  - selecione **Parâmetro** (em formato **#id - nome**)
+  - confirme e veja se a coluna **Parâmetros** aparece preenchida na versão criada
 - Lógica de criação de uma planilha (obra):
-  - 1) Planilha: a planilha combina **Obra + Parâmetros + Fonte de dados**.
+  - 1) Planilha: a planilha combina **Obra + Parâmetros + Catálogo (da própria versão)**.
   - 2) Parâmetros: ao criar/clonar uma planilha, define-se o conjunto de **parâmetros** (UF, data-base, BDI, encargos e descontos). Eles determinam como os custos são calculados na planilha.
-  - 3) Serviços (FONTE) — catálogo técnico: é a **união de todos os serviços usados** nas planilhas que apontam para esta Fonte. Ele é alimentado automaticamente quando:
+  - 3) Serviços (catálogo da planilha): é a **união de todos os serviços usados** na versão selecionada. Ele é alimentado automaticamente quando:
     - você cria um serviço na Planilha (Adicionar linha) com um CÓDIGO novo; ou
     - você cria/edita na Composição e salva (atualiza também o catálogo); ou
     - você importa serviços (CSV / outra planilha).
-    Para criar um serviço novo no catálogo da Fonte:
+    Para criar um serviço novo no catálogo da planilha:
       1 - Crie o serviço na Planilha (Adicionar linha);
       2 - Ou através do botão Novo Serviço;
       3 - Crie o serviço direto na composição.
     Informando o CÓDIGO/Fonte/descrição/UND.
-  - 4) Planilha (itens): o usuário decide quais serviços do catálogo viram **itens** na planilha. Todo item de serviço referencia um serviço do catálogo da fonte.
-  - 5) Composições: para cada serviço do catálogo da fonte, cadastra-se/importa-se sua **composição** (itens, subcomposições e insumos), sempre vinculada ao serviço (pai).
-  - 5) Insumos consolidados: a lista de insumos é derivada das composições dos serviços e precisa ser recalculada sempre que uma composição muda.
-- Regra: ao salvar/importar uma composição (ou importar um serviço que traga composição), o sistema refaz o consolidado de insumos e atualiza os valores do serviço em todas as planilhas vinculadas (efeito cascata).
-- Regra: ao alterar Parâmetros (BDI/LS/Descontos/Data-base/UF), o sistema recalcula automaticamente os valores unitários e parciais dos serviços em todas as planilhas que usam esses parâmetros (isso alimenta também telas derivadas como Adequação e, no futuro, Medição).
+  - 4) Planilha (itens): o usuário decide quais serviços do catálogo viram **itens** na planilha. Todo item de serviço referencia um serviço do catálogo da planilha.
+  - 5) Composições: para cada serviço do catálogo da planilha, cadastra-se/importa-se sua **composição** (itens, subcomposições e insumos), sempre vinculada ao serviço (pai).
+  - 6) Insumos consolidados: a lista de insumos é derivada das composições dos serviços e é recalculada sempre que uma composição muda.
+- Regra: ao salvar/importar uma composição (ou importar um serviço que traga composição), o sistema refaz o consolidado de insumos e atualiza os valores do serviço na própria versão da planilha.
+- Regra: ao trocar Parâmetros (BDI/LS/Descontos/Data-base/UF) de uma versão, o sistema recalcula automaticamente os valores unitários e parciais dos serviços daquela versão (isso alimenta também telas derivadas como Adequação e, no futuro, Medição).
 - Importação CSV (planilha) com **prévia**: antes de gravar, o sistema mostra uma grade de conferência e destaca campos inválidos.
   - Colunas importadas (CSV): `item`, `codigo`, `fonte`, `servicos`, `und`, `quant`, `valor_unitario` (o **valor parcial** é calculado automaticamente).
   - Observação de compatibilidade: leitura “smart” de encoding (UTF-8 / Windows-1252) para reduzir erros de acentuação no texto importado.
-  - Observação: ao importar itens do tipo Serviço, o sistema garante que o serviço exista no catálogo da fonte (Serviços (FONTE)).
-  - Observação: ao salvar/importar composições, o sistema garante que subcomposições referenciadas existam no catálogo da fonte (reduz “cadastros órfãos”).
-- Regra importante (catálogo): um serviço pode chegar na planilha por CSV/cópia mesmo que ainda não exista no catálogo da Fonte. Ao **importar** (ou ao **salvar** um serviço criado na planilha), o sistema cria/atualiza automaticamente o registro em **Serviços (catálogo da fonte)** usando o mesmo **código**.
+  - Observação: ao importar itens do tipo Serviço, o sistema garante que o serviço exista no catálogo da planilha (Serviços).
+  - Observação: ao salvar/importar composições, o sistema garante que subcomposições referenciadas existam no catálogo da planilha (reduz “cadastros órfãos”).
+- Regra importante (catálogo): um serviço pode chegar na planilha por CSV/cópia mesmo que ainda não exista no catálogo. Ao **importar** (ou ao **salvar** um serviço criado na planilha), o sistema cria/atualiza automaticamente o registro em **Serviços** usando o mesmo **código**.
 - Importações (tela dedicada): as importações ficam na tela **Importações** (botão no card **Adicionar serviço**). O botão **Importar** só aparece quando a **prévia** estiver aberta.
 
 ##### Como criar um serviço novo (pela Planilha)
@@ -1779,16 +1772,17 @@ ETAPA 2 — O que clicar
 
 ETAPA 3 — O que preencher
 - Sempre preencha: **ITEM**, **CÓDIGO** e **QUANT.**
-- Os campos **Fonte**, **Serviços (descrição)**, **UND** e **VALOR UNIT.** são **virtuais** (vêm do **catálogo da Fonte**) e ficam travados quando o código já existe no catálogo.
+- Os campos **Fonte**, **Serviços (descrição)**, **UND** e **VALOR UNIT.** são **virtuais** (vêm do **catálogo da planilha**) e ficam travados quando o código já existe no catálogo.
 - Se o código ainda não existir no catálogo, você poderá preencher **Fonte/descrição/UND** uma única vez para cadastrar o serviço. Ao salvar, o serviço passa a existir no catálogo e, a partir daí, esses campos ficam travados na Planilha.
-- Regra: não é permitido alterar **Fonte**, **nome** e **UND** de um serviço já cadastrado através da Planilha. Essas informações são gravadas e mantidas em **Serviços (catálogo da Fonte)** (ou na tela de **Composição**, que atualiza o catálogo ao salvar).
+- Regra: não é permitido alterar **Fonte**, **nome** e **UND** de um serviço já cadastrado através da Planilha. Essas informações são gravadas e mantidas em **Serviços** (ou na tela de **Composição**, que atualiza o catálogo ao salvar).
 
 ETAPA 4 — O que esperar
-- Ao clicar em **Salvar**, o serviço entra na planilha e também é criado/atualizado no catálogo da Fonte.
+- Ao clicar em **Salvar**, o serviço entra na planilha e também é criado/atualizado no catálogo da planilha.
 
 ETAPA 5 — Como validar
-- Clique em **Serviços (catálogo da fonte)** e confirme se o serviço aparece pelo **código**.
-- Duplo clique no serviço na planilha abre **Serviços (catálogo da fonte)** já focado no código selecionado.
+- Clique em **Serviços** e confirme se o serviço aparece pelo **código**.
+- Duplo clique no serviço na planilha abre **Serviços** já focado no código selecionado.
+
 
 #### Como usar — Tela Importações (Planilha orçamentária)
 
@@ -1890,8 +1884,8 @@ ETAPA 5 — Como validar
 - Navegação (breadcrumb): nas telas de **Planilha**, **Serviços**, **Insumos**, **SINAPI**, **Adequação** e **Análise de composição**, o caminho é exibido como botões clicáveis (Engenharia → Obras → Obra → Planilha). A **Obra selecionada** e a **planilha selecionada** ficam destacadas em **azul**.
 - Edição de serviço (regra de preço):
   - ao selecionar **Tipo = Serviço**, os campos **Código**, **Serviços** e **Fonte** viram campos de **seleção com busca** (clicar mostra opções, digitar filtra em tempo real);
-  - ao selecionar um valor (ou concluir a digitação), o sistema **preenche/filtra os demais campos** com base no catálogo de serviços da fonte (Código/Serviços/Fonte/UND);
-  - quando o **Código** já existe no catálogo (Serviços (FONTE)), os campos **Fonte/Serviços/UND** ficam travados no item e passam a ser tratados como leitura do catálogo (evita divergência entre item e catálogo);
+  - ao selecionar um valor (ou concluir a digitação), o sistema **preenche/filtra os demais campos** com base no catálogo de serviços da planilha (Código/Serviços/Fonte/UND);
+  - quando o **Código** já existe no catálogo (Serviços), os campos **Fonte/Serviços/UND** ficam travados no item e passam a ser tratados como leitura do catálogo (evita divergência entre item e catálogo);
   - o campo **Valor Unit.** do serviço **não é digitável**;
   - ele é preenchido automaticamente a partir da composição vinculada ao código do serviço (ou **0** quando não existe composição definida);
   - ao informar/alterar o **Código** do serviço, o sistema recalcula o valor unitário.
@@ -1903,24 +1897,23 @@ ETAPA 5 — Como validar
 - Serviços:
   - A tela marca serviços **sem composição** e **divergentes** comparando total da planilha x total calculado por composição.
   - Existe ação para **copiar serviço entre versões** (origem → destino), com prévia (pode copiar composição).
-    - Se a **Fonte** for a mesma: copia apenas a **linha do serviço** (ITEM/QUANT.) na planilha destino, pois a composição já é compartilhada.
-    - Se a **Fonte** for diferente: além da linha, copia também o **serviço** para a **Fonte destino** e copia a **composição** quando ela existir na origem e não existir no destino.
-    - Se marcar **Substituir composição no destino**, a composição é sobrescrita na Fonte destino (impacta todas as planilhas que usam essa Fonte).
+    - Como o catálogo é por versão, a cópia cria/atualiza também o **catálogo** e as **composições** no destino (conforme as opções selecionadas na prévia).
+    - Se marcar **Substituir composição no destino**, a composição é sobrescrita no destino (impacta apenas a versão de destino).
 - Análise de composição (editar itens):
   - em **Composições**, é permitido alterar apenas **Código** e **Qtd** (demais campos são preenchidos/calculados automaticamente);
   - em **Insumos**, é permitido alterar apenas **Código**, **Qtd** e **Valor Unit** (demais campos são preenchidos/calculados automaticamente);
   - o campo **Qtd** aceita apenas números e um único separador decimal (**.** ou **,**); ao sair do campo, o sistema formata com **3 casas decimais** e separador de milhar;
-  - alterações têm efeito em cascata: recalculam serviços afetados (direta e indiretamente) e atualizam o valor nas planilhas vinculadas à mesma Fonte;
+  - alterações têm efeito em cascata: recalculam serviços afetados (direta e indiretamente) e atualizam o valor na própria versão da planilha;
   - a tecla **Esc** cancela a edição e restaura o último estado salvo.
   - Indicador de carregamento: a tela exibe “Carregando página…” e “Página carregada” para deixar claro quando o carregamento inicial terminou.
 - Insumos consolidados:
-  - A lista é derivada das **composições da Fonte** aplicadas aos **serviços existentes na planilha selecionada**.
-  - O preço base do insumo vem da **Fonte de dados**. Quando um preço de insumo é alterado na Fonte (via composição/importação), isso recalcula automaticamente os serviços afetados em todas as planilhas que usam a mesma Fonte.
+  - A lista é derivada das **composições da planilha** aplicadas aos **serviços existentes na versão selecionada**.
+  - O preço do insumo é do escopo da planilha (versão). Quando um preço de insumo é alterado (via composição/importação), isso recalcula automaticamente os serviços afetados na própria versão.
 
 #### Validação
 
 - programação e apropriação usam os serviços que estão em **Planilha (itens)** da versão selecionada.
-- um serviço pode existir no **catálogo** (Serviços (FONTE)) com composição e insumos, mas só impacta o orçamento/total da planilha quando o usuário o inserir em **Planilha (itens)**.
+- um serviço pode existir no **catálogo** (Serviços) com composição e insumos, mas só impacta o orçamento/total da planilha quando o usuário o inserir em **Planilha (itens)**.
 
 ### 11.6 BDI, impostos e lucro
 
@@ -2175,7 +2168,8 @@ Esta seção descreve como **Serviços**, **Composições** e **Insumos** se rel
 #### Regras (integridade)
 
 - A cadeia de dados é: **Planilha (itens)** → **Serviços (FONTE catálogo)** → **Composições (itens da fonte)** → **Insumos (preço base da fonte)** + **Insumos (preço na planilha)**.
-- Todo item de serviço na **Planilha (itens)** referencia um serviço no catálogo (Serviços (FONTE)).
+- A cadeia de dados é: **Planilha (itens)** → **Serviços (catálogo da planilha)** → **Composições (itens da planilha)** → **Insumos (preço na planilha)** + **SINAPI (base de referência)**.
+- Todo item de serviço na **Planilha (itens)** referencia um serviço no catálogo (Serviços).
 - Toda composição é **sempre vinculada** a um serviço do catálogo (pai), e pode referenciar insumos e subcomposições.
 - Serviço no catálogo não pode ficar sem **descrição** e/ou **UND** (bloqueia inconsistências e cadastros incompletos).
 - O preço do insumo é **único por código** na planilha (versão). Se mudar em um lugar, muda no outro e recalcula a cascata.
@@ -3298,19 +3292,19 @@ ETAPA 5 — Como validar
 - Menor retrabalho operacional para montar composições auxiliares.
 - Maior estabilidade para produção (valor unitário persistido e rastreável no backend).
 
-**Como uma composição fica cadastrada na Fonte (no sistema)**
+**Como uma composição fica cadastrada na planilha (no sistema)**
 
 Regras (consistência)
-- Uma **composição sempre** está vinculada a um **serviço válido** do **catálogo da Fonte**:
-  - o serviço precisa existir em `Serviços (catálogo da fonte)` e ter **nome** e **unidade**
+- Uma **composição sempre** está vinculada a um **serviço válido** do **catálogo da planilha**:
+  - o serviço precisa existir em `Serviços` e ter **nome** e **unidade**
 - Não permite:
-  - composição sem serviço válido na Fonte
-  - serviço sem nome/unidade na Fonte
+  - composição sem serviço válido no catálogo da planilha
+  - serviço sem nome/unidade no catálogo da planilha
   - importações com dados inconsistentes (o backend bloqueia e a UI alerta)
 
 Escopo (persistência)
-- As composições e insumos são salvos no escopo: `tenant + fonte de dados`.
-- A planilha (versão) armazena apenas as **linhas** (item/subitem/serviço) e referencia o serviço pelo **código do serviço** (via catálogo da Fonte).
+- As composições e insumos são salvos no escopo: `tenant + obra + planilha (versão)`.
+- A planilha (versão) armazena as **linhas** (item/subitem/serviço) e referencia o serviço pelo **id_servico** (catálogo da própria versão), mantendo também o **código** como chave funcional.
 
 Benefício da mudança
 - Evita planilhas com serviços incompletos e composições “soltas”.
@@ -3568,19 +3562,18 @@ Legenda:
 
 **Problema identificado**
 
-- O usuário operava opções que pareciam “da planilha”, mas na prática afetavam também o **cadastro da Fonte de dados** (compartilhado por várias planilhas).
-- Os nomes das opções não deixavam claro o escopo real de cada escolha (planilha destino x fonte de dados), aumentando risco de divergência e impacto em outras planilhas.
+- O usuário operava opções que pareciam “da planilha”, mas na prática também afetavam o **catálogo** (serviços/composição/insumos) associado à planilha destino.
+- Os nomes das opções não deixavam claro o escopo real de cada escolha (linhas da planilha x catálogo), aumentando risco de divergência.
 
 **Oportunidade de melhoria**
 
 - Explicar e tornar visível que a importação tem dois efeitos possíveis:
   - **LINHAS da planilha** (itens/subitens/serviços na versão destino).
-  - **CADASTRO da Fonte de dados** (serviços/códigos compartilhados pelas planilhas que usam a mesma Fonte).
+  - **CATÁLOGO da planilha** (serviços/códigos, composições e preços de insumos da versão destino).
 
 **Solução sugerida (implementada)**
 
 - A tela **Importações** foi organizada com tooltips explicativos nos campos principais.
-- Na importação **de outra planilha**, quando **a Fonte de dados da origem é a mesma da Fonte do destino**, a opção **Repetidos na Fonte** é travada em **Manter como está** para evitar alteração desnecessária do cadastro compartilhado.
 
 **Definições (o que cada opção realmente controla)**
 
@@ -3589,11 +3582,11 @@ Legenda:
 - Complementar: adiciona as linhas importadas ao final.
 - Substituir: apaga todas as linhas da planilha destino e recria somente com o que está selecionado para importar.
 
-2) Repetidos na Fonte (Completar / Manter / Sobrescrever)
-- Controla o que acontece no **CADASTRO da Fonte de dados** para o mesmo **código** de serviço.
-- Completar campos vazios (padrão): preenche apenas o que estiver vazio no cadastro.
-- Manter como está: não altera o cadastro (somente usa o que já existe).
-- Sobrescrever (somente dados informados): atualiza no cadastro apenas os campos que vierem preenchidos na importação.
+2) Repetidos no catálogo (Completar / Manter / Sobrescrever)
+- Controla o que acontece no **catálogo da planilha destino** para o mesmo **código** de serviço.
+- Completar campos vazios (padrão): preenche apenas o que estiver vazio no catálogo do destino.
+- Manter como está: não altera o catálogo do destino (somente usa o que já existe).
+- Sobrescrever (somente dados informados): atualiza no catálogo do destino apenas os campos que vierem preenchidos na importação.
 
 3) Repetidos nas linhas da planilha (automaticamente)
 - Controla apenas as **LINHAS** na planilha destino.
@@ -3608,19 +3601,19 @@ Exemplo base:
 
 1) Modo: Complementar
 - Resultado na planilha destino: evita inserir duplicatas idênticas automaticamente (Item/Código/Quant/Valor).
-- Cadastro da Fonte: depende de Repetidos na Fonte.
+- Catálogo: depende de Repetidos no catálogo.
 
 2) Modo: Substituir
 - Resultado na planilha destino: apaga tudo e recria com o CSV (não existe “repetida” porque a planilha foi apagada).
-- Cadastro da Fonte: depende de Repetidos na Fonte.
+- Catálogo: depende de Repetidos no catálogo.
 
-Repetidos na Fonte (CSV) — exemplo:
-- Já existe no cadastro da Fonte o serviço `COMP.UPA.155` com descrição “ADMINISTRAÇÃO TÉCNICA…” e UND `%`.
+Repetidos no catálogo (CSV) — exemplo:
+- Já existe no catálogo do destino o serviço `COMP.UPA.155` com descrição “ADMINISTRAÇÃO TÉCNICA…” e UND `%`.
 - O CSV traz o mesmo código com descrição/UND preenchidas.
 
 - Completar campos vazios: só preenche se o cadastro estiver vazio nesses campos.
 - Manter como está: ignora o que veio no CSV para esse código.
-- Sobrescrever (somente dados informados): atualiza descrição/UND (e pode impactar outras planilhas que usam a mesma Fonte).
+- Sobrescrever (somente dados informados): atualiza descrição/UND na planilha destino.
 
 **Importar serviços de outra planilha — combinações (com exemplos)**
 
@@ -3634,9 +3627,8 @@ Exemplo base:
 2) Modo: Substituir
 - Resultado na planilha destino: apaga tudo e recria com as linhas selecionadas da origem.
 
-3) Repetidos na Fonte (de outra planilha)
-- Regra geral: controla o cadastro da Fonte da planilha destino.
-- Caso especial (fonte da origem = fonte do destino): a opção é travada em “Manter como está”, porque o cadastro já é o mesmo e atualizar por importação não agrega valor e aumenta risco.
+3) Repetidos no catálogo (de outra planilha)
+- Controla o catálogo da planilha destino.
 
 **Como usar — Importações (CSV ou de outra planilha)**
 
@@ -3649,14 +3641,14 @@ ETAPA 2 — O que clicar
 
 ETAPA 3 — O que preencher (CSV)
 - Modo: Complementar ou Substituir.
-- Repetidos na Fonte: escolha conforme o impacto desejado no cadastro compartilhado.
+- Repetidos no catálogo: escolha conforme o impacto desejado no catálogo da planilha destino.
 - Clique em “Selecionar CSV” → confira a prévia → clique em “Importar”.
 
 ETAPA 3 — O que preencher (de outra planilha)
 - Planilha origem: selecione a versão de onde copiar as linhas.
 - (Opcional) Marque “De outra obra” para selecionar uma planilha de outra obra.
 - Modo: Complementar ou Substituir.
-- Repetidos na Fonte: só use “Sobrescrever” quando você tiver certeza de que deseja alterar o cadastro da Fonte (impacto em outras planilhas).
+- Repetidos no catálogo: só use “Sobrescrever” quando você tiver certeza de que deseja alterar o catálogo da planilha destino.
 - Clique em “Carregar prévia” → selecione as linhas → clique em “Importar”.
 
 ETAPA 4 — O que esperar
@@ -3667,7 +3659,7 @@ ETAPA 5 — Como validar
 - Volte para Planilha orçamentária e confira se:
   - os itens/subitens/serviços aparecem conforme esperado;
   - não houve duplicidade indesejada;
-  - se você alterou “Repetidos na Fonte”, confira se outras planilhas que usam a mesma Fonte não foram impactadas indevidamente.
+  - se você alterou “Repetidos no catálogo”, confira se o catálogo da planilha destino ficou consistente (Serviços / Composições / Insumos).
 
 ### 18.3 Documentos e acervos
 
