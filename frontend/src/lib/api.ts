@@ -34,6 +34,20 @@ function isAxiosHeaders(value: unknown): value is AxiosHeaders {
   return typeof value === 'object' && value !== null && 'set' in value && typeof (value as { set?: unknown }).set === 'function';
 }
 
+function extractAxiosUrl(error: any) {
+  const rawUrl = typeof error?.config?.url === 'string' ? error.config.url : '';
+  const base = typeof error?.config?.baseURL === 'string' ? error.config.baseURL : '';
+  if (!rawUrl) return '';
+  if (/^https?:\/\//i.test(rawUrl)) return rawUrl;
+  if (!base) return rawUrl;
+  return `${String(base).replace(/\/$/, '')}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`;
+}
+
+function isAuthUrl(url: string) {
+  const u = String(url || '');
+  return u.includes('/api/auth/');
+}
+
 // Intercept requests to add token
 api.interceptors.request.use((config) => {
   const url = typeof config.url === 'string' ? config.url : '';
@@ -61,10 +75,17 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Clear token and redirect to login if unauthorized
       if (typeof window !== 'undefined') {
-        safeLocalStorage.removeItem('token');
-        window.location.href = '/login';
+        const url = extractAxiosUrl(error);
+        const onLoginPage = window.location?.pathname === '/login';
+        const allowLocalHandling = onLoginPage || isAuthUrl(url);
+        if (!allowLocalHandling) {
+          const message = error.response?.data?.message;
+          safeLocalStorage.setItem('auth_error', typeof message === 'string' && message.trim() ? message : 'Sua sessão expirou. Faça login novamente.');
+          safeLocalStorage.removeItem('token');
+          safeLocalStorage.removeItem('user');
+          window.location.href = '/login';
+        }
       }
     }
     if (error.response?.status === 402) {
@@ -75,7 +96,7 @@ api.interceptors.response.use(
         }
         safeLocalStorage.removeItem('token');
         safeLocalStorage.removeItem('user');
-        window.location.href = '/login';
+        if (window.location?.pathname !== '/login') window.location.href = '/login';
       }
     }
     return Promise.reject(error);

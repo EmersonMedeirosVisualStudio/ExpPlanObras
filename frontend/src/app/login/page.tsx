@@ -34,15 +34,18 @@ type TenantOption = {
 
 function getApiErrorMessage(err: unknown) {
   if (typeof err !== 'object' || !err) return undefined;
-  if (!('response' in err)) return undefined;
-  const response = (err as { response?: unknown }).response;
-  if (typeof response !== 'object' || !response) return undefined;
-  if (!('data' in response)) return undefined;
-  const data = (response as { data?: unknown }).data;
-  if (typeof data !== 'object' || !data) return undefined;
-  if (!('message' in data)) return undefined;
-  const message = (data as { message?: unknown }).message;
-  return typeof message === 'string' ? message : undefined;
+  const e = err as any;
+  const status = typeof e?.response?.status === 'number' ? Number(e.response.status) : null;
+  const message = typeof e?.response?.data?.message === 'string' ? String(e.response.data.message || '').trim() : '';
+  if (message) return message;
+  const msg = typeof e?.message === 'string' ? String(e.message || '').trim() : '';
+  const code = typeof e?.code === 'string' ? String(e.code || '').trim() : '';
+  const isNetwork = !e?.response && (msg.toLowerCase().includes('network') || msg.toLowerCase().includes('failed to fetch') || code === 'ERR_NETWORK');
+  if (isNetwork) return 'Falha ao conectar no servidor. Verifique sua internet e se o backend está online.';
+  if (status === 401) return 'Email ou senha inválidos.';
+  if (status === 403) return 'Acesso negado. Sua conta pode estar inativa ou sem permissão.';
+  if (status === 429) return 'Muitas tentativas. Aguarde alguns minutos e tente novamente.';
+  return msg || undefined;
 }
 
 function setCookie(name: string, value: string, maxAgeSeconds: number) {
@@ -455,6 +458,7 @@ export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [persistedError, setPersistedError] = useState('');
   const [addressError, setAddressError] = useState('');
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [googleEnabled, setGoogleEnabled] = useState(false);
@@ -512,8 +516,7 @@ export default function LoginPage() {
   useEffect(() => {
     const authError = localStorage.getItem('auth_error');
     if (authError) {
-      localStorage.removeItem('auth_error');
-      setError(authError);
+      setPersistedError(String(authError || '').trim());
     }
 
     const params = new URLSearchParams(window.location.search);
@@ -854,10 +857,19 @@ export default function LoginPage() {
     }
   };
 
+  const clearLoginAlerts = () => {
+    setError('');
+    setPersistedError('');
+    try {
+      localStorage.removeItem('auth_error');
+    } catch {
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+    clearLoginAlerts();
 
     try {
       if (isLogin) {
@@ -1256,8 +1268,22 @@ export default function LoginPage() {
             </div>
           )}
 
-          {error && (
-            <div className="text-red-500 text-sm text-center bg-red-50 p-2 rounded">{error}</div>
+          {(persistedError || error) && (
+            <div className="bg-red-50 border border-red-200 text-red-800 text-sm p-3 rounded">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-semibold">Não foi possível entrar</div>
+                  <div className="mt-1 break-words">{error || persistedError}</div>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded border border-red-200 bg-white px-2 py-1 text-xs text-red-700 hover:bg-red-100"
+                  onClick={clearLoginAlerts}
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
           )}
           {!isLogin && addressError && (
             <div className="text-red-500 text-sm text-center bg-red-50 p-2 rounded">{addressError}</div>
