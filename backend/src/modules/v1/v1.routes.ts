@@ -699,7 +699,9 @@ async function clonarEstruturaPlanilha(
     input.sourcePlanilhaId
   );
 
-  const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
+  const primitivaExists = (await tx.$queryRawUnsafe(
+    `SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas')::text AS "t"`
+  )) as any[];
   const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
   if (hasPrimitivaTable) {
     await tx.$executeRawUnsafe(
@@ -1022,7 +1024,7 @@ async function ensurePlanilhaMigratedToEstruturaUnica(tx: any, tenantId: number,
     }
   }
 
-  const legacyServicosExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_servicos_fonte') AS "t"`)) as any[];
+  const legacyServicosExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_servicos_fonte')::text AS "t"`)) as any[];
   const hasLegacyServicos = Boolean(legacyServicosExists?.[0]?.t);
   if (hasLegacyServicos) {
     const dangling = (await tx.$queryRawUnsafe(
@@ -7067,7 +7069,9 @@ export default async function v1Routes(server: FastifyInstance) {
           await tx.$executeRawUnsafe(`DELETE FROM tab_insumos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`, ctx.tenantId, idObra, idPlanilha);
           await tx.$executeRawUnsafe(`DELETE FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, idPlanilha);
 
-          const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
+          const primitivaExists = (await tx.$queryRawUnsafe(
+            `SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas')::text AS "t"`
+          )) as any[];
           const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
           if (hasPrimitivaTable) {
             await tx.$executeRawUnsafe(
@@ -7296,7 +7300,7 @@ export default async function v1Routes(server: FastifyInstance) {
           );
 
           const oldExists = (await tx.$queryRawUnsafe(
-            `SELECT to_regclass(current_schema() || '.obras_planilhas_linhas') AS "l", to_regclass(current_schema() || '.obras_planilhas_composicoes_itens') AS "c"`
+            `SELECT to_regclass(current_schema() || '.obras_planilhas_linhas')::text AS "l", to_regclass(current_schema() || '.obras_planilhas_composicoes_itens')::text AS "c"`
           )) as any[];
           const hasOldLinhas = Boolean(oldExists?.[0]?.l) && Boolean(oldExists?.[0]?.c);
           if (hasOldLinhas) {
@@ -8767,7 +8771,9 @@ export default async function v1Routes(server: FastifyInstance) {
       await recalcularFixacaoCascata(tx, ctx.tenantId, idObra, idPlanilha, codigos);
       await atualizarServicosPlanilhaPorCodigos(tx, ctx.tenantId, idObra, idPlanilha, cascata);
 
-      const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
+      const primitivaExists = (await tx.$queryRawUnsafe(
+        `SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas')::text AS "t"`
+      )) as any[];
       const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
       if (hasPrimitivaTable && codigos.length) {
         await tx.$executeRawUnsafe(
@@ -9315,7 +9321,9 @@ export default async function v1Routes(server: FastifyInstance) {
         await recalcularFixacaoCascata(tx, ctx.tenantId, idObra, idPlanilha, [codigoServico]);
         await atualizarServicosPlanilhaPorCodigos(tx, ctx.tenantId, idObra, idPlanilha, cascata);
 
-        const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
+        const primitivaExists = (await tx.$queryRawUnsafe(
+          `SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas')::text AS "t"`
+        )) as any[];
         const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
         if (hasPrimitivaTable && cascata.length) {
           await tx.$executeRawUnsafe(
@@ -9677,7 +9685,9 @@ export default async function v1Routes(server: FastifyInstance) {
       await recalcularFixacaoCascata(tx, ctx.tenantId, idObra, idPlanilha, [codigoServico]);
       await atualizarServicosPlanilhaPorCodigos(tx, ctx.tenantId, idObra, idPlanilha, cascata);
 
-      const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
+      const primitivaExists = (await tx.$queryRawUnsafe(
+        `SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas')::text AS "t"`
+      )) as any[];
       const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
       if (hasPrimitivaTable && cascata.length) {
         await tx.$executeRawUnsafe(
@@ -10719,7 +10729,9 @@ export default async function v1Routes(server: FastifyInstance) {
         await recalcularFixacaoCascata(tx, ctx.tenantId, obraId, planilhaId, toImport);
         await atualizarServicosPlanilhaPorCodigos(tx, ctx.tenantId, obraId, planilhaId, cascata);
 
-        const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
+        const primitivaExists = (await tx.$queryRawUnsafe(
+          `SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas')::text AS "t"`
+        )) as any[];
         const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
         if (hasPrimitivaTable && cascata.length) {
           await tx.$executeRawUnsafe(
@@ -11128,7 +11140,9 @@ export default async function v1Routes(server: FastifyInstance) {
         await recalcularFixacaoCascata(tx, ctx.tenantId, obraId, planilhaId, [codigoServico]);
         await atualizarServicosPlanilhaPorCodigos(tx, ctx.tenantId, obraId, planilhaId, cascata);
 
-        const primitivaExists = (await tx.$queryRawUnsafe(`SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas') AS "t"`)) as any[];
+        const primitivaExists = (await tx.$queryRawUnsafe(
+          `SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas')::text AS "t"`
+        )) as any[];
         const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
         if (hasPrimitivaTable && cascata.length) {
           await tx.$executeRawUnsafe(
