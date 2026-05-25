@@ -3,13 +3,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
+import { Lock } from "lucide-react";
 
-type Row = { codigoItem: string; descricao: string; und: string; valorUnitario: number; quantidadeTotal: number };
+type Row = {
+  codigoItem: string;
+  descricao: string;
+  und: string;
+  valorUnitario: number;
+  quantidadeTotal: number;
+  travado: boolean;
+  travadoPorCadeia: boolean;
+  origemTipo: string;
+  origemChave: string;
+};
 type VersaoInfo = {
   idPlanilha: number;
   numeroVersao: number;
   nome: string;
   atual: boolean;
+  travado: boolean;
   idParametros: number | null;
   parametrosNome: string;
 };
@@ -50,6 +62,7 @@ export default function Page() {
   const [selectedVersao, setSelectedVersao] = useState<VersaoInfo | null>(null);
   const [edits, setEdits] = useState<Record<string, string>>({});
   const valueBeforeFocusRef = useRef<Record<string, string>>({});
+  const planilhaTravada = Boolean(selectedVersao?.travado);
 
   async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     let token: string | null = null;
@@ -82,6 +95,7 @@ export default function Page() {
           numeroVersao: Number(v?.numeroVersao || 0),
           nome: String(v?.nome || ""),
           atual: Boolean(v?.atual),
+          travado: Boolean(v?.travado),
           idParametros: v?.idParametros == null ? null : Number(v.idParametros),
           parametrosNome: String(v?.parametrosNome || ""),
         }))
@@ -117,6 +131,10 @@ export default function Page() {
         und: String(r.und || ""),
         valorUnitario: r.valorUnitario == null ? 0 : Number(r.valorUnitario || 0),
         quantidadeTotal: Number(r.quantidadeTotal || 0),
+        travado: Boolean(r.travado),
+        travadoPorCadeia: Boolean(r.travadoPorCadeia),
+        origemTipo: String(r.origemTipo || ""),
+        origemChave: String(r.origemChave || ""),
       }));
       setRows(nextRows);
       setEdits((prev) => {
@@ -136,8 +154,21 @@ export default function Page() {
 
   async function salvarValorUnitario(codigoItem: string) {
     if (!idObra) return;
+    if (planilhaTravada) {
+      setErr("Esta planilha está travada. Não é permitido alterar preços.");
+      return;
+    }
     const code = String(codigoItem || "").trim().toUpperCase();
     if (!code) return;
+    const row = rows.find((r) => String(r.codigoItem || "").trim().toUpperCase() === code) || null;
+    if (row?.travadoPorCadeia) {
+      setErr("Este preço de insumo está travado em cadeia. Destrave o elemento pai (planilha/item) antes.");
+      return;
+    }
+    if (row?.travado) {
+      setErr("Este preço de insumo está travado. Dê duplo-clique no cadeado para destravar.");
+      return;
+    }
     const raw = String(edits[code] ?? edits[codigoItem] ?? "").trim().replace(/\./g, "").replace(",", ".");
     const vu = Number(raw);
     if (!Number.isFinite(vu) || vu < 0) {
@@ -167,8 +198,91 @@ export default function Page() {
     }
   }
 
+  async function toggleTravaPrecoInsumo(codigoItem: string) {
+    if (!idObra) return;
+    if (planilhaTravada) {
+      setErr("Esta planilha está travada. Não é permitido alterar travas de preços.");
+      return;
+    }
+    const code = String(codigoItem || "").trim().toUpperCase();
+    if (!code) return;
+    const row = rows.find((r) => String(r.codigoItem || "").trim().toUpperCase() === code) || null;
+    if (row?.travadoPorCadeia) {
+      setErr("Preço travado em cadeia: destrave o elemento pai (planilha/item) antes.");
+      return;
+    }
+    const next = !Boolean(row?.travado);
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const qs = new URLSearchParams();
+      if (planilhaId) qs.set("planilhaId", String(planilhaId));
+      const tail = qs.toString();
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/insumos/precos/trava${tail ? `?${tail}` : ""}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codigoItem: code, travado: next }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao atualizar trava do preço do insumo");
+      setOkMsg(next ? `Preço travado: ${code}` : `Preço destravado: ${code}`);
+      await carregar();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao atualizar trava do preço do insumo");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function duplicarInsumo(codigoItemOrig: string) {
+    if (!idObra) return;
+    if (planilhaTravada) {
+      setErr("Esta planilha está travada. Não é permitido duplicar insumos.");
+      return;
+    }
+    const orig = String(codigoItemOrig || "").trim().toUpperCase();
+    if (!orig) return;
+    const sugestao = `${orig}-DUP`;
+    const entrada = window.prompt("Informe o novo código para o insumo duplicado:", sugestao);
+    const codigoItemNovo = String(entrada || "").trim().toUpperCase();
+    if (!codigoItemNovo) return;
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const qs = new URLSearchParams();
+      if (planilhaId) qs.set("planilhaId", String(planilhaId));
+      const tail = qs.toString();
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/insumos/duplicar${tail ? `?${tail}` : ""}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codigoItemOrig: orig, codigoItemNovo }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao duplicar insumo");
+      setOkMsg(`Insumo duplicado: ${orig} → ${codigoItemNovo}`);
+      await carregar();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao duplicar insumo");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function moeda(v: number) {
     return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  }
+
+  function tooltipTravaPreco(r: Row) {
+    if (planilhaTravada) return "Planilha travada: não é permitido alterar preços nem travas.";
+    if (!r.travado && !r.travadoPorCadeia) return "Duplo-clique para travar/destravar o preço deste insumo nesta planilha.";
+    if (r.travadoPorCadeia) {
+      if (String(r.origemTipo || "").toUpperCase() === "PLANILHA") return `Travado em cadeia pela planilha #${String(r.origemChave || "").trim() || "?"}`;
+      if (String(r.origemTipo || "").toUpperCase() === "ITEM") return "Travado em cadeia por um item da planilha";
+      return "Travado em cadeia";
+    }
+    return "Travado manualmente";
   }
 
   useEffect(() => {
@@ -299,8 +413,8 @@ export default function Page() {
       </div>
 
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-        Atenção: alterações aqui são compartilhadas. Se você alterar Serviço/Insumo/Composição da Fonte, muda em TODAS as planilhas que usam essa Fonte. Se você alterar um
-        Parâmetro, muda em TODAS as planilhas que usam esse Parâmetro.
+        Atenção: o preço do insumo é por planilha. Ao salvar aqui, o sistema propaga esse preço para todas as composições/serviços desta planilha que usam o mesmo código de
+        insumo.
       </div>
 
       <div className="flex items-center justify-end gap-2 flex-wrap">
@@ -322,6 +436,9 @@ export default function Page() {
           <table className="min-w-[1100px] w-full text-sm">
             <thead className="bg-slate-50 text-left text-slate-700">
               <tr>
+                <th className="px-3 py-2 w-[44px]" title="Duplo-clique no cadeado para travar/destravar">
+                  <Lock className="h-4 w-4 text-slate-600" />
+                </th>
                 <th className="px-3 py-2">INSUMO</th>
                 <th className="px-3 py-2">DESCRIÇÃO</th>
                 <th className="px-3 py-2">UND</th>
@@ -336,8 +453,24 @@ export default function Page() {
                 const editKey = r.codigoItem;
                 const valorInput = edits[editKey] ?? String(r.valorUnitario ?? 0);
                 const total = Number(r.quantidadeTotal || 0) * Number(r.valorUnitario || 0);
+                const bloqueado = loading || planilhaTravada || Boolean(r.travado) || Boolean(r.travadoPorCadeia);
                 return (
                   <tr key={`${r.codigoItem}__${r.und}__${r.valorUnitario}`} className="border-t">
+                    <td className="px-3 py-2">
+                      <button
+                        className={`inline-flex items-center justify-center rounded border px-2 py-1.5 text-xs ${
+                          r.travado ? "bg-slate-100 text-slate-700" : "bg-white text-slate-700 hover:bg-slate-50"
+                        } disabled:opacity-60`}
+                        type="button"
+                        onDoubleClick={() => toggleTravaPrecoInsumo(r.codigoItem)}
+                        disabled={loading || planilhaTravada || r.travadoPorCadeia}
+                        title={
+                          tooltipTravaPreco(r)
+                        }
+                      >
+                        <Lock className={`h-4 w-4 ${r.travado || r.travadoPorCadeia ? "" : "opacity-30"} ${r.travadoPorCadeia ? "opacity-40" : ""}`} />
+                      </button>
+                    </td>
                     <td className="px-3 py-2">{r.codigoItem}</td>
                     <td className="px-3 py-2">{r.descricao}</td>
                     <td className="px-3 py-2">{r.und}</td>
@@ -358,10 +491,10 @@ export default function Page() {
                           }
                           if (e.key === "Enter") {
                             e.preventDefault();
-                            salvarValorUnitario(r.codigoItem);
+                            if (!bloqueado) salvarValorUnitario(r.codigoItem);
                           }
                         }}
-                        disabled={loading}
+                        disabled={bloqueado}
                       />
                     </td>
                     <td className="px-3 py-2 text-right">{Number(r.quantidadeTotal || 0).toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</td>
@@ -371,9 +504,18 @@ export default function Page() {
                         className="rounded border bg-white px-3 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-60"
                         type="button"
                         onClick={() => salvarValorUnitario(r.codigoItem)}
-                        disabled={loading}
+                        disabled={bloqueado}
                       >
                         Salvar
+                      </button>
+                      <button
+                        className="ml-2 rounded border bg-white px-3 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-60"
+                        type="button"
+                        onClick={() => duplicarInsumo(r.codigoItem)}
+                        disabled={loading || planilhaTravada}
+                        title="Cria um novo código de insumo nesta planilha, copiando o preço atual"
+                      >
+                        Duplicar
                       </button>
                     </td>
                   </tr>
@@ -381,7 +523,7 @@ export default function Page() {
               })}
               {!rows.length ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={8} className="px-3 py-6 text-center text-slate-500">
                     Sem dados. Importe/cadastre composições e clique em Atualizar.
                   </td>
                 </tr>

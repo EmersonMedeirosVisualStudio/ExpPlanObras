@@ -1719,6 +1719,72 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
   - **preços de insumos** da planilha.
   Reusa (não clona) o mesmo **id de Parâmetros** (a menos que você opte por clonar).
 
+#### Travamento (cadeado) e travamento em cadeia
+
+O sistema possui travamento operacional para proteger o orçamento e evitar alterações acidentais.
+
+Estados do cadeado:
+
+- **Livre (🔓)**: editável.
+- **Travado manualmente (🔒)**: editável somente após destravar manualmente.
+- **Travado por cadeia (🔒 desabilitado/cinza)**: não permite clicar/destravar; sempre exibe um tooltip com a origem (ex.: “Travado em cadeia pela planilha #X”).
+
+Regra de ação:
+
+- **Duplo clique no cadeado** alterna **travar/destravar** (quando permitido).
+
+Hierarquia de travamento (herança):
+
+- **Planilha → Item da planilha → Serviço → Composição → Subcomposição → Insumo**
+
+Efeitos por tipo:
+
+- **Travar Planilha** (card “Versões cadastradas”):
+  - trava parâmetros, itens, serviços, composições/subcomposições, insumos e preços de insumos (no contexto daquela planilha);
+  - impede destravar itens internos individualmente enquanto a planilha estiver travada.
+- **Travar Item da planilha** (cadeado na grade da planilha, linha de Serviço):
+  - trava o serviço do item e sua composição/subcomposições/insumos;
+  - trava também os preços de insumos associados àquele serviço (no contexto da planilha).
+- **Travar Serviço** (tela Serviços):
+  - trava serviço, composição, subcomposições e insumos;
+  - não trava automaticamente o preço do insumo da planilha (o preço pertence ao contexto da planilha e continua editável se a planilha não estiver travada).
+- **Travar Parâmetro** (Engenharia → Planilhas → Parâmetros):
+  - trava o parâmetro manualmente;
+  - também pode ficar travado por cadeia quando a planilha vinculada estiver travada.
+
+Mensagens de confirmação:
+
+- Ao travar/destravar uma **planilha**, o sistema mostra uma mensagem explicando o impacto (itens internos não destravam individualmente).
+- Ao travar um **serviço**, o sistema confirma que composição/subcomposições/insumos serão travados e que os preços por planilha permanecem editáveis se a planilha não estiver travada.
+- Ao travar um **parâmetro**, o sistema confirma a ação.
+
+ETAPA 1 — Onde acessar (Planilha)
+- Engenharia → Obras → (selecione a obra) → Planilha orçamentária
+
+ETAPA 2 — O que clicar
+- Em **Versões cadastradas**, use o cadeado (duplo clique) na coluna **Ações** para **travar/destravar a planilha**
+- Na grade da planilha, use o cadeado (duplo clique) na **linha do Serviço** para travar/destravar **somente aquele item**
+
+ETAPA 3 — O que esperar
+- Se estiver travado por cadeia, o cadeado fica **cinza/desabilitado** e mostra o motivo ao passar o mouse
+- Se a planilha estiver travada, campos e ações de edição ficam bloqueados
+
+ETAPA 4 — Como validar
+- Tente editar um item/serviço/insumo e confirme que o sistema bloqueia e informa o motivo
+
+#### Duplicação (Serviço e Insumo)
+
+Duplicação cria uma cópia independente, sem vínculo com o original, e **nasce destravada**.
+
+- **Duplicar Serviço** (tela Serviços): duplica o serviço e a composição do serviço.
+- **Duplicar Insumo** (telas de Insumos): duplica o insumo.
+
+Regra de nomeação automática:
+
+- O novo item recebe: **Nome original - vX**
+- **X** é a próxima versão disponível, considerando todas as versões existentes (não reutiliza versões apagadas).
+  - Ex.: existem v2, v3, v5 → próximo é v6
+
 #### Como cadastrar Parâmetros (para uso na planilha)
 
 ETAPA 1 — Onde acessar

@@ -304,6 +304,84 @@ function normalizeHeader(h: string) {
     .replace(/^_+|_+$/g, '');
 }
 
+function normalizeCodigoKey(v: unknown) {
+  return String(v || '').trim().toUpperCase();
+}
+
+async function lockExists(tx: any, tenantId: number, entidadeTipo: string, entidadeChave: string) {
+  const rows = (await tx.$queryRawUnsafe(
+    `
+    SELECT 1 AS ok
+    FROM tab_travas
+    WHERE tenant_id = $1 AND entidade_tipo = $2 AND entidade_chave = $3
+    LIMIT 1
+    `,
+    tenantId,
+    entidadeTipo,
+    entidadeChave
+  )) as any[];
+  return Boolean(rows?.[0]?.ok);
+}
+
+async function listLocks(tx: any, tenantId: number, entidadeTipo: string, entidadeChave: string) {
+  const rows = (await tx.$queryRawUnsafe(
+    `
+    SELECT origem_tipo AS "origemTipo", origem_chave AS "origemChave"
+    FROM tab_travas
+    WHERE tenant_id = $1 AND entidade_tipo = $2 AND entidade_chave = $3
+    ORDER BY criado_em ASC, id_trava ASC
+    `,
+    tenantId,
+    entidadeTipo,
+    entidadeChave
+  )) as any[];
+  return (rows || []).map((r: any) => ({ origemTipo: String(r.origemTipo || ''), origemChave: String(r.origemChave || '') }));
+}
+
+async function addLock(tx: any, args: { tenantId: number; entidadeTipo: string; entidadeChave: string; origemTipo: string; origemChave: string; userId?: number | null }) {
+  await tx.$executeRawUnsafe(
+    `
+    INSERT INTO tab_travas (tenant_id, entidade_tipo, entidade_chave, origem_tipo, origem_chave, id_usuario)
+    VALUES ($1,$2,$3,$4,$5,$6)
+    ON CONFLICT (tenant_id, entidade_tipo, entidade_chave, origem_tipo, origem_chave)
+    DO NOTHING
+    `,
+    args.tenantId,
+    args.entidadeTipo,
+    args.entidadeChave,
+    args.origemTipo,
+    args.origemChave,
+    args.userId == null ? null : Number(args.userId)
+  );
+}
+
+async function deleteLocksByOrigin(tx: any, args: { tenantId: number; origemTipo: string; origemChave: string }) {
+  await tx.$executeRawUnsafe(
+    `DELETE FROM tab_travas WHERE tenant_id = $1 AND origem_tipo = $2 AND origem_chave = $3`,
+    args.tenantId,
+    args.origemTipo,
+    args.origemChave
+  );
+}
+
+async function deleteManualLock(tx: any, args: { tenantId: number; entidadeTipo: string; entidadeChave: string; origemTipo: string }) {
+  await tx.$executeRawUnsafe(
+    `DELETE FROM tab_travas WHERE tenant_id = $1 AND entidade_tipo = $2 AND entidade_chave = $3 AND origem_tipo = $4`,
+    args.tenantId,
+    args.entidadeTipo,
+    args.entidadeChave,
+    args.origemTipo
+  );
+}
+
+function makePrecoInsumoKey(args: { idObra: number; idPlanilha: number; codigoItem: string }) {
+  return `${Number(args.idObra)}:${Number(args.idPlanilha)}:${normalizeCodigoKey(args.codigoItem)}`;
+}
+
+function makePlanilhaItemOriginKey(args: { idObra: number; idPlanilha: number; idPlanilhaItem: number }) {
+  return `${Number(args.idObra)}:${Number(args.idPlanilha)}:${Number(args.idPlanilhaItem)}`;
+}
+
 function normalizeClassificacaoSinapiToTipoExpert(classificacao: unknown): string | null {
   const raw = String(classificacao || '').trim();
   const key = normalizeHeader(raw);
@@ -489,6 +567,9 @@ async function ensurePlanilhaOrcamentariaTables(tx: any) {
       numero_versao INT NOT NULL,
       nome VARCHAR(120) NOT NULL DEFAULT 'Planilha orçamentária',
       atual BOOLEAN NOT NULL DEFAULT TRUE,
+      travado BOOLEAN NOT NULL DEFAULT FALSE,
+      travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE,
+      origem_travamento VARCHAR(200) NULL,
       origem VARCHAR(16) NOT NULL DEFAULT 'MANUAL',
       id_parametros BIGINT NULL,
       data_base_sbc VARCHAR(16) NULL,
@@ -510,6 +591,9 @@ async function ensurePlanilhaOrcamentariaTables(tx: any) {
   await safeExecuteRawUnsafe(tx, `CREATE UNIQUE INDEX IF NOT EXISTS tab_planilhas_uk_versao ON tab_planilhas (tenant_id, id_obra, numero_versao)`);
   await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_planilhas_idx_atual ON tab_planilhas (tenant_id, id_obra, atual)`);
   await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_planilhas_idx_obra ON tab_planilhas (tenant_id, id_obra)`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS travado BOOLEAN NOT NULL DEFAULT FALSE`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS origem_travamento VARCHAR(200) NULL`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS uf_sinapi VARCHAR(2) NULL`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS id_parametros BIGINT NULL`);
   await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_planilhas_idx_parametros ON tab_planilhas (tenant_id, id_parametros)`);
@@ -545,6 +629,27 @@ async function ensurePlanilhaOrcamentariaTables(tx: any) {
   await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN und TYPE VARCHAR(40)`);
 }
 
+async function ensureTravasEmCadeiaTables(tx: any) {
+  await tx.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS tab_travas (
+      id_trava BIGSERIAL PRIMARY KEY,
+      tenant_id BIGINT NOT NULL,
+      entidade_tipo VARCHAR(32) NOT NULL,
+      entidade_chave VARCHAR(200) NOT NULL,
+      origem_tipo VARCHAR(32) NOT NULL,
+      origem_chave VARCHAR(200) NOT NULL,
+      id_usuario BIGINT NULL,
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_travas_idx_entidade ON tab_travas (tenant_id, entidade_tipo, entidade_chave)`);
+  await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_travas_idx_origem ON tab_travas (tenant_id, origem_tipo, origem_chave)`);
+  await safeExecuteRawUnsafe(
+    tx,
+    `CREATE UNIQUE INDEX IF NOT EXISTS tab_travas_uk ON tab_travas (tenant_id, entidade_tipo, entidade_chave, origem_tipo, origem_chave)`
+  );
+}
+
 async function ensurePlanilhaEstruturaUnicaTables(tx: any) {
   await ensurePlanilhaOrcamentariaTables(tx);
   await ensurePlanilhaParametrosTables(tx);
@@ -553,6 +658,7 @@ async function ensurePlanilhaEstruturaUnicaTables(tx: any) {
   await ensurePlanilhaComposicaoTables(tx);
   await ensureInsumosPrecosTables(tx);
   await ensurePlanilhaComposicaoPrimitivaTables(tx);
+  await ensureTravasEmCadeiaTables(tx);
 }
 
 async function criarVersaoPlanilha(tx: any, input: { tenantId: number; idObra: number; nome: string; origem: string; idParametros: number | null; userId: number }) {
@@ -733,6 +839,9 @@ async function ensurePlanilhaServicosTables(tx: any) {
       fonte VARCHAR(80) NULL,
       servico VARCHAR(800) NULL,
       und VARCHAR(40) NULL,
+      travado BOOLEAN NOT NULL DEFAULT FALSE,
+      travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE,
+      origem_travamento VARCHAR(200) NULL,
       criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
@@ -743,6 +852,9 @@ async function ensurePlanilhaServicosTables(tx: any) {
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ALTER COLUMN fonte TYPE VARCHAR(80)`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ALTER COLUMN servico TYPE VARCHAR(800)`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ALTER COLUMN und TYPE VARCHAR(40)`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ADD COLUMN IF NOT EXISTS travado BOOLEAN NOT NULL DEFAULT FALSE`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ADD COLUMN IF NOT EXISTS travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ADD COLUMN IF NOT EXISTS origem_travamento VARCHAR(200) NULL`);
   await safeExecuteRawUnsafe(tx, `CREATE OR REPLACE VIEW obras_planilhas_servicos AS SELECT * FROM tab_servicos`);
 }
 
@@ -766,6 +878,9 @@ async function ensurePlanilhaParametrosTables(tx: any) {
       enc_sociais_sem_des_sinapi NUMERIC(10,4) NULL,
       desconto_sbc NUMERIC(10,4) NULL,
       desconto_sinapi NUMERIC(10,4) NULL,
+      travado BOOLEAN NOT NULL DEFAULT FALSE,
+      travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE,
+      origem_travamento VARCHAR(200) NULL,
       assinatura VARCHAR(200) NOT NULL,
       criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -773,6 +888,9 @@ async function ensurePlanilhaParametrosTables(tx: any) {
   `);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_parametros ADD COLUMN IF NOT EXISTS nome VARCHAR(160) NULL`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_parametros ADD COLUMN IF NOT EXISTS tipo_encargos_sociais VARCHAR(3) NULL`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_parametros ADD COLUMN IF NOT EXISTS travado BOOLEAN NOT NULL DEFAULT FALSE`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_parametros ADD COLUMN IF NOT EXISTS travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_parametros ADD COLUMN IF NOT EXISTS origem_travamento VARCHAR(200) NULL`);
   await safeExecuteRawUnsafe(tx, `CREATE UNIQUE INDEX IF NOT EXISTS tab_parametros_uk ON tab_parametros (tenant_id, assinatura)`);
   await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_parametros_idx ON tab_parametros (tenant_id)`);
   await safeExecuteRawUnsafe(tx, `CREATE OR REPLACE VIEW obras_planilhas_parametros AS SELECT * FROM tab_parametros`);
@@ -795,11 +913,17 @@ async function ensurePlanilhaItensTables(tx: any) {
       valor_parcial NUMERIC(14,6) NULL,
       nivel INT NOT NULL DEFAULT 0,
       tipo_linha VARCHAR(16) NOT NULL,
+      travado BOOLEAN NOT NULL DEFAULT FALSE,
+      travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE,
+      origem_travamento VARCHAR(200) NULL,
       observacao VARCHAR(800) NULL,
       criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilha_itens ADD COLUMN IF NOT EXISTS travado BOOLEAN NOT NULL DEFAULT FALSE`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilha_itens ADD COLUMN IF NOT EXISTS travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilha_itens ADD COLUMN IF NOT EXISTS origem_travamento VARCHAR(200) NULL`);
   await safeExecuteRawUnsafe(
     tx,
     `CREATE INDEX IF NOT EXISTS tab_planilha_itens_idx_planilha ON tab_planilha_itens (tenant_id, id_planilha, ordem, id_planilha_item)`
@@ -1439,6 +1563,9 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
       valor_unitario NUMERIC(14,6) NULL,
       perda_percentual NUMERIC(10,4) NOT NULL DEFAULT 0,
       codigo_centro_custo VARCHAR(40) NULL,
+      travado BOOLEAN NOT NULL DEFAULT FALSE,
+      travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE,
+      origem_travamento VARCHAR(200) NULL,
       criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
@@ -1457,6 +1584,9 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_composicoes ALTER COLUMN tipo_item TYPE VARCHAR(32)`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS banco VARCHAR(60) NULL`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS valor_unitario NUMERIC(14,6) NULL`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS travado BOOLEAN NOT NULL DEFAULT FALSE`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS origem_travamento VARCHAR(200) NULL`);
 
   await safeExecuteRawUnsafe(
     tx,
@@ -1556,6 +1686,9 @@ async function ensureInsumosPrecosTables(tx: any) {
       descricao VARCHAR(255) NULL,
       und VARCHAR(40) NULL,
       valor_unitario NUMERIC(14,6) NOT NULL,
+      travado BOOLEAN NOT NULL DEFAULT FALSE,
+      travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE,
+      origem_travamento VARCHAR(200) NULL,
       criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
@@ -1565,6 +1698,9 @@ async function ensureInsumosPrecosTables(tx: any) {
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS banco VARCHAR(60) NULL`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS descricao VARCHAR(255) NULL`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS und VARCHAR(40) NULL`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS travado BOOLEAN NOT NULL DEFAULT FALSE`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_insumos ADD COLUMN IF NOT EXISTS origem_travamento VARCHAR(200) NULL`);
   await safeExecuteRawUnsafe(tx, `DROP INDEX IF EXISTS tab_insumos_uk`);
   await safeExecuteRawUnsafe(tx, `CREATE UNIQUE INDEX IF NOT EXISTS tab_insumos_uk ON tab_insumos (tenant_id, id_obra, id_planilha, codigo_item)`);
   await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_insumos_idx_obra ON tab_insumos (tenant_id, id_obra, id_planilha)`);
@@ -5289,7 +5425,7 @@ export default async function v1Routes(server: FastifyInstance) {
   server.get('/engenharia/planilhas/parametros', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
-    await ensurePlanilhaParametrosTables(prisma);
+    await ensurePlanilhaEstruturaUnicaTables(prisma);
     const rows = (await prisma.$queryRawUnsafe(
       `
       SELECT
@@ -5307,6 +5443,47 @@ export default async function v1Routes(server: FastifyInstance) {
         enc_sociais_sem_des_sinapi AS "encSociaisSemDesSinapi",
         desconto_sbc AS "descontoSbc",
         desconto_sinapi AS "descontoSinapi",
+        EXISTS (
+          SELECT 1
+          FROM tab_travas t
+          WHERE t.tenant_id = tab_parametros.tenant_id
+            AND t.entidade_tipo = 'PARAMETRO'
+            AND t.entidade_chave = tab_parametros.id_parametros::text
+        ) AS travado,
+        EXISTS (
+          SELECT 1
+          FROM tab_travas t
+          WHERE t.tenant_id = tab_parametros.tenant_id
+            AND t.entidade_tipo = 'PARAMETRO'
+            AND t.entidade_chave = tab_parametros.id_parametros::text
+            AND t.origem_tipo NOT LIKE 'MANUAL_%'
+        ) AS "travadoPorCadeia",
+        COALESCE(
+          (
+            SELECT t.origem_tipo
+            FROM tab_travas t
+            WHERE t.tenant_id = tab_parametros.tenant_id
+              AND t.entidade_tipo = 'PARAMETRO'
+              AND t.entidade_chave = tab_parametros.id_parametros::text
+              AND t.origem_tipo NOT LIKE 'MANUAL_%'
+            ORDER BY t.criado_em DESC
+            LIMIT 1
+          ),
+          ''
+        ) AS "origemTipo",
+        COALESCE(
+          (
+            SELECT t.origem_chave
+            FROM tab_travas t
+            WHERE t.tenant_id = tab_parametros.tenant_id
+              AND t.entidade_tipo = 'PARAMETRO'
+              AND t.entidade_chave = tab_parametros.id_parametros::text
+              AND t.origem_tipo NOT LIKE 'MANUAL_%'
+            ORDER BY t.criado_em DESC
+            LIMIT 1
+          ),
+          ''
+        ) AS "origemChave",
         assinatura AS "assinatura",
         criado_em AS "criadoEm",
         atualizado_em AS "atualizadoEm"
@@ -5334,11 +5511,61 @@ export default async function v1Routes(server: FastifyInstance) {
         encSociaisSemDesSinapi: r.encSociaisSemDesSinapi == null ? null : Number(r.encSociaisSemDesSinapi),
         descontoSbc: r.descontoSbc == null ? null : Number(r.descontoSbc),
         descontoSinapi: r.descontoSinapi == null ? null : Number(r.descontoSinapi),
+        travado: Boolean(r.travado),
+        travadoPorCadeia: Boolean(r.travadoPorCadeia),
+        origemTipo: String(r.origemTipo || ''),
+        origemChave: String(r.origemChave || ''),
         assinatura: String(r.assinatura || ''),
         criadoEm: r.criadoEm ? new Date(r.criadoEm).toISOString() : null,
         atualizadoEm: r.atualizadoEm ? new Date(r.atualizadoEm).toISOString() : null,
       })),
     });
+  });
+
+  server.post('/engenharia/planilhas/parametros/trava', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const body = z
+      .object({
+        idParametros: z.coerce.number().int().positive(),
+        travado: z.coerce.boolean(),
+      })
+      .parse(request.body || {});
+
+    await ensurePlanilhaEstruturaUnicaTables(prisma);
+    const idParametros = Number(body.idParametros);
+    const travado = Boolean(body.travado);
+
+    const res = await prismaTx(async (tx: any) => {
+      await ensurePlanilhaEstruturaUnicaTables(tx);
+      const exists = (await tx.$queryRawUnsafe(
+        `SELECT 1 AS ok FROM tab_parametros WHERE tenant_id = $1 AND id_parametros = $2 LIMIT 1`,
+        ctx.tenantId,
+        idParametros
+      )) as any[];
+      if (!exists?.[0]) throw new Error('Parâmetro não encontrado');
+
+      if (travado) {
+        await addLock(tx, {
+          tenantId: ctx.tenantId,
+          entidadeTipo: 'PARAMETRO',
+          entidadeChave: String(idParametros),
+          origemTipo: 'MANUAL_PARAMETRO',
+          origemChave: String(ctx.userId),
+          userId: ctx.userId,
+        });
+      } else {
+        await deleteManualLock(tx, { tenantId: ctx.tenantId, entidadeTipo: 'PARAMETRO', entidadeChave: String(idParametros), origemTipo: 'MANUAL_PARAMETRO' });
+      }
+
+      const locked = await lockExists(tx, ctx.tenantId, 'PARAMETRO', String(idParametros));
+      const origens = await listLocks(tx, ctx.tenantId, 'PARAMETRO', String(idParametros));
+      const travadoPorCadeia = (origens || []).some((o: any) => String(o.origemTipo || '').trim().toUpperCase().startsWith('MANUAL_') === false);
+      return { idParametros, travado: Boolean(locked), travadoPorCadeia, origens };
+    });
+
+    if (!travado && res?.travado) return fail(reply, 422, 'Não foi possível destravar: existe trava em cadeia ativa');
+    return ok(reply, res, { message: travado ? 'Parâmetro travado' : 'Parâmetro destravado' });
   });
 
   server.get(
@@ -5450,6 +5677,13 @@ export default async function v1Routes(server: FastifyInstance) {
         Number(body.idParametros)
       )) as any[];
       if (!exists?.[0]) return fail(reply, 404, 'Parâmetro não encontrado');
+
+      const lockRow = (await prisma.$queryRawUnsafe(
+        `SELECT 1 AS ok FROM tab_travas WHERE tenant_id = $1 AND entidade_tipo = 'PARAMETRO' AND entidade_chave = $2 LIMIT 1`,
+        ctx.tenantId,
+        String(Number(body.idParametros))
+      )) as any[];
+      if (lockRow?.[0]) return fail(reply, 422, 'Parâmetro travado: não é permitido alterar');
 
         const used = (await prisma.$queryRawUnsafe(
           `SELECT 1 AS ok FROM tab_planilhas WHERE tenant_id = $1 AND id_parametros = $2 LIMIT 1`,
@@ -5739,6 +5973,7 @@ export default async function v1Routes(server: FastifyInstance) {
             v.numero_versao AS "numeroVersao",
             v.nome AS "nome",
             v.atual AS "atual",
+            v.travado AS "travado",
             v.id_parametros AS "idParametros"
           FROM tab_planilhas v
           WHERE v.tenant_id = $1 AND v.id_obra = $2
@@ -5757,6 +5992,7 @@ export default async function v1Routes(server: FastifyInstance) {
             numeroVersao: Number(r.numeroVersao),
             nome: String(r.nome || ''),
             atual: Boolean(r.atual),
+            travado: Boolean(r.travado),
             idParametros: r.idParametros == null ? null : Number(r.idParametros),
             parametrosNome: '',
             valorTotal: 0,
@@ -5773,6 +6009,7 @@ export default async function v1Routes(server: FastifyInstance) {
             v.numero_versao AS "numeroVersao",
             v.nome AS "nome",
             v.atual AS "atual",
+            v.travado AS "travado",
             v.id_parametros AS "idParametros",
             COALESCE(p.nome,'') AS "parametrosNome"
           FROM tab_planilhas v
@@ -5794,6 +6031,7 @@ export default async function v1Routes(server: FastifyInstance) {
             numeroVersao: Number(r.numeroVersao),
             nome: String(r.nome || ''),
             atual: Boolean(r.atual),
+            travado: Boolean(r.travado),
             idParametros: r.idParametros == null ? null : Number(r.idParametros),
             parametrosNome: String(r.parametrosNome || ''),
             valorTotal: 0,
@@ -5810,6 +6048,7 @@ export default async function v1Routes(server: FastifyInstance) {
             v.numero_versao AS "numeroVersao",
             v.nome AS "nome",
             v.atual AS "atual",
+            v.travado AS "travado",
             SUM(CASE WHEN i.tipo_linha = 'SERVICO' THEN 1 ELSE 0 END)::int AS "totalServicos",
             COALESCE(SUM(CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(i.valor_parcial, 0) ELSE 0 END), 0) AS "valorTotalDb",
             COALESCE(ROUND(SUM(CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(i.valor_parcial, 0) ELSE 0 END)::numeric, 2), 0) AS "valorTotalRound2",
@@ -5839,6 +6078,7 @@ export default async function v1Routes(server: FastifyInstance) {
               numeroVersao: Number(r.numeroVersao),
               nome: String(r.nome || ''),
               atual: Boolean(r.atual),
+              travado: Boolean(r.travado),
               totalServicos: Number(r.totalServicos || 0),
               valorTotalDb,
               valorTotalRound2,
@@ -5857,6 +6097,7 @@ export default async function v1Routes(server: FastifyInstance) {
             v.numero_versao AS "numeroVersao",
             v.nome AS "nome",
             v.atual AS "atual",
+            v.travado AS "travado",
             v.id_parametros AS "idParametros",
             p.uf_sinapi AS "pUfSinapi",
             p.data_base_sbc AS "pDataBaseSbc",
@@ -5903,6 +6144,7 @@ export default async function v1Routes(server: FastifyInstance) {
             numeroVersao: Number(r.numeroVersao),
             nome: String(r.nome || ''),
             atual: Boolean(r.atual),
+            travado: Boolean(r.travado),
             idParametros: r.idParametros == null ? null : Number(r.idParametros),
             parametrosNome: formatParametrosNome(r),
             valorTotal: r.valorTotal == null ? 0 : Number(r.valorTotal),
@@ -5937,6 +6179,7 @@ export default async function v1Routes(server: FastifyInstance) {
           numero_versao AS "numeroVersao",
           nome,
           atual,
+          travado,
           origem,
           id_parametros AS "idParametros",
           criado_em AS "criadoEm"
@@ -5992,6 +6235,9 @@ export default async function v1Routes(server: FastifyInstance) {
           i.valor_unitario AS "valorUnitario",
           i.valor_parcial AS "valorParcial",
           nivel,
+          i.travado AS "travado",
+          i.travado_por_cadeia AS "travadoPorCadeia",
+          i.origem_travamento AS "origemTravamento",
           i.tipo_linha AS "tipoLinha"
         FROM tab_planilha_itens i
         LEFT JOIN tab_servicos s
@@ -6053,6 +6299,7 @@ export default async function v1Routes(server: FastifyInstance) {
           numeroVersao: Number(v.numeroVersao),
           nome: String(v.nome || ''),
           atual: Boolean(v.atual),
+          travado: Boolean(v.travado),
           origem: String(v.origem || 'MANUAL'),
           idParametros: idParametros || null,
           criadoEm: v.criadoEm ? new Date(v.criadoEm).toISOString() : '',
@@ -6090,6 +6337,9 @@ export default async function v1Routes(server: FastifyInstance) {
             valorParcial: r.valorParcial == null ? '' : String(r.valorParcial),
             nivel: Number(r.nivel || 0),
             tipoLinha: String(r.tipoLinha || 'ITEM'),
+            travado: Boolean(r.travado),
+            travadoPorCadeia: Boolean(r.travadoPorCadeia),
+            origemTravamento: r.origemTravamento != null ? String(r.origemTravamento || '') : '',
           })),
         },
       });
@@ -6346,7 +6596,6 @@ export default async function v1Routes(server: FastifyInstance) {
             await tx.$executeRawUnsafe(`UPDATE tab_planilhas SET atual = FALSE WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha <> $3`, ctx.tenantId, idObra, idPlanilha);
 
             await tx.$executeRawUnsafe(`DELETE FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, idPlanilha);
-            await tx.$executeRawUnsafe(`DELETE FROM tab_servicos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`, ctx.tenantId, idObra, idPlanilha);
           } else {
             const exists = (await tx.$queryRawUnsafe(
               `SELECT 1 AS ok FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
@@ -6588,18 +6837,6 @@ export default async function v1Routes(server: FastifyInstance) {
 
           if (modoImportacao === 'REPLACE') {
             await tx.$executeRawUnsafe(`DELETE FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, Number(payload.idPlanilhaTarget));
-            await tx.$executeRawUnsafe(
-              `DELETE FROM tab_servicos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
-              ctx.tenantId,
-              idObra,
-              Number(payload.idPlanilhaTarget)
-            );
-            await tx.$executeRawUnsafe(
-              `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
-              ctx.tenantId,
-              idObra,
-              Number(payload.idPlanilhaTarget)
-            );
             await tx.$executeRawUnsafe(`DELETE FROM tab_insumos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`, ctx.tenantId, idObra, Number(payload.idPlanilhaTarget));
           }
           const maxOrdRows = (await tx.$queryRawUnsafe(
@@ -7014,6 +7251,399 @@ export default async function v1Routes(server: FastifyInstance) {
         return ok(reply, res, { message: 'Planilha definida como atual' });
       }
 
+      if (action === 'TRAVAR_PLANILHA' || action === 'DESTRAVAR_PLANILHA') {
+        const idPlanilha = body.idPlanilha != null ? Number(body.idPlanilha) : NaN;
+        if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
+        const locked = action === 'TRAVAR_PLANILHA';
+
+        const res = await prismaTx(async (tx: any) => {
+          await ensurePlanilhaEstruturaUnicaTables(tx);
+
+          const rows = (await tx.$queryRawUnsafe(
+            `SELECT atual, travado, id_parametros AS "idParametros" FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+            ctx.tenantId,
+            idObra,
+            idPlanilha
+          )) as any[];
+          const row = rows?.[0] || null;
+          if (!row) throw new Error('Planilha não encontrada');
+
+          await tx.$executeRawUnsafe(
+            `UPDATE tab_planilhas SET travado = $4, atualizado_em = NOW() WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
+            ctx.tenantId,
+            idObra,
+            idPlanilha,
+            locked
+          );
+
+          await deleteLocksByOrigin(tx, { tenantId: ctx.tenantId, origemTipo: 'PLANILHA', origemChave: String(idPlanilha) });
+
+          if (locked) {
+            await tx.$executeRawUnsafe(
+              `
+              UPDATE tab_planilha_itens
+              SET travado_por_cadeia = TRUE, origem_travamento = $3, atualizado_em = NOW()
+              WHERE tenant_id = $1 AND id_planilha = $2
+              `,
+              ctx.tenantId,
+              idPlanilha,
+              `PLANILHA:${idPlanilha}`
+            );
+
+            const idParametros = row?.idParametros != null ? Number(row.idParametros) : null;
+            if (idParametros && Number.isFinite(idParametros) && idParametros > 0) {
+              await addLock(tx, {
+                tenantId: ctx.tenantId,
+                entidadeTipo: 'PARAMETRO',
+                entidadeChave: String(idParametros),
+                origemTipo: 'PLANILHA',
+                origemChave: String(idPlanilha),
+                userId: ctx.userId,
+              });
+            }
+
+            const svcRows = (await tx.$queryRawUnsafe(
+              `
+              SELECT DISTINCT UPPER(COALESCE(s.codigo,'')) AS codigo
+              FROM tab_planilha_itens i
+              INNER JOIN tab_servicos s
+                ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
+              WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO'
+              `,
+              ctx.tenantId,
+              idPlanilha
+            )) as any[];
+            const seedServicos = (svcRows || []).map((r: any) => String(r.codigo || '').trim().toUpperCase()).filter(Boolean);
+
+            const compCodes = new Set<string>();
+            const insCodes = new Set<string>();
+            const queue: string[] = [];
+            for (const c of seedServicos) {
+              compCodes.add(c);
+              queue.push(c);
+            }
+
+            while (queue.length) {
+              const code = queue.shift() as string;
+              const itens = (await tx.$queryRawUnsafe(
+                `
+                SELECT tipo_item AS "tipoItem", codigo_item AS "codigoItem"
+                FROM tab_composicoes
+                WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
+                `,
+                ctx.tenantId,
+                idObra,
+                idPlanilha,
+                code
+              )) as any[];
+              for (const it of itens || []) {
+                const tipoKey = normalizeHeader(String(it?.tipoItem || ''));
+                const child = normalizeCodigoKey(it?.codigoItem);
+                if (!child) continue;
+                if (tipoKey.includes('composicao')) {
+                  if (!compCodes.has(child)) {
+                    compCodes.add(child);
+                    queue.push(child);
+                  }
+                } else {
+                  insCodes.add(child);
+                }
+              }
+            }
+
+            for (const c of seedServicos) {
+              await addLock(tx, { tenantId: ctx.tenantId, entidadeTipo: 'SERVICO', entidadeChave: c, origemTipo: 'PLANILHA', origemChave: String(idPlanilha), userId: ctx.userId });
+            }
+            for (const c of compCodes) {
+              await addLock(tx, { tenantId: ctx.tenantId, entidadeTipo: 'COMPOSICAO', entidadeChave: c, origemTipo: 'PLANILHA', origemChave: String(idPlanilha), userId: ctx.userId });
+              await addLock(tx, { tenantId: ctx.tenantId, entidadeTipo: 'SERVICO', entidadeChave: c, origemTipo: 'PLANILHA', origemChave: String(idPlanilha), userId: ctx.userId });
+            }
+            for (const c of insCodes) {
+              await addLock(tx, { tenantId: ctx.tenantId, entidadeTipo: 'INSUMO', entidadeChave: c, origemTipo: 'PLANILHA', origemChave: String(idPlanilha), userId: ctx.userId });
+              const precoKey = makePrecoInsumoKey({ idObra, idPlanilha, codigoItem: c });
+              if (precoKey) {
+                await addLock(tx, { tenantId: ctx.tenantId, entidadeTipo: 'PRECO_INSUMO', entidadeChave: precoKey, origemTipo: 'PLANILHA', origemChave: String(idPlanilha), userId: ctx.userId });
+              }
+            }
+          } else {
+            await tx.$executeRawUnsafe(
+              `
+              UPDATE tab_planilha_itens
+              SET travado_por_cadeia = FALSE, origem_travamento = NULL, atualizado_em = NOW()
+              WHERE tenant_id = $1 AND id_planilha = $2
+              `,
+              ctx.tenantId,
+              idPlanilha
+            );
+          }
+
+          const updatedRow = (await tx.$queryRawUnsafe(
+            `SELECT travado FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+            ctx.tenantId,
+            idObra,
+            idPlanilha
+          )) as any[];
+          return { idPlanilha, travado: Boolean(updatedRow?.[0]?.travado) };
+        });
+
+        return ok(reply, res, { message: locked ? 'Planilha travada' : 'Planilha destravada' });
+      }
+
+      if (action === 'TRAVAR_LINHA' || action === 'DESTRAVAR_LINHA') {
+        const idPlanilha = body.idPlanilha != null ? Number(body.idPlanilha) : NaN;
+        const idLinha = body.idLinha != null ? Number(body.idLinha) : NaN;
+        if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
+        if (!Number.isFinite(idLinha) || idLinha <= 0) return fail(reply, 422, 'idLinha inválido');
+        const locked = action === 'TRAVAR_LINHA';
+
+        const res = await prismaTx(async (tx: any) => {
+          await ensurePlanilhaEstruturaUnicaTables(tx);
+          const plan = (await tx.$queryRawUnsafe(
+            `SELECT travado FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+            ctx.tenantId,
+            idObra,
+            idPlanilha
+          )) as any[];
+          if (!plan?.[0]) throw new Error('Planilha não encontrada');
+          if (Boolean(plan?.[0]?.travado)) throw new Error('Não é permitido alterar trava de linha quando a planilha está travada');
+
+          const row = (await tx.$queryRawUnsafe(
+            `SELECT travado, travado_por_cadeia AS "travadoPorCadeia", tipo_linha AS "tipoLinha", id_servico AS "idServico" FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2 AND id_planilha_item = $3 LIMIT 1`,
+            ctx.tenantId,
+            idPlanilha,
+            idLinha
+          )) as any[];
+          const linha = row?.[0] || null;
+          if (!linha) throw new Error('Linha não encontrada');
+          if (Boolean(linha.travadoPorCadeia)) throw new Error('Linha travada em cadeia: destrave o elemento pai (planilha) antes');
+
+          const tipoLinha = String(linha.tipoLinha || '').trim().toUpperCase();
+          if (tipoLinha !== 'SERVICO') throw new Error('Somente linhas do tipo SERVICO podem ser travadas/destravadas');
+          const idServico = linha.idServico != null ? Number(linha.idServico) : 0;
+          if (!idServico) throw new Error('Linha sem serviço vinculado');
+
+          const updated = await tx.$executeRawUnsafe(
+            `UPDATE tab_planilha_itens SET travado = $4, atualizado_em = NOW() WHERE tenant_id = $1 AND id_planilha = $2 AND id_planilha_item = $3`,
+            ctx.tenantId,
+            idPlanilha,
+            idLinha,
+            locked
+          );
+          if (!updated) throw new Error('Linha não encontrada');
+
+          const originKey = makePlanilhaItemOriginKey({ idObra, idPlanilha, idPlanilhaItem: idLinha });
+          await deleteLocksByOrigin(tx, { tenantId: ctx.tenantId, origemTipo: 'ITEM', origemChave: originKey });
+
+          if (locked) {
+            const svcRows = (await tx.$queryRawUnsafe(
+              `
+              SELECT UPPER(COALESCE(codigo,'')) AS codigo
+              FROM tab_servicos
+              WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND id_servico = $4
+              LIMIT 1
+              `,
+              ctx.tenantId,
+              idObra,
+              idPlanilha,
+              idServico
+            )) as any[];
+            const codigoServico = normalizeCodigoKey(svcRows?.[0]?.codigo);
+            if (!codigoServico) throw new Error('Serviço não encontrado para a linha');
+
+            const compCodes = new Set<string>();
+            const insCodes = new Set<string>();
+            const queue: string[] = [];
+            compCodes.add(codigoServico);
+            queue.push(codigoServico);
+
+            while (queue.length) {
+              const code = queue.shift() as string;
+              const itens = (await tx.$queryRawUnsafe(
+                `
+                SELECT tipo_item AS "tipoItem", codigo_item AS "codigoItem"
+                FROM tab_composicoes
+                WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
+                `,
+                ctx.tenantId,
+                idObra,
+                idPlanilha,
+                code
+              )) as any[];
+              for (const it of itens || []) {
+                const tipoKey = normalizeHeader(String(it?.tipoItem || ''));
+                const child = normalizeCodigoKey(it?.codigoItem);
+                if (!child) continue;
+                if (tipoKey.includes('composicao')) {
+                  if (!compCodes.has(child)) {
+                    compCodes.add(child);
+                    queue.push(child);
+                  }
+                } else {
+                  insCodes.add(child);
+                }
+              }
+            }
+
+            await addLock(tx, { tenantId: ctx.tenantId, entidadeTipo: 'SERVICO', entidadeChave: codigoServico, origemTipo: 'ITEM', origemChave: originKey, userId: ctx.userId });
+            for (const c of compCodes) {
+              await addLock(tx, { tenantId: ctx.tenantId, entidadeTipo: 'COMPOSICAO', entidadeChave: c, origemTipo: 'ITEM', origemChave: originKey, userId: ctx.userId });
+              await addLock(tx, { tenantId: ctx.tenantId, entidadeTipo: 'SERVICO', entidadeChave: c, origemTipo: 'ITEM', origemChave: originKey, userId: ctx.userId });
+            }
+            for (const c of insCodes) {
+              await addLock(tx, { tenantId: ctx.tenantId, entidadeTipo: 'INSUMO', entidadeChave: c, origemTipo: 'ITEM', origemChave: originKey, userId: ctx.userId });
+              const precoKey = makePrecoInsumoKey({ idObra, idPlanilha, codigoItem: c });
+              if (precoKey) {
+                await addLock(tx, { tenantId: ctx.tenantId, entidadeTipo: 'PRECO_INSUMO', entidadeChave: precoKey, origemTipo: 'ITEM', origemChave: originKey, userId: ctx.userId });
+              }
+            }
+          }
+
+          const row2 = (await tx.$queryRawUnsafe(
+            `SELECT travado, travado_por_cadeia AS "travadoPorCadeia" FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2 AND id_planilha_item = $3 LIMIT 1`,
+            ctx.tenantId,
+            idPlanilha,
+            idLinha
+          )) as any[];
+          return { idPlanilha, idLinha, travado: Boolean(row2?.[0]?.travado), travadoPorCadeia: Boolean(row2?.[0]?.travadoPorCadeia) };
+        });
+
+        return ok(reply, res, { message: locked ? 'Linha travada' : 'Linha destravada' });
+      }
+
+      if (
+        action === 'TRAVAR_SERVICO' ||
+        action === 'DESTRAVAR_SERVICO' ||
+        action === 'TRAVAR_COMPOSICAO' ||
+        action === 'DESTRAVAR_COMPOSICAO' ||
+        action === 'TRAVAR_INSUMO' ||
+        action === 'DESTRAVAR_INSUMO'
+      ) {
+        const idPlanilha = body.idPlanilha != null ? Number(body.idPlanilha) : NaN;
+        const codigoServico = body.codigoServico != null ? normalizeCodigoKey(body.codigoServico) : '';
+        const codigoComposicao = body.codigoComposicao != null ? normalizeCodigoKey(body.codigoComposicao) : '';
+        const codigoInsumo = body.codigoInsumo != null ? normalizeCodigoKey(body.codigoInsumo) : '';
+
+        const isServico = action.includes('SERVICO');
+        const isComposicao = action.includes('COMPOSICAO');
+        const isInsumo = action.includes('INSUMO');
+
+        const entidadeTipo = isServico ? 'SERVICO' : isComposicao ? 'COMPOSICAO' : 'INSUMO';
+        const entidadeChave = isServico ? codigoServico : isComposicao ? codigoComposicao : codigoInsumo;
+        if (!entidadeChave) return fail(reply, 422, 'Código inválido');
+        const locked = action.startsWith('TRAVAR_');
+        const manualOriginTipo = isServico ? 'MANUAL_SERVICO' : isComposicao ? 'MANUAL_COMPOSICAO' : 'MANUAL_INSUMO';
+        const cascadeOriginTipo = isServico ? 'SERVICO' : isComposicao ? 'COMPOSICAO' : null;
+        const cascadeOriginChave = entidadeChave;
+
+        const res = await prismaTx(async (tx: any) => {
+          await ensurePlanilhaEstruturaUnicaTables(tx);
+          const resolvedPlanilhaId = Number.isFinite(idPlanilha) && idPlanilha > 0 ? idPlanilha : await resolvePlanilhaIdForObra(tx, ctx.tenantId, idObra, null);
+          await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, resolvedPlanilhaId);
+          const plan = (await tx.$queryRawUnsafe(
+            `SELECT travado FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+            ctx.tenantId,
+            idObra,
+            resolvedPlanilhaId
+          )) as any[];
+          if (Boolean(plan?.[0]?.travado)) throw new Error('Planilha travada: não é permitido alterar travas internas');
+
+          if (locked) {
+            await addLock(tx, {
+              tenantId: ctx.tenantId,
+              entidadeTipo,
+              entidadeChave,
+              origemTipo: manualOriginTipo,
+              origemChave: String(ctx.userId),
+              userId: ctx.userId,
+            });
+          } else {
+            await deleteManualLock(tx, { tenantId: ctx.tenantId, entidadeTipo, entidadeChave, origemTipo: manualOriginTipo });
+          }
+
+          if (cascadeOriginTipo) {
+            await deleteLocksByOrigin(tx, { tenantId: ctx.tenantId, origemTipo: cascadeOriginTipo, origemChave: cascadeOriginChave });
+
+            if (locked) {
+              const compCodes = new Set<string>();
+              const insCodes = new Set<string>();
+              const queue: string[] = [];
+              compCodes.add(entidadeChave);
+              queue.push(entidadeChave);
+
+              while (queue.length) {
+                const code = queue.shift() as string;
+                const itens = (await tx.$queryRawUnsafe(
+                  `
+                  SELECT tipo_item AS "tipoItem", codigo_item AS "codigoItem"
+                  FROM tab_composicoes
+                  WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
+                  `,
+                  ctx.tenantId,
+                  idObra,
+                  resolvedPlanilhaId,
+                  code
+                )) as any[];
+                for (const it of itens || []) {
+                  const tipoKey = normalizeHeader(String(it?.tipoItem || ''));
+                  const child = normalizeCodigoKey(it?.codigoItem);
+                  if (!child) continue;
+                  if (tipoKey.includes('composicao')) {
+                    if (!compCodes.has(child)) {
+                      compCodes.add(child);
+                      queue.push(child);
+                    }
+                  } else {
+                    insCodes.add(child);
+                  }
+                }
+              }
+
+              for (const c of compCodes) {
+                await addLock(tx, {
+                  tenantId: ctx.tenantId,
+                  entidadeTipo: 'SERVICO',
+                  entidadeChave: c,
+                  origemTipo: cascadeOriginTipo,
+                  origemChave: cascadeOriginChave,
+                  userId: ctx.userId,
+                });
+                await addLock(tx, {
+                  tenantId: ctx.tenantId,
+                  entidadeTipo: 'COMPOSICAO',
+                  entidadeChave: c,
+                  origemTipo: cascadeOriginTipo,
+                  origemChave: cascadeOriginChave,
+                  userId: ctx.userId,
+                });
+              }
+              for (const c of insCodes) {
+                await addLock(tx, {
+                  tenantId: ctx.tenantId,
+                  entidadeTipo: 'INSUMO',
+                  entidadeChave: c,
+                  origemTipo: cascadeOriginTipo,
+                  origemChave: cascadeOriginChave,
+                  userId: ctx.userId,
+                });
+              }
+            }
+          }
+
+          const travado = await lockExists(tx, ctx.tenantId, entidadeTipo, entidadeChave);
+          const origens = await listLocks(tx, ctx.tenantId, entidadeTipo, entidadeChave);
+          return { entidadeTipo, entidadeChave, travado, origens, planilhaId: resolvedPlanilhaId };
+        });
+
+        const stillLocked = Boolean(res?.travado);
+        const msg =
+          locked && stillLocked
+            ? 'Travado'
+            : !locked && !stillLocked
+              ? 'Destravado'
+              : 'Não foi possível destravar: existe trava em cadeia ativa';
+        return ok(reply, res, { message: msg });
+      }
+
       if (action === 'EXCLUIR_PLANILHA') {
         const idPlanilha = body.idPlanilha != null ? Number(body.idPlanilha) : NaN;
         if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
@@ -7400,6 +8030,25 @@ export default async function v1Routes(server: FastifyInstance) {
           await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
         });
 
+        const planLockRows = (await prisma.$queryRawUnsafe(
+          `SELECT travado FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+          ctx.tenantId,
+          idObra,
+          idPlanilha
+        )) as any[];
+        const planTravada = Boolean(planLockRows?.[0]?.travado);
+        if (planTravada) return fail(reply, 422, 'Planilha travada: não é permitido editar linhas');
+        if (idLinha) {
+          const linhaRows = (await prisma.$queryRawUnsafe(
+            `SELECT travado FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2 AND id_planilha_item = $3 LIMIT 1`,
+            ctx.tenantId,
+            idPlanilha,
+            idLinha
+          )) as any[];
+          if (!linhaRows?.[0]) return fail(reply, 404, 'Linha não encontrada');
+          if (Boolean(linhaRows?.[0]?.travado)) return fail(reply, 422, 'Linha travada: não é permitido editar');
+        }
+
         let idServico: number | null = null;
         if (tipoLinha === 'SERVICO' && codigo) {
           const code = String(codigo || '').trim().toUpperCase();
@@ -7585,6 +8234,23 @@ export default async function v1Routes(server: FastifyInstance) {
         if (!Number.isFinite(idPlanilha) || idPlanilha <= 0) return fail(reply, 422, 'idPlanilha inválido');
         if (!Number.isFinite(idLinha) || idLinha <= 0) return fail(reply, 422, 'idLinha inválido');
 
+        const planLockRows = (await prisma.$queryRawUnsafe(
+          `SELECT travado FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+          ctx.tenantId,
+          idObra,
+          idPlanilha
+        )) as any[];
+        const planTravada = Boolean(planLockRows?.[0]?.travado);
+        if (planTravada) return fail(reply, 422, 'Planilha travada: não é permitido excluir linhas');
+        const linhaRows = (await prisma.$queryRawUnsafe(
+          `SELECT travado FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2 AND id_planilha_item = $3 LIMIT 1`,
+          ctx.tenantId,
+          idPlanilha,
+          idLinha
+        )) as any[];
+        if (!linhaRows?.[0]) return fail(reply, 404, 'Linha não encontrada');
+        if (Boolean(linhaRows?.[0]?.travado)) return fail(reply, 422, 'Linha travada: não é permitido excluir');
+
         await prisma.$executeRawUnsafe(`DELETE FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2 AND id_planilha_item = $3`, ctx.tenantId, idPlanilha, idLinha);
         await prismaTx(async (tx: any) => {
           const rows = (await tx.$queryRawUnsafe(
@@ -7686,7 +8352,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaServicosTables(prisma);
+    await ensurePlanilhaEstruturaUnicaTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
 
     const rows = (await prisma.$queryRawUnsafe(
@@ -7708,6 +8374,48 @@ export default async function v1Routes(server: FastifyInstance) {
     )) as any[];
     const r = rows?.[0] || null;
 
+    const travaRows = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        EXISTS (
+          SELECT 1
+          FROM tab_travas t
+          WHERE t.tenant_id = $1 AND t.entidade_tipo = 'SERVICO' AND t.entidade_chave = $2
+        ) AS travado,
+        EXISTS (
+          SELECT 1
+          FROM tab_travas t
+          WHERE t.tenant_id = $1 AND t.entidade_tipo = 'SERVICO' AND t.entidade_chave = $2 AND t.origem_tipo NOT LIKE 'MANUAL_%'
+        ) AS "travadoPorCadeia",
+        COALESCE(
+          (
+            SELECT t.origem_tipo
+            FROM tab_travas t
+            WHERE t.tenant_id = $1 AND t.entidade_tipo = 'SERVICO' AND t.entidade_chave = $2 AND t.origem_tipo NOT LIKE 'MANUAL_%'
+            ORDER BY t.criado_em DESC
+            LIMIT 1
+          ),
+          ''
+        ) AS "origemTipo",
+        COALESCE(
+          (
+            SELECT t.origem_chave
+            FROM tab_travas t
+            WHERE t.tenant_id = $1 AND t.entidade_tipo = 'SERVICO' AND t.entidade_chave = $2 AND t.origem_tipo NOT LIKE 'MANUAL_%'
+            ORDER BY t.criado_em DESC
+            LIMIT 1
+          ),
+          ''
+        ) AS "origemChave"
+      `,
+      ctx.tenantId,
+      codigoServico
+    )) as any[];
+    const travado = Boolean(travaRows?.[0]?.travado);
+    const travadoPorCadeia = Boolean(travaRows?.[0]?.travadoPorCadeia);
+    const origemTipo = travaRows?.[0]?.origemTipo != null ? String(travaRows[0].origemTipo || '') : '';
+    const origemChave = travaRows?.[0]?.origemChave != null ? String(travaRows[0].origemChave || '') : '';
+
     const existsLinha = (await prisma.$queryRawUnsafe(
       `
       SELECT 1 AS ok
@@ -7727,6 +8435,10 @@ export default async function v1Routes(server: FastifyInstance) {
       fonte: r ? String(r.fonte || '').trim() : '',
       descricao: r ? String(r.servico || '').trim() : '',
       und: r ? String(r.und || '').trim() : '',
+      travado,
+      travadoPorCadeia,
+      origemTipo,
+      origemChave,
       existsEmServicosLinhas: Boolean(existsLinha?.[0]?.ok),
     });
   });
@@ -7758,32 +8470,49 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!descricao) return fail(reply, 422, 'Descrição do serviço é obrigatória');
     if (!und) return fail(reply, 422, 'UND do serviço é obrigatória');
 
-    await ensurePlanilhaServicosTables(prisma);
-    const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, body.planilhaId ?? q.planilhaId);
+    const result = await prismaTx(async (tx: any) => {
+      await ensurePlanilhaEstruturaUnicaTables(tx);
+      const idPlanilha = await resolvePlanilhaIdForObra(tx, ctx.tenantId, idObra, body.planilhaId ?? q.planilhaId);
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
 
-    const rows = (await prisma.$queryRawUnsafe(
-      `
-      INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
-      VALUES ($1,$2,$3,$4,$5,$6,$7)
-      ON CONFLICT (tenant_id, id_obra, id_planilha, codigo) DO UPDATE
-      SET
-        fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
-        servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
-        und = COALESCE(NULLIF(EXCLUDED.und,''), tab_servicos.und),
-        atualizado_em = NOW()
-      RETURNING id_servico AS "idServico"
-      `,
-      ctx.tenantId,
-      idObra,
-      idPlanilha,
-      codigoServico,
-      banco,
-      descricao,
-      und
-    )) as any[];
-    const idServico = rows?.[0]?.idServico ? Number(rows[0].idServico) : 0;
+      const plan = (await tx.$queryRawUnsafe(
+        `SELECT travado FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+        ctx.tenantId,
+        idObra,
+        idPlanilha
+      )) as any[];
+      if (Boolean(plan?.[0]?.travado)) throw new Error('Planilha travada: não é permitido criar/editar serviços');
 
-    return ok(reply, { idServico, codigoServico }, { message: 'Serviço salvo' });
+      const codeKey = normalizeCodigoKey(codigoServico);
+      if (!codeKey) throw new Error('Código do serviço inválido');
+      const isLocked = await lockExists(tx, ctx.tenantId, 'SERVICO', codeKey);
+      if (isLocked) throw new Error('Serviço travado: não é permitido alterar');
+
+      const rows = (await tx.$queryRawUnsafe(
+        `
+        INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT (tenant_id, id_obra, id_planilha, codigo) DO UPDATE
+        SET
+          fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
+          servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
+          und = COALESCE(NULLIF(EXCLUDED.und,''), tab_servicos.und),
+          atualizado_em = NOW()
+        RETURNING id_servico AS "idServico"
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        codigoServico,
+        banco,
+        descricao,
+        und
+      )) as any[];
+      const idServico = rows?.[0]?.idServico ? Number(rows[0].idServico) : 0;
+      return { idServico, codigoServico, idPlanilha };
+    });
+
+    return ok(reply, { idServico: result.idServico, codigoServico: result.codigoServico }, { message: 'Serviço salvo' });
   });
 
   server.get('/engenharia/obras/:id/planilha/sinapi/servicos/:codigo/meta', async (request, reply) => {
@@ -8112,9 +8841,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaOrcamentariaTables(prisma);
-    await ensurePlanilhaServicosTables(prisma);
-    await ensurePlanilhaComposicaoTables(prisma);
+    await ensurePlanilhaEstruturaUnicaTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
     if (!idPlanilha) return ok(reply, { planilhaId: null, bdiPercent: 0, lsPercent: 0, rows: [] });
 
@@ -8146,7 +8873,48 @@ export default async function v1Routes(server: FastifyInstance) {
           COALESCE(s.fonte,'') AS fonte,
           COALESCE(s.servico,'') AS servico,
           COALESCE(ps.item,'') AS item,
-          COALESCE(ps.total_planilha, 0) AS total_planilha
+          COALESCE(ps.total_planilha, 0) AS total_planilha,
+          EXISTS (
+            SELECT 1
+            FROM tab_travas t
+            WHERE t.tenant_id = s.tenant_id
+              AND t.entidade_tipo = 'SERVICO'
+              AND t.entidade_chave = UPPER(COALESCE(s.codigo,''))
+          ) AS travado,
+          EXISTS (
+            SELECT 1
+            FROM tab_travas t
+            WHERE t.tenant_id = s.tenant_id
+              AND t.entidade_tipo = 'SERVICO'
+              AND t.entidade_chave = UPPER(COALESCE(s.codigo,''))
+              AND t.origem_tipo NOT LIKE 'MANUAL_%'
+          ) AS travado_por_cadeia,
+          COALESCE(
+            (
+              SELECT t.origem_tipo
+              FROM tab_travas t
+              WHERE t.tenant_id = s.tenant_id
+                AND t.entidade_tipo = 'SERVICO'
+                AND t.entidade_chave = UPPER(COALESCE(s.codigo,''))
+                AND t.origem_tipo NOT LIKE 'MANUAL_%'
+              ORDER BY t.criado_em DESC
+              LIMIT 1
+            ),
+            ''
+          ) AS origem_tipo,
+          COALESCE(
+            (
+              SELECT t.origem_chave
+              FROM tab_travas t
+              WHERE t.tenant_id = s.tenant_id
+                AND t.entidade_tipo = 'SERVICO'
+                AND t.entidade_chave = UPPER(COALESCE(s.codigo,''))
+                AND t.origem_tipo NOT LIKE 'MANUAL_%'
+              ORDER BY t.criado_em DESC
+              LIMIT 1
+            ),
+            ''
+          ) AS origem_chave
         FROM tab_servicos s
         LEFT JOIN planilha_servicos ps ON ps.codigo_servico = UPPER(COALESCE(s.codigo,''))
         WHERE s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3
@@ -8166,6 +8934,10 @@ export default async function v1Routes(server: FastifyInstance) {
         b.item AS "item",
         b.fonte AS "fonte",
         b.servico AS "servico",
+        b.travado AS "travado",
+        b.travado_por_cadeia AS "travadoPorCadeia",
+        b.origem_tipo AS "origemTipo",
+        b.origem_chave AS "origemChave",
         b.total_planilha AS "totalPlanilha",
         COALESCE(c.qtd_itens, 0) AS "qtdItens",
         COALESCE(c.total_base, 0) AS "totalBase",
@@ -8198,6 +8970,10 @@ export default async function v1Routes(server: FastifyInstance) {
         item: String(r.item || '').trim(),
           fonte: String(r.fonte || '').trim(),
         servico: String(r.servico || ''),
+        travado: Boolean(r.travado),
+        travadoPorCadeia: Boolean(r.travadoPorCadeia),
+        origemTipo: String(r.origemTipo || ''),
+        origemChave: String(r.origemChave || ''),
         totalPlanilha,
         totalComposicao: Number(totalComLSComBDI.toFixed(6)),
         diff: Number(diff.toFixed(6)),
@@ -9036,6 +9812,300 @@ export default async function v1Routes(server: FastifyInstance) {
     return { atualizados: Number(res || 0) };
   }
 
+  server.post('/engenharia/obras/:id/planilha/servicos/duplicar', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+    const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
+    const body = z
+      .object({
+        planilhaId: z.coerce.number().int().positive().optional().nullable(),
+        codigoServicoOrig: z.string().min(1),
+        codigoServicoNovo: z.string().min(1),
+        duplicarInsumos: z.coerce.boolean().optional().nullable(),
+      })
+      .parse(request.body || {});
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    const codigoServicoOrig = normalizeCodigoKey(body.codigoServicoOrig);
+    const codigoServicoNovo = normalizeCodigoKey(body.codigoServicoNovo);
+    const duplicarInsumos = Boolean(body.duplicarInsumos);
+    if (!codigoServicoOrig) return fail(reply, 422, 'Código de origem inválido');
+    if (!codigoServicoNovo) return fail(reply, 422, 'Código novo inválido');
+    if (codigoServicoOrig === codigoServicoNovo) return fail(reply, 422, 'Código novo deve ser diferente do código de origem');
+
+    const res = await prismaTx(async (tx: any) => {
+      await ensurePlanilhaEstruturaUnicaTables(tx);
+      const idPlanilha = await resolvePlanilhaIdForObra(tx, ctx.tenantId, idObra, body.planilhaId ?? q.planilhaId);
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
+
+      const planLock = (await tx.$queryRawUnsafe(
+        `SELECT travado FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+        ctx.tenantId,
+        idObra,
+        idPlanilha
+      )) as any[];
+      if (!planLock?.[0]) throw new Error('Planilha não encontrada');
+      if (Boolean(planLock?.[0]?.travado)) throw new Error('Planilha travada: não é permitido duplicar serviços');
+
+      const existsNew = (await tx.$queryRawUnsafe(
+        `
+        SELECT 1 AS ok
+        FROM tab_servicos
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        codigoServicoNovo
+      )) as any[];
+      if (Boolean(existsNew?.[0]?.ok)) throw new Error('Já existe um serviço com esse código nesta planilha');
+
+      const srcMetaRows = (await tx.$queryRawUnsafe(
+        `
+        SELECT COALESCE(fonte,'') AS fonte, COALESCE(servico,'') AS servico, COALESCE(und,'') AS und
+        FROM tab_servicos
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4
+        ORDER BY id_servico DESC
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        codigoServicoOrig
+      )) as any[];
+      const srcMeta = srcMetaRows?.[0] || null;
+      if (!srcMeta) throw new Error('Serviço de origem não encontrado no catálogo desta planilha');
+
+      const rawServicoDesc = String(srcMeta.servico || '').trim();
+      const baseServicoDesc = rawServicoDesc.replace(/\s*-\s*v\d+\s*$/i, '').trim();
+      let maxVServico = 1;
+      if (baseServicoDesc) {
+        const descRows = (await tx.$queryRawUnsafe(
+          `
+          SELECT COALESCE(servico,'') AS servico
+          FROM tab_servicos
+          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND COALESCE(servico,'') ILIKE $4
+          `,
+          ctx.tenantId,
+          idObra,
+          idPlanilha,
+          `${baseServicoDesc}%`
+        )) as any[];
+        for (const r of descRows || []) {
+          const d = String(r?.servico || '').trim();
+          const b = d.replace(/\s*-\s*v\d+\s*$/i, '').trim();
+          if (!b || b.toLowerCase() !== baseServicoDesc.toLowerCase()) continue;
+          const m = d.match(/\s*-\s*v(\d+)\s*$/i);
+          if (m && m[1]) {
+            const n = Number(m[1]);
+            if (Number.isFinite(n) && n > maxVServico) maxVServico = n;
+          }
+        }
+      }
+      const servicoDescNovo = baseServicoDesc ? `${baseServicoDesc} - v${maxVServico + 1}` : rawServicoDesc;
+
+      await tx.$executeRawUnsafe(
+        `
+        INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        codigoServicoNovo,
+        String(srcMeta.fonte || '').trim() || null,
+        servicoDescNovo ? String(servicoDescNovo || '').trim().slice(0, 800) : null,
+        String(srcMeta.und || '').trim().toUpperCase() || null
+      );
+
+      const compRows = (await tx.$queryRawUnsafe(
+        `
+        SELECT
+          etapa,
+          tipo_item AS "tipoItem",
+          codigo_item AS "codigoItem",
+          banco,
+          descricao,
+          und,
+          quantidade,
+          valor_unitario AS "valorUnitario",
+          perda_percentual AS "perdaPercentual",
+          codigo_centro_custo AS "codigoCentroCusto"
+        FROM tab_composicoes
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
+        ORDER BY id_item ASC
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        codigoServicoOrig
+      )) as any[];
+
+      const insumoMap = new Map<string, string>();
+      let insumosDuplicados = 0;
+
+      function isBancoManual(raw: any) {
+        const b = String(raw || '').trim().toUpperCase();
+        if (!b) return true;
+        if (b === 'SINAPI') return false;
+        if (b === 'SBC') return false;
+        return true;
+      }
+
+      async function ensureUniqueInsumoCode(base: string) {
+        const rawBase = String(base || '').trim().toUpperCase();
+        const b = rawBase.slice(0, 80);
+        if (!b) return '';
+        let candidate = b;
+        for (let i = 1; i <= 50; i++) {
+          const exists = (await tx.$queryRawUnsafe(
+            `
+            SELECT 1 AS ok
+            FROM tab_insumos
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_item,'')) = $4
+            LIMIT 1
+            `,
+            ctx.tenantId,
+            idObra,
+            idPlanilha,
+            candidate
+          )) as any[];
+          if (!Boolean(exists?.[0]?.ok)) return candidate;
+          const suffix = `-D${i}`;
+          candidate = `${b.slice(0, Math.max(1, 80 - suffix.length))}${suffix}`;
+        }
+        return '';
+      }
+
+      for (const r of compRows || []) {
+        const tipoKey = normalizeHeader(String(r?.tipoItem || ''));
+        const codigoItem = normalizeCodigoKey(r?.codigoItem);
+        if (!duplicarInsumos) continue;
+        if (!codigoItem) continue;
+        if (tipoKey === 'composicao' || tipoKey === 'composicao_auxiliar') continue;
+        if (!isBancoManual(r?.banco)) continue;
+        if (insumoMap.has(codigoItem)) continue;
+
+        const baseCandidate = `${codigoItem}-DUP`;
+        const codigoNovo = await ensureUniqueInsumoCode(baseCandidate);
+        if (!codigoNovo) continue;
+        insumoMap.set(codigoItem, codigoNovo);
+
+        const srcPrice = (await tx.$queryRawUnsafe(
+          `
+          SELECT
+            COALESCE(tipo,'') AS tipo,
+            COALESCE(banco,'') AS banco,
+            COALESCE(descricao,'') AS descricao,
+            COALESCE(und,'') AS und,
+            COALESCE(valor_unitario,0) AS valor_unitario
+          FROM tab_insumos
+          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_item,'')) = $4
+          ORDER BY id_insumo DESC
+          LIMIT 1
+          `,
+          ctx.tenantId,
+          idObra,
+          idPlanilha,
+          codigoItem
+        )) as any[];
+        const src = srcPrice?.[0] || null;
+
+        const rawDesc = String((src?.descricao != null ? src.descricao : r?.descricao) || '').trim();
+        const baseDesc = rawDesc.replace(/\s*-\s*v\d+\s*$/i, '').trim();
+        let maxV = 1;
+        if (baseDesc) {
+          const descRows = (await tx.$queryRawUnsafe(
+            `
+            SELECT COALESCE(descricao,'') AS descricao
+            FROM tab_insumos
+            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND COALESCE(descricao,'') ILIKE $4
+            `,
+            ctx.tenantId,
+            idObra,
+            idPlanilha,
+            `${baseDesc}%`
+          )) as any[];
+          for (const rr of descRows || []) {
+            const d = String(rr?.descricao || '').trim();
+            const b = d.replace(/\s*-\s*v\d+\s*$/i, '').trim();
+            if (!b || b.toLowerCase() !== baseDesc.toLowerCase()) continue;
+            const m = d.match(/\s*-\s*v(\d+)\s*$/i);
+            if (m && m[1]) {
+              const n = Number(m[1]);
+              if (Number.isFinite(n) && n > maxV) maxV = n;
+            }
+          }
+        }
+        const descricaoNova = baseDesc ? `${baseDesc} - v${maxV + 1}` : rawDesc;
+
+        await tx.$executeRawUnsafe(
+          `
+          INSERT INTO tab_insumos
+            (tenant_id, id_obra, id_planilha, codigo_item, tipo, banco, descricao, und, valor_unitario, travado)
+          VALUES
+            ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE)
+          `,
+          ctx.tenantId,
+          idObra,
+          idPlanilha,
+          codigoNovo,
+          src?.tipo ? String(src.tipo || '').trim().toUpperCase().slice(0, 32) : null,
+          src?.banco ? String(src.banco || '').trim().slice(0, 60) : (r?.banco ? String(r.banco || '').trim().slice(0, 60) : null),
+          descricaoNova ? String(descricaoNova || '').trim().slice(0, 255) : null,
+          src?.und ? String(src.und || '').trim().slice(0, 40) : (r?.und ? String(r.und || '').trim().slice(0, 40) : null),
+          src?.valor_unitario == null ? toDec(0) : toDec(src.valor_unitario)
+        );
+        insumosDuplicados++;
+      }
+
+      for (const r of compRows || []) {
+        const tipoItemRaw = String(r?.tipoItem || '').trim().toUpperCase().slice(0, 32) || 'INSUMO';
+        const codigoItemOld = normalizeCodigoKey(r?.codigoItem);
+        const codigoItemNew = codigoItemOld && insumoMap.has(codigoItemOld) ? insumoMap.get(codigoItemOld)! : (codigoItemOld || '');
+        if (!codigoItemNew) continue;
+
+        await tx.$executeRawUnsafe(
+          `
+          INSERT INTO tab_composicoes
+            (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo)
+          VALUES
+            ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+          `,
+          ctx.tenantId,
+          idObra,
+          idPlanilha,
+          codigoServicoNovo,
+          r?.etapa != null ? String(r.etapa || '').trim() || null : null,
+          tipoItemRaw,
+          codigoItemNew,
+          r?.banco != null ? String(r.banco || '').trim().slice(0, 60) || null : null,
+          r?.descricao != null ? String(r.descricao || '').trim().slice(0, 255) || null : null,
+          r?.und != null ? String(r.und || '').trim().slice(0, 40) || null : null,
+          r?.quantidade == null ? null : toDec(r.quantidade),
+          r?.valorUnitario == null ? null : toDec(r.valorUnitario),
+          r?.perdaPercentual == null ? toDec(0) : toDec(r.perdaPercentual),
+          r?.codigoCentroCusto != null ? String(r.codigoCentroCusto || '').trim().slice(0, 120) || null : null
+        );
+      }
+
+      return {
+        idPlanilha,
+        codigoServicoOrig,
+        codigoServicoNovo,
+        itensCopiados: Number((compRows || []).length),
+        insumosDuplicados,
+      };
+    });
+
+    return ok(reply, res, { message: 'Serviço duplicado' });
+  });
+
   server.get('/engenharia/obras/:id/planilha/servicos/:codigo/composicao-itens', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
@@ -9047,8 +10117,11 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
+    await ensurePlanilhaEstruturaUnicaTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
-    await ensurePlanilhaComposicaoTables(prisma);
+    await prismaTx(async (tx: any) => {
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
+    });
     const rows = (await prisma.$queryRawUnsafe(
       `
       SELECT
@@ -9062,7 +10135,60 @@ export default async function v1Routes(server: FastifyInstance) {
         i.quantidade AS "quantidade",
         i.valor_unitario AS "valorUnitario",
         i.perda_percentual AS "perdaPercentual",
-        i.codigo_centro_custo AS "codigoCentroCusto"
+        i.codigo_centro_custo AS "codigoCentroCusto",
+        EXISTS (
+          SELECT 1
+          FROM tab_travas t
+          WHERE t.tenant_id = i.tenant_id
+            AND t.entidade_chave = UPPER(COALESCE(i.codigo_item,''))
+            AND t.entidade_tipo = CASE
+              WHEN UPPER(COALESCE(i.tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN 'COMPOSICAO'
+              ELSE 'INSUMO'
+            END
+        ) AS "travado",
+        EXISTS (
+          SELECT 1
+          FROM tab_travas t
+          WHERE t.tenant_id = i.tenant_id
+            AND t.entidade_chave = UPPER(COALESCE(i.codigo_item,''))
+            AND t.entidade_tipo = CASE
+              WHEN UPPER(COALESCE(i.tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN 'COMPOSICAO'
+              ELSE 'INSUMO'
+            END
+            AND t.origem_tipo NOT LIKE 'MANUAL_%'
+        ) AS "travadoPorCadeia",
+        COALESCE(
+          (
+            SELECT t.origem_tipo
+            FROM tab_travas t
+            WHERE t.tenant_id = i.tenant_id
+              AND t.entidade_chave = UPPER(COALESCE(i.codigo_item,''))
+              AND t.entidade_tipo = CASE
+                WHEN UPPER(COALESCE(i.tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN 'COMPOSICAO'
+                ELSE 'INSUMO'
+              END
+              AND t.origem_tipo NOT LIKE 'MANUAL_%'
+            ORDER BY t.criado_em DESC
+            LIMIT 1
+          ),
+          ''
+        ) AS "origemTipo",
+        COALESCE(
+          (
+            SELECT t.origem_chave
+            FROM tab_travas t
+            WHERE t.tenant_id = i.tenant_id
+              AND t.entidade_chave = UPPER(COALESCE(i.codigo_item,''))
+              AND t.entidade_tipo = CASE
+                WHEN UPPER(COALESCE(i.tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN 'COMPOSICAO'
+                ELSE 'INSUMO'
+              END
+              AND t.origem_tipo NOT LIKE 'MANUAL_%'
+            ORDER BY t.criado_em DESC
+            LIMIT 1
+          ),
+          ''
+        ) AS "origemChave"
       FROM tab_composicoes i
       WHERE i.tenant_id = $1 AND i.id_obra = $2 AND i.id_planilha = $3 AND UPPER(COALESCE(i.codigo_servico,'')) = $4
       ORDER BY COALESCE(i.etapa,'') ASC, i.id_item ASC
@@ -9079,6 +10205,10 @@ export default async function v1Routes(server: FastifyInstance) {
         ...r,
         idItemBase: typeof r.idItemBase === 'bigint' ? Number(r.idItemBase) : Number(r.idItemBase || 0),
         codigoCentroCustoBase: null,
+        travado: Boolean(r.travado),
+        travadoPorCadeia: Boolean(r.travadoPorCadeia),
+        origemTipo: String(r.origemTipo || ''),
+        origemChave: String(r.origemChave || ''),
       })),
     });
   });
@@ -9094,17 +10224,29 @@ export default async function v1Routes(server: FastifyInstance) {
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
 
-    await ensurePlanilhaOrcamentariaTables(prisma);
-    await ensurePlanilhaServicosTables(prisma);
-    await ensurePlanilhaComposicaoTables(prisma);
-    await ensureInsumosPrecosTables(prisma);
+    await ensurePlanilhaEstruturaUnicaTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
     const body = (request.body || {}) as any;
 
     if (Array.isArray(body.itens)) {
       const itens = body.itens as any[];
       await prismaTx(async (tx: any) => {
+        await ensurePlanilhaEstruturaUnicaTables(tx);
         await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
+
+        const plan = (await tx.$queryRawUnsafe(
+          `SELECT travado FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+          ctx.tenantId,
+          idObra,
+          idPlanilha
+        )) as any[];
+        if (Boolean(plan?.[0]?.travado)) throw new Error('Planilha travada: não é permitido alterar composições');
+
+        const codeKey = normalizeCodigoKey(codigoServico);
+        if (!codeKey) throw new Error('Código do serviço inválido');
+        const isLockedServico = await lockExists(tx, ctx.tenantId, 'SERVICO', codeKey);
+        const isLockedComposicao = await lockExists(tx, ctx.tenantId, 'COMPOSICAO', codeKey);
+        if (isLockedServico || isLockedComposicao) throw new Error('Composição/serviço travado: não é permitido alterar');
 
         const vers = (await tx.$queryRawUnsafe(
           `
@@ -12365,10 +13507,23 @@ export default async function v1Routes(server: FastifyInstance) {
         i.descricao AS "descricao",
         i.und AS "und",
         COALESCE(p.valor_unitario, i.max_valor_unitario, 0) AS "valorUnitario",
+        COALESCE(p.travado, FALSE) AS "travado",
+        CASE WHEN lt.origem_tipo IS NULL THEN FALSE ELSE TRUE END AS "travadoPorCadeia",
+        COALESCE(lt.origem_tipo,'') AS "origemTipo",
+        COALESCE(lt.origem_chave,'') AS "origemChave",
         i.quantidade_total AS "quantidadeTotal"
       FROM insumos i
       LEFT JOIN tab_insumos p
         ON p.tenant_id = $1 AND p.id_obra = $2 AND p.id_planilha = $3 AND UPPER(COALESCE(p.codigo_item,'')) = i.codigo_item
+      LEFT JOIN LATERAL (
+        SELECT origem_tipo, origem_chave
+        FROM tab_travas t
+        WHERE t.tenant_id = $1
+          AND t.entidade_tipo = 'PRECO_INSUMO'
+          AND t.entidade_chave = ($2::text || ':' || $3::text || ':' || i.codigo_item)
+        ORDER BY t.criado_em DESC
+        LIMIT 1
+      ) lt ON true
       ORDER BY i.codigo_item
       `,
       ctx.tenantId,
@@ -12384,6 +13539,10 @@ export default async function v1Routes(server: FastifyInstance) {
           descricao: String(r.descricao || ''),
           und: String(r.und || ''),
           valorUnitario: r.valorUnitario == null ? 0 : Number(r.valorUnitario),
+          travado: Boolean(r.travado),
+          travadoPorCadeia: Boolean(r.travadoPorCadeia),
+          origemTipo: String(r.origemTipo || ''),
+          origemChave: String(r.origemChave || ''),
           quantidadeTotal: r.quantidadeTotal == null ? 0 : Number(r.quantidadeTotal),
         })),
       },
@@ -12411,6 +13570,10 @@ export default async function v1Routes(server: FastifyInstance) {
       SELECT
         UPPER(COALESCE(p.codigo_item,'')) AS "codigoItem",
         COALESCE(p.valor_unitario, 0) AS "valorUnitario",
+        MAX(CASE WHEN COALESCE(p.travado,FALSE) THEN 1 ELSE 0 END)::int AS "travado",
+        MAX(CASE WHEN lt.origem_tipo IS NULL THEN 0 ELSE 1 END)::int AS "travadoPorCadeia",
+        MAX(COALESCE(lt.origem_tipo,'')) AS "origemTipo",
+        MAX(COALESCE(lt.origem_chave,'')) AS "origemChave",
         MAX(COALESCE(i.descricao,'')) AS "descricao",
         MAX(COALESCE(i.und,'')) AS "und"
       FROM tab_insumos p
@@ -12420,8 +13583,17 @@ export default async function v1Routes(server: FastifyInstance) {
         AND i.id_planilha = p.id_planilha
         AND UPPER(COALESCE(i.codigo_item,'')) = UPPER(COALESCE(p.codigo_item,''))
         AND UPPER(COALESCE(i.tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+      LEFT JOIN LATERAL (
+        SELECT origem_tipo, origem_chave
+        FROM tab_travas t
+        WHERE t.tenant_id = p.tenant_id
+          AND t.entidade_tipo = 'PRECO_INSUMO'
+          AND t.entidade_chave = (p.id_obra::text || ':' || p.id_planilha::text || ':' || UPPER(COALESCE(p.codigo_item,'')))
+        ORDER BY t.criado_em DESC
+        LIMIT 1
+      ) lt ON true
       WHERE p.tenant_id = $1 AND p.id_obra = $2 AND p.id_planilha = $3
-      GROUP BY UPPER(COALESCE(p.codigo_item,'')), COALESCE(p.valor_unitario, 0)
+      GROUP BY UPPER(COALESCE(p.codigo_item,'')), COALESCE(p.valor_unitario, 0), lt.origem_tipo, lt.origem_chave
       ORDER BY UPPER(COALESCE(p.codigo_item,''))
       `,
       ctx.tenantId,
@@ -12436,6 +13608,10 @@ export default async function v1Routes(server: FastifyInstance) {
         descricao: String(r.descricao || ''),
         und: String(r.und || ''),
         valorUnitario: r.valorUnitario == null ? 0 : Number(r.valorUnitario),
+        travado: Boolean(r.travado),
+        travadoPorCadeia: Boolean(r.travadoPorCadeia),
+        origemTipo: String(r.origemTipo || ''),
+        origemChave: String(r.origemChave || ''),
       })),
     });
   });
@@ -12985,6 +14161,34 @@ export default async function v1Routes(server: FastifyInstance) {
       if (!codigoItem) return fail(reply, 422, 'Código do insumo inválido');
       if (!Number.isFinite(valorUnitario) || valorUnitario < 0) return fail(reply, 422, 'Valor unitário inválido');
 
+      const planLock = (await tx.$queryRawUnsafe(
+        `SELECT travado FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+        ctx.tenantId,
+        idObra,
+        idPlanilha
+      )) as any[];
+      if (!planLock?.[0]) return fail(reply, 404, 'Planilha não encontrada');
+      if (Boolean(planLock?.[0]?.travado)) return fail(reply, 422, 'Planilha travada: não é permitido alterar preço de insumos');
+
+      const precoLock = (await tx.$queryRawUnsafe(
+        `SELECT travado FROM tab_insumos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_item,'')) = $4 LIMIT 1`,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        codigoItem
+      )) as any[];
+      if (Boolean(precoLock?.[0]?.travado)) return fail(reply, 422, `Preço do insumo ${codigoItem} está travado`);
+
+      const precoKey = makePrecoInsumoKey({ idObra, idPlanilha, codigoItem });
+      if (precoKey) {
+        const chainLock = (await tx.$queryRawUnsafe(
+          `SELECT 1 AS ok FROM tab_travas WHERE tenant_id = $1 AND entidade_tipo = 'PRECO_INSUMO' AND entidade_chave = $2 LIMIT 1`,
+          ctx.tenantId,
+          precoKey
+        )) as any[];
+        if (Boolean(chainLock?.[0]?.ok)) return fail(reply, 422, `Preço do insumo ${codigoItem} está travado em cadeia`);
+      }
+
       const pairs = (await tx.$queryRawUnsafe(
         `
         SELECT DISTINCT
@@ -13102,6 +14306,268 @@ export default async function v1Routes(server: FastifyInstance) {
     });
 
     return ok(reply, { ok: true }, { message: 'Preço do insumo atualizado e propagado em cascata' });
+  });
+
+  server.post('/engenharia/obras/:id/planilha/insumos/precos/trava', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+    const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
+    const body = z
+      .object({
+        codigoItem: z.string().min(1),
+        travado: z.coerce.boolean(),
+      })
+      .parse(request.body || {});
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    const codigoItem = String(body.codigoItem || '').trim().toUpperCase();
+    const travado = Boolean(body.travado);
+    if (!codigoItem) return fail(reply, 422, 'Código do insumo inválido');
+
+    const res = await prismaTx(async (tx: any) => {
+      const idPlanilha = await resolvePlanilhaIdForObra(tx, ctx.tenantId, idObra, q.planilhaId);
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
+
+      const planLock = (await tx.$queryRawUnsafe(
+        `SELECT travado FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+        ctx.tenantId,
+        idObra,
+        idPlanilha
+      )) as any[];
+      if (!planLock?.[0]) throw new Error('Planilha não encontrada');
+      if (Boolean(planLock?.[0]?.travado) && !travado) throw new Error('Não é permitido destravar preço do insumo quando a planilha está travada');
+
+      const precoKey = makePrecoInsumoKey({ idObra, idPlanilha, codigoItem });
+      if (precoKey && !travado) {
+        const chainLock = (await tx.$queryRawUnsafe(
+          `SELECT 1 AS ok FROM tab_travas WHERE tenant_id = $1 AND entidade_tipo = 'PRECO_INSUMO' AND entidade_chave = $2 AND origem_tipo <> 'MANUAL_PRECO' LIMIT 1`,
+          ctx.tenantId,
+          precoKey
+        )) as any[];
+        if (Boolean(chainLock?.[0]?.ok)) throw new Error('Preço travado em cadeia: destrave o elemento pai (planilha/item) antes');
+      }
+
+      const updated = await tx.$executeRawUnsafe(
+        `
+        UPDATE tab_insumos
+        SET travado = $5, atualizado_em = NOW()
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_item,'')) = $4
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        codigoItem,
+        travado
+      );
+      if (!updated && travado) {
+        const metaRow = (await tx.$queryRawUnsafe(
+          `
+          SELECT
+            UPPER(COALESCE(tipo_item,'')) AS tipo,
+            COALESCE(NULLIF(trim(banco),''),'') AS banco,
+            COALESCE(NULLIF(trim(descricao),''),'') AS descricao,
+            COALESCE(NULLIF(trim(und),''),'') AS und
+          FROM tab_composicoes
+          WHERE tenant_id = $1
+            AND id_obra = $2
+            AND id_planilha = $3
+            AND UPPER(COALESCE(codigo_item,'')) = $4
+            AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+          ORDER BY id_item DESC
+          LIMIT 1
+          `,
+          ctx.tenantId,
+          idObra,
+          idPlanilha,
+          codigoItem
+        )) as any[];
+        const meta = metaRow?.[0] || {};
+        await tx.$executeRawUnsafe(
+          `
+          INSERT INTO tab_insumos
+            (tenant_id, id_obra, id_planilha, codigo_item, tipo, banco, descricao, und, valor_unitario, travado)
+          VALUES
+            ($1, $2, $3, $4, $5, $6, $7, $8, 0, TRUE)
+          ON CONFLICT (tenant_id, id_obra, id_planilha, codigo_item)
+          DO UPDATE SET
+            travado = TRUE,
+            atualizado_em = NOW()
+          `,
+          ctx.tenantId,
+          idObra,
+          idPlanilha,
+          codigoItem,
+          meta?.tipo ? String(meta.tipo || '').trim().toUpperCase().slice(0, 32) : null,
+          meta?.banco ? String(meta.banco || '').trim().slice(0, 60) : null,
+          meta?.descricao ? String(meta.descricao || '').trim().slice(0, 255) : null,
+          meta?.und ? String(meta.und || '').trim().slice(0, 40) : null
+        );
+      }
+
+      const rows = (await tx.$queryRawUnsafe(
+        `SELECT travado FROM tab_insumos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_item,'')) = $4 LIMIT 1`,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        codigoItem
+      )) as any[];
+      return { idPlanilha, codigoItem, travado: Boolean(rows?.[0]?.travado) };
+    });
+
+    return ok(reply, res, { message: res.travado ? 'Preço do insumo travado' : 'Preço do insumo destravado' });
+  });
+
+  server.post('/engenharia/obras/:id/planilha/insumos/duplicar', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
+    const idObra = Number(id);
+    const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
+    const body = z
+      .object({
+        planilhaId: z.coerce.number().int().positive().optional().nullable(),
+        codigoItemOrig: z.string().min(1),
+        codigoItemNovo: z.string().min(1),
+      })
+      .parse(request.body || {});
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    const codigoItemOrig = normalizeCodigoKey(body.codigoItemOrig);
+    const codigoItemNovo = normalizeCodigoKey(body.codigoItemNovo);
+    if (!codigoItemOrig) return fail(reply, 422, 'Código de origem inválido');
+    if (!codigoItemNovo) return fail(reply, 422, 'Código novo inválido');
+    if (codigoItemOrig === codigoItemNovo) return fail(reply, 422, 'Código novo deve ser diferente do código de origem');
+
+    const res = await prismaTx(async (tx: any) => {
+      await ensurePlanilhaEstruturaUnicaTables(tx);
+      const idPlanilha = await resolvePlanilhaIdForObra(tx, ctx.tenantId, idObra, body.planilhaId ?? q.planilhaId);
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
+
+      const planLock = (await tx.$queryRawUnsafe(
+        `SELECT travado FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
+        ctx.tenantId,
+        idObra,
+        idPlanilha
+      )) as any[];
+      if (!planLock?.[0]) throw new Error('Planilha não encontrada');
+      if (Boolean(planLock?.[0]?.travado)) throw new Error('Planilha travada: não é permitido duplicar insumos');
+
+      const existsNew = (await tx.$queryRawUnsafe(
+        `
+        SELECT 1 AS ok
+        FROM tab_insumos
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_item,'')) = $4
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        codigoItemNovo
+      )) as any[];
+      if (Boolean(existsNew?.[0]?.ok)) throw new Error('Já existe um insumo com esse código nesta planilha');
+
+      const srcRows = (await tx.$queryRawUnsafe(
+        `
+        SELECT
+          COALESCE(tipo,'') AS tipo,
+          COALESCE(banco,'') AS banco,
+          COALESCE(descricao,'') AS descricao,
+          COALESCE(und,'') AS und,
+          COALESCE(valor_unitario,0) AS valor_unitario
+        FROM tab_insumos
+        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_item,'')) = $4
+        ORDER BY id_insumo DESC
+        LIMIT 1
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        codigoItemOrig
+      )) as any[];
+      const src = srcRows?.[0] || null;
+
+      const metaRow = src
+        ? src
+        : (
+            (await tx.$queryRawUnsafe(
+              `
+              SELECT
+                UPPER(COALESCE(tipo_item,'')) AS tipo,
+                COALESCE(NULLIF(trim(banco),''),'') AS banco,
+                COALESCE(NULLIF(trim(descricao),''),'') AS descricao,
+                COALESCE(NULLIF(trim(und),''),'') AS und
+              FROM tab_composicoes
+              WHERE tenant_id = $1
+                AND id_obra = $2
+                AND id_planilha = $3
+                AND UPPER(COALESCE(codigo_item,'')) = $4
+                AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
+              ORDER BY id_item DESC
+              LIMIT 1
+              `,
+              ctx.tenantId,
+              idObra,
+              idPlanilha,
+              codigoItemOrig
+            )) as any[]
+          )?.[0] || {};
+
+      const rawDesc = metaRow?.descricao != null ? String(metaRow.descricao || '').trim() : '';
+      const baseDesc = rawDesc.replace(/\s*-\s*v\d+\s*$/i, '').trim();
+      let maxV = 1;
+      if (baseDesc) {
+        const descRows = (await tx.$queryRawUnsafe(
+          `
+          SELECT COALESCE(descricao,'') AS descricao
+          FROM tab_insumos
+          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND COALESCE(descricao,'') ILIKE $4
+          `,
+          ctx.tenantId,
+          idObra,
+          idPlanilha,
+          `${baseDesc}%`
+        )) as any[];
+        for (const r of descRows || []) {
+          const d = String(r?.descricao || '').trim();
+          const b = d.replace(/\s*-\s*v\d+\s*$/i, '').trim();
+          if (!b || b.toLowerCase() !== baseDesc.toLowerCase()) continue;
+          const m = d.match(/\s*-\s*v(\d+)\s*$/i);
+          if (m && m[1]) {
+            const n = Number(m[1]);
+            if (Number.isFinite(n) && n > maxV) maxV = n;
+          }
+        }
+      }
+      const descricaoNova = baseDesc ? `${baseDesc} - v${maxV + 1}` : (rawDesc || null);
+
+      await tx.$executeRawUnsafe(
+        `
+        INSERT INTO tab_insumos
+          (tenant_id, id_obra, id_planilha, codigo_item, tipo, banco, descricao, und, valor_unitario, travado)
+        VALUES
+          ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE)
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        codigoItemNovo,
+        metaRow?.tipo ? String(metaRow.tipo || '').trim().toUpperCase().slice(0, 32) : null,
+        metaRow?.banco ? String(metaRow.banco || '').trim().slice(0, 60) : null,
+        descricaoNova ? String(descricaoNova || '').trim().slice(0, 255) : null,
+        metaRow?.und ? String(metaRow.und || '').trim().slice(0, 40) : null,
+        src?.valor_unitario == null ? toDec(0) : toDec(src.valor_unitario)
+      );
+
+      return { idPlanilha, codigoItemOrig, codigoItemNovo };
+    });
+
+    return ok(reply, res, { message: 'Insumo duplicado' });
   });
 
   server.post('/engenharia/obras/:id/planilha/insumos/precos/importar-csv', async (request, reply) => {

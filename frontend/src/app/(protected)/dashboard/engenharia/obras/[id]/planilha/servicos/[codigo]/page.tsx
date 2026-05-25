@@ -2,7 +2,7 @@
  
 import { useEffect, useMemo, useRef, useState } from "react";
  import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Trash2, Printer, FileSpreadsheet, Image, CheckCircle2, CircleDashed, XCircle, Layers, BrickWall, Wrench, HardHat } from "lucide-react";
+import { Trash2, Printer, FileSpreadsheet, Image, CheckCircle2, CircleDashed, XCircle, Layers, BrickWall, Wrench, HardHat, Lock } from "lucide-react";
  
  type ItemRow = {
   idItemBase: number;
@@ -17,6 +17,10 @@ import { Trash2, Printer, FileSpreadsheet, Image, CheckCircle2, CircleDashed, XC
    perdaPercentual: string;
    codigoCentroCusto: string;
   codigoCentroCustoBase: string;
+  travado: boolean;
+  travadoPorCadeia: boolean;
+  origemTipo: string;
+  origemChave: string;
  };
  
 type PrevistoPlanilhaRow = {
@@ -205,6 +209,11 @@ async function readTextSmart(file: File) {
   const [bootDone, setBootDone] = useState(false);
    const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
+  const [planilhaTravada, setPlanilhaTravada] = useState(false);
+  const [servicoTravado, setServicoTravado] = useState(false);
+  const [servicoTravadoPorCadeia, setServicoTravadoPorCadeia] = useState(false);
+  const [servicoOrigemTipo, setServicoOrigemTipo] = useState("");
+  const [servicoOrigemChave, setServicoOrigemChave] = useState("");
    const [itens, setItens] = useState<ItemRow[]>([]);
   const itensSavedRef = useRef<ItemRow[]>([]);
   const [previstoRows, setPrevistoRows] = useState<PrevistoPlanilhaRow[]>([]);
@@ -438,6 +447,10 @@ async function readTextSmart(file: File) {
         perdaPercentual: i.perdaPercentual == null ? "" : String(i.perdaPercentual),
         codigoCentroCusto: String(i.codigoCentroCusto || ""),
         codigoCentroCustoBase: String(i.codigoCentroCustoBase || ""),
+        travado: Boolean(i.travado),
+        travadoPorCadeia: Boolean(i.travadoPorCadeia),
+        origemTipo: String(i.origemTipo || ""),
+        origemChave: String(i.origemChave || ""),
       }));
       setItens(mapped);
       itensSavedRef.current = mapped.map((r: any) => ({ ...r }));
@@ -490,6 +503,14 @@ async function readTextSmart(file: File) {
 
    async function salvar() {
      if (!idObra || !codigoServico) return;
+    if (planilhaTravada) {
+      setErr("Esta planilha está travada. Não é permitido salvar alterações.");
+      return;
+    }
+    if (servicoTravado) {
+      setErr("Este serviço está travado (manual ou em cadeia). Não é permitido salvar alterações.");
+      return;
+    }
      try {
        setLoading(true);
        setErr(null);
@@ -540,6 +561,14 @@ async function readTextSmart(file: File) {
    }
  
   async function salvarItens(payload: Array<any>, successMsg: string) {
+    if (planilhaTravada) {
+      setErr("Esta planilha está travada. Não é permitido importar/salvar alterações.");
+      return;
+    }
+    if (servicoTravado) {
+      setErr("Este serviço está travado (manual ou em cadeia). Não é permitido importar/salvar alterações.");
+      return;
+    }
      try {
        setLoading(true);
        setErr(null);
@@ -604,6 +633,10 @@ async function readTextSmart(file: File) {
 
   async function prepararImportacaoCsv(file: File) {
     if (!idObra || !codigoServico) return;
+    if (planilhaTravada || servicoTravado) {
+      setErr("Composição travada: não é permitido importar CSV.");
+      return;
+    }
     try {
       setErr(null);
       setOkMsg(null);
@@ -684,6 +717,10 @@ async function readTextSmart(file: File) {
             perdaPercentual,
             codigoCentroCusto,
             codigoCentroCustoBase: "",
+            travado: false,
+            travadoPorCadeia: false,
+            origemTipo: "",
+            origemChave: "",
           });
         }
       }
@@ -715,6 +752,10 @@ async function readTextSmart(file: File) {
       perdaPercentual: r.perdaPercentual,
       codigoCentroCusto: r.codigoCentroCusto,
       codigoCentroCustoBase: "",
+      travado: false,
+      travadoPorCadeia: false,
+      origemTipo: "",
+      origemChave: "",
     }));
     if (!incoming.length) {
       setErr("Não há linhas válidas para importar. Corrija o CSV.");
@@ -761,6 +802,7 @@ async function readTextSmart(file: File) {
       const byQuery = planilhaId != null ? versoes.find((v: any) => Number(v?.idPlanilha || 0) === Number(planilhaId)) : null;
       const atual = versoes.find((v: any) => Boolean(v.atual)) || versoes[0] || null;
       const pick = byQuery || atual || null;
+      setPlanilhaTravada(Boolean(pick?.travado));
       const pid = pick?.idPlanilha != null ? Number(pick.idPlanilha) : 0;
       setPlanilhaCtx(
         pick
@@ -771,8 +813,39 @@ async function readTextSmart(file: File) {
           : null
       );
       if (!pid) {
+        setServicoTravado(false);
+        setServicoTravadoPorCadeia(false);
+        setServicoOrigemTipo("");
+        setServicoOrigemChave("");
         setPrevistoRows([]);
         return;
+      }
+
+      try {
+        const qsMeta = new URLSearchParams();
+        qsMeta.set("planilhaId", String(pid));
+        const resMeta = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/meta?${qsMeta.toString()}`);
+        const jsonMeta = await resMeta.json().catch(() => null);
+        if (resMeta.ok && jsonMeta?.success) {
+          setServicoTravado(Boolean(jsonMeta?.data?.travado));
+          setServicoTravadoPorCadeia(Boolean(jsonMeta?.data?.travadoPorCadeia));
+          setServicoOrigemTipo(String(jsonMeta?.data?.origemTipo || ""));
+          setServicoOrigemChave(String(jsonMeta?.data?.origemChave || ""));
+          const desc = jsonMeta?.data?.descricao != null ? String(jsonMeta.data.descricao || "").trim() : "";
+          const und = jsonMeta?.data?.und != null ? String(jsonMeta.data.und || "").trim() : "";
+          const fonte = jsonMeta?.data?.fonte != null ? String(jsonMeta.data.fonte || "").trim().toUpperCase() : "";
+          if (desc || und) setPrevistoServicoMeta({ descricao: desc, und, fonte });
+        } else {
+          setServicoTravado(false);
+          setServicoTravadoPorCadeia(false);
+          setServicoOrigemTipo("");
+          setServicoOrigemChave("");
+        }
+      } catch {
+        setServicoTravado(false);
+        setServicoTravadoPorCadeia(false);
+        setServicoOrigemTipo("");
+        setServicoOrigemChave("");
       }
 
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${pid}`);
@@ -881,6 +954,90 @@ async function readTextSmart(file: File) {
       setPlanilhaCtx(null);
       setNavPlanilhaServicos([]);
       setNavIdx(-1);
+      setPlanilhaTravada(false);
+      setServicoTravado(false);
+      setServicoTravadoPorCadeia(false);
+      setServicoOrigemTipo("");
+      setServicoOrigemChave("");
+    }
+  }
+
+  async function toggleTravaServicoAtual() {
+    if (!idObra || !codigoServico) return;
+    const pid = planilhaInfo?.idPlanilha || planilhaId;
+    if (!pid) {
+      setErr("Selecione uma planilha para alterar a trava.");
+      return;
+    }
+    if (planilhaTravada) {
+      setErr("Esta planilha está travada. Não é permitido alterar travas.");
+      return;
+    }
+    if (servicoTravadoPorCadeia) {
+      setErr("Serviço travado em cadeia: destrave o elemento pai (planilha/item) antes.");
+      return;
+    }
+    if (!servicoTravado) {
+      const ok = window.confirm(
+        "Deseja travar este serviço?\n\nAo confirmar:\n- sua composição será travada\n- subcomposições serão travadas\n- insumos serão travados\n\nOs preços dos insumos da planilha continuarão editáveis caso a planilha não esteja travada."
+      );
+      if (!ok) return;
+    }
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const action = servicoTravado ? "DESTRAVAR_SERVICO" : "TRAVAR_SERVICO";
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, idPlanilha: pid, codigoServico }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao alterar trava do serviço");
+      await Promise.all([carregar(true), carregarPrevistoPlanilha()]);
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao alterar trava do serviço");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function toggleTravaItem(tipoItem: string, codigoItem: string, travadoAtual: boolean, travadoPorCadeia: boolean) {
+    if (!idObra) return;
+    const pid = planilhaInfo?.idPlanilha || planilhaId;
+    if (!pid) {
+      setErr("Selecione uma planilha para alterar a trava.");
+      return;
+    }
+    if (planilhaTravada) {
+      setErr("Esta planilha está travada. Não é permitido alterar travas.");
+      return;
+    }
+    if (travadoPorCadeia) {
+      setErr("Item travado em cadeia: destrave o elemento pai (planilha/serviço/item) antes.");
+      return;
+    }
+    const code = String(codigoItem || "").trim().toUpperCase();
+    if (!code) return;
+    const isComp = isComposicaoTipo(tipoItem);
+    const action = isComp ? (travadoAtual ? "DESTRAVAR_COMPOSICAO" : "TRAVAR_COMPOSICAO") : travadoAtual ? "DESTRAVAR_INSUMO" : "TRAVAR_INSUMO";
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(isComp ? { action, idPlanilha: pid, codigoComposicao: code } : { action, idPlanilha: pid, codigoInsumo: code }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao alterar trava");
+      await carregar(true);
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao alterar trava");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -1491,6 +1648,10 @@ async function readTextSmart(file: File) {
 
   function criarNovaComposicao() {
     if (!idObra) return;
+    if (planilhaTravada) {
+      setErr("Esta planilha está travada. Não é permitido criar novas composições.");
+      return;
+    }
     const sugestao = `${codigoServico || "COMP"}-NOVA`;
     const entrada = window.prompt("Informe o código da nova composição:", sugestao);
     const codigoNovo = String(entrada || "").trim().toUpperCase();
@@ -1827,6 +1988,7 @@ async function readTextSmart(file: File) {
               const v = vRaw;
               const total = q != null && v != null ? q * v : null;
               const displayValorUnit = r.valorUnitario;
+              const bloqueadoLinha = loading || planilhaTravada || servicoTravado || Boolean(r.travado) || Boolean(r.travadoPorCadeia);
               return (
                 <tr key={idx} className="border-t" style={{ backgroundColor: bg }}>
                   {displayPrefs.colTipo ? (
@@ -1855,13 +2017,14 @@ async function readTextSmart(file: File) {
                             const code = String(r.codigoItem || "").trim().toUpperCase();
                             if (isComp && code) await atualizarValorComposicaoNoItem(idx, code);
                           }}
+                          disabled={bloqueadoLinha}
                           style={{ fontSize: px(fs.codigo) }}
                         />
                         {isComposicao && codigoComposicao ? (
                           <button
                             className="rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60"
                             type="button"
-                            disabled={loading}
+                            disabled={bloqueadoLinha}
                             title={
                               isDefinida
                                 ? "Composição definida (clique para abrir)"
@@ -1934,6 +2097,7 @@ async function readTextSmart(file: File) {
                           return p.map((x, i) => (i === idx ? { ...x, quantidade: next } : x));
                         });
                       }}
+                      disabled={bloqueadoLinha}
                       style={{ ...cellW(w.qtd), fontSize: px(fs.qtd) }}
                     />
                   </td>
@@ -1961,6 +2125,7 @@ async function readTextSmart(file: File) {
                         className="input bg-white text-right"
                         value={r.valorUnitario}
                         onChange={(e) => setItens((p) => p.map((x, i) => (i === idx ? { ...x, valorUnitario: e.target.value } : x)))}
+                        disabled={bloqueadoLinha}
                         style={{ ...cellW(w.valorUnit), fontSize: px(fs.valorUnit) }}
                       />
                     )}
@@ -1978,11 +2143,31 @@ async function readTextSmart(file: File) {
                   ) : null}
                   <td className="px-3 py-2" style={{ ...cellW(w.acoes), fontSize: px(fs.acoes) }}>
                     <button
+                      className={`mr-2 rounded border p-2 hover:bg-slate-50 disabled:opacity-60 ${
+                        r.travado ? "bg-slate-100 text-slate-800" : "bg-white text-slate-800"
+                      }`}
+                      type="button"
+                      title={
+                        planilhaTravada
+                          ? "Planilha travada: não é permitido alterar travas."
+                          : r.travadoPorCadeia
+                            ? String(r.origemTipo || "").toUpperCase() === "PLANILHA"
+                              ? `Travado em cadeia pela planilha #${String(r.origemChave || "").trim() || "?"}`
+                              : "Travado em cadeia"
+                            : "Duplo-clique para travar/destravar este item (com travas em cadeia)."
+                      }
+                      onDoubleClick={() => toggleTravaItem(r.tipoItem, r.codigoItem, Boolean(r.travado), Boolean(r.travadoPorCadeia))}
+                      disabled={loading || planilhaTravada || Boolean(r.travadoPorCadeia) || !String(r.codigoItem || "").trim()}
+                      style={{ fontSize: px(fs.acoes) }}
+                    >
+                      <Lock className={`h-4 w-4 ${r.travado || r.travadoPorCadeia ? "" : "opacity-30"} ${r.travadoPorCadeia ? "opacity-40" : ""}`} />
+                    </button>
+                    <button
                       className="rounded border bg-white p-2 text-red-700 hover:bg-slate-50 disabled:opacity-60"
                       type="button"
                       title="Remover"
                       onClick={() => setItens((p) => p.filter((_, i) => i !== idx))}
-                      disabled={loading}
+                      disabled={bloqueadoLinha}
                       style={{ fontSize: px(fs.acoes) }}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -2395,14 +2580,39 @@ async function readTextSmart(file: File) {
                if (f) prepararImportacaoCsv(f);
              }}
            />
-           <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60" type="button" onClick={salvar} disabled={loading} title="Salvar alterações da composição">
+          <button
+            className={`inline-flex items-center justify-center rounded-lg border px-3 py-2 text-sm ${
+              servicoTravado ? "bg-slate-100 text-slate-800" : "bg-white text-slate-800 hover:bg-slate-50"
+            } disabled:opacity-60`}
+            type="button"
+            onDoubleClick={toggleTravaServicoAtual}
+            disabled={loading || planilhaTravada || servicoTravadoPorCadeia}
+            title={
+              planilhaTravada
+                ? "Planilha travada: não é permitido alterar travas."
+                : servicoTravadoPorCadeia
+                  ? String(servicoOrigemTipo || "").toUpperCase() === "PLANILHA"
+                    ? `Travado em cadeia pela planilha #${String(servicoOrigemChave || "").trim() || "?"}`
+                    : "Travado em cadeia"
+                  : "Duplo-clique para travar/destravar o serviço (com travas em cadeia)."
+            }
+          >
+            <Lock className={`h-4 w-4 ${servicoTravado || servicoTravadoPorCadeia ? "" : "opacity-30"} ${servicoTravadoPorCadeia ? "opacity-40" : ""}`} />
+          </button>
+          <button
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60"
+            type="button"
+            onClick={salvar}
+            disabled={loading || planilhaTravada || servicoTravado}
+            title="Salvar alterações da composição"
+          >
              Salvar
            </button>
            <button
              className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
              type="button"
              onClick={criarNovaComposicao}
-             disabled={loading || primitiveLoading}
+            disabled={loading || primitiveLoading || planilhaTravada || servicoTravado}
              title="Cria uma nova composição (novo código) e abre para edição. Não substitui nem apaga a atual automaticamente."
            >
              Nova composição
@@ -2484,7 +2694,10 @@ async function readTextSmart(file: File) {
             disabled={loading || primitiveLoading}
             title="Gerar composição primitiva (consolidado de insumos)"
           >
-            Composição primitiva
+            <span className="inline-flex items-center gap-2">
+              {primitiveLoading ? <CircleDashed className="h-4 w-4 animate-spin" /> : null}
+              <span>{primitiveLoading ? "Carregando..." : "Composição primitiva"}</span>
+            </span>
           </button>
           <div className="flex items-center gap-2">
             <button
@@ -2832,6 +3045,10 @@ async function readTextSmart(file: File) {
                           perdaPercentual: "",
                           codigoCentroCusto: "",
                           codigoCentroCustoBase: "",
+                          travado: false,
+                          travadoPorCadeia: false,
+                          origemTipo: "",
+                          origemChave: "",
                         })),
                         bg: "#FFFFFF",
                       },
@@ -2860,6 +3077,10 @@ async function readTextSmart(file: File) {
                         perdaPercentual: "",
                         codigoCentroCusto: "",
                         codigoCentroCustoBase: "",
+                        travado: false,
+                        travadoPorCadeia: false,
+                        origemTipo: "",
+                        origemChave: "",
                       })),
                       `composicao_primitiva_${codigoServico}.csv`
                     )
@@ -2876,7 +3097,12 @@ async function readTextSmart(file: File) {
             </div>
 
             {primitiveErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{primitiveErr}</div> : null}
-            {primitiveLoading ? <div className="text-sm text-slate-600">Gerando…</div> : null}
+            {primitiveLoading ? (
+              <div className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                <CircleDashed className="h-4 w-4 animate-spin" />
+                <span>Gerando composição primitiva…</span>
+              </div>
+            ) : null}
 
             <div className="max-h-[60vh] overflow-auto rounded-lg border">
               <table className="min-w-[1100px] w-full text-sm">
@@ -3345,6 +3571,10 @@ async function readTextSmart(file: File) {
                         perdaPercentual: "",
                         codigoCentroCusto: "",
                         codigoCentroCustoBase: "",
+                        travado: false,
+                        travadoPorCadeia: false,
+                        origemTipo: "",
+                        origemChave: "",
                       },
                     ])
                   }

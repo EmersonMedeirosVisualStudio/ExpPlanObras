@@ -3,12 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
+import { Lock, Copy } from "lucide-react";
 
 type ValidacaoRow = {
   item: string;
   codigoServico: string;
   fonte: string;
   servico: string;
+  travado: boolean;
+  travadoPorCadeia: boolean;
+  origemTipo: string;
+  origemChave: string;
   totalPlanilha: number;
   totalComposicao: number;
   diff: number;
@@ -24,6 +29,10 @@ type CatalogListRow = {
   tipo: string;
   fonte: string;
   descricao: string;
+  travado: boolean | null;
+  travadoPorCadeia: boolean | null;
+  origemTipo: string | null;
+  origemChave: string | null;
   totalPlanilha: number | null;
   totalComposicao: number | null;
   diff: number | null;
@@ -35,6 +44,7 @@ type VersaoRow = {
   numeroVersao: number;
   nome: string;
   atual: boolean;
+  travado: boolean;
   idParametros?: number | null;
   parametrosNome?: string;
 };
@@ -142,6 +152,12 @@ export default function Page() {
   const [showNovoServicoCard, setShowNovoServicoCard] = useState(false);
   const [novoServicoForm, setNovoServicoForm] = useState<{ codigoServico: string; descricao: string; und: string }>({ codigoServico: "", descricao: "", und: "" });
   const [novoServicoLoading, setNovoServicoLoading] = useState(false);
+  const planilhaTravada = useMemo(() => {
+    const pid = planilhaIdFromQuery ?? planilhaId ?? null;
+    if (!pid) return false;
+    const v = versoes.find((x) => Number(x.idPlanilha) === Number(pid)) || null;
+    return Boolean(v?.travado);
+  }, [planilhaIdFromQuery, planilhaId, versoes]);
 
   async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
     let token: string | null = null;
@@ -220,6 +236,7 @@ export default function Page() {
           numeroVersao: Number(v?.numeroVersao || 0),
           nome: String(v?.nome || ""),
           atual: Boolean(v?.atual),
+          travado: Boolean(v?.travado),
           idParametros: v?.idParametros == null ? null : Number(v.idParametros),
           parametrosNome: String(v?.parametrosNome || ""),
         }))
@@ -260,6 +277,10 @@ export default function Page() {
           codigoServico: String(r.codigoServico || "").trim().toUpperCase(),
           fonte: String(r.fonte || "").trim().toUpperCase(),
           servico: String(r.servico || ""),
+          travado: Boolean(r.travado),
+          travadoPorCadeia: Boolean(r.travadoPorCadeia),
+          origemTipo: String(r.origemTipo || ""),
+          origemChave: String(r.origemChave || ""),
           totalPlanilha: Number(r.totalPlanilha || 0),
           totalComposicao: Number(r.totalComposicao || 0),
           diff: Number(r.diff || 0),
@@ -394,6 +415,10 @@ export default function Page() {
         tipo: "Serviço",
         fonte: String(r.fonte || "").trim().toUpperCase(),
         descricao: String(r.servico || ""),
+        travado: Boolean(r.travado),
+        travadoPorCadeia: Boolean(r.travadoPorCadeia),
+        origemTipo: String(r.origemTipo || ""),
+        origemChave: String(r.origemChave || ""),
         totalPlanilha: Number(r.totalPlanilha || 0),
         totalComposicao: Number(r.totalComposicao || 0),
         diff: Number(r.diff || 0),
@@ -407,6 +432,10 @@ export default function Page() {
         tipo: String(r.tipo || ""),
         fonte: "",
         descricao: "",
+        travado: null,
+        travadoPorCadeia: null,
+        origemTipo: null,
+        origemChave: null,
         totalPlanilha: null,
         totalComposicao: null,
         diff: null,
@@ -455,6 +484,105 @@ export default function Page() {
     return out;
   }, [rows, refs, statusFilter, focusCodigo, listMode, textFilter, fonteFilter, orderBy]);
 
+  async function toggleTravaServico(codigoServico: string) {
+    if (!idObra) return;
+    if (planilhaTravada) {
+      setErr("Esta planilha está travada. Não é permitido alterar travas.");
+      return;
+    }
+    const code = String(codigoServico || "").trim().toUpperCase();
+    if (!code) return;
+    const row = rows.find((r) => String(r.codigoServico || "").trim().toUpperCase() === code) || null;
+    if (row?.travadoPorCadeia) {
+      setErr("Serviço travado em cadeia: destrave o elemento pai (planilha/item) antes.");
+      return;
+    }
+    const locked = Boolean(row?.travado);
+    const action = locked ? "DESTRAVAR_SERVICO" : "TRAVAR_SERVICO";
+    if (!locked) {
+      const ok = window.confirm(
+        "Deseja travar este serviço?\n\nAo confirmar:\n- sua composição será travada\n- subcomposições serão travadas\n- insumos serão travados\n\nOs preços dos insumos da planilha continuarão editáveis caso a planilha não esteja travada."
+      );
+      if (!ok) return;
+    }
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const pid = planilhaIdFromQuery ?? planilhaId ?? null;
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, idPlanilha: pid, codigoServico: code }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao alterar trava do serviço");
+      setOkMsg(locked ? `Serviço destravado: ${code}` : `Serviço travado: ${code}`);
+      await carregarTudo();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao alterar trava do serviço");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function tooltipTravaServico(r: CatalogListRow) {
+    if (r.kind !== "SERVICO") return "Trava disponível apenas para serviços.";
+    if (planilhaTravada) return "Planilha travada: não é permitido alterar travas.";
+    if (!r.travado) return "Duplo-clique para travar/destravar o serviço (com travas em cadeia).";
+    if (r.travadoPorCadeia) {
+      if (String(r.origemTipo || "").toUpperCase() === "PLANILHA") return `Travado em cadeia pela planilha #${String(r.origemChave || "").trim() || "?"}`;
+      if (String(r.origemTipo || "").toUpperCase() === "ITEM") return "Travado em cadeia por um item da planilha";
+      if (String(r.origemTipo || "").toUpperCase() === "SERVICO") return "Travado em cadeia pelo serviço";
+      return "Travado em cadeia";
+    }
+    return "Travado manualmente";
+  }
+
+  async function duplicarServico(codigoServicoOrig: string) {
+    if (!idObra) return;
+    if (planilhaTravada) {
+      setErr("Esta planilha está travada. Não é permitido duplicar serviços.");
+      return;
+    }
+    const orig = String(codigoServicoOrig || "").trim().toUpperCase();
+    if (!orig) return;
+    const sugestao = `${orig}-DUP`;
+    const entrada = window.prompt("Informe o novo código para o serviço duplicado:", sugestao);
+    const codigoServicoNovo = String(entrada || "").trim().toUpperCase();
+    if (!codigoServicoNovo) return;
+    if (codigoServicoNovo === orig) {
+      setErr("O código novo deve ser diferente do código de origem.");
+      return;
+    }
+    const duplicarInsumos = window.confirm(
+      "Duplicar insumos também?\n\n" +
+        "- SIM: cria novos códigos de insumo (apenas os não-SINAPI/SBC) e ajusta a composição do novo serviço.\n" +
+        "- NÃO: mantém os mesmos códigos de insumo na composição."
+    );
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const qs = new URLSearchParams();
+      const pid = planilhaIdFromQuery ?? planilhaId ?? null;
+      if (pid) qs.set("planilhaId", String(pid));
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/duplicar?${qs.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codigoServicoOrig: orig, codigoServicoNovo, duplicarInsumos }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao duplicar serviço");
+      setOkMsg(`Serviço duplicado: ${orig} → ${codigoServicoNovo}`);
+      await carregarTudo();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao duplicar serviço");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const fonteOptions = useMemo(() => {
     const set = new Set<string>();
     for (const r of rows) {
@@ -485,6 +613,10 @@ export default function Page() {
   }, [statusSel]);
 
   async function criarNovoServico() {
+    if (planilhaTravada) {
+      setErr("Esta planilha está travada. Não é permitido criar/editar serviços.");
+      return;
+    }
     const codigoServico = String(novoServicoForm.codigoServico || "").trim().toUpperCase();
     const descricao = String(novoServicoForm.descricao || "").trim();
     const und = String(novoServicoForm.und || "").trim();
@@ -526,6 +658,10 @@ export default function Page() {
   }
 
   async function previewCopiar() {
+    if (planilhaTravada) {
+      setErr("Esta planilha está travada. Não é permitido copiar serviços para ela.");
+      return;
+    }
     if (!copyForm.sourcePlanilhaId || !copyForm.targetPlanilhaId || !copyForm.codigoServico.trim()) {
       setErr("Preencha origem, destino e código do serviço.");
       return;
@@ -1238,18 +1374,49 @@ export default function Page() {
                     )}
                   </td>
                   <td className="px-2 py-1.5" style={{ width: `${colWidths.acao}px` }}>
-                    <button
-                      className="rounded border bg-white px-3 py-1.5 text-xs hover:bg-slate-50"
-                      type="button"
-                      onClick={() => {
-                        const qs = new URLSearchParams();
-                        if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
-                        qs.set("returnTo", selfHref);
-                        router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(r.codigo)}?${qs.toString()}`);
-                      }}
-                    >
-                      Abrir
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className={`inline-flex items-center justify-center rounded border px-2 py-1.5 text-xs ${
+                          r.travado ? "bg-slate-100 text-slate-700" : "bg-white text-slate-700 hover:bg-slate-50"
+                        } disabled:opacity-60`}
+                        type="button"
+                        onDoubleClick={() => {
+                          if (r.kind === "SERVICO") toggleTravaServico(r.codigo);
+                        }}
+                        disabled={loading || planilhaTravada || r.kind !== "SERVICO" || Boolean(r.travadoPorCadeia)}
+                        title={tooltipTravaServico(r)}
+                      >
+                        <Lock className={`h-4 w-4 ${r.travado ? "" : "opacity-30"} ${r.travadoPorCadeia ? "opacity-40" : ""}`} />
+                      </button>
+                      <button
+                        className="inline-flex items-center justify-center rounded border bg-white px-2 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-60"
+                        type="button"
+                        onClick={() => duplicarServico(r.codigo)}
+                        disabled={loading || planilhaTravada || r.kind !== "SERVICO"}
+                        title={
+                          r.kind !== "SERVICO"
+                            ? "Duplicação disponível apenas para serviços."
+                            : planilhaTravada
+                              ? "Planilha travada: não é permitido duplicar serviços."
+                              : "Duplicar serviço (copia serviço e composição; opcionalmente duplica insumos manuais)."
+                        }
+                      >
+                        <Copy className="h-4 w-4" />
+                      </button>
+                      <button
+                        className="rounded border bg-white px-3 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-60"
+                        type="button"
+                        onClick={() => {
+                          const qs = new URLSearchParams();
+                          if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
+                          qs.set("returnTo", selfHref);
+                          router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(r.codigo)}?${qs.toString()}`);
+                        }}
+                        disabled={!String(r.codigo || "").trim()}
+                      >
+                        Abrir
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

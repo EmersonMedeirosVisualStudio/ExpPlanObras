@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Lock } from "lucide-react";
 
 type ParametroDTO = {
   idParametros: number;
@@ -18,6 +19,10 @@ type ParametroDTO = {
   encSociaisSemDesSinapi: number | null;
   descontoSbc: number | null;
   descontoSinapi: number | null;
+  travado: boolean;
+  travadoPorCadeia: boolean;
+  origemTipo: string;
+  origemChave: string;
 };
 
 type PlanilhaAfetadaRow = {
@@ -85,6 +90,12 @@ export default function ParametrosPage() {
     descontoSinapi: "",
   });
 
+  const formTravado = useMemo(() => {
+    if (!form.idParametros) return false;
+    const p = parametros.find((x) => Number(x.idParametros) === Number(form.idParametros)) || null;
+    return Boolean(p?.travado);
+  }, [form.idParametros, parametros]);
+
   function parseNumberLoose(v: unknown) {
     const raw = String(v ?? "").trim();
     if (!raw) return null;
@@ -144,6 +155,10 @@ export default function ParametrosPage() {
         encSociaisSemDesSinapi: r.encSociaisSemDesSinapi == null ? null : Number(r.encSociaisSemDesSinapi),
         descontoSbc: r.descontoSbc == null ? null : Number(r.descontoSbc),
         descontoSinapi: r.descontoSinapi == null ? null : Number(r.descontoSinapi),
+        travado: Boolean(r.travado),
+        travadoPorCadeia: Boolean(r.travadoPorCadeia),
+        origemTipo: String(r.origemTipo || ""),
+        origemChave: String(r.origemChave || ""),
       }));
       setParametros(normalized);
     } catch (e: any) {
@@ -158,6 +173,11 @@ export default function ParametrosPage() {
     const nome = String(form.nome || "").trim();
     if (!nome) {
       setErr("Nome do parâmetro é obrigatório.");
+      return;
+    }
+    const currentLocked = form.idParametros ? parametros.find((p) => Number(p.idParametros) === Number(form.idParametros)) : null;
+    if (currentLocked?.travado) {
+      setErr("Este parâmetro está travado. Dê duplo-clique no cadeado para destravar.");
       return;
     }
     try {
@@ -283,6 +303,45 @@ export default function ParametrosPage() {
       setAfetadasRows([]);
     } finally {
       setAfetadasLoading(false);
+    }
+  }
+
+  function tooltipTrava(p: ParametroDTO) {
+    if (!p.travado) return "Duplo-clique para travar/destravar este parâmetro.";
+    if (p.travadoPorCadeia) {
+      if (String(p.origemTipo || "").toUpperCase() === "PLANILHA") return `Travado em cadeia pela planilha #${String(p.origemChave || "").trim() || "?"}`;
+      return "Travado em cadeia";
+    }
+    return "Travado manualmente";
+  }
+
+  async function toggleTravaParametro(p: ParametroDTO) {
+    if (!p?.idParametros) return;
+    if (!p.travado) {
+      const ok = window.confirm("Deseja travar este parâmetro?");
+      if (!ok) return;
+    }
+    if (p.travado && p.travadoPorCadeia) {
+      setErr("Parâmetro travado em cadeia: destrave a planilha (origem) antes.");
+      return;
+    }
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const res = await authFetch(`/api/v1/engenharia/planilhas/parametros/trava`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idParametros: p.idParametros, travado: !p.travado }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao alterar trava do parâmetro");
+      setOkMsg(json?.message || "Trava atualizada.");
+      await carregar();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao alterar trava do parâmetro");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -413,6 +472,17 @@ export default function ParametrosPage() {
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
                         <button
+                          className={`inline-flex items-center justify-center rounded border px-2 py-1 text-xs ${
+                            p.travado ? "bg-slate-100 text-slate-700" : "bg-white text-slate-700 hover:bg-slate-50"
+                          } disabled:opacity-60`}
+                          type="button"
+                          onDoubleClick={() => toggleTravaParametro(p)}
+                          disabled={loading || p.travadoPorCadeia}
+                          title={tooltipTrava(p)}
+                        >
+                          <Lock className={`h-4 w-4 ${p.travado ? "" : "opacity-30"} ${p.travadoPorCadeia ? "opacity-40" : ""}`} />
+                        </button>
+                        <button
                           className="rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
                           type="button"
                           onClick={() =>
@@ -444,7 +514,7 @@ export default function ParametrosPage() {
                               descontoSinapi: p.descontoSinapi == null ? "" : String(p.descontoSinapi),
                             })
                           }
-                          disabled={loading}
+                          disabled={loading || p.travado}
                         >
                           Editar
                         </button>
@@ -485,7 +555,12 @@ export default function ParametrosPage() {
                 </div>
                 <label className="rounded border bg-white px-3 py-2 text-sm">
                   <div className="text-xs text-slate-500">Nome</div>
-                  <input className="input bg-white w-full mt-1" value={form.nome} onChange={(e) => setForm((p) => ({ ...p, nome: e.target.value }))} disabled={loading} />
+                  <input
+                    className="input bg-white w-full mt-1"
+                    value={form.nome}
+                    onChange={(e) => setForm((p) => ({ ...p, nome: e.target.value }))}
+                    disabled={loading || formTravado}
+                  />
                 </label>
               </div>
             </div>
@@ -499,7 +574,7 @@ export default function ParametrosPage() {
                     className="input bg-white w-full mt-1"
                     value={form.tipoBase === "SINAPI" ? form.ufSinapi : ""}
                     onChange={(e) => setForm((p) => ({ ...p, ufSinapi: e.target.value }))}
-                    disabled={loading || form.tipoBase !== "SINAPI"}
+                    disabled={loading || formTravado || form.tipoBase !== "SINAPI"}
                     placeholder={form.tipoBase === "SINAPI" ? "SP" : "—"}
                   />
                 </label>
@@ -509,7 +584,7 @@ export default function ParametrosPage() {
                     className="input bg-white w-full mt-1"
                     value={form.tipoBase}
                     onChange={(e) => setForm((p) => ({ ...p, tipoBase: (e.target.value as any) === "SBC" ? "SBC" : "SINAPI" }))}
-                    disabled={loading}
+                    disabled={loading || formTravado}
                   >
                     <option value="SINAPI">SINAPI</option>
                     <option value="SBC">SBC</option>
@@ -521,7 +596,7 @@ export default function ParametrosPage() {
                     className="input bg-white w-full mt-1"
                     value={form.tipoBase === "SINAPI" ? form.dataBaseSinapi : form.dataBaseSbc}
                     onChange={(e) => setForm((p) => (p.tipoBase === "SINAPI" ? { ...p, dataBaseSinapi: e.target.value } : { ...p, dataBaseSbc: e.target.value }))}
-                    disabled={loading}
+                    disabled={loading || formTravado}
                     placeholder="2024-01"
                   />
                 </label>
@@ -536,7 +611,7 @@ export default function ParametrosPage() {
                         tipoEncargosSociais: (e.target.value as any) === "ICD" ? "ICD" : (e.target.value as any) === "ISE" ? "ISE" : "ISD",
                       }))
                     }
-                    disabled={loading}
+                    disabled={loading || formTravado}
                   >
                     <option value="ISD">ISD — Encargos sociais SEM desoneração</option>
                     <option value="ICD">ICD — Encargos sociais COM desoneração</option>
@@ -555,7 +630,7 @@ export default function ParametrosPage() {
                     className="input bg-white w-full mt-1"
                     value={form.tipoBase === "SINAPI" ? form.bdiServicosSinapi : form.bdiServicosSbc}
                     onChange={(e) => setForm((p) => (p.tipoBase === "SINAPI" ? { ...p, bdiServicosSinapi: e.target.value } : { ...p, bdiServicosSbc: e.target.value }))}
-                    disabled={loading}
+                    disabled={loading || formTravado}
                   />
                 </label>
                 <label className="rounded border bg-white px-3 py-2 text-sm">
@@ -615,7 +690,13 @@ export default function ParametrosPage() {
             >
               {form.idParametros ? "Cancelar" : "Limpar"}
             </button>
-            <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60" type="button" onClick={salvar} disabled={loading}>
+            <button
+              className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+              type="button"
+              onClick={salvar}
+              disabled={loading || formTravado}
+              title={formTravado ? "Parâmetro travado: dê duplo-clique no cadeado para destravar." : "Salvar"}
+            >
               Salvar
             </button>
           </div>

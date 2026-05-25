@@ -102,7 +102,7 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 - A grade mostra as linhas do CSV antes de gravar
 - Campos com erro ficam destacados (ex.: item vazio, serviço sem código, quant inválida)
 - O sistema calcula o **valor parcial** automaticamente (quant × valor_unitario)
-- Se o **código do serviço** não existir no **catálogo da Fonte**, o sistema cria/atualiza automaticamente o serviço no catálogo quando você confirma a importação
+- Se o **código do serviço** não existir no **catálogo de serviços da planilha**, o sistema cria/atualiza automaticamente o serviço no catálogo quando você confirma a importação
 - Itens e subitens ficam em **negrito** para facilitar leitura
 - A grade tem **rolagem vertical** com **cabeçalho fixo** para facilitar leitura
 - Você pode ajustar o **tamanho da fonte**, **fontes (dados/cabeçalho)**, **negrito do cabeçalho**, **cores de fundo** de Item/Subitem, além de **exibir/ocultar colunas** e ajustar **larguras** (essas preferências ficam salvas no seu usuário)
@@ -117,7 +117,7 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 - Em **Serviços (catálogo da fonte)**, você também pode cadastrar pelo botão **Novo Serviço** (informando CÓDIGO/Fonte/descrição/UND)
 - Você também pode cadastrar/atualizar o serviço direto na tela de **Composição** (ao salvar a composição, o serviço é atualizado no catálogo)
 
-## 3.1.1 Nova planilha / Editar / Clonar (Fonte e Parâmetros)
+## 3.1.1 Nova planilha / Editar / Clonar (Parâmetros)
 
 ### ETAPA 1 — Onde acessar
 - Abra **Obra #ID** → clique em **Planilha orçamentária**
@@ -129,20 +129,46 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 
 ### ETAPA 3 — O que preencher
 - Em **Nova planilha** e em **Editar**, selecione:
-  - **Fonte de dados** (formato **#id - nome**)
   - **Parâmetro** (formato **#id - nome**)
 - Para cadastrar/editar os cadastros, use os botões no canto superior direito (abaixo de **Voltar**). Eles abrem telas separadas:
-  - **Cadastrar Fonte de dados** → tela de Fontes de dados
   - **Cadastrar Parâmetro** → tela de Parâmetros
 
 ### ETAPA 4 — O que esperar
 - O sistema mostra um aviso de compartilhamento:
-  - Alterar Serviço/Insumo/Composição da Fonte afeta todas as planilhas que usam essa Fonte
-  - Alterar um Parâmetro afeta todas as planilhas que usam esse Parâmetro (e o sistema recalcula automaticamente os valores unitários/parciais vinculados)
-- Ao editar um serviço existente na planilha, **Fonte**, **nome** e **UND** vêm do **catálogo da Fonte** e não são alterados pela planilha.
+  - Alterar um **Parâmetro** afeta todas as planilhas que usam esse Parâmetro (e o sistema recalcula automaticamente os valores unitários/parciais vinculados)
+- Ao editar um serviço existente na planilha, **Fonte** (SBC/SINAPI), **nome** e **UND** vêm do **catálogo de serviços da planilha** e não são alterados pela planilha.
 
 ### ETAPA 5 — Como validar
-- Volte em **Versões cadastradas** e confirme que as colunas **Fonte** e **Parâmetros** aparecem preenchidas na versão criada/editada
+- Volte em **Versões cadastradas** e confirme que a coluna **Parâmetros** aparece preenchida na versão criada/editada
+
+## 3.1.2 Travamento (cadeado) e duplicação
+
+O sistema tem cadeado para evitar alterações indevidas no orçamento.
+
+Estados do cadeado:
+
+- **🔓 Livre**: você pode editar.
+- **🔒 Travado manualmente**: você só edita após destravar manualmente.
+- **🔒 Travado por cadeia (cinza/desabilitado)**: não dá para destravar individualmente; o sistema mostra o motivo ao passar o mouse.
+
+Regra de uso:
+
+- **Duplo clique no cadeado** alterna travar/destravar (quando permitido).
+
+ETAPA 1 — Onde acessar
+- Obra #ID → **Planilha orçamentária** (cadeado da planilha e dos itens)
+- Obra #ID → Planilha orçamentária → **Serviços** (cadeado do serviço)
+- Engenharia → Planilhas → **Parâmetros** (cadeado do parâmetro)
+
+ETAPA 2 — O que clicar
+- Para **travar/destravar a planilha**: na lista de versões, dê duplo clique no cadeado
+- Para **travar/destravar um item (serviço) dentro da planilha**: na grade da planilha, dê duplo clique no cadeado da linha do serviço
+- Para **duplicar**: use os botões de duplicar nas telas de **Serviços** e **Insumos**
+
+ETAPA 3 — O que esperar
+- Ao travar a planilha, tudo fica bloqueado (serviços, composições, insumos e preços do contexto daquela planilha)
+- Itens travados por cadeia ficam com cadeado desabilitado e tooltip explicando a origem
+- Ao duplicar, o novo item nasce destravado e recebe nome automático no formato: **Nome original - vX**
 
 ---
 
@@ -170,7 +196,6 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
 - O topo da tela mostra:
   - **Planilha: #id - nome**
   - **Parâmetros: #id - nome**
-  - **Fonte de dados: #id - nome**
 - A trilha (subtítulo) mostra o caminho completo até a tela e é clicável (Engenharia → Obras → Obra → Planilha). A **Obra selecionada** e a **planilha selecionada** ficam destacadas em **azul**.
 - Clique em **Configurar tela** para abrir o card **Configuração de tela** (fica oculto por padrão) e ajustar colunas (exibir/ocultar) e larguras (isso fica gravado).
 - Se os dados da lista “Serviços SINAPI importados” estiverem filtrados, aparece um aviso **Dados filtrados** com os filtros ativos.

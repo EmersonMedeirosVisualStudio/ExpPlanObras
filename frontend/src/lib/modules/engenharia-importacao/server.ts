@@ -13,6 +13,9 @@ export async function ensureEngenhariaImportTables() {
       categoria VARCHAR(64) NULL,
       preco_unitario DECIMAL(12,2) NOT NULL DEFAULT 0,
       estoque_minimo DECIMAL(12,2) NOT NULL DEFAULT 0,
+      travado TINYINT(1) NOT NULL DEFAULT 0,
+      travado_por_cadeia TINYINT(1) NOT NULL DEFAULT 0,
+      origem_travamento VARCHAR(200) NULL,
       ativo TINYINT(1) NOT NULL DEFAULT 1,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -33,6 +36,9 @@ export async function ensureEngenhariaImportTables() {
       unidade VARCHAR(32) NOT NULL,
       grupo VARCHAR(64) NULL,
       preco_unitario DECIMAL(12,2) NOT NULL DEFAULT 0,
+      travado TINYINT(1) NOT NULL DEFAULT 0,
+      travado_por_cadeia TINYINT(1) NOT NULL DEFAULT 0,
+      origem_travamento VARCHAR(200) NULL,
       ativo TINYINT(1) NOT NULL DEFAULT 1,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -53,6 +59,9 @@ export async function ensureEngenhariaImportTables() {
       descricao VARCHAR(255) NOT NULL,
       unidade VARCHAR(32) NOT NULL,
       bdi DECIMAL(8,4) NOT NULL DEFAULT 0,
+      travado TINYINT(1) NOT NULL DEFAULT 0,
+      travado_por_cadeia TINYINT(1) NOT NULL DEFAULT 0,
+      origem_travamento VARCHAR(200) NULL,
       ativo TINYINT(1) NOT NULL DEFAULT 1,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -93,6 +102,16 @@ export async function ensureEngenhariaImportTables() {
   await db.query(`ALTER TABLE engenharia_composicoes_itens MODIFY etapa VARCHAR(120) NOT NULL DEFAULT ''`).catch(() => null);
   await db.query(`ALTER TABLE engenharia_composicoes_itens DROP INDEX uk_itens_unique`).catch(() => null);
   await db.query(`ALTER TABLE engenharia_composicoes_itens ADD UNIQUE KEY uk_itens_unique (tenant_id, id_composicao, etapa, tipo_item, codigo_item)`).catch(() => null);
+
+  await db.query(`ALTER TABLE engenharia_materiais ADD COLUMN travado TINYINT(1) NOT NULL DEFAULT 0`).catch(() => null);
+  await db.query(`ALTER TABLE engenharia_materiais ADD COLUMN travado_por_cadeia TINYINT(1) NOT NULL DEFAULT 0`).catch(() => null);
+  await db.query(`ALTER TABLE engenharia_materiais ADD COLUMN origem_travamento VARCHAR(200) NULL`).catch(() => null);
+  await db.query(`ALTER TABLE engenharia_servicos ADD COLUMN travado TINYINT(1) NOT NULL DEFAULT 0`).catch(() => null);
+  await db.query(`ALTER TABLE engenharia_servicos ADD COLUMN travado_por_cadeia TINYINT(1) NOT NULL DEFAULT 0`).catch(() => null);
+  await db.query(`ALTER TABLE engenharia_servicos ADD COLUMN origem_travamento VARCHAR(200) NULL`).catch(() => null);
+  await db.query(`ALTER TABLE engenharia_composicoes ADD COLUMN travado TINYINT(1) NOT NULL DEFAULT 0`).catch(() => null);
+  await db.query(`ALTER TABLE engenharia_composicoes ADD COLUMN travado_por_cadeia TINYINT(1) NOT NULL DEFAULT 0`).catch(() => null);
+  await db.query(`ALTER TABLE engenharia_composicoes ADD COLUMN origem_travamento VARCHAR(200) NULL`).catch(() => null);
 
   await db.query(
     `

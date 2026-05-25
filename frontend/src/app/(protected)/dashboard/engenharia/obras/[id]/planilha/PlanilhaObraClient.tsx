@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Check, Printer, FileSpreadsheet, Pencil, Trash2, XCircle, TriangleAlert, Image, Filter } from "lucide-react";
+import { Download, Check, Printer, FileSpreadsheet, Pencil, Trash2, XCircle, TriangleAlert, Image, Filter, Lock } from "lucide-react";
 import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 
 type ComposicaoItem = {
@@ -23,6 +23,7 @@ type VersaoRow = {
   numeroVersao: number;
   nome: string;
   atual: boolean;
+  travado: boolean;
   idParametros: number | null;
   parametrosNome: string;
   valorTotal: number | null;
@@ -54,6 +55,9 @@ type PlanilhaLinha = {
   valorParcial: string;
   nivel: number;
   tipoLinha: "ITEM" | "SUBITEM" | "SERVICO";
+  travado: boolean;
+  travadoPorCadeia: boolean;
+  origemTravamento: string | null;
 };
 
 type Planilha = {
@@ -61,6 +65,7 @@ type Planilha = {
   numeroVersao: number;
   nome: string;
   atual: boolean;
+  travado: boolean;
   idParametros: number | null;
   parametrosNome: string;
   valorTotal?: number | null;
@@ -113,6 +118,20 @@ type ParametroDTO = {
 
 function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function tooltipTravamentoEmCadeia(origem: string | null | undefined) {
+  const raw = String(origem || "").trim();
+  if (!raw) return "Travado em cadeia";
+  const upper = raw.toUpperCase();
+  if (upper.startsWith("PLANILHA:")) {
+    const id = raw.split(":")[1] ? String(raw.split(":")[1]).trim() : "";
+    return id ? `Travado em cadeia pela planilha #${id}` : "Travado em cadeia pela planilha";
+  }
+  if (upper.startsWith("ITEM:")) return "Travado em cadeia pelo item da planilha";
+  if (upper.startsWith("SERVICO:")) return "Travado em cadeia pelo serviço";
+  if (upper.startsWith("COMPOSICAO:")) return "Travado em cadeia pela composição";
+  return `Travado em cadeia (${raw})`;
 }
 
 function parseNumberLoose(v: unknown) {
@@ -689,8 +708,8 @@ export default function PlanilhaObraClient({
   const adicionarLinhaRef = useRef<HTMLDivElement | null>(null);
 
   const podeEditar = useMemo(() => {
-    return true;
-  }, []);
+    return !Boolean(planilha?.travado);
+  }, [planilha?.travado]);
 
   function scrollToRef(ref: { current: HTMLDivElement | null }) {
     window.requestAnimationFrame(() => {
@@ -1215,6 +1234,7 @@ export default function PlanilhaObraClient({
         numeroVersao: Number(v.numeroVersao),
         nome: String(v.nome || ""),
         atual: Boolean(v.atual),
+        travado: Boolean(v.travado),
         idParametros: v.idParametros == null ? null : Number(v.idParametros),
         parametrosNome: String(v.parametrosNome || "—"),
         valorTotal: v.valorTotal == null ? (mode === "FULL" ? 0 : null) : Number(v.valorTotal),
@@ -1227,7 +1247,7 @@ export default function PlanilhaObraClient({
         return normalized.map((v) => {
           const p = prevById.get(Number(v.idPlanilha));
           if (!p) return v;
-          return { ...v, valorTotal: p.valorTotal, totalServicos: p.totalServicos };
+          return { ...v, valorTotal: p.valorTotal, totalServicos: p.totalServicos, travado: v.travado };
         });
       });
       setPlanilhaId((cur) => cur);
@@ -1629,6 +1649,33 @@ export default function PlanilhaObraClient({
     }
   }
 
+  async function toggleTravaLinha(l: PlanilhaLinha) {
+    if (!planilha) return;
+    if (!l?.idLinha) return;
+    if (Boolean(l.travadoPorCadeia)) {
+      setErr(tooltipTravamentoEmCadeia(l.origemTravamento));
+      return;
+    }
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const action = l.travado ? "DESTRAVAR_LINHA" : "TRAVAR_LINHA";
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, idPlanilha: planilha.idPlanilha, idLinha: l.idLinha }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao alterar trava da linha");
+      await carregarPlanilha(planilha.idPlanilha);
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao alterar trava da linha");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function iniciarEdicaoLinha(l: any) {
     if (!l) return;
     const next = {
@@ -1750,6 +1797,47 @@ export default function PlanilhaObraClient({
     }
   }
 
+  async function toggleTravaPlanilha(v: VersaoRow) {
+    if (!v?.idPlanilha) return;
+    if (!v.travado) {
+      const msg =
+        "Deseja travar esta planilha?\n\n" +
+        "Ao confirmar:\n" +
+        "- todos os parâmetros, serviços, composições, subcomposições e insumos vinculados à planilha serão travados\n" +
+        "- preços dos insumos desta planilha serão travados\n\n" +
+        "Os itens internos não poderão ser destravados individualmente.";
+      if (!window.confirm(msg)) return;
+    } else {
+      const msg =
+        "Deseja destravar esta planilha?\n\n" +
+        "Ao confirmar:\n" +
+        "- os itens travados em cadeia serão liberados\n" +
+        "- serviços poderão voltar a ser editados\n" +
+        "- composições poderão voltar a ser editadas\n" +
+        "- preços dos insumos voltarão a ser alteráveis";
+      if (!window.confirm(msg)) return;
+    }
+    try {
+      setLoading(true);
+      setErr(null);
+      setOkMsg(null);
+      const action = v.travado ? "DESTRAVAR_PLANILHA" : "TRAVAR_PLANILHA";
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, idPlanilha: v.idPlanilha }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao alterar trava da planilha");
+      await carregarVersoes("INFO", { silent: true });
+      if (planilhaId === v.idPlanilha) await carregarPlanilha(v.idPlanilha);
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao alterar trava da planilha");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function editarVersao(v: VersaoRow) {
     if (!v?.idPlanilha) return;
     setEditarPlanilhaTarget(v);
@@ -1813,7 +1901,7 @@ export default function PlanilhaObraClient({
   async function excluirPlanilha(v: VersaoRow) {
     if (!v?.idPlanilha) return;
     const msg =
-      "Excluir a planilha inteira?\n\nIsso remove:\n- Linhas/serviços\n- Composições/subcomposições\n- Preços de insumos\n\nAlém disso, se os Parâmetros desta planilha NÃO estiverem compartilhados com outras planilhas, eles também serão excluídos.\n\nEsta ação não pode ser desfeita.";
+      "Excluir esta versão da planilha?\n\nIsso remove:\n- Linhas/serviços desta versão\n- Preços de insumos desta versão\n- Cache de composição primitiva (se existir)\n\nAlém disso, se os Parâmetros desta planilha NÃO estiverem compartilhados com outras versões, eles também serão excluídos.\n\nCatálogos (serviços/composições/insumos corporativos) não são apagados.\n\nEsta ação não pode ser desfeita.";
     if (!window.confirm(msg)) return;
     try {
       setLoading(true);
@@ -2785,6 +2873,26 @@ export default function PlanilhaObraClient({
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
+                      <button
+                        className={`inline-flex items-center gap-1 rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60 ${
+                          v.travado ? "border-amber-300 text-amber-800" : ""
+                        }`}
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onDoubleClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toggleTravaPlanilha(v);
+                        }}
+                        disabled={loading}
+                        title={v.travado ? "Planilha travada (duplo-clique para destravar)" : "Planilha destravada (duplo-clique para travar)"}
+                      >
+                        <Lock className="h-3.5 w-3.5" />
+                        {v.travado ? "Travada" : "Travar"}
+                      </button>
                       <button
                         className="inline-flex items-center gap-1 rounded border bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-60"
                         type="button"
@@ -3897,11 +4005,40 @@ export default function PlanilhaObraClient({
                           {visible.includes("acoes") ? (
                             <td className="px-3 py-2">
                               <div className="flex items-center gap-2">
+                                {l.tipoLinha === "SERVICO" ? (
+                                  <button
+                                    className={`rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60 ${
+                                      l.travadoPorCadeia ? "border-slate-200 text-slate-400" : l.travado ? "border-amber-300 text-amber-800" : "text-slate-800"
+                                    }`}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                    }}
+                                    onDoubleClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      toggleTravaLinha(l);
+                                    }}
+                                    disabled={!podeEditar || loading || Boolean(planilha.travado) || Boolean(l.travadoPorCadeia)}
+                                    title={
+                                      planilha.travado
+                                        ? "Planilha travada"
+                                        : l.travadoPorCadeia
+                                          ? tooltipTravamentoEmCadeia(l.origemTravamento)
+                                          : l.travado
+                                            ? "Serviço travado na planilha (duplo-clique para destravar)"
+                                            : "Serviço destravado na planilha (duplo-clique para travar)"
+                                    }
+                                  >
+                                    <Lock className="h-4 w-4" />
+                                  </button>
+                                ) : null}
                                 <button
                                   className="rounded border bg-white p-2 text-slate-800 hover:bg-slate-50 disabled:opacity-60"
                                   type="button"
                                   onClick={() => iniciarEdicaoLinha(l)}
-                                  disabled={!podeEditar || loading}
+                                  disabled={!podeEditar || loading || Boolean(planilha.travado) || Boolean(l.travado) || Boolean(l.travadoPorCadeia)}
                                   title="Editar"
                                 >
                                   <Pencil className="h-4 w-4" />
@@ -3910,7 +4047,7 @@ export default function PlanilhaObraClient({
                                   className="rounded border bg-white p-2 text-red-700 hover:bg-slate-50 disabled:opacity-60"
                                   type="button"
                                   onClick={() => excluirLinha(l.idLinha)}
-                                  disabled={!podeEditar || loading}
+                                  disabled={!podeEditar || loading || Boolean(planilha.travado) || Boolean(l.travado) || Boolean(l.travadoPorCadeia)}
                                   title="Excluir"
                                 >
                                   <Trash2 className="h-4 w-4" />

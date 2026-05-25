@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 
     const [rows]: any = await db.query(
       `
-      SELECT codigo, descricao, unidade, grupo, categoria, preco_unitario AS custoBase
+      SELECT codigo, descricao, unidade, grupo, categoria, preco_unitario AS custoBase, travado, travado_por_cadeia, origem_travamento
       FROM engenharia_materiais
       WHERE ${where.join(' AND ')}
       ORDER BY codigo ASC
@@ -43,6 +43,9 @@ export async function GET(req: NextRequest) {
         grupo: r.grupo ? String(r.grupo) : null,
         categoria: r.categoria ? String(r.categoria) : null,
         custoBase: r.custoBase == null ? 0 : Number(r.custoBase),
+        travado: Boolean(r.travado),
+        travadoPorCadeia: Boolean(r.travado_por_cadeia),
+        origemTravamento: r.origem_travamento ? String(r.origem_travamento) : null,
       }))
     );
   } catch (e) {
@@ -68,6 +71,20 @@ export async function POST(req: NextRequest) {
     if (!descricao) return fail(422, 'descricao é obrigatória');
     if (!unidade) return fail(422, 'unidade é obrigatória');
 
+    const locked: any = await db
+      .query(
+        `
+        SELECT travado
+        FROM engenharia_materiais
+        WHERE tenant_id = ? AND codigo = ?
+        LIMIT 1
+        `,
+        [current.tenantId, codigo]
+      )
+      .then((r: any) => (Array.isArray(r?.[0]) ? r[0]?.[0] : null))
+      .catch(() => null);
+    if (locked && Number(locked.travado || 0) === 1) return fail(422, 'Insumo travado: não é permitido alterar');
+
     await db.query(
       `
       INSERT INTO engenharia_materiais (tenant_id, codigo, descricao, unidade, grupo, categoria, preco_unitario, ativo)
@@ -90,3 +107,27 @@ export async function POST(req: NextRequest) {
   }
 }
 
+export async function PATCH(req: NextRequest) {
+  try {
+    const current = await requireApiPermission(PERMISSIONS.DASHBOARD_ENGENHARIA_VIEW);
+    await ensureEngenhariaImportTables();
+
+    const body = await req.json().catch(() => null);
+    const codigo = String(body?.codigo || '').trim().toUpperCase();
+    const travado = body?.travado === true ? 1 : 0;
+    if (!codigo) return fail(422, 'codigo é obrigatório');
+
+    await db.query(
+      `
+      UPDATE engenharia_materiais
+      SET travado = ?
+      WHERE tenant_id = ? AND codigo = ?
+      `,
+      [travado, current.tenantId, codigo]
+    );
+
+    return ok({ codigo, travado: Boolean(travado) });
+  } catch (e) {
+    return handleApiError(e);
+  }
+}

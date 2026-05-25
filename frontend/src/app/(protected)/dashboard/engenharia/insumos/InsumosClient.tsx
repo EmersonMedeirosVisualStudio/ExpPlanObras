@@ -1,8 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Copy, Lock } from "lucide-react";
 
-type Insumo = { codigo: string; descricao: string; unidade: string; grupo: string | null; categoria: string | null; custoBase: number };
+type Insumo = {
+  codigo: string;
+  descricao: string;
+  unidade: string;
+  grupo: string | null;
+  categoria: string | null;
+  custoBase: number;
+  travado: boolean;
+  travadoPorCadeia?: boolean;
+  origemTravamento?: string | null;
+};
 
 export default function InsumosClient() {
   const [q, setQ] = useState("");
@@ -53,6 +64,67 @@ export default function InsumosClient() {
       await carregar();
     } catch (e: any) {
       setErr(e?.message || "Erro ao salvar insumo");
+    }
+  }
+
+  async function toggleTrava(codigo: string, next: boolean) {
+    try {
+      setLoading(true);
+      setErr(null);
+      const res = await fetch(`/api/v1/engenharia/insumos`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codigo, travado: next }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao alterar trava");
+      await carregar();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao alterar trava");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function duplicarInsumo(row: Insumo) {
+    try {
+      setErr(null);
+      const sugestao = `${String(row.codigo || "").trim().toUpperCase()}-DUP`;
+      const entrada = window.prompt("Informe o novo código para o insumo duplicado:", sugestao);
+      const codigoNovo = String(entrada || "").trim().toUpperCase();
+      if (!codigoNovo) return;
+      const rawDesc = String(row.descricao || "").trim();
+      const base = rawDesc.replace(/\s*-\s*v\d+\s*$/i, "").trim();
+      let maxV = 1;
+      for (const r of rows || []) {
+        const d = String((r as any)?.descricao || "").trim();
+        const b = d.replace(/\s*-\s*v\d+\s*$/i, "").trim();
+        if (!b || b.toLowerCase() !== base.toLowerCase()) continue;
+        const m = d.match(/\s*-\s*v(\d+)\s*$/i);
+        if (m && m[1]) {
+          const n = Number(m[1]);
+          if (Number.isFinite(n) && n > maxV) maxV = n;
+        }
+      }
+      const descricaoNova = base ? `${base} - v${maxV + 1}` : rawDesc;
+      const payload: any = {
+        codigo: codigoNovo,
+        descricao: descricaoNova,
+        unidade: String(row.unidade || "").trim(),
+        grupo: row.grupo,
+        categoria: row.categoria,
+        custoBase: Number(row.custoBase || 0),
+      };
+      const res = await fetch(`/api/v1/engenharia/insumos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao duplicar insumo");
+      await carregar();
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao duplicar insumo");
     }
   }
 
@@ -120,28 +192,56 @@ export default function InsumosClient() {
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50 text-left">
               <tr>
+                <th className="px-3 py-2 w-[44px]" title="Duplo-clique para travar/destravar">
+                  <Lock className="h-4 w-4 text-slate-600" />
+                </th>
                 <th className="px-3 py-2">Código</th>
                 <th className="px-3 py-2">Descrição</th>
                 <th className="px-3 py-2">Un.</th>
                 <th className="px-3 py-2">Grupo</th>
                 <th className="px-3 py-2">Categoria</th>
                 <th className="px-3 py-2">Custo</th>
+                <th className="px-3 py-2 text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.codigo} className="border-t">
+                  <td className="px-3 py-2">
+                    <button
+                      className={`inline-flex items-center justify-center rounded border px-2 py-1.5 text-xs ${
+                        r.travado ? "bg-slate-100 text-slate-700" : "bg-white text-slate-700 hover:bg-slate-50"
+                      } disabled:opacity-60`}
+                      type="button"
+                      onDoubleClick={() => toggleTrava(r.codigo, !r.travado)}
+                      disabled={loading}
+                      title="Duplo-clique para travar/destravar este insumo (base corporativa)."
+                    >
+                      <Lock className={`h-4 w-4 ${r.travado ? "" : "opacity-30"}`} />
+                    </button>
+                  </td>
                   <td className="px-3 py-2 font-medium">{r.codigo}</td>
                   <td className="px-3 py-2">{r.descricao}</td>
                   <td className="px-3 py-2">{r.unidade}</td>
                   <td className="px-3 py-2">{r.grupo || "-"}</td>
                   <td className="px-3 py-2">{r.categoria || "-"}</td>
                   <td className="px-3 py-2">{Number(r.custoBase || 0).toFixed(2)}</td>
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      className="inline-flex items-center justify-center rounded border bg-white px-2 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-60"
+                      type="button"
+                      onClick={() => duplicarInsumo(r)}
+                      disabled={loading}
+                      title="Duplicar este insumo (novo código)"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </button>
+                  </td>
                 </tr>
               ))}
               {!rows.length ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={9} className="px-3 py-6 text-center text-slate-500">
                     Sem dados.
                   </td>
                 </tr>
@@ -153,4 +253,3 @@ export default function InsumosClient() {
     </div>
   );
 }
-
