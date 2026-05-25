@@ -7652,6 +7652,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
         const res = await prismaTx(async (tx: any) => {
           await ensurePlanilhaEstruturaUnicaTables(tx);
+          await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
 
           const exists = (await tx.$queryRawUnsafe(
             `
@@ -7686,8 +7687,23 @@ export default async function v1Routes(server: FastifyInstance) {
               )
             : false;
 
+          await deleteLocksByOrigin(tx, { tenantId: ctx.tenantId, origemTipo: 'PLANILHA', origemChave: String(idPlanilha) });
+          await safeExecuteRawUnsafe(
+            tx,
+            `DELETE FROM tab_travas WHERE tenant_id = $1 AND origem_tipo = 'ITEM' AND origem_chave LIKE $2`,
+            ctx.tenantId,
+            `${idObra}:${idPlanilha}:%`
+          );
+          await safeExecuteRawUnsafe(
+            tx,
+            `DELETE FROM tab_travas WHERE tenant_id = $1 AND entidade_tipo = 'PRECO_INSUMO' AND entidade_chave LIKE $2`,
+            ctx.tenantId,
+            `${idObra}:${idPlanilha}:%`
+          );
+
           await tx.$executeRawUnsafe(`DELETE FROM tab_insumos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`, ctx.tenantId, idObra, idPlanilha);
           await tx.$executeRawUnsafe(`DELETE FROM tab_planilha_itens WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, idPlanilha);
+          await safeExecuteRawUnsafe(tx, `DELETE FROM obras_planilhas_linhas WHERE tenant_id = $1 AND id_planilha = $2`, ctx.tenantId, idPlanilha);
 
           const primitivaExists = (await tx.$queryRawUnsafe(
             `SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas')::text AS "t"`
@@ -7701,6 +7717,9 @@ export default async function v1Routes(server: FastifyInstance) {
               idPlanilha
             );
           }
+
+          await safeExecuteRawUnsafe(tx, `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`, ctx.tenantId, idObra, idPlanilha);
+          await safeExecuteRawUnsafe(tx, `DELETE FROM tab_servicos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`, ctx.tenantId, idObra, idPlanilha);
 
           await tx.$executeRawUnsafe(
             `DELETE FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,
