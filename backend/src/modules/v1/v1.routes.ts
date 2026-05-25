@@ -15,7 +15,7 @@ import { addTenantHistoryEntry } from '../admin/tenantHistory.service.js';
 type ApiSuccess<T> = { success: true; message?: string; data: T; meta?: any };
 type ApiError = { success: false; message: string; errors?: Record<string, string[]> };
 
-const PRISMA_TX_OPTIONS = { maxWait: 60_000, timeout: 120_000 };
+const PRISMA_TX_OPTIONS = { maxWait: 120_000, timeout: 600_000 };
 async function prismaTx<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) {
   return prisma.$transaction(fn, PRISMA_TX_OPTIONS);
 }
