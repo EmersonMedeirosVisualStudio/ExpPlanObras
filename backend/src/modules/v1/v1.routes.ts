@@ -6174,9 +6174,10 @@ export default async function v1Routes(server: FastifyInstance) {
 
       if (!idPlanilha) return ok(reply, { idObra, obraStatus, obra: obraResumo, planilha: null });
 
-      await prismaTx(async (tx: any) => {
-        await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, Number(idPlanilha));
-      });
+      try {
+        await ensurePlanilhaMigratedToEstruturaUnica(prisma, ctx.tenantId, idObra, Number(idPlanilha));
+      } catch {
+      }
 
       const versoes = (await prisma.$queryRawUnsafe(
         `

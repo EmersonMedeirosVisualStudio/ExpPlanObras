@@ -1301,7 +1301,10 @@ export default function PlanilhaObraClient({
       setErr(null);
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${idPlanilha}&includeCatalog=0`);
       const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar planilha");
+      if (!res.ok || !json?.success) {
+        const msg = json?.message ? String(json.message) : `Erro ao carregar planilha (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
       const data = json.data || {};
       setObraStatus(data.obraStatus ?? null);
       setObraResumo((data.obra as any) || null);
