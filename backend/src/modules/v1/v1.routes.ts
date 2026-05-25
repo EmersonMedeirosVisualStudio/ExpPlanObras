@@ -5576,7 +5576,9 @@ export default async function v1Routes(server: FastifyInstance) {
       if (!ctx || (ctx as any).success === false) return;
       const { id } = request.params as any;
       const idParametros = Number(id);
-      await ensurePlanilhaEstruturaUnicaTables(prisma);
+      await prismaTx(async (tx: any) => {
+        await ensurePlanilhaEstruturaUnicaTables(tx);
+      });
 
       const versoes = (await prisma.$queryRawUnsafe(
         `

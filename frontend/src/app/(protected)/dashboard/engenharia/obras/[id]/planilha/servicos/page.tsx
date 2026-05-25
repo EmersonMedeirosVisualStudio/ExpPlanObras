@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
-import { Lock, Copy } from "lucide-react";
+import { Lock, Copy, Pencil, X } from "lucide-react";
 
 type ValidacaoRow = {
   item: string;
@@ -48,6 +48,8 @@ type VersaoRow = {
   idParametros?: number | null;
   parametrosNome?: string;
 };
+
+type ColKey = "item" | "codigo" | "tipo" | "fonte" | "servico" | "planilha" | "composicao" | "dif" | "status" | "acao";
 
 function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -103,18 +105,7 @@ export default function Page() {
   const [textFilter, setTextFilter] = useState("");
   const [fonteFilter, setFonteFilter] = useState<string>("");
   const [showColsCard, setShowColsCard] = useState(false);
-  const [colWidths, setColWidths] = useState<{
-    item: number;
-    codigo: number;
-    tipo: number;
-    fonte: number;
-    servico: number;
-    planilha: number;
-    composicao: number;
-    dif: number;
-    status: number;
-    acao: number;
-  }>({
+  const [colWidths, setColWidths] = useState<Record<ColKey, number>>({
     item: 90,
     codigo: 100,
     tipo: 120,
@@ -125,6 +116,18 @@ export default function Page() {
     dif: 110,
     status: 120,
     acao: 90,
+  });
+  const [colFixed, setColFixed] = useState<Record<ColKey, boolean>>({
+    item: false,
+    codigo: false,
+    tipo: false,
+    fonte: false,
+    servico: false,
+    planilha: false,
+    composicao: false,
+    dif: false,
+    status: false,
+    acao: false,
   });
   const [refs, setRefs] = useState<RefRow[]>([]);
   const [composicoesSemServico, setComposicoesSemServico] = useState<{ total: number; codes: string[]; blankCount: number } | null>(null);
@@ -183,6 +186,15 @@ export default function Page() {
     } catch {}
     return "exp:servicos:col-widths";
   }, []);
+  const colFixedKey = useMemo(() => {
+    try {
+      const raw = localStorage.getItem("user");
+      const u = raw ? JSON.parse(raw) : null;
+      const id = Number(u?.id);
+      if (Number.isFinite(id) && id > 0) return `exp:servicos:col-fixed:${id}`;
+    } catch {}
+    return "exp:servicos:col-fixed";
+  }, []);
 
   useEffect(() => {
     try {
@@ -220,6 +232,161 @@ export default function Page() {
       localStorage.setItem(colWidthsKey, JSON.stringify(colWidths));
     } catch {}
   }, [colWidths, colWidthsKey]);
+
+  useEffect(() => {
+    try {
+      let raw = localStorage.getItem(colFixedKey);
+      if (!raw && colFixedKey !== "exp:servicos:col-fixed") {
+        const legacy = localStorage.getItem("exp:servicos:col-fixed");
+        if (legacy) {
+          localStorage.setItem(colFixedKey, legacy);
+          raw = legacy;
+        }
+      }
+      if (!raw) return;
+      const p = JSON.parse(raw) as any;
+      const b = (v: any) => Boolean(v);
+      setColFixed((cur) => ({
+        item: b(p?.item ?? cur.item),
+        codigo: b(p?.codigo ?? cur.codigo),
+        tipo: b(p?.tipo ?? cur.tipo),
+        fonte: b(p?.fonte ?? cur.fonte),
+        servico: b(p?.servico ?? cur.servico),
+        planilha: b(p?.planilha ?? cur.planilha),
+        composicao: b(p?.composicao ?? cur.composicao),
+        dif: b(p?.dif ?? cur.dif),
+        status: b(p?.status ?? cur.status),
+        acao: b(p?.acao ?? cur.acao),
+      }));
+    } catch {}
+  }, [colFixedKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(colFixedKey, JSON.stringify(colFixed));
+    } catch {}
+  }, [colFixed, colFixedKey]);
+
+  const colKeys = useMemo<ColKey[]>(() => ["item", "codigo", "tipo", "fonte", "servico", "planilha", "composicao", "dif", "status", "acao"], []);
+
+  function setColWidthWithRedistribution(key: ColKey, nextWidth: number) {
+    const min = 10;
+    const next = Math.max(min, Math.min(1200, Math.round(Number(nextWidth || 0) || min)));
+    setColWidths((prev) => {
+      const before = prev[key];
+      if (before === next) return prev;
+      const out: Record<ColKey, number> = { ...prev, [key]: next };
+      const delta = next - before;
+      const adjustable = colKeys.filter((k) => k !== key && !colFixed[k]);
+      if (!adjustable.length) return out;
+      let remaining = -delta;
+      let pool = adjustable.slice();
+      let guard = 0;
+      while (pool.length && guard < 12 && Math.abs(remaining) >= 1) {
+        guard++;
+        const sum = pool.reduce((s, k) => s + (out[k] || 0), 0);
+        if (!(sum > 0)) break;
+        let applied = 0;
+        for (let i = 0; i < pool.length; i++) {
+          const k = pool[i];
+          const share = i === pool.length - 1 ? remaining - applied : Math.round((remaining * (out[k] || 0)) / sum);
+          const candidate = out[k] + share;
+          const clamped = Math.max(min, candidate);
+          const actual = clamped - out[k];
+          out[k] = clamped;
+          applied += actual;
+        }
+        remaining -= applied;
+        if (remaining < 0) pool = pool.filter((k) => out[k] > min);
+        else break;
+      }
+      return out;
+    });
+  }
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editErr, setEditErr] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<{ codigoServico: string; tipo: string; fonte: string; servico: string; undHidden: string }>({
+    codigoServico: "",
+    tipo: "Serviço",
+    fonte: "",
+    servico: "",
+    undHidden: "",
+  });
+
+  async function abrirEditarServico(codigo: string) {
+    const code = String(codigo || "").trim().toUpperCase();
+    if (!code) return;
+    if (planilhaTravada) {
+      setErr("Esta planilha está travada. Não é permitido editar serviços.");
+      return;
+    }
+    try {
+      setEditLoading(true);
+      setEditErr(null);
+      const qs = new URLSearchParams();
+      const pid = planilhaIdFromQuery ?? planilhaId ?? null;
+      if (pid) qs.set("planilhaId", String(pid));
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}/meta?${qs.toString()}`);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar dados do serviço");
+      const d = json.data || {};
+      setEditForm({
+        codigoServico: code,
+        tipo: "Serviço",
+        fonte: String(d?.fonte || "").trim().toUpperCase(),
+        servico: String(d?.descricao || "").trim(),
+        undHidden: String(d?.und || "").trim().toUpperCase(),
+      });
+      setEditOpen(true);
+    } catch (e: any) {
+      setEditErr(e?.message || "Erro ao carregar dados do serviço");
+      setEditOpen(true);
+    } finally {
+      setEditLoading(false);
+    }
+  }
+
+  async function salvarEdicaoServico() {
+    const codigoServico = String(editForm.codigoServico || "").trim().toUpperCase();
+    const descricao = String(editForm.servico || "").trim();
+    const banco = String(editForm.fonte || "").trim().toUpperCase();
+    const und = String(editForm.undHidden || "").trim().toUpperCase();
+    if (!codigoServico) {
+      setEditErr("Código inválido.");
+      return;
+    }
+    if (!descricao) {
+      setEditErr("Serviço (descrição) é obrigatório.");
+      return;
+    }
+    if (!und) {
+      setEditErr("UND do serviço não encontrada. Recarregue e tente novamente.");
+      return;
+    }
+    try {
+      setEditLoading(true);
+      setEditErr(null);
+      const qs = new URLSearchParams();
+      const pid = planilhaIdFromQuery ?? planilhaId ?? null;
+      if (pid) qs.set("planilhaId", String(pid));
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/novo?${qs.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codigoServico, descricao, und, banco }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao salvar serviço");
+      setOkMsg("Serviço atualizado.");
+      setEditOpen(false);
+      await carregarTudo();
+    } catch (e: any) {
+      setEditErr(e?.message || "Erro ao salvar serviço");
+    } finally {
+      setEditLoading(false);
+    }
+  }
 
   async function carregarPlanilhaAtual() {
     if (!idObra) return;
@@ -1152,9 +1319,9 @@ export default function Page() {
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <div className="text-lg font-semibold">Serviços e composições referenciadas</div>
+            <div className="text-lg font-semibold">Serviços cadastrados</div>
             <div className="text-sm text-slate-600">
-              Lista serviços do catálogo da planilha e também composições auxiliares/referenciadas (usadas indiretamente), marcando: sem composição/não definida e divergente entre total da planilha e total calculado pela composição.
+              Lista os serviços cadastrados no catálogo da planilha e também serviços/composições referenciadas (usadas indiretamente), marcando: sem composição/não definida e divergente entre total da planilha e total calculado pela composição.
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1259,7 +1426,17 @@ export default function Page() {
                 { key: "acao", label: "AÇÃO" },
               ].map((c) => (
                 <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-2 py-1.5">
-                  <div className="font-medium text-slate-700">{c.label}</div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={Boolean(colFixed[c.key as ColKey])}
+                      onChange={(e) => setColFixed((p) => ({ ...p, [c.key]: Boolean(e.target.checked) } as any))}
+                      title="Fixar largura desta coluna"
+                      disabled={loading}
+                    />
+                    <div className="font-medium text-slate-700">{c.label}</div>
+                  </div>
                   <input
                     className="input bg-white w-[92px]"
                     type="number"
@@ -1269,7 +1446,7 @@ export default function Page() {
                     onChange={(e) => {
                       const v = Number(e.target.value || 0);
                       const next = Number.isFinite(v) ? Math.max(10, Math.min(1200, Math.round(v))) : 120;
-                      setColWidths((p) => ({ ...(p as any), [c.key]: next }));
+                      setColWidthWithRedistribution(c.key as ColKey, next);
                     }}
                     title="Largura (px)"
                   />
@@ -1333,6 +1510,14 @@ export default function Page() {
                   key={`${r.kind}-${r.codigo}`}
                   id={`row-${String(r.codigo || "").trim().toUpperCase()}`}
                   className={`border-t ${focusCodigo && String(r.codigo || "").trim().toUpperCase() === focusCodigo ? "bg-red-50" : ""}`}
+                  onDoubleClick={() => {
+                    const code = String(r.codigo || "").trim();
+                    if (!code) return;
+                    const qs = new URLSearchParams();
+                    if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
+                    qs.set("returnTo", selfHref);
+                    router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}?${qs.toString()}`);
+                  }}
                 >
                   <td className="px-2 py-1.5 font-medium" style={{ width: `${colWidths.item}px` }}>
                     {r.item || "—"}
@@ -1380,7 +1565,9 @@ export default function Page() {
                           r.travado ? "bg-slate-100 text-slate-700" : "bg-white text-slate-700 hover:bg-slate-50"
                         } disabled:opacity-60`}
                         type="button"
-                        onDoubleClick={() => {
+                        onDoubleClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           if (r.kind === "SERVICO") toggleTravaServico(r.codigo);
                         }}
                         disabled={loading || planilhaTravada || r.kind !== "SERVICO" || Boolean(r.travadoPorCadeia)}
@@ -1391,7 +1578,11 @@ export default function Page() {
                       <button
                         className="inline-flex items-center justify-center rounded border bg-white px-2 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-60"
                         type="button"
-                        onClick={() => duplicarServico(r.codigo)}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          duplicarServico(r.codigo);
+                        }}
                         disabled={loading || planilhaTravada || r.kind !== "SERVICO"}
                         title={
                           r.kind !== "SERVICO"
@@ -1404,17 +1595,27 @@ export default function Page() {
                         <Copy className="h-4 w-4" />
                       </button>
                       <button
-                        className="rounded border bg-white px-3 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-60"
+                        className="inline-flex items-center justify-center rounded border bg-white px-2 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-60"
                         type="button"
-                        onClick={() => {
-                          const qs = new URLSearchParams();
-                          if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
-                          qs.set("returnTo", selfHref);
-                          router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(r.codigo)}?${qs.toString()}`);
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          abrirEditarServico(r.codigo);
                         }}
-                        disabled={!String(r.codigo || "").trim()}
+                        disabled={loading || planilhaTravada || r.kind !== "SERVICO" || Boolean(r.travado) || Boolean(r.travadoPorCadeia)}
+                        title={
+                          r.kind !== "SERVICO"
+                            ? "Edição disponível apenas para serviços."
+                            : planilhaTravada
+                              ? "Planilha travada: não é permitido editar serviços."
+                              : r.travadoPorCadeia
+                                ? "Serviço travado em cadeia: não é permitido editar."
+                                : r.travado
+                                  ? "Serviço travado: não é permitido editar."
+                                  : "Editar serviço (abre um card nesta tela)."
+                        }
                       >
-                        Abrir
+                        <Pencil className="h-4 w-4" />
                       </button>
                     </div>
                   </td>
@@ -1431,6 +1632,75 @@ export default function Page() {
           </table>
         </div>
       </section>
+
+      {editOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-xl overflow-hidden rounded-xl border bg-white shadow-sm">
+            <div className="flex items-start justify-between gap-3 border-b bg-slate-50 p-4">
+              <div>
+                <div className="text-lg font-semibold">Editar serviço</div>
+                <div className="text-sm text-slate-600">Edição desacoplada da tela (sem navegar).</div>
+              </div>
+              <button
+                className="rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60"
+                type="button"
+                onClick={() => setEditOpen(false)}
+                disabled={editLoading}
+                title="Fechar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3 p-4">
+              {editErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{editErr}</div> : null}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="space-y-1">
+                  <div className="text-xs text-slate-500">CÓDIGO</div>
+                  <input className="input bg-white w-full" value={editForm.codigoServico} disabled title="Código não é alterável aqui. Use Duplicar para gerar um novo código." />
+                </label>
+                <label className="space-y-1">
+                  <div className="text-xs text-slate-500">TIPO</div>
+                  <input className="input bg-white w-full" value={editForm.tipo} disabled />
+                </label>
+                <label className="space-y-1">
+                  <div className="text-xs text-slate-500">FONTE</div>
+                  <input
+                    className="input bg-white w-full"
+                    value={editForm.fonte}
+                    onChange={(e) => setEditForm((p) => ({ ...p, fonte: e.target.value }))}
+                    disabled={editLoading}
+                    placeholder="Ex.: SBC, SINAPI"
+                  />
+                </label>
+                <label className="space-y-1 sm:col-span-2">
+                  <div className="text-xs text-slate-500">SERVIÇO</div>
+                  <input
+                    className="input bg-white w-full"
+                    value={editForm.servico}
+                    onChange={(e) => setEditForm((p) => ({ ...p, servico: e.target.value }))}
+                    disabled={editLoading}
+                    placeholder="Descrição do serviço"
+                  />
+                </label>
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60" type="button" onClick={() => setEditOpen(false)} disabled={editLoading}>
+                  Cancelar
+                </button>
+                <button
+                  className="rounded-lg border border-blue-600 bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 disabled:opacity-60"
+                  type="button"
+                  onClick={() => salvarEdicaoServico()}
+                  disabled={editLoading}
+                  title="Salvar alterações"
+                >
+                  Salvar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
