@@ -823,14 +823,42 @@ export default function PlanilhaObraClient({
     try {
       if (typeof window !== "undefined") token = localStorage.getItem("token");
     } catch {}
-    return fetch(input, {
-      ...init,
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(init?.headers || {}),
-      },
-      cache: "no-store",
-    });
+    const apiOrigin = String(process.env.NEXT_PUBLIC_API_URL || "")
+      .trim()
+      .replace(/\/$/, "");
+    const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input);
+    const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : apiOrigin ? `${apiOrigin}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}` : rawUrl;
+
+    const doFetch = async () =>
+      fetch(url, {
+        ...init,
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(init?.headers || {}),
+        },
+        cache: "no-store",
+      });
+
+    let lastRes: Response | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await doFetch();
+        lastRes = res;
+        if (res.status !== 502 && res.status !== 503 && res.status !== 504) return res;
+        if (attempt < 3) await new Promise((r) => window.setTimeout(r, attempt * 800));
+      } catch (e: any) {
+        const msg = String(e?.message || e || "");
+        if (msg.toLowerCase().includes("failed to fetch")) {
+          throw new Error(
+            apiOrigin
+              ? `Falha ao conectar no backend (${apiOrigin}). Verifique se NEXT_PUBLIC_API_URL está correto e se o backend (Render) está online.`
+              : "Falha ao conectar. NEXT_PUBLIC_API_URL não configurada e a rota /api/v1/... não respondeu."
+          );
+        }
+        throw e;
+      }
+    }
+    return lastRes!;
   }
 
   function resetLinhaForm() {
