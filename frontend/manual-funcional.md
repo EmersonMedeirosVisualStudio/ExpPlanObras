@@ -1809,27 +1809,27 @@ ETAPA 5 — Como validar
   - selecione **Parâmetro** (em formato **#id - nome**)
   - confirme e veja se a coluna **Parâmetros** aparece preenchida na versão criada
 - Lógica de criação de uma planilha (obra):
-  - 1) Planilha: a planilha combina **Obra + Parâmetros + Catálogo (da própria versão)**.
+  - 1) Planilha: a planilha combina **Obra + Parâmetros + Catálogo (único da obra)**.
   - 2) Parâmetros: ao criar/clonar uma planilha, define-se o conjunto de **parâmetros** (UF, data-base, BDI, encargos e descontos). Eles determinam como os custos são calculados na planilha.
-  - 3) Serviços (catálogo da planilha): é a **união de todos os serviços usados** na versão selecionada. Ele é alimentado automaticamente quando:
+  - 3) Serviços (catálogo da obra): é o **catálogo único de serviços** da obra. Ele é alimentado automaticamente quando:
     - você cria um serviço na Planilha (Adicionar linha) com um CÓDIGO novo; ou
     - você cria/edita na Composição e salva (atualiza também o catálogo); ou
     - você importa serviços (CSV / outra planilha).
-    Para criar um serviço novo no catálogo da planilha:
+    Para criar um serviço novo no catálogo da obra:
       1 - Crie o serviço na Planilha (Adicionar linha);
       2 - Ou através do botão Novo Serviço;
       3 - Crie o serviço direto na composição.
     Informando o CÓDIGO/Fonte/descrição/UND.
-  - 4) Planilha (itens): o usuário decide quais serviços do catálogo viram **itens** na planilha. Todo item de serviço referencia um serviço do catálogo da planilha.
-  - 5) Composições: para cada serviço do catálogo da planilha, cadastra-se/importa-se sua **composição** (itens, subcomposições e insumos), sempre vinculada ao serviço (pai).
+  - 4) Planilha (itens): o usuário decide quais serviços do catálogo viram **itens** na planilha. Todo item de serviço referencia um serviço do catálogo da obra.
+  - 5) Composições: para cada serviço do catálogo da obra, cadastra-se/importa-se sua **composição** (itens, subcomposições e insumos), sempre vinculada ao serviço (pai).
   - 6) Insumos consolidados: a lista de insumos é derivada das composições dos serviços e é recalculada sempre que uma composição muda.
 - Regra: ao salvar/importar uma composição (ou importar um serviço que traga composição), o sistema refaz o consolidado de insumos e atualiza os valores do serviço na própria versão da planilha.
 - Regra: ao trocar Parâmetros (BDI/LS/Descontos/Data-base/UF) de uma versão, o sistema recalcula automaticamente os valores unitários e parciais dos serviços daquela versão (isso alimenta também telas derivadas como Adequação e, no futuro, Medição).
 - Importação CSV (planilha) com **prévia**: antes de gravar, o sistema mostra uma grade de conferência e destaca campos inválidos.
   - Colunas importadas (CSV): `item`, `codigo`, `fonte`, `servicos`, `und`, `quant`, `valor_unitario` (o **valor parcial** é calculado automaticamente).
   - Observação de compatibilidade: leitura “smart” de encoding (UTF-8 / Windows-1252) para reduzir erros de acentuação no texto importado.
-  - Observação: ao importar itens do tipo Serviço, o sistema garante que o serviço exista no catálogo da planilha (Serviços).
-  - Observação: ao salvar/importar composições, o sistema garante que subcomposições referenciadas existam no catálogo da planilha (reduz “cadastros órfãos”).
+  - Observação: ao importar itens do tipo Serviço, o sistema garante que o serviço exista no catálogo da obra (Serviços).
+  - Observação: ao salvar/importar composições, o sistema garante que subcomposições referenciadas existam no catálogo da obra (reduz “cadastros órfãos”).
 - Regra importante (catálogo): um serviço pode chegar na planilha por CSV/cópia mesmo que ainda não exista no catálogo. Ao **importar** (ou ao **salvar** um serviço criado na planilha), o sistema cria/atualiza automaticamente o registro em **Serviços** usando o mesmo **código**.
 - Importações (tela dedicada): as importações ficam na tela **Importações** (botão no card **Adicionar serviço**). O botão **Importar** só aparece quando a **prévia** estiver aberta.
 
@@ -1843,12 +1843,12 @@ ETAPA 2 — O que clicar
 
 ETAPA 3 — O que preencher
 - Sempre preencha: **ITEM**, **CÓDIGO** e **QUANT.**
-- Os campos **Fonte**, **Serviços (descrição)**, **UND** e **VALOR UNIT.** são **virtuais** (vêm do **catálogo da planilha**) e ficam travados quando o código já existe no catálogo.
+- Os campos **Fonte**, **Serviços (descrição)**, **UND** e **VALOR UNIT.** são **virtuais** (vêm do **catálogo da obra**) e ficam travados quando o código já existe no catálogo.
 - Se o código ainda não existir no catálogo, você poderá preencher **Fonte/descrição/UND** uma única vez para cadastrar o serviço. Ao salvar, o serviço passa a existir no catálogo e, a partir daí, esses campos ficam travados na Planilha.
 - Regra: não é permitido alterar **Fonte**, **nome** e **UND** de um serviço já cadastrado através da Planilha. Essas informações são gravadas e mantidas em **Serviços** (ou na tela de **Composição**, que atualiza o catálogo ao salvar).
 
 ETAPA 4 — O que esperar
-- Ao clicar em **Salvar**, o serviço entra na planilha e também é criado/atualizado no catálogo da planilha.
+- Ao clicar em **Salvar**, o serviço entra na planilha e também é criado/atualizado no catálogo da obra.
 
 ETAPA 5 — Como validar
 - Clique em **Serviços** e confirme se o serviço aparece pelo **código**.
@@ -1950,14 +1950,14 @@ ETAPA 4 — O que esperar
 ETAPA 5 — Como validar
 - Clique em **Importar**
 - Volte para a tela **Planilha orçamentária** e confira se as linhas foram inseridas na versão selecionada
-- Após selecionar uma versão, o sistema exibe o card **Visualizando** e, em seguida, o card **Navegação** (visível apenas com planilha selecionada) para abrir/fechar e rolar até: **Parâmetros**, **Planilha** e **Adicionar linha**.
+- O sistema exibe o card **Visualizando** e o card **Navegação** para abrir: **Serviços**, **SINAPI** e **Insumos** (independente da seleção de versão).
 - Planilha (visual): a grade tem **rolagem vertical** com **cabeçalho fixo** (também na tela de **Adequação**). Linhas do tipo **Item** e **Subitem** são exibidas em negrito; o usuário pode definir **tamanho da fonte**, **fontes (dados/cabeçalho)**, **negrito do cabeçalho**, **cor de fundo** (Item/Subitem), além de **mostrar/ocultar colunas** e ajustar **larguras**. Essas preferências ficam salvas para o usuário.
 - Ordem/organização das linhas: o campo **Ordem** foi removido da edição. A visualização segue a ordem do **ITEM** (ordenação numérica/hierárquica, por exemplo: `1.2` vem antes de `1.10`).
 - Navegação ativa: quando o usuário está na tela **Planilha orçamentária**, o botão **Planilha** fica destacado no topo para indicar a tela atual.
 - Navegação (breadcrumb): nas telas de **Planilha**, **Serviços**, **Insumos**, **SINAPI**, **Adequação** e **Análise de composição**, o caminho é exibido como botões clicáveis (Engenharia → Obras → Obra → Planilha). A **Obra selecionada** e a **planilha selecionada** ficam destacadas em **azul**.
 - Edição de serviço (regra de preço):
   - ao selecionar **Tipo = Serviço**, os campos **Código**, **Serviços** e **Fonte** viram campos de **seleção com busca** (clicar mostra opções, digitar filtra em tempo real);
-  - ao selecionar um valor (ou concluir a digitação), o sistema **preenche/filtra os demais campos** com base no catálogo de serviços da planilha (Código/Serviços/Fonte/UND);
+  - ao selecionar um valor (ou concluir a digitação), o sistema **preenche/filtra os demais campos** com base no catálogo de serviços da obra (Código/Serviços/Fonte/UND);
   - quando o **Código** já existe no catálogo (Serviços), os campos **Fonte/Serviços/UND** ficam travados no item e passam a ser tratados como leitura do catálogo (evita divergência entre item e catálogo);
   - o campo **Valor Unit.** do serviço **não é digitável**;
   - ele é preenchido automaticamente a partir da composição vinculada ao código do serviço (ou **0** quando não existe composição definida);
@@ -1970,8 +1970,8 @@ ETAPA 5 — Como validar
 - Serviços:
   - A tela marca serviços **sem composição** e **divergentes** comparando total da planilha x total calculado por composição.
   - Existe ação para **copiar serviço entre versões** (origem → destino), com prévia (pode copiar composição).
-    - Como o catálogo é por versão, a cópia cria/atualiza também o **catálogo** e as **composições** no destino (conforme as opções selecionadas na prévia).
-    - Se marcar **Substituir composição no destino**, a composição é sobrescrita no destino (impacta apenas a versão de destino).
+    - Como o catálogo é **único da obra**, a cópia foca nas **linhas da planilha**. A composição já está vinculada ao serviço no catálogo.
+    - Se existir regra/ação de sobrescrever composição, ela afeta o serviço no catálogo (impacta todas as versões que usam o código).
 - Análise de composição (editar itens):
   - em **Composições**, é permitido alterar apenas **Código** e **Qtd** (demais campos são preenchidos/calculados automaticamente);
   - em **Insumos**, é permitido alterar apenas **Código**, **Qtd** e **Valor Unit** (demais campos são preenchidos/calculados automaticamente);
@@ -1980,7 +1980,7 @@ ETAPA 5 — Como validar
   - a tecla **Esc** cancela a edição e restaura o último estado salvo.
   - Indicador de carregamento: a tela exibe “Carregando página…” e “Página carregada” para deixar claro quando o carregamento inicial terminou.
 - Insumos consolidados:
-  - A lista é derivada das **composições da planilha** aplicadas aos **serviços existentes na versão selecionada**.
+  - A lista é derivada das **composições do catálogo** aplicadas aos **serviços existentes na versão selecionada**.
   - O preço do insumo é do escopo da planilha (versão). Quando um preço de insumo é alterado (via composição/importação), isso recalcula automaticamente os serviços afetados na própria versão.
 
 #### Validação

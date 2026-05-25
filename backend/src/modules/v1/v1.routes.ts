@@ -6174,6 +6174,10 @@ export default async function v1Routes(server: FastifyInstance) {
 
       if (!idPlanilha) return ok(reply, { idObra, obraStatus, obra: obraResumo, planilha: null });
 
+      await prismaTx(async (tx: any) => {
+        await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, Number(idPlanilha));
+      });
+
       const versoes = (await prisma.$queryRawUnsafe(
         `
         SELECT
@@ -7717,9 +7721,6 @@ export default async function v1Routes(server: FastifyInstance) {
               idPlanilha
             );
           }
-
-          await safeExecuteRawUnsafe(tx, `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`, ctx.tenantId, idObra, idPlanilha);
-          await safeExecuteRawUnsafe(tx, `DELETE FROM tab_servicos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`, ctx.tenantId, idObra, idPlanilha);
 
           await tx.$executeRawUnsafe(
             `DELETE FROM tab_planilhas WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3`,

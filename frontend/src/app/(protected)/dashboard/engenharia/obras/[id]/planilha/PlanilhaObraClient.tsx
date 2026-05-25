@@ -2708,8 +2708,8 @@ export default function PlanilhaObraClient({
                 qs.set("returnTo", selfHref);
                 router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos?${qs.toString()}`);
               }}
-              disabled={loading || !effectivePlanilhaId || !planilha}
-              title={!effectivePlanilhaId || !planilha ? "Selecione uma versão da planilha para abrir os serviços" : "Abrir a tela de serviços da planilha selecionada"}
+              disabled={loading}
+              title="Abrir Serviços (o catálogo é independente da seleção de versão)"
             >
               Serviços
             </button>
@@ -2722,8 +2722,8 @@ export default function PlanilhaObraClient({
                 qs.set("returnTo", selfHref);
                 router.push(`/dashboard/engenharia/obras/${idObra}/planilha/sinapi?${qs.toString()}`);
               }}
-              disabled={loading || !effectivePlanilhaId || !planilha}
-              title={!effectivePlanilhaId || !planilha ? "Selecione uma versão da planilha para abrir o SINAPI" : "Abrir a tela SINAPI para importar/aplicar serviços e composições"}
+              disabled={loading}
+              title="Abrir SINAPI (independente da seleção de versão)"
             >
               SINAPI
             </button>
@@ -2736,8 +2736,8 @@ export default function PlanilhaObraClient({
                 qs.set("returnTo", selfHref);
                 router.push(`/dashboard/engenharia/obras/${idObra}/planilha/insumos?${qs.toString()}`);
               }}
-              disabled={loading || !effectivePlanilhaId || !planilha}
-              title={!effectivePlanilhaId || !planilha ? "Selecione uma versão da planilha para abrir Insumos" : "Abrir a tela de Insumos consolidados da planilha selecionada"}
+              disabled={loading}
+              title="Abrir Insumos (independente da seleção de versão)"
             >
               Insumos
             </button>
