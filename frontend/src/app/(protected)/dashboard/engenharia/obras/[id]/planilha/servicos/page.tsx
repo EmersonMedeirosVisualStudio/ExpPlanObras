@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
-import { Lock, Copy, Pencil, X } from "lucide-react";
+import { Lock, Copy, Pencil, X, Check, XCircle } from "lucide-react";
 
 type ValidacaoRow = {
   codigoServico: string;
@@ -29,6 +29,7 @@ type CatalogListRow = {
   origemTipo: string | null;
   origemChave: string | null;
   totalComposicao: number | null;
+  qtdItens: number | null;
   definida: boolean | null;
 };
 type VersaoRow = {
@@ -45,6 +46,25 @@ type ColKey = "codigo" | "tipo" | "fonte" | "servico" | "composicao" | "acao";
 
 function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function normalizeHeader(h: string) {
+  return String(h || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function normalizeFilterChoice(v: string) {
+  const raw = String(v || "").trim();
+  if (!raw) return "";
+  const n = normalizeHeader(raw);
+  if (n === "todas") return "";
+  if (n === "nenhuma") return "__NONE__";
+  return raw;
 }
 
 export default function Page() {
@@ -91,6 +111,8 @@ export default function Page() {
   const [rowsLoading, setRowsLoading] = useState(false);
   const [obraNome, setObraNome] = useState<string>("");
   const [textFilter, setTextFilter] = useState("");
+  const [tipoFilter, setTipoFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [fonteFilter, setFonteFilter] = useState<string>("");
   const [showColsCard, setShowColsCard] = useState(false);
   const [colWidths, setColWidths] = useState<Record<ColKey, number>>({
@@ -575,6 +597,7 @@ export default function Page() {
         origemTipo: String(r.origemTipo || ""),
         origemChave: String(r.origemChave || ""),
         totalComposicao: Number(r.totalComposicao || 0),
+        qtdItens: Number(r.qtdItens || 0),
         definida: null,
       })),
       ...refs.map((r) => ({
@@ -588,11 +611,33 @@ export default function Page() {
         origemTipo: null,
         origemChave: null,
         totalComposicao: null,
+        qtdItens: null,
         definida: Boolean(r.definida),
       })),
     ];
 
     let out = merged;
+
+    const tipoSel = normalizeFilterChoice(tipoFilter);
+    if (tipoSel === "__NONE__") return [];
+    if (tipoSel) {
+      const selNorm = normalizeHeader(tipoSel);
+      out = out.filter((r) => normalizeHeader(String(r.tipo || "")) === selNorm);
+    }
+
+    const statusSel = normalizeFilterChoice(statusFilter);
+    if (statusSel === "__NONE__") return [];
+    if (statusSel) {
+      const st = normalizeHeader(statusSel);
+      const wantsCom = st.startsWith("com");
+      const wantsSem = st.startsWith("sem");
+      out = out.filter((r) => {
+        const hasComp = r.kind === "SERVICO" ? Number(r.qtdItens || 0) > 0 : Boolean(r.definida);
+        if (wantsCom) return hasComp;
+        if (wantsSem) return !hasComp;
+        return true;
+      });
+    }
 
     const fonteSel = String(fonteFilter || "").trim().toUpperCase();
     if (fonteSel) {
@@ -613,7 +658,19 @@ export default function Page() {
 
     out = [...out].sort((a, b) => String(a.codigo || "").localeCompare(String(b.codigo || ""), "pt-BR", { numeric: true, sensitivity: "base" }));
     return out;
-  }, [rows, refs, focusCodigo, textFilter, fonteFilter]);
+  }, [rows, refs, focusCodigo, textFilter, tipoFilter, statusFilter, fonteFilter]);
+
+  const tipoOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows || []) set.add("Serviço");
+    for (const r of refs || []) {
+      const t = String((r as any)?.tipo || "").trim();
+      if (t) set.add(t);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [rows, refs]);
+
+  const statusOptions = useMemo(() => ["todas", "nenhuma", "Com composição", "Sem composição"], []);
 
   async function toggleTravaServico(codigoServico: string) {
     if (!idObra) return;
@@ -1310,8 +1367,8 @@ export default function Page() {
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="flex-1 space-y-1" title="Filtra a lista por código do serviço ou descrição (texto livre)">
+        <div className="flex flex-wrap lg:flex-nowrap items-end gap-2">
+          <label className="space-y-1" style={{ width: "280px" }} title="Filtra a lista por código do serviço ou descrição (texto livre)">
             <div className="text-xs text-slate-500">Código / Serviço</div>
             <input
               className="input bg-white w-full"
@@ -1320,6 +1377,40 @@ export default function Page() {
               placeholder="Filtrar por código, fonte ou serviço"
               disabled={loading}
             />
+          </label>
+          <label className="space-y-1" style={{ width: "170px" }} title="Filtra por tipo (selecione ou digite)">
+            <div className="text-xs text-slate-500">Tipo</div>
+            <input
+              className="input bg-white w-full"
+              value={tipoFilter}
+              onChange={(e) => setTipoFilter(e.target.value)}
+              placeholder="todas"
+              list="exp-servicos-tipo-options"
+              disabled={loading}
+            />
+            <datalist id="exp-servicos-tipo-options">
+              <option value="todas" />
+              <option value="nenhuma" />
+              {tipoOptions.map((t) => (
+                <option key={t} value={t} />
+              ))}
+            </datalist>
+          </label>
+          <label className="space-y-1" style={{ width: "170px" }} title="Filtra por status de composição (selecione ou digite)">
+            <div className="text-xs text-slate-500">Status</div>
+            <input
+              className="input bg-white w-full"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              placeholder="todas"
+              list="exp-servicos-status-options"
+              disabled={loading}
+            />
+            <datalist id="exp-servicos-status-options">
+              {statusOptions.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
           </label>
           <label className="space-y-1" style={{ width: "160px" }} title="Filtra a lista pela fonte (banco) do serviço">
             <div className="text-xs text-slate-500">Fonte</div>
@@ -1408,7 +1499,7 @@ export default function Page() {
                   SERVIÇO
                 </th>
                 <th className="px-2 py-1.5 text-right" style={{ width: `${colWidths.composicao}px` }}>
-                  COMPOSIÇÃO
+                  STATUS
                 </th>
                 <th className="px-2 py-1.5" style={{ width: `${colWidths.acao}px` }}>
                   Ação
@@ -1443,7 +1534,30 @@ export default function Page() {
                     {r.descricao || "—"}
                   </td>
                   <td className="px-2 py-1.5 text-right" style={{ width: `${colWidths.composicao}px` }}>
-                    {r.totalComposicao == null ? "—" : moeda(Number(r.totalComposicao || 0))}
+                    {(() => {
+                      if (r.kind === "SERVICO") {
+                        const has = Number(r.qtdItens || 0) > 0;
+                        const total = r.totalComposicao == null ? null : Number(r.totalComposicao || 0);
+                        const title = has
+                          ? `Composição cadastrada (${Number(r.qtdItens || 0)} itens)${total != null ? ` | Total base: ${moeda(total)}` : ""}`
+                          : "Sem composição cadastrada";
+                        return (
+                          <span title={title} className="inline-flex items-center justify-end w-full">
+                            {has ? <Check className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
+                          </span>
+                        );
+                      }
+                      if (r.kind === "REF") {
+                        const has = Boolean(r.definida);
+                        const title = has ? "Composição definida" : "Composição não definida";
+                        return (
+                          <span title={title} className="inline-flex items-center justify-end w-full">
+                            {has ? <Check className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
+                          </span>
+                        );
+                      }
+                      return "—";
+                    })()}
                   </td>
                   <td className="px-2 py-1.5" style={{ width: `${colWidths.acao}px` }}>
                     <div className="flex items-center gap-1">

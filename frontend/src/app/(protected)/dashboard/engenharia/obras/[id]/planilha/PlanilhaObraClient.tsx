@@ -4039,9 +4039,8 @@ export default function PlanilhaObraClient({
                             if (!code) return;
                             const qs = new URLSearchParams();
                             if (effectivePlanilhaId) qs.set("planilhaId", String(effectivePlanilhaId));
-                            qs.set("codigoServico", code);
                             qs.set("returnTo", selfHref);
-                            router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos?${qs.toString()}`);
+                            router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}?${qs.toString()}`);
                           }}
                         >
                           {visible.includes("item") ? (
