@@ -24,7 +24,7 @@ type LinhaServico = {
   servicos: string;
   und: string;
   quant: string;
-  valorUnitario: string;
+  valorUnitReferencia: string;
 };
 
 function parseNumberLoose(v: unknown) {
@@ -192,9 +192,9 @@ export default function PlanilhaImportacoesPage() {
       servicos: string;
       und: string;
       quant: string;
-      valorUnitario: string;
+      valorUnitReferencia: string;
       tipoLinha: "ITEM" | "SUBITEM" | "SERVICO";
-      errors: Partial<Record<"item" | "codigo" | "servicos" | "und" | "quant" | "valorUnitario" | "tipoLinha", string>>;
+      errors: Partial<Record<"item" | "codigo" | "servicos" | "und" | "quant" | "valorUnitReferencia" | "tipoLinha", string>>;
     }>;
     missingColumns: string[];
   }>({ file: null, rows: [], missingColumns: [] });
@@ -340,14 +340,14 @@ export default function PlanilhaImportacoesPage() {
         const servicos = get(r, "servicos");
         const und = get(r, "und");
         const quant = get(r, "quant");
-        const valorUnitario = get(r, "valor_unitario");
+        const valorUnitReferencia = get(r, "valor_unitario");
         const tipoLinhaRaw = idx["tipo_linha"] != null ? get(r, "tipo_linha") : "";
         const tipoLinhaNorm = String(tipoLinhaRaw || "").trim().toUpperCase();
         const tipoLinhaFromCsv =
           tipoLinhaNorm === "ITEM" || tipoLinhaNorm === "SUBITEM" || tipoLinhaNorm === "SERVICO" ? (tipoLinhaNorm as any) : "";
-        const det = tipoLinhaFromCsv ? { tipo: tipoLinhaFromCsv, nivel: 0 } : detectTipoLinha(item, codigo, und, quant, valorUnitario);
+        const det = tipoLinhaFromCsv ? { tipo: tipoLinhaFromCsv, nivel: 0 } : detectTipoLinha(item, codigo, und, quant, valorUnitReferencia);
         const quantidade = toDec(quant);
-        const vUnit = toDec(valorUnitario);
+        const vUnitRef = toDec(valorUnitReferencia);
 
         const errors: any = {};
         if (!item.trim()) errors.item = "Obrigatório";
@@ -358,14 +358,14 @@ export default function PlanilhaImportacoesPage() {
           if (!codigo.trim()) errors.codigo = "Obrigatório (serviço)";
           if (!und.trim()) errors.und = "Obrigatório (serviço)";
           if (quantidade == null || !(quantidade > 0)) errors.quant = "Inválido (serviço)";
-          if (vUnit == null || !(vUnit >= 0)) errors.valorUnitario = "Inválido (serviço)";
+          if (valorUnitReferencia.trim() && (vUnitRef == null || !(vUnitRef >= 0))) errors.valorUnitReferencia = "Inválido (serviço)";
         } else {
           if (codigo.trim()) errors.codigo = "Não usar em ITEM/SUBITEM";
           if (und.trim()) errors.und = "Não usar em ITEM/SUBITEM";
           if (quant.trim()) errors.quant = "Não usar em ITEM/SUBITEM";
-          if (valorUnitario.trim()) errors.valorUnitario = "Não usar em ITEM/SUBITEM";
+          if (valorUnitReferencia.trim()) errors.valorUnitReferencia = "Não usar em ITEM/SUBITEM";
         }
-        return { rowIndex: i, item, codigo, fonte, servicos, und, quant, valorUnitario, tipoLinha: det.tipo, errors };
+        return { rowIndex: i, item, codigo, fonte, servicos, und, quant, valorUnitReferencia, tipoLinha: det.tipo, errors };
       });
       setCsvPreview({ file, rows: mapped.map((x) => ({ checked: true, ...x })), missingColumns });
     } catch (e: any) {
@@ -468,7 +468,7 @@ export default function PlanilhaImportacoesPage() {
           servicos: String(l.servicos || l.servico || l.observacao || "").trim(),
           und: String(l.und || "").trim(),
           quant: String(l.quant || "").trim(),
-          valorUnitario: String(l.valorUnitario || "").trim(),
+          valorUnitReferencia: String(l.valorUnitReferencia ?? l.valorUnitario ?? "").trim(),
         }))
         .filter((l) => l.item || l.codigo || l.servicos);
       all.sort((a, b) => {
@@ -790,7 +790,7 @@ export default function PlanilhaImportacoesPage() {
                 - Catálogo de serviços (TAB_SERVICOS): a regra depende de <span className="font-semibold">Repetidos no catálogo</span> (manter / completar / sobrescrever).
               </div>
               <div>- Se um serviço do CSV não existir no catálogo da planilha destino, ele é criado automaticamente ao importar (usando o código).</div>
-            <div>- Linhas na planilha (TAB_PLANILHA_ITENS): no modo Complementar o sistema evita inserir duplicatas idênticas (Item/Código/Quant/Valor).</div>
+            <div>- Linhas na planilha (TAB_PLANILHA_ITENS): no modo Complementar o sistema evita inserir duplicatas idênticas (Item/Código/Quant/Valor de referência).</div>
               <div>- Composições/insumos não são importados por esta tela; são tratados nas telas Serviços/SINAPI/Insumos.</div>
             </div>
             <div className="overflow-auto rounded-lg border">
@@ -804,7 +804,7 @@ export default function PlanilhaImportacoesPage() {
                     <th className="px-3 py-2">Serviços</th>
                     <th className="px-3 py-2">Und</th>
                     <th className="px-3 py-2 text-right">Quant</th>
-                    <th className="px-3 py-2 text-right">Valor unitário</th>
+                    <th className="px-3 py-2 text-right">Vlr unit ref.</th>
                     <th className="px-3 py-2">Tipo</th>
                   </tr>
                 </thead>
@@ -830,7 +830,7 @@ export default function PlanilhaImportacoesPage() {
                         <td className="px-3 py-2">{r.servicos || "—"}</td>
                         <td className="px-3 py-2">{r.und || "—"}</td>
                         <td className="px-3 py-2 text-right">{r.quant || "—"}</td>
-                        <td className="px-3 py-2 text-right">{r.valorUnitario || "—"}</td>
+                        <td className="px-3 py-2 text-right">{r.valorUnitReferencia || "—"}</td>
                         <td className="px-3 py-2">{r.tipoLinha}</td>
                       </tr>
                     );
@@ -967,7 +967,7 @@ export default function PlanilhaImportacoesPage() {
                     <th className="px-3 py-2">Serviços</th>
                     <th className="px-3 py-2">Und</th>
                     <th className="px-3 py-2 text-right">Quant</th>
-                    <th className="px-3 py-2 text-right">Valor unitário</th>
+                    <th className="px-3 py-2 text-right">Vlr unit ref.</th>
                     <th className="px-3 py-2">Tipo</th>
                   </tr>
                 </thead>
@@ -990,7 +990,7 @@ export default function PlanilhaImportacoesPage() {
                       <td className="px-3 py-2">{x.r.servicos || "—"}</td>
                       <td className="px-3 py-2">{x.r.und || "—"}</td>
                       <td className="px-3 py-2 text-right">{x.r.quant || "—"}</td>
-                      <td className="px-3 py-2 text-right">{x.r.valorUnitario || "—"}</td>
+                      <td className="px-3 py-2 text-right">{x.r.valorUnitReferencia || "—"}</td>
                       <td className="px-3 py-2">{x.r.tipoLinha}</td>
                     </tr>
                   ))}

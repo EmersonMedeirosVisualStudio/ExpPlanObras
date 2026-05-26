@@ -96,19 +96,22 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
   - `servicos`
   - `und`
   - `quant`
-  - `valor_unitario`
+  - `valor_unitario` (Valor Unit de referência — opcional)
 
 ### ETAPA 4 — O que esperar
 - A grade mostra as linhas do CSV antes de gravar
 - Campos com erro ficam destacados (ex.: item vazio, serviço sem código, quant inválida)
-- O sistema calcula o **valor parcial** automaticamente (quant × valor_unitario)
+- Na prévia, o sistema pode calcular o **valor parcial de referência** (quant × valor_unitario) apenas para conferência
 - Se o **código do serviço** não existir no **catálogo de serviços da obra**, o sistema cria/atualiza automaticamente o serviço no catálogo quando você confirma a importação
 - Itens e subitens ficam em **negrito** para facilitar leitura
 - A grade tem **rolagem vertical** com **cabeçalho fixo** para facilitar leitura
 - Você pode ajustar o **tamanho da fonte**, **fontes (dados/cabeçalho)**, **negrito do cabeçalho**, **cores de fundo** de Item/Subitem, além de **exibir/ocultar colunas** e ajustar **larguras** (essas preferências ficam salvas no seu usuário)
-- A tela mostra o **Valor total** da planilha
+- Na planilha (após importar), o **VALOR UNIT.** e o **VALOR PARCIAL** ficam vinculados ao valor calculado pela **composição** do serviço (quando existir)
+- A coluna **VLR UNIT REF.** (ao lado de **VALOR UNIT.**) guarda o valor de referência (quando informado)
+- A coluna **COMP.** compara **Sistema (VALOR UNIT.)** × **Referência (VLR UNIT REF.)** para marcar divergência
+- A tela mostra o **Valor total** da planilha com base nos valores do sistema (composição)
 - A tela mostra o **valor parcial consolidado** de cada **Item** e **Subitem**
-- Na **prévia**, o sistema mostra o **total consolidado** antes de confirmar a importação
+- Na **prévia**, o sistema mostra o **total consolidado de referência** antes de confirmar a importação
 
 ### ETAPA 5 — Como validar
 - Clique em **Confirmar importação**
@@ -118,6 +121,13 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 - Você também pode cadastrar/atualizar o serviço direto na tela de **Composição** (ao salvar a composição, o serviço é atualizado no catálogo)
 - Na tela **Serviços cadastrados**, o carregamento é feito **de 50 em 50**. Use o botão **Carregar mais (50)** para continuar.
 - Na lista de serviços, as colunas exibidas são: **CÓDIGO**, **TIPO**, **FONTE**, **SERVIÇO**, **COMPOSIÇÃO** e **Ações**.
+
+Indicador **COMP.** (na planilha):
+
+- **X vermelho**: serviço sem composição cadastrada no sistema.
+- **Alerta amarelo**: divergência entre **Sistema (VALOR UNIT.)** e **Referência (VLR UNIT REF.)** (o tooltip mostra Referência/Sistema/Diferença).
+- **Check verde**: OK (quando a referência está vazia, o sistema não compara e considera OK).
+- **Check verde “Composição definida”**: a composição existe, mas a validação ainda não foi carregada para aquele código.
 
 ## 3.1.1 Nova planilha / Editar / Clonar (Parâmetros)
 

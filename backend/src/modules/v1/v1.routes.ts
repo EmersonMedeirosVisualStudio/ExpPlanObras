@@ -910,6 +910,7 @@ async function ensurePlanilhaItensTables(tx: any) {
       id_servico BIGINT NULL,
       quantidade NUMERIC(14,4) NULL,
       valor_unitario NUMERIC(14,6) NULL,
+      valor_unit_referencia NUMERIC(14,6) NULL,
       valor_parcial NUMERIC(14,6) NULL,
       nivel INT NOT NULL DEFAULT 0,
       tipo_linha VARCHAR(16) NOT NULL,
@@ -924,6 +925,7 @@ async function ensurePlanilhaItensTables(tx: any) {
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilha_itens ADD COLUMN IF NOT EXISTS travado BOOLEAN NOT NULL DEFAULT FALSE`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilha_itens ADD COLUMN IF NOT EXISTS travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilha_itens ADD COLUMN IF NOT EXISTS origem_travamento VARCHAR(200) NULL`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilha_itens ADD COLUMN IF NOT EXISTS valor_unit_referencia NUMERIC(14,6) NULL`);
   await safeExecuteRawUnsafe(
     tx,
     `CREATE INDEX IF NOT EXISTS tab_planilha_itens_idx_planilha ON tab_planilha_itens (tenant_id, id_planilha, ordem, id_planilha_item)`
@@ -6191,6 +6193,7 @@ export default async function v1Routes(server: FastifyInstance) {
             COALESCE(s.und,'') AS "und",
             i.quantidade AS "quantidade",
             i.valor_unitario AS "valorUnitario",
+            i.valor_unit_referencia AS "valorUnitReferencia",
             i.valor_parcial AS "valorParcial",
             i.nivel AS "nivel",
             i.travado AS "travado",
@@ -6225,6 +6228,7 @@ export default async function v1Routes(server: FastifyInstance) {
             und: r.und ? String(r.und) : '',
             quant: r.quantidade == null ? '' : String(r.quantidade),
             valorUnitario: r.valorUnitario == null ? '' : String(r.valorUnitario),
+            valorUnitReferencia: r.valorUnitReferencia == null ? '' : String(r.valorUnitReferencia),
             valorParcial: r.valorParcial == null ? '' : String(r.valorParcial),
             nivel: Number(r.nivel || 0),
             tipoLinha: String(r.tipoLinha || 'ITEM'),
@@ -6321,6 +6325,7 @@ export default async function v1Routes(server: FastifyInstance) {
             COALESCE(s.und,'') AS und,
             quantidade,
             i.valor_unitario AS "valorUnitario",
+            i.valor_unit_referencia AS "valorUnitReferencia",
             i.valor_parcial AS "valorParcial",
             nivel,
             i.travado AS "travado",
@@ -6423,6 +6428,7 @@ export default async function v1Routes(server: FastifyInstance) {
             und: r.und ? String(r.und) : '',
             quant: r.quantidade == null ? '' : String(r.quantidade),
             valorUnitario: r.valorUnitario == null ? '' : String(r.valorUnitario),
+            valorUnitReferencia: r.valorUnitReferencia == null ? '' : String(r.valorUnitReferencia),
             valorParcial: r.valorParcial == null ? '' : String(r.valorParcial),
             nivel: Number(r.nivel || 0),
             tipoLinha: String(r.tipoLinha || 'ITEM'),
@@ -6561,8 +6567,7 @@ export default async function v1Routes(server: FastifyInstance) {
             ? { tipo: tipoLinhaFromCsv as any, nivel: item.trim() ? Math.max(0, item.split('.').filter(Boolean).length) : 0 }
             : detectTipoLinha(item, codigo, und, quant, valorUnit);
           const quantidade = toDec(quant);
-          const vUnit = toDec(valorUnit);
-          const valorParcialCalc = quantidade != null && vUnit != null ? Number((quantidade * vUnit).toFixed(6)) : null;
+          const vUnitRef = toDec(valorUnit);
 
           if (!item.trim()) {
             prepared.push({ ok: false as const, rowIndex: i, message: 'Campo "item" é obrigatório', field: 'item' as const });
@@ -6594,7 +6599,7 @@ export default async function v1Routes(server: FastifyInstance) {
               prepared.push({ ok: false as const, rowIndex: i, message: 'Campo "quant" inválido para serviço', field: 'quant' as const });
               continue;
             }
-            if (vUnit == null || !(vUnit >= 0)) {
+            if (String(valorUnit || '').trim() && (vUnitRef == null || !(vUnitRef >= 0))) {
               prepared.push({ ok: false as const, rowIndex: i, message: 'Campo "valor_unitario" inválido para serviço', field: 'valor_unitario' as const });
               continue;
             }
@@ -6628,8 +6633,9 @@ export default async function v1Routes(server: FastifyInstance) {
             servico: servicos ? String(servicos).slice(0, 800) : null,
             und: und ? String(und).slice(0, 40) : null,
             quantidade: quantidade == null ? null : quantidade,
-            valorUnitario: vUnit == null ? null : vUnit,
-            valorParcial: valorParcialCalc,
+            valorUnitario: null,
+            valorUnitReferencia: vUnitRef == null ? null : vUnitRef,
+            valorParcial: null,
             nivel: det.nivel,
             tipoLinha: det.tipo,
           });
@@ -6714,7 +6720,7 @@ export default async function v1Routes(server: FastifyInstance) {
                 COALESCE(i.item,'') AS item,
                 COALESCE(s.codigo,'') AS codigo,
                 COALESCE(i.quantidade,0) AS quantidade,
-                COALESCE(i.valor_unitario,0) AS "valorUnitario",
+                COALESCE(i.valor_unit_referencia,0) AS "valorUnitReferencia",
                 COALESCE(i.observacao,'') AS observacao,
                 i.tipo_linha AS "tipoLinha"
               FROM tab_planilha_itens i
@@ -6733,8 +6739,8 @@ export default async function v1Routes(server: FastifyInstance) {
               const obs = String(r?.observacao || '').trim();
               if (tipo === 'SERVICO') {
                 const q = Number(r?.quantidade ?? 0);
-                const vu = Number(r?.valorUnitario ?? 0);
-                keySet.add(`S|${item}|${codigo}|${q.toFixed(6)}|${vu.toFixed(6)}`);
+                const vRef = Number(r?.valorUnitReferencia ?? 0);
+                keySet.add(`S|${item}|${codigo}|${q.toFixed(6)}|${vRef.toFixed(6)}`);
               } else {
                 keySet.add(`N|${tipo}|${item}|${obs}`);
               }
@@ -6746,8 +6752,8 @@ export default async function v1Routes(server: FastifyInstance) {
               if (tipo === 'SERVICO') {
                 const codigo = String(r?.codigo || '').trim().toUpperCase();
                 const q = Number(r?.quantidade ?? 0);
-                const vu = Number(r?.valorUnitario ?? 0);
-                const key = `S|${item}|${codigo}|${q.toFixed(6)}|${vu.toFixed(6)}`;
+                const vRef = Number(r?.valorUnitReferencia ?? 0);
+                const key = `S|${item}|${codigo}|${q.toFixed(6)}|${vRef.toFixed(6)}`;
                 return !keySet.has(key);
               }
               const obs = String(r?.servico || '').trim();
@@ -6758,6 +6764,76 @@ export default async function v1Routes(server: FastifyInstance) {
             preparedOk = filtered.map((r: any, idx: number) => ({ ...r, ordem: idx + 1 }));
             if (!preparedOk.length) throw new Error('Nenhuma linha nova para importar (todas eram repetidas na planilha)');
           }
+
+          const svcCodes = Array.from(
+            new Set(
+              preparedOk
+                .filter((r: any) => String(r?.tipoLinha || '').trim().toUpperCase() === 'SERVICO')
+                .map((r: any) => String(r?.codigo || '').trim().toUpperCase())
+                .filter((c: any) => c)
+            )
+          );
+
+          const paramsRows = (await tx.$queryRawUnsafe(
+            `
+            SELECT
+              COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
+              COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
+            FROM tab_planilhas v
+            LEFT JOIN tab_parametros p
+              ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
+            WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
+            LIMIT 1
+            `,
+            ctx.tenantId,
+            idObra,
+            idPlanilha
+          )) as any[];
+          const bdiPercent = paramsRows?.[0]?.bdi == null ? 0 : Number(paramsRows[0].bdi);
+          const lsPercent = paramsRows?.[0]?.ls == null ? 0 : Number(paramsRows[0].ls);
+
+          const unitByCodigo = new Map<string, number>();
+          if (svcCodes.length) {
+            const compRows = (await tx.$queryRawUnsafe(
+              `
+              SELECT
+                UPPER(COALESCE(ci.codigo_servico,'')) AS codigo_servico,
+                COUNT(ci.id_item) AS qtd_itens,
+                SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
+                SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
+              FROM tab_composicoes ci
+              WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+                AND UPPER(COALESCE(ci.codigo_servico,'')) = ANY($4)
+              GROUP BY 1
+              `,
+              ctx.tenantId,
+              idObra,
+              idPlanilha,
+              svcCodes
+            )) as any[];
+            for (const r of compRows || []) {
+              const codigo = String(r?.codigo_servico || '').trim().toUpperCase();
+              if (!codigo) continue;
+              const qtdItens = Number(r?.qtd_itens || 0);
+              if (!(qtdItens > 0)) continue;
+              const totalBase = r?.total_base == null ? 0 : Number(r.total_base);
+              const totalMaoBase = r?.total_mao_base == null ? 0 : Number(r.total_mao_base);
+              const totalComLS = (totalBase - totalMaoBase) + totalMaoBase * (1 + (lsPercent || 0) / 100);
+              const totalComLSComBDI = totalComLS * (1 + (bdiPercent || 0) / 100);
+              const unit = Number(totalComLSComBDI.toFixed(6));
+              if (Number.isFinite(unit) && unit >= 0) unitByCodigo.set(codigo, unit);
+            }
+          }
+
+          preparedOk = preparedOk.map((r: any) => {
+            if (String(r?.tipoLinha || '').trim().toUpperCase() !== 'SERVICO') return r;
+            const codigo = String(r?.codigo || '').trim().toUpperCase();
+            const unit = codigo ? unitByCodigo.get(codigo) : undefined;
+            const quantidade = r?.quantidade == null ? null : Number(r.quantidade);
+            const valorUnitario = unit == null ? null : Number(unit);
+            const valorParcial = quantidade != null && valorUnitario != null ? Number((quantidade * valorUnitario).toFixed(6)) : null;
+            return { ...r, valorUnitario, valorParcial };
+          });
 
           const svcMap = new Map<string, { codigo: string; fonte: string; servico: string; und: string }>();
           for (const r of preparedOk) {
@@ -6811,7 +6887,7 @@ export default async function v1Routes(server: FastifyInstance) {
             const values = chunk
               .map((r: any, idx: number) => {
                 const ordem = baseOrd + start + idx + 1;
-                const base = [ordem, r.item, r.codigo, r.quantidade, r.valorUnitario, r.valorParcial, r.nivel, r.tipoLinha, r.servico];
+                const base = [ordem, r.item, r.codigo, r.quantidade, r.valorUnitario, r.valorUnitReferencia, r.valorParcial, r.nivel, r.tipoLinha, r.servico];
                 for (const v of base) params.push(v);
                 const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
                 return `(${placeholders})`;
@@ -6820,11 +6896,11 @@ export default async function v1Routes(server: FastifyInstance) {
 
             await tx.$executeRawUnsafe(
               `
-              WITH v(ordem, item, codigo, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao) AS (
+              WITH v(ordem, item, codigo, quantidade, valor_unitario, valor_unit_referencia, valor_parcial, nivel, tipo_linha, observacao) AS (
                 VALUES ${values}
               )
               INSERT INTO tab_planilha_itens
-                (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
+                (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_unit_referencia, valor_parcial, nivel, tipo_linha, observacao)
               SELECT
                 $1 AS tenant_id,
                 $2 AS id_planilha,
@@ -6836,6 +6912,7 @@ export default async function v1Routes(server: FastifyInstance) {
                 END AS id_servico,
                 CASE WHEN v.tipo_linha = 'SERVICO' THEN v.quantidade ELSE NULL END AS quantidade,
                 CASE WHEN v.tipo_linha = 'SERVICO' THEN v.valor_unitario ELSE NULL END AS valor_unitario,
+                CASE WHEN v.tipo_linha = 'SERVICO' THEN v.valor_unit_referencia ELSE NULL END AS valor_unit_referencia,
                 CASE WHEN v.tipo_linha = 'SERVICO' THEN v.valor_parcial ELSE NULL END AS valor_parcial,
                 v.nivel,
                 v.tipo_linha,
@@ -6880,6 +6957,7 @@ export default async function v1Routes(server: FastifyInstance) {
                   und: z.string().optional().nullable(),
                   quant: z.string().optional().nullable(),
                   valorUnitario: z.string().optional().nullable(),
+                  valorUnitReferencia: z.string().optional().nullable(),
                 })
               )
               .min(1),
@@ -6935,7 +7013,7 @@ export default async function v1Routes(server: FastifyInstance) {
           )) as any[];
           const baseOrd = modoImportacao === 'APPEND' ? Number(maxOrdRows?.[0]?.maxOrd || 0) : 0;
 
-          const svcMap = new Map<string, { codigo: string; banco: string; descricao: string; und: string; valorUnitario: number | null }>();
+          const svcMap = new Map<string, { codigo: string; banco: string; descricao: string; und: string }>();
           const rowsPreparedBase = payload.rows.map((r, i) => {
             const item = r.item != null ? String(r.item || '').trim().slice(0, 80) : '';
             const codigo = r.codigo != null ? String(r.codigo || '').trim().toUpperCase() : '';
@@ -6943,15 +7021,16 @@ export default async function v1Routes(server: FastifyInstance) {
             const descricao = r.servicos != null ? String(r.servicos || '').trim() : '';
             const und = r.und != null ? String(r.und || '').trim() : '';
             const quantRaw = r.quant != null ? String(r.quant || '').trim() : '';
-            const valorUnitRaw = r.valorUnitario != null ? String(r.valorUnitario || '').trim() : '';
+            const valorUnitRefRaw =
+              r.valorUnitReferencia != null ? String(r.valorUnitReferencia || '').trim() : r.valorUnitario != null ? String(r.valorUnitario || '').trim() : '';
             const quantidade = quantRaw ? toDec(quantRaw) : null;
-            const valorUnitario = valorUnitRaw ? toDec(valorUnitRaw) : null;
+            const valorUnitReferencia = valorUnitRefRaw ? toDec(valorUnitRefRaw) : null;
 
             const tipoLinhaNorm = r.tipoLinha != null ? String(r.tipoLinha || '').trim().toUpperCase() : '';
             const tipoLinhaFromClient = tipoLinhaNorm === 'ITEM' || tipoLinhaNorm === 'SUBITEM' || tipoLinhaNorm === 'SERVICO' ? tipoLinhaNorm : '';
             const det = tipoLinhaFromClient
               ? { tipo: tipoLinhaFromClient as any, nivel: item.trim() ? Math.max(0, item.split('.').filter(Boolean).length) : 0 }
-              : detectTipoLinha(item, codigo, und, quantRaw, valorUnitRaw);
+              : detectTipoLinha(item, codigo, und, quantRaw, valorUnitRefRaw);
 
             if (!item.trim()) throw new Error(`Linha ${i + 1}: "item" é obrigatório`);
             if (!isValidItemPath(item)) throw new Error(`Linha ${i + 1}: "item" inválido (use 1, 1.1, 2.15.3)`);
@@ -6961,24 +7040,19 @@ export default async function v1Routes(server: FastifyInstance) {
               if (!codigo.trim()) throw new Error(`Linha ${i + 1}: "codigo" é obrigatório para serviço`);
               if (!und.trim()) throw new Error(`Linha ${i + 1}: "und" é obrigatório para serviço`);
               if (quantidade == null || !(quantidade > 0)) throw new Error(`Linha ${i + 1}: "quant" inválido para serviço`);
-              if (valorUnitario == null || !(valorUnitario >= 0)) throw new Error(`Linha ${i + 1}: "valorUnitario" inválido para serviço`);
+              if (valorUnitRefRaw.trim() && (valorUnitReferencia == null || !(valorUnitReferencia >= 0)))
+                throw new Error(`Linha ${i + 1}: "valorUnitReferencia" inválido para serviço`);
               const prev = svcMap.get(codigo);
-              if (!prev) svcMap.set(codigo, { codigo, banco, descricao, und, valorUnitario: valorUnitario == null ? null : Number(valorUnitario) });
-              else
-                svcMap.set(codigo, {
-                  codigo,
-                  banco: prev.banco || banco,
-                  descricao: prev.descricao || descricao,
-                  und: prev.und || und,
-                  valorUnitario: prev.valorUnitario ?? (valorUnitario == null ? null : Number(valorUnitario)),
-                });
+              if (!prev) svcMap.set(codigo, { codigo, banco, descricao, und });
+              else svcMap.set(codigo, { codigo, banco: prev.banco || banco, descricao: prev.descricao || descricao, und: prev.und || und });
               return {
                 ordem: i + 1,
                 item: item || null,
                 codigo,
                 quantidade: quantidade == null ? null : Number(quantidade),
-                valorUnitario: valorUnitario == null ? null : Number(valorUnitario),
-                valorParcial: quantidade != null && valorUnitario != null ? Number((Number(quantidade) * Number(valorUnitario)).toFixed(6)) : null,
+                valorUnitario: null,
+                valorUnitReferencia: valorUnitReferencia == null ? null : Number(valorUnitReferencia),
+                valorParcial: null,
                 nivel: det.nivel,
                 tipoLinha: det.tipo,
                 observacao: null,
@@ -6988,7 +7062,7 @@ export default async function v1Routes(server: FastifyInstance) {
             if (codigo.trim()) throw new Error(`Linha ${i + 1}: não usar "codigo" em ITEM/SUBITEM`);
             if (und.trim()) throw new Error(`Linha ${i + 1}: não usar "und" em ITEM/SUBITEM`);
             if (quantRaw.trim()) throw new Error(`Linha ${i + 1}: não usar "quant" em ITEM/SUBITEM`);
-            if (valorUnitRaw.trim()) throw new Error(`Linha ${i + 1}: não usar "valorUnitario" em ITEM/SUBITEM`);
+            if (valorUnitRefRaw.trim()) throw new Error(`Linha ${i + 1}: não usar "valorUnitReferencia" em ITEM/SUBITEM`);
 
             return {
               ordem: i + 1,
@@ -6996,6 +7070,7 @@ export default async function v1Routes(server: FastifyInstance) {
               codigo: null,
               quantidade: null,
               valorUnitario: null,
+              valorUnitReferencia: null,
               valorParcial: null,
               nivel: det.nivel,
               tipoLinha: det.tipo,
@@ -7011,7 +7086,7 @@ export default async function v1Routes(server: FastifyInstance) {
                 COALESCE(i.item,'') AS item,
                 COALESCE(s.codigo,'') AS codigo,
                 COALESCE(i.quantidade,0) AS quantidade,
-                COALESCE(i.valor_unitario,0) AS "valorUnitario",
+                COALESCE(i.valor_unit_referencia,0) AS "valorUnitReferencia",
                 COALESCE(i.observacao,'') AS observacao,
                 i.tipo_linha AS "tipoLinha"
               FROM tab_planilha_itens i
@@ -7030,8 +7105,8 @@ export default async function v1Routes(server: FastifyInstance) {
               const obs = String(r?.observacao || '').trim();
               if (tipo === 'SERVICO') {
                 const q = Number(r?.quantidade ?? 0);
-                const vu = Number(r?.valorUnitario ?? 0);
-                keySet.add(`S|${item}|${codigo}|${q.toFixed(6)}|${vu.toFixed(6)}`);
+                const vRef = Number(r?.valorUnitReferencia ?? 0);
+                keySet.add(`S|${item}|${codigo}|${q.toFixed(6)}|${vRef.toFixed(6)}`);
               } else {
                 keySet.add(`N|${tipo}|${item}|${obs}`);
               }
@@ -7042,8 +7117,8 @@ export default async function v1Routes(server: FastifyInstance) {
               if (tipo === 'SERVICO') {
                 const codigo = String(r?.codigo || '').trim().toUpperCase();
                 const q = Number(r?.quantidade ?? 0);
-                const vu = Number(r?.valorUnitario ?? 0);
-                const key = `S|${item}|${codigo}|${q.toFixed(6)}|${vu.toFixed(6)}`;
+                const vRef = Number(r?.valorUnitReferencia ?? 0);
+                const key = `S|${item}|${codigo}|${q.toFixed(6)}|${vRef.toFixed(6)}`;
                 return !keySet.has(key);
               }
               const obs = String(r?.observacao || '').trim();
@@ -7053,6 +7128,76 @@ export default async function v1Routes(server: FastifyInstance) {
             rowsPrepared = filtered.map((r: any, idx: number) => ({ ...r, ordem: idx + 1 }));
             if (!rowsPrepared.length) throw new Error('Nenhuma linha nova para importar (todas eram repetidas na planilha)');
           }
+
+          const svcCodes = Array.from(
+            new Set(
+              rowsPrepared
+                .filter((r: any) => String(r?.tipoLinha || '').trim().toUpperCase() === 'SERVICO')
+                .map((r: any) => String(r?.codigo || '').trim().toUpperCase())
+                .filter((c: any) => c)
+            )
+          );
+
+          const paramsRows = (await tx.$queryRawUnsafe(
+            `
+            SELECT
+              COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
+              COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
+            FROM tab_planilhas v
+            LEFT JOIN tab_parametros p
+              ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
+            WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
+            LIMIT 1
+            `,
+            ctx.tenantId,
+            idObra,
+            Number(payload.idPlanilhaTarget)
+          )) as any[];
+          const bdiPercent = paramsRows?.[0]?.bdi == null ? 0 : Number(paramsRows[0].bdi);
+          const lsPercent = paramsRows?.[0]?.ls == null ? 0 : Number(paramsRows[0].ls);
+
+          const unitByCodigo = new Map<string, number>();
+          if (svcCodes.length) {
+            const compRows = (await tx.$queryRawUnsafe(
+              `
+              SELECT
+                UPPER(COALESCE(ci.codigo_servico,'')) AS codigo_servico,
+                COUNT(ci.id_item) AS qtd_itens,
+                SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
+                SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
+              FROM tab_composicoes ci
+              WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+                AND UPPER(COALESCE(ci.codigo_servico,'')) = ANY($4)
+              GROUP BY 1
+              `,
+              ctx.tenantId,
+              idObra,
+              Number(payload.idPlanilhaTarget),
+              svcCodes
+            )) as any[];
+            for (const r of compRows || []) {
+              const codigo = String(r?.codigo_servico || '').trim().toUpperCase();
+              if (!codigo) continue;
+              const qtdItens = Number(r?.qtd_itens || 0);
+              if (!(qtdItens > 0)) continue;
+              const totalBase = r?.total_base == null ? 0 : Number(r.total_base);
+              const totalMaoBase = r?.total_mao_base == null ? 0 : Number(r.total_mao_base);
+              const totalComLS = (totalBase - totalMaoBase) + totalMaoBase * (1 + (lsPercent || 0) / 100);
+              const totalComLSComBDI = totalComLS * (1 + (bdiPercent || 0) / 100);
+              const unit = Number(totalComLSComBDI.toFixed(6));
+              if (Number.isFinite(unit) && unit >= 0) unitByCodigo.set(codigo, unit);
+            }
+          }
+
+          rowsPrepared = rowsPrepared.map((r: any) => {
+            if (String(r?.tipoLinha || '').trim().toUpperCase() !== 'SERVICO') return r;
+            const codigo = String(r?.codigo || '').trim().toUpperCase();
+            const unit = codigo ? unitByCodigo.get(codigo) : undefined;
+            const quantidade = r?.quantidade == null ? null : Number(r.quantidade);
+            const valorUnitario = unit == null ? null : Number(unit);
+            const valorParcial = quantidade != null && valorUnitario != null ? Number((quantidade * valorUnitario).toFixed(6)) : null;
+            return { ...r, valorUnitario, valorParcial };
+          });
 
           const svcRows = Array.from(svcMap.values());
           if (cadastrarServicosFaltantes && svcRows.length) {
@@ -7089,7 +7234,7 @@ export default async function v1Routes(server: FastifyInstance) {
             const values = chunk
               .map((r, idx) => {
                 const ordem = baseOrd + start + idx + 1;
-                const base = [ordem, r.item, r.codigo, r.quantidade, r.valorUnitario, r.valorParcial, r.nivel, r.tipoLinha, r.observacao];
+                const base = [ordem, r.item, r.codigo, r.quantidade, r.valorUnitario, r.valorUnitReferencia, r.valorParcial, r.nivel, r.tipoLinha, r.observacao];
                 for (const v of base) params.push(v);
                 const placeholders = Array.from({ length: base.length }, () => `$${p++}`).join(',');
                 return `(${placeholders})`;
@@ -7098,11 +7243,11 @@ export default async function v1Routes(server: FastifyInstance) {
 
             await tx.$executeRawUnsafe(
               `
-              WITH v(ordem, item, codigo, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao) AS (
+              WITH v(ordem, item, codigo, quantidade, valor_unitario, valor_unit_referencia, valor_parcial, nivel, tipo_linha, observacao) AS (
                 VALUES ${values}
               )
               INSERT INTO tab_planilha_itens
-                (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
+                (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_unit_referencia, valor_parcial, nivel, tipo_linha, observacao)
               SELECT
                 $1 AS tenant_id,
                 $2 AS id_planilha,
@@ -7114,6 +7259,7 @@ export default async function v1Routes(server: FastifyInstance) {
                 END AS id_servico,
                 CASE WHEN v.tipo_linha = 'SERVICO' THEN v.quantidade ELSE NULL END AS quantidade,
                 CASE WHEN v.tipo_linha = 'SERVICO' THEN v.valor_unitario ELSE NULL END AS valor_unitario,
+                CASE WHEN v.tipo_linha = 'SERVICO' THEN v.valor_unit_referencia ELSE NULL END AS valor_unit_referencia,
                 CASE WHEN v.tipo_linha = 'SERVICO' THEN v.valor_parcial ELSE NULL END AS valor_parcial,
                 v.nivel,
                 v.tipo_linha,
@@ -8126,6 +8272,7 @@ export default async function v1Routes(server: FastifyInstance) {
         const nivel = item ? item.split('.').filter(Boolean).length : 0;
 
         let valorUnitario = linha.valorUnitario == null || linha.valorUnitario === '' ? null : toDec(linha.valorUnitario);
+        let valorUnitReferencia = linha.valorUnitReferencia == null || linha.valorUnitReferencia === '' ? null : toDec(linha.valorUnitReferencia);
         let valorParcialBody = linha.valorParcial == null || linha.valorParcial === '' ? null : toDec(linha.valorParcial);
         let valorParcial =
           valorParcialBody != null ? valorParcialBody : quantidade != null && valorUnitario != null ? Number((quantidade * valorUnitario).toFixed(6)) : null;
@@ -8187,6 +8334,7 @@ export default async function v1Routes(server: FastifyInstance) {
           fonteLinha = null;
           undLinha = null;
           valorUnitario = null;
+          valorUnitReferencia = null;
           valorParcialBody = null;
           valorParcial = null;
         }
@@ -8276,10 +8424,11 @@ export default async function v1Routes(server: FastifyInstance) {
               id_servico = $6,
               quantidade = $7,
               valor_unitario = $8,
-              valor_parcial = $9,
-              nivel = $10,
-              tipo_linha = $11,
-              observacao = $12,
+              valor_unit_referencia = $9,
+              valor_parcial = $10,
+              nivel = $11,
+              tipo_linha = $12,
+              observacao = $13,
               atualizado_em = NOW()
             WHERE tenant_id = $1 AND id_planilha = $2 AND id_planilha_item = $3
             `,
@@ -8291,6 +8440,7 @@ export default async function v1Routes(server: FastifyInstance) {
             idServico,
             quantidade,
             valorUnitario,
+            valorUnitReferencia,
             valorParcial,
             nivel,
             tipoLinha,
@@ -8300,9 +8450,9 @@ export default async function v1Routes(server: FastifyInstance) {
           await prisma.$executeRawUnsafe(
             `
             INSERT INTO tab_planilha_itens
-              (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
+              (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_unit_referencia, valor_parcial, nivel, tipo_linha, observacao)
             VALUES
-              ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+              ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
             `,
             ctx.tenantId,
             idPlanilha,
@@ -8311,6 +8461,7 @@ export default async function v1Routes(server: FastifyInstance) {
             idServico,
             quantidade,
             valorUnitario,
+            valorUnitReferencia,
             valorParcial,
             nivel,
             tipoLinha,
@@ -9107,7 +9258,8 @@ export default async function v1Routes(server: FastifyInstance) {
           SELECT
             sp.codigo_servico AS codigo_servico,
             COALESCE(MIN(i.item) FILTER (WHERE COALESCE(i.item,'') <> ''), '') AS item,
-            SUM(COALESCE(i.valor_parcial, 0)) AS total_planilha
+            SUM(COALESCE(i.valor_parcial, 0)) AS total_planilha,
+            MAX(i.valor_unit_referencia) FILTER (WHERE i.valor_unit_referencia IS NOT NULL) AS valor_unit_referencia
           FROM tab_planilha_itens i
           JOIN tab_servicos s
             ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
@@ -9123,6 +9275,7 @@ export default async function v1Routes(server: FastifyInstance) {
             sp.servico AS servico,
             COALESCE(ps.item,'') AS item,
             COALESCE(ps.total_planilha, 0) AS total_planilha,
+            ps.valor_unit_referencia AS valor_unit_referencia,
             EXISTS (
               SELECT 1
               FROM tab_travas t
@@ -9189,6 +9342,7 @@ export default async function v1Routes(server: FastifyInstance) {
           b.origem_tipo AS "origemTipo",
           b.origem_chave AS "origemChave",
           b.total_planilha AS "totalPlanilha",
+          b.valor_unit_referencia AS "valorUnitReferencia",
           COALESCE(c.qtd_itens, 0) AS "qtdItens",
           COALESCE(c.total_base, 0) AS "totalBase",
           COALESCE(c.total_mao_base, 0) AS "totalMaoBase",
@@ -9210,13 +9364,14 @@ export default async function v1Routes(server: FastifyInstance) {
 
       out = (rows || []).map((r: any) => {
         const totalPlanilha = r.totalPlanilha == null ? 0 : Number(r.totalPlanilha);
+        const valorUnitReferencia = r.valorUnitReferencia == null ? null : Number(r.valorUnitReferencia);
         const totalBase = r.totalBase == null ? 0 : Number(r.totalBase);
         const totalMaoBase = r.totalMaoBase == null ? 0 : Number(r.totalMaoBase);
         const totalComLS = (totalBase - totalMaoBase) + totalMaoBase * (1 + (lsPercent || 0) / 100);
         const totalComLSComBDI = totalComLS * (1 + (bdiPercent || 0) / 100);
-        const diff = totalPlanilha - totalComLSComBDI;
         const hasComposicao = Number(r.qtdItens || 0) > 0;
-        const status = !hasComposicao ? 'SEM_COMPOSICAO' : Math.abs(diff) > 0.01 ? 'DIVERGENTE' : 'OK';
+        const diff = valorUnitReferencia == null ? 0 : totalComLSComBDI - valorUnitReferencia;
+        const status = !hasComposicao ? 'SEM_COMPOSICAO' : valorUnitReferencia == null ? 'OK' : Math.abs(diff) > 0.01 ? 'DIVERGENTE' : 'OK';
         return {
           codigoServico: String(r.codigoServico || '').trim(),
           item: String(r.item || '').trim(),
@@ -9227,6 +9382,7 @@ export default async function v1Routes(server: FastifyInstance) {
           origemTipo: String(r.origemTipo || ''),
           origemChave: String(r.origemChave || ''),
           totalPlanilha,
+          valorUnitReferencia: valorUnitReferencia == null ? null : Number(valorUnitReferencia.toFixed(6)),
           totalComposicao: Number(totalComLSComBDI.toFixed(6)),
           diff: Number(diff.toFixed(6)),
           status,

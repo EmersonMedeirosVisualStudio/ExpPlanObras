@@ -1827,7 +1827,9 @@ ETAPA 5 — Como validar
 - Regra: ao salvar/importar uma composição (ou importar um serviço que traga composição), o sistema refaz o consolidado de insumos e atualiza os valores do serviço na própria versão da planilha.
 - Regra: ao trocar Parâmetros (BDI/LS/Descontos/Data-base/UF) de uma versão, o sistema recalcula automaticamente os valores unitários e parciais dos serviços daquela versão (isso alimenta também telas derivadas como Adequação e, no futuro, Medição).
 - Importação CSV (planilha) com **prévia**: antes de gravar, o sistema mostra uma grade de conferência e destaca campos inválidos.
-  - Colunas importadas (CSV): `item`, `codigo`, `fonte`, `servicos`, `und`, `quant`, `valor_unitario` (o **valor parcial** é calculado automaticamente).
+  - Colunas importadas (CSV): `item`, `codigo`, `fonte`, `servicos`, `und`, `quant`, `valor_unitario` (**Valor Unit de referência**, opcional).
+  - Observação: na prévia, o sistema pode calcular um **valor parcial de referência** (quant × valor_unitario) apenas para conferência.
+  - Observação: na planilha (após importar), o **VALOR UNIT.** e o **VALOR PARCIAL** do orçamento são vinculados ao valor calculado pela **composição** do serviço (quando existir).
   - Observação de compatibilidade: leitura “smart” de encoding (UTF-8 / Windows-1252) para reduzir erros de acentuação no texto importado.
   - Observação: ao importar itens do tipo Serviço, o sistema garante que o serviço exista no catálogo da obra (Serviços).
   - Observação: ao salvar/importar composições, o sistema garante que subcomposições referenciadas existam no catálogo da obra (reduz “cadastros órfãos”).
@@ -1844,7 +1846,9 @@ ETAPA 2 — O que clicar
 
 ETAPA 3 — O que preencher
 - Sempre preencha: **ITEM**, **CÓDIGO** e **QUANT.**
-- Os campos **Fonte**, **Serviços (descrição)**, **UND** e **VALOR UNIT.** são **virtuais** (vêm do **catálogo da obra**) e ficam travados quando o código já existe no catálogo.
+- Os campos **Fonte**, **Serviços (descrição)** e **UND** vêm do **catálogo da obra** e ficam travados quando o código já existe no catálogo.
+- O campo **VLR UNIT REF.** é opcional e serve como referência de comparação para o indicador **COMP.**
+- O campo **VALOR UNIT.** não é digitável e representa o valor calculado pela **composição** do serviço (com BDI/LS da versão).
 - Se o código ainda não existir no catálogo, você poderá preencher **Fonte/descrição/UND** uma única vez para cadastrar o serviço. Ao salvar, o serviço passa a existir no catálogo e, a partir daí, esses campos ficam travados na Planilha.
 - Regra: não é permitido alterar **Fonte**, **nome** e **UND** de um serviço já cadastrado através da Planilha. Essas informações são gravadas e mantidas em **Serviços** (ou na tela de **Composição**, que atualiza o catálogo ao salvar).
 
@@ -1963,13 +1967,14 @@ ETAPA 5 — Como validar
   - o campo **Valor Unit.** do serviço **não é digitável**;
   - ele é preenchido automaticamente a partir da composição vinculada ao código do serviço (ou **0** quando não existe composição definida);
   - ao informar/alterar o **Código** do serviço, o sistema recalcula o valor unitário.
+  - o campo **Vlr Unit Ref.** (opcional) pode ser informado para permitir comparação de referência.
 - Edição de Item/Subitem:
   - ao selecionar **Tipo = Item** ou **Tipo = Subitem**, os campos **Código**, **Fonte**, **UND**, **Quant.** e **Valor Unit.** não são exibidos (pois são específicos de Serviço);
   - o **Valor parcial** do Item/Subitem é a **soma dos serviços** cadastrados abaixo dele e é atualizado automaticamente conforme serviços são inseridos/alterados/excluídos.
 - Cancelamento de edição (atalho): a tecla **Esc** cancela a edição em andamento e restaura o último estado salvo.
 - Planilha (exportação): no card **Planilha orçamentária**, os botões **Imprimir**, **PDF** e **CSV** ficam no canto superior direito do card.
 - Serviços:
-  - A tela marca serviços **sem composição** e **divergentes** comparando total da planilha x total calculado por composição.
+  - A tela marca serviços **sem composição** e **divergentes** comparando **Sistema (VALOR UNIT.)** × **Referência (Vlr Unit Ref.)**.
   - Existe ação para **copiar serviço entre versões** (origem → destino), com prévia (pode copiar composição).
     - Como o catálogo é **único da obra**, a cópia foca nas **linhas da planilha**. A composição já está vinculada ao serviço no catálogo.
     - Se existir regra/ação de sobrescrever composição, ela afeta o serviço no catálogo (impacta todas as versões que usam o código).

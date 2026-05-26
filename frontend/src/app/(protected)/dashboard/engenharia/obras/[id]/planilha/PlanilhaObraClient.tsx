@@ -52,6 +52,7 @@ type PlanilhaLinha = {
   und: string;
   quant: string;
   valorUnitario: string;
+  valorUnitReferencia: string;
   valorParcial: string;
   nivel: number;
   tipoLinha: "ITEM" | "SUBITEM" | "SERVICO";
@@ -93,12 +94,24 @@ type ComposicaoValidacaoRow = {
   servico: string;
   totalPlanilha: number;
   totalComposicao: number;
+  valorUnitReferencia: number | null;
   diff: number;
   status: "SEM_COMPOSICAO" | "DIVERGENTE" | "OK";
   qtdItens: number;
 };
 
-type PlanilhaGridColKey = "item" | "comp" | "codigo" | "fonte" | "servicos" | "und" | "quant" | "valorUnitario" | "valorParcial" | "acoes";
+type PlanilhaGridColKey =
+  | "item"
+  | "comp"
+  | "codigo"
+  | "fonte"
+  | "servicos"
+  | "und"
+  | "quant"
+  | "valorUnitario"
+  | "valorUnitReferencia"
+  | "valorParcial"
+  | "acoes";
 
 type ParametroDTO = {
   idParametros: number;
@@ -473,6 +486,7 @@ function buildLinhaFormErrorMessage(errors: Partial<Record<keyof PlanilhaLinha, 
     und: "UND",
     quant: "QUANT.",
     valorUnitario: "VALOR UNIT.",
+    valorUnitReferencia: "VLR UNIT REF.",
     valorParcial: "VALOR PARCIAL",
   };
 
@@ -596,6 +610,7 @@ export default function PlanilhaObraClient({
         und: 64,
         quant: 110,
         valorUnitario: 130,
+        valorUnitReferencia: 130,
         valorParcial: 140,
         acoes: 96,
       },
@@ -608,6 +623,7 @@ export default function PlanilhaObraClient({
         und: true,
         quant: true,
         valorUnitario: true,
+        valorUnitReferencia: true,
         valorParcial: true,
         acoes: true,
       },
@@ -631,6 +647,7 @@ export default function PlanilhaObraClient({
     und: "",
     quant: "",
     valorUnitario: "",
+    valorUnitReferencia: "",
     valorParcial: "",
   });
   const [showFilters, setShowFilters] = useState(false);
@@ -648,6 +665,7 @@ export default function PlanilhaObraClient({
     und: "",
     quant: "",
     valorUnitario: "",
+    valorUnitReferencia: "",
     valorParcial: "",
   });
 
@@ -771,6 +789,9 @@ export default function PlanilhaObraClient({
             valorUnitario: Number.isFinite(Number(colWidthRaw?.valorUnitario))
               ? Math.max(90, Math.min(260, Math.round(Number(colWidthRaw.valorUnitario))))
               : p.grid.colWidth.valorUnitario,
+            valorUnitReferencia: Number.isFinite(Number(colWidthRaw?.valorUnitReferencia))
+              ? Math.max(90, Math.min(260, Math.round(Number(colWidthRaw.valorUnitReferencia))))
+              : p.grid.colWidth.valorUnitReferencia,
             valorParcial: Number.isFinite(Number(colWidthRaw?.valorParcial))
               ? Math.max(90, Math.min(280, Math.round(Number(colWidthRaw.valorParcial))))
               : p.grid.colWidth.valorParcial,
@@ -785,6 +806,7 @@ export default function PlanilhaObraClient({
             und: typeof colVisibleRaw?.und === "boolean" ? Boolean(colVisibleRaw.und) : p.grid.colVisible.und,
             quant: typeof colVisibleRaw?.quant === "boolean" ? Boolean(colVisibleRaw.quant) : p.grid.colVisible.quant,
             valorUnitario: typeof colVisibleRaw?.valorUnitario === "boolean" ? Boolean(colVisibleRaw.valorUnitario) : p.grid.colVisible.valorUnitario,
+            valorUnitReferencia: typeof colVisibleRaw?.valorUnitReferencia === "boolean" ? Boolean(colVisibleRaw.valorUnitReferencia) : p.grid.colVisible.valorUnitReferencia,
             valorParcial: typeof colVisibleRaw?.valorParcial === "boolean" ? Boolean(colVisibleRaw.valorParcial) : p.grid.colVisible.valorParcial,
             acoes: typeof colVisibleRaw?.acoes === "boolean" ? Boolean(colVisibleRaw.acoes) : p.grid.colVisible.acoes,
           },
@@ -863,7 +885,18 @@ export default function PlanilhaObraClient({
 
   function resetLinhaForm() {
     setEditingLinhaId(null);
-    setNovo({ tipoLinha: "SERVICO", item: "", codigo: "", fonte: "", servicos: "", und: "", quant: "", valorUnitario: "", valorParcial: "" });
+    setNovo({
+      tipoLinha: "SERVICO",
+      item: "",
+      codigo: "",
+      fonte: "",
+      servicos: "",
+      und: "",
+      quant: "",
+      valorUnitario: "",
+      valorUnitReferencia: "",
+      valorParcial: "",
+    });
     setLinhaErrors({});
     setLinhaFormErr(null);
     setOkMsg(null);
@@ -873,7 +906,9 @@ export default function PlanilhaObraClient({
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
-      const hasTyped = [novo.item, novo.codigo, novo.fonte, novo.servicos, novo.und, novo.quant, novo.valorUnitario, novo.valorParcial].some((v) => String(v || "").trim());
+      const hasTyped = [novo.item, novo.codigo, novo.fonte, novo.servicos, novo.und, novo.quant, novo.valorUnitario, novo.valorUnitReferencia, novo.valorParcial].some((v) =>
+        String(v || "").trim()
+      );
       if (!editingLinhaId && !hasTyped) return;
       e.preventDefault();
       resetLinhaForm();
@@ -944,7 +979,7 @@ export default function PlanilhaObraClient({
           String(l.servicos || ""),
           String(l.und || ""),
           String(l.quant || ""),
-          String(l.valorUnitario || ""),
+          String(l.valorUnitReferencia || ""),
           valorParcialOut,
           String(l.tipoLinha || ""),
         ]
@@ -1034,6 +1069,7 @@ export default function PlanilhaObraClient({
           <td>${escapeHtml(l.und || "")}</td>
           <td style="text-align:right">${escapeHtml(l.quant || "")}</td>
           <td style="text-align:right">${escapeHtml(l.valorUnitario || "")}</td>
+          <td style="text-align:right">${escapeHtml(l.valorUnitReferencia || "")}</td>
           <td style="text-align:right">${escapeHtml(l.valorParcial || "")}</td>
         </tr>`;
       })
@@ -1066,6 +1102,7 @@ export default function PlanilhaObraClient({
         <col style="width:64px" />
         <col style="width:74px" />
         <col style="width:86px" />
+        <col style="width:86px" />
       </colgroup>
     `;
 
@@ -1082,6 +1119,7 @@ export default function PlanilhaObraClient({
               <th>UND</th>
               <th style="text-align:right">QUANT.</th>
               <th style="text-align:right">VALOR UNIT.</th>
+              <th style="text-align:right">VLR UNIT REF.</th>
               <th style="text-align:right">VALOR PARCIAL</th>
             </tr>
           </thead>
@@ -1336,7 +1374,14 @@ export default function PlanilhaObraClient({
       const data = json.data || {};
       setObraStatus(data.obraStatus ?? null);
       setObraResumo((data.obra as any) || null);
-      setPlanilha((data.planilha as any) || null);
+      const pl = (data.planilha as any) || null;
+      if (pl?.linhas && Array.isArray(pl.linhas)) {
+        pl.linhas = pl.linhas.map((l: any) => ({
+          ...l,
+          valorUnitReferencia: l?.valorUnitReferencia == null ? "" : String(l.valorUnitReferencia),
+        }));
+      }
+      setPlanilha(pl);
     } catch (e: any) {
       setErr(e?.message || "Erro ao salvar item");
     } finally {
@@ -1416,6 +1461,7 @@ export default function PlanilhaObraClient({
             servico: String(r.servico || ""),
             totalPlanilha: Number(r.totalPlanilha || 0),
             totalComposicao: Number(r.totalComposicao || 0),
+            valorUnitReferencia: r.valorUnitReferencia == null ? null : Number(r.valorUnitReferencia),
             diff: Number(r.diff || 0),
             status: String(r.status || "OK") as any,
             qtdItens: Number(r.qtdItens || 0),
@@ -1603,6 +1649,8 @@ export default function PlanilhaObraClient({
       if (q == null || !(q > 0)) errors.quant = "Inválido";
       const v = parseNumberLoose(next.valorUnitario) ?? 0;
       if (!(v >= 0)) errors.valorUnitario = "Inválido";
+      const vr = parseNumberLoose(next.valorUnitReferencia);
+      if (String(next.valorUnitReferencia || "").trim() && (vr == null || !(vr >= 0))) errors.valorUnitReferencia = "Inválido";
       const vp = calcValorParcialLinha(next.quant, String(v));
       if (!vp) errors.valorParcial = "Inválido";
     }
@@ -1619,7 +1667,7 @@ export default function PlanilhaObraClient({
       setLinhaFormErr(null);
       let normalized = applyValorParcialAuto({ ...novo });
       if (normalized.tipoLinha !== "SERVICO") {
-        normalized = { ...normalized, codigo: "", fonte: "", und: "", quant: "", valorUnitario: "" };
+        normalized = { ...normalized, codigo: "", fonte: "", und: "", quant: "", valorUnitario: "", valorUnitReferencia: "" };
       }
       if (normalized.tipoLinha === "SERVICO") {
         const info = await obterPrecoUnitarioServico(normalized.codigo, planilha.idPlanilha);
@@ -1651,6 +1699,7 @@ export default function PlanilhaObraClient({
             und: normalized.und,
             quant: normalized.quant,
             valorUnitario: normalized.valorUnitario,
+            valorUnitReferencia: normalized.valorUnitReferencia,
             valorParcial: normalized.valorParcial,
             tipoLinha: normalized.tipoLinha,
           },
@@ -1728,6 +1777,7 @@ export default function PlanilhaObraClient({
       und: String(l.und || ""),
       quant: formatDecimalOnBlur(String(l.quant || ""), 3),
       valorUnitario: formatDecimalOnBlur(String(l.valorUnitario || ""), 2),
+      valorUnitReferencia: formatDecimalOnBlur(String(l.valorUnitReferencia || ""), 2),
       valorParcial: formatDecimalOnBlur(String(l.valorParcial || ""), 2),
     };
     setEditingLinhaId(Number(l.idLinha));
@@ -2034,7 +2084,7 @@ export default function PlanilhaObraClient({
           if (!codigo.trim()) errors.codigo = "Obrigatório (serviço)";
           if (!und.trim()) errors.und = "Obrigatório (serviço)";
           if (quantidade == null || !(quantidade > 0)) errors.quant = "Inválido (serviço)";
-          if (vUnit == null || !(vUnit >= 0)) errors.valorUnitario = "Inválido (serviço)";
+          if (valorUnitario.trim() && (vUnit == null || !(vUnit >= 0))) errors.valorUnitario = "Inválido (serviço)";
         } else {
           if (codigo.trim()) errors.codigo = "Não usar código em ITEM/SUBITEM";
           if (und.trim()) errors.und = "Não usar und em ITEM/SUBITEM";
@@ -2286,6 +2336,7 @@ export default function PlanilhaObraClient({
       und: q(gridFilter.und),
       quant: qNum(gridFilter.quant),
       valorUnitario: qNum(gridFilter.valorUnitario),
+      valorUnitReferencia: qNum((gridFilter as any).valorUnitReferencia),
       valorParcial: qNum(gridFilter.valorParcial),
     };
 
@@ -2312,6 +2363,9 @@ export default function PlanilhaObraClient({
 
       const valorUnit = qNum(l.valorUnitario);
       if (f.valorUnitario && !valorUnit.includes(f.valorUnitario)) return false;
+
+      const valorUnitRef = qNum((l as any).valorUnitReferencia);
+      if (f.valorUnitReferencia && !valorUnitRef.includes(f.valorUnitReferencia)) return false;
 
       const displayParcial =
         l.tipoLinha === "ITEM" || l.tipoLinha === "SUBITEM"
@@ -3242,6 +3296,7 @@ export default function PlanilhaObraClient({
                           { key: "und", label: "UND", min: 50, max: 120 },
                           { key: "quant", label: "QUANT.", min: 80, max: 220 },
                           { key: "valorUnitario", label: "VALOR UNIT.", min: 90, max: 260 },
+                          { key: "valorUnitReferencia", label: "VLR UNIT REF.", min: 90, max: 260 },
                           { key: "valorParcial", label: "VALOR PARCIAL", min: 90, max: 280 },
                           { key: "acoes", label: "Ações", min: 70, max: 180 },
                         ] as Array<{ key: PlanilhaGridColKey; label: string; min: number; max: number }>
@@ -3496,7 +3551,7 @@ export default function PlanilhaObraClient({
                             setLinhaFormErr(null);
                             setNovo((p) => {
                               if (tipoLinha === "SERVICO") return applyValorParcialAuto({ ...p, tipoLinha });
-                              return { ...p, tipoLinha, codigo: "", fonte: "", und: "", quant: "", valorUnitario: "", valorParcial: "" };
+                              return { ...p, tipoLinha, codigo: "", fonte: "", und: "", quant: "", valorUnitario: "", valorUnitReferencia: "", valorParcial: "" };
                             });
                             setLinhaErrors((p) => {
                               if (!("tipoLinha" in p)) return p;
@@ -3698,6 +3753,28 @@ export default function PlanilhaObraClient({
                         <div className="text-sm text-slate-600">VALOR UNIT.</div>
                         <input className={`input bg-white ${linhaErrors.valorUnitario ? "border-red-300 bg-red-50" : ""}`} value={novo.valorUnitario} readOnly disabled={!podeEditar} />
                       </div>
+                      <div>
+                        <div className="text-sm text-slate-600">VLR UNIT REF.</div>
+                        <input
+                          className={`input bg-white ${linhaErrors.valorUnitReferencia ? "border-red-300 bg-red-50" : ""}`}
+                          value={novo.valorUnitReferencia}
+                          onChange={(e) => {
+                            const v = sanitizeDecimalInput(e.target.value);
+                            setLinhaFormErr(null);
+                            setNovo((p) => ({ ...p, valorUnitReferencia: v }));
+                            setLinhaErrors((p) => {
+                              if (!("valorUnitReferencia" in p)) return p;
+                              const { valorUnitReferencia: _, ...rest } = p as any;
+                              return rest;
+                            });
+                          }}
+                          onBlur={() => setNovo((p) => ({ ...p, valorUnitReferencia: formatDecimalOnBlur(p.valorUnitReferencia, 2) }))}
+                          disabled={!podeEditar}
+                          inputMode="decimal"
+                          placeholder="(opcional)"
+                          title="Valor Unitário de Referência (opcional). Se vazio, o status COMP. não compara."
+                        />
+                      </div>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
@@ -3711,7 +3788,7 @@ export default function PlanilhaObraClient({
                             setLinhaFormErr(null);
                             setNovo((p) => {
                               if (tipoLinha === "SERVICO") return applyValorParcialAuto({ ...p, tipoLinha });
-                              return { ...p, tipoLinha, codigo: "", fonte: "", und: "", quant: "", valorUnitario: "", valorParcial: "" };
+                              return { ...p, tipoLinha, codigo: "", fonte: "", und: "", quant: "", valorUnitario: "", valorUnitReferencia: "", valorParcial: "" };
                             });
                             setLinhaErrors((p) => {
                               if (!("tipoLinha" in p)) return p;
@@ -3855,6 +3932,15 @@ export default function PlanilhaObraClient({
                     <input className="input bg-white w-full" value={gridFilter.valorUnitario} onChange={(e) => setGridFilter((p) => ({ ...p, valorUnitario: e.target.value }))} inputMode="decimal" />
                   </label>
                   <label className="space-y-1">
+                    <div className="text-xs text-slate-600">VLR UNIT REF.</div>
+                    <input
+                      className="input bg-white w-full"
+                      value={(gridFilter as any).valorUnitReferencia}
+                      onChange={(e) => setGridFilter((p) => ({ ...p, valorUnitReferencia: e.target.value } as any))}
+                      inputMode="decimal"
+                    />
+                  </label>
+                  <label className="space-y-1">
                     <div className="text-xs text-slate-600">VALOR PARCIAL</div>
                     <input className="input bg-white w-full" value={gridFilter.valorParcial} onChange={(e) => setGridFilter((p) => ({ ...p, valorParcial: e.target.value }))} inputMode="decimal" />
                   </label>
@@ -3863,7 +3949,7 @@ export default function PlanilhaObraClient({
             ) : null}
 
             {(() => {
-              const order: PlanilhaGridColKey[] = ["item", "comp", "codigo", "fonte", "servicos", "und", "quant", "valorUnitario", "valorParcial", "acoes"];
+              const order: PlanilhaGridColKey[] = ["item", "comp", "codigo", "fonte", "servicos", "und", "quant", "valorUnitario", "valorUnitReferencia", "valorParcial", "acoes"];
               const visible = order.filter((k) => uiPrefs.grid.colVisible[k]);
               const thStyle: CSSProperties = {
                 fontFamily: uiPrefs.grid.headerFontFamily === "inherit" ? undefined : uiPrefs.grid.headerFontFamily,
@@ -3920,6 +4006,11 @@ export default function PlanilhaObraClient({
                         {visible.includes("valorUnitario") ? (
                           <th className="px-3 py-2 text-right border-r border-slate-200" style={thStyle}>
                             VALOR UNIT.
+                          </th>
+                        ) : null}
+                        {visible.includes("valorUnitReferencia") ? (
+                          <th className="px-3 py-2 text-right border-r border-slate-200" style={thStyle}>
+                            VLR UNIT REF.
                           </th>
                         ) : null}
                         {visible.includes("valorParcial") ? (
@@ -3994,20 +4085,32 @@ export default function PlanilhaObraClient({
                                   ) : null;
                                 if (v.status === "SEM_COMPOSICAO")
                                   return (
-                                    <span title="Sem composição">
+                                    <span
+                                      title={
+                                        String(l.valorUnitReferencia || "").trim()
+                                          ? `Sem composição | Referência: ${moeda(Number(parseNumberLoose(l.valorUnitReferencia) || 0))}`
+                                          : "Sem composição"
+                                      }
+                                    >
                                       <XCircle className="h-4 w-4 text-red-600" />
                                     </span>
                                   );
                                 if (v.status === "DIVERGENTE")
                                   return (
                                     <span
-                                      title={`Planilha: ${moeda(Number(v.totalPlanilha || 0))} | Composição: ${moeda(Number(v.totalComposicao || 0))} | Dif.: ${moeda(Number(v.diff || 0))}`}
+                                      title={`Referência: ${moeda(Number(v.valorUnitReferencia || 0))} | Sistema: ${moeda(Number(v.totalComposicao || 0))} | Dif.: ${moeda(Number(v.diff || 0))}`}
                                     >
                                       <TriangleAlert className="h-4 w-4 text-amber-700" />
                                     </span>
                                   );
                                 return (
-                                  <span title="OK">
+                                  <span
+                                    title={
+                                      v.valorUnitReferencia == null
+                                        ? "OK"
+                                        : `OK | Referência: ${moeda(Number(v.valorUnitReferencia || 0))} | Sistema: ${moeda(Number(v.totalComposicao || 0))}`
+                                    }
+                                  >
                                     <Check className="h-4 w-4 text-green-600" />
                                   </span>
                                 );
@@ -4025,6 +4128,9 @@ export default function PlanilhaObraClient({
                           {visible.includes("quant") ? <td className="px-3 py-2 text-right border-r border-slate-200">{fmtCellNumber(l.quant, 3)}</td> : null}
                           {visible.includes("valorUnitario") ? (
                             <td className="px-3 py-2 text-right border-r border-slate-200">{fmtCellNumber(l.valorUnitario, 2)}</td>
+                          ) : null}
+                          {visible.includes("valorUnitReferencia") ? (
+                            <td className="px-3 py-2 text-right border-r border-slate-200">{fmtCellNumber(l.valorUnitReferencia, 2)}</td>
                           ) : null}
                           {visible.includes("valorParcial") ? (
                             <td className="px-3 py-2 text-right border-r border-slate-200">
