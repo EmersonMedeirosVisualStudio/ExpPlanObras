@@ -8945,6 +8945,7 @@ export default async function v1Routes(server: FastifyInstance) {
         planilhaId: z.coerce.number().int().positive().optional(),
         limit: z.coerce.number().int().positive().optional(),
         offset: z.coerce.number().int().min(0).optional(),
+        mode: z.string().optional(),
       })
       .parse(request.query || {});
     const idObra = Number(id);
@@ -8954,7 +8955,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
     await ensurePlanilhaEstruturaUnicaTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
-    if (!idPlanilha) return ok(reply, { planilhaId: null, bdiPercent: 0, lsPercent: 0, rows: [] });
+    if (!idPlanilha) return ok(reply, { planilhaId: null, total: 0, offset: 0, limit: 50, nextOffset: 0, hasMore: false, rows: [] });
 
     const limit = q.limit != null ? Math.max(1, Math.min(200, Number(q.limit))) : 50;
     const offset = q.offset != null ? Math.max(0, Math.min(1_000_000, Number(q.offset))) : 0;
@@ -8970,162 +8971,273 @@ export default async function v1Routes(server: FastifyInstance) {
     )) as any[];
     const total = totalRows?.[0]?.total == null ? 0 : Number(totalRows[0].total);
 
-    const rows = (await prisma.$queryRawUnsafe(
-      `
-      WITH planilha_params AS (
-        SELECT
-          COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
-          COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
-        FROM tab_planilhas v
-        LEFT JOIN tab_parametros p
-          ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
-        WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
-        LIMIT 1
-      ),
-      svc_page AS (
-        SELECT
-          UPPER(COALESCE(s.codigo,'')) AS codigo_servico,
-          COALESCE(s.fonte,'') AS fonte,
-          COALESCE(s.servico,'') AS servico
-        FROM tab_servicos s
-        WHERE s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3
-        ORDER BY UPPER(COALESCE(s.codigo,''))
-        LIMIT $4 OFFSET $5
-      ),
-      planilha_servicos AS (
-        SELECT
-          sp.codigo_servico AS codigo_servico,
-          COALESCE(MIN(i.item) FILTER (WHERE COALESCE(i.item,'') <> ''), '') AS item,
-          SUM(COALESCE(i.valor_parcial, 0)) AS total_planilha
-        FROM tab_planilha_itens i
-        JOIN tab_servicos s
-          ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
-        JOIN svc_page sp
-          ON sp.codigo_servico = UPPER(COALESCE(s.codigo,''))
-        WHERE i.tenant_id = $1 AND i.id_planilha = $3 AND i.tipo_linha = 'SERVICO'
-        GROUP BY sp.codigo_servico
-      ),
-      base AS (
-        SELECT
-          sp.codigo_servico AS codigo_servico,
-          sp.fonte AS fonte,
-          sp.servico AS servico,
-          COALESCE(ps.item,'') AS item,
-          COALESCE(ps.total_planilha, 0) AS total_planilha,
-          EXISTS (
-            SELECT 1
-            FROM tab_travas t
-            WHERE t.tenant_id = $1
-              AND t.entidade_tipo = 'SERVICO'
-              AND t.entidade_chave = sp.codigo_servico
-          ) AS travado,
-          EXISTS (
-            SELECT 1
-            FROM tab_travas t
-            WHERE t.tenant_id = $1
-              AND t.entidade_tipo = 'SERVICO'
-              AND t.entidade_chave = sp.codigo_servico
-              AND t.origem_tipo NOT LIKE 'MANUAL_%'
-          ) AS travado_por_cadeia,
-          COALESCE(
-            (
-              SELECT t.origem_tipo
+    const mode = String(q.mode || 'FULL').trim().toUpperCase();
+
+    let bdiPercent = 0;
+    let lsPercent = 0;
+    let out: any[] = [];
+
+    if (mode === 'CATALOGO') {
+      const rows = (await prisma.$queryRawUnsafe(
+        `
+        WITH svc_page AS (
+          SELECT
+            UPPER(COALESCE(s.codigo,'')) AS codigo_servico,
+            COALESCE(s.fonte,'') AS fonte,
+            COALESCE(s.servico,'') AS servico
+          FROM tab_servicos s
+          WHERE s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3
+          ORDER BY UPPER(COALESCE(s.codigo,''))
+          LIMIT $4 OFFSET $5
+        ),
+        base AS (
+          SELECT
+            sp.codigo_servico AS codigo_servico,
+            sp.fonte AS fonte,
+            sp.servico AS servico,
+            EXISTS (
+              SELECT 1
+              FROM tab_travas t
+              WHERE t.tenant_id = $1
+                AND t.entidade_tipo = 'SERVICO'
+                AND t.entidade_chave = sp.codigo_servico
+            ) AS travado,
+            EXISTS (
+              SELECT 1
               FROM tab_travas t
               WHERE t.tenant_id = $1
                 AND t.entidade_tipo = 'SERVICO'
                 AND t.entidade_chave = sp.codigo_servico
                 AND t.origem_tipo NOT LIKE 'MANUAL_%'
-              ORDER BY t.criado_em DESC
-              LIMIT 1
-            ),
-            ''
-          ) AS origem_tipo,
-          COALESCE(
-            (
-              SELECT t.origem_chave
-              FROM tab_travas t
-              WHERE t.tenant_id = $1
-                AND t.entidade_tipo = 'SERVICO'
-                AND t.entidade_chave = sp.codigo_servico
-                AND t.origem_tipo NOT LIKE 'MANUAL_%'
-              ORDER BY t.criado_em DESC
-              LIMIT 1
-            ),
-            ''
-          ) AS origem_chave
-        FROM svc_page sp
-        LEFT JOIN planilha_servicos ps ON ps.codigo_servico = sp.codigo_servico
-      ),
-      comps AS (
+            ) AS travado_por_cadeia,
+            COALESCE(
+              (
+                SELECT t.origem_tipo
+                FROM tab_travas t
+                WHERE t.tenant_id = $1
+                  AND t.entidade_tipo = 'SERVICO'
+                  AND t.entidade_chave = sp.codigo_servico
+                  AND t.origem_tipo NOT LIKE 'MANUAL_%'
+                ORDER BY t.criado_em DESC
+                LIMIT 1
+              ),
+              ''
+            ) AS origem_tipo,
+            COALESCE(
+              (
+                SELECT t.origem_chave
+                FROM tab_travas t
+                WHERE t.tenant_id = $1
+                  AND t.entidade_tipo = 'SERVICO'
+                  AND t.entidade_chave = sp.codigo_servico
+                  AND t.origem_tipo NOT LIKE 'MANUAL_%'
+                ORDER BY t.criado_em DESC
+                LIMIT 1
+              ),
+              ''
+            ) AS origem_chave
+          FROM svc_page sp
+        ),
+        comps AS (
+          SELECT
+            UPPER(COALESCE(ci.codigo_servico,'')) AS codigo_servico,
+            COUNT(ci.id_item) AS qtd_itens,
+            SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base
+          FROM tab_composicoes ci
+          JOIN svc_page sp
+            ON sp.codigo_servico = UPPER(COALESCE(ci.codigo_servico,''))
+          WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+          GROUP BY UPPER(COALESCE(ci.codigo_servico,''))
+        )
         SELECT
-          UPPER(COALESCE(ci.codigo_servico,'')) AS codigo_servico,
-          COUNT(ci.id_item) AS qtd_itens,
-          SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
-          SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
-        FROM tab_composicoes ci
-        JOIN svc_page sp
-          ON sp.codigo_servico = UPPER(COALESCE(ci.codigo_servico,''))
-        WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
-        GROUP BY UPPER(COALESCE(ci.codigo_servico,''))
-      )
-      SELECT
-        b.codigo_servico AS "codigoServico",
-        b.item AS "item",
-        b.fonte AS "fonte",
-        b.servico AS "servico",
-        b.travado AS "travado",
-        b.travado_por_cadeia AS "travadoPorCadeia",
-        b.origem_tipo AS "origemTipo",
-        b.origem_chave AS "origemChave",
-        b.total_planilha AS "totalPlanilha",
-        COALESCE(c.qtd_itens, 0) AS "qtdItens",
-        COALESCE(c.total_base, 0) AS "totalBase",
-        COALESCE(c.total_mao_base, 0) AS "totalMaoBase",
-        (SELECT bdi FROM planilha_params) AS "bdiPercent",
-        (SELECT ls FROM planilha_params) AS "lsPercent"
-      FROM base b
-      LEFT JOIN comps c ON c.codigo_servico = b.codigo_servico
-      ORDER BY b.codigo_servico
-      `,
-      ctx.tenantId,
-      idObra,
-      idPlanilha,
-      limit,
-      offset
-    )) as any[];
-
-    const bdiPercent = rows?.[0]?.bdiPercent == null ? 0 : Number(rows[0].bdiPercent);
-    const lsPercent = rows?.[0]?.lsPercent == null ? 0 : Number(rows[0].lsPercent);
-
-    const out = (rows || []).map((r: any) => {
-      const totalPlanilha = r.totalPlanilha == null ? 0 : Number(r.totalPlanilha);
-      const totalBase = r.totalBase == null ? 0 : Number(r.totalBase);
-      const totalMaoBase = r.totalMaoBase == null ? 0 : Number(r.totalMaoBase);
-      const totalComLS = (totalBase - totalMaoBase) + totalMaoBase * (1 + (lsPercent || 0) / 100);
-      const totalComLSComBDI = totalComLS * (1 + (bdiPercent || 0) / 100);
-      const diff = totalPlanilha - totalComLSComBDI;
-      const hasComposicao = Number(r.qtdItens || 0) > 0;
-      const status = !hasComposicao ? 'SEM_COMPOSICAO' : Math.abs(diff) > 0.01 ? 'DIVERGENTE' : 'OK';
-      return {
+          b.codigo_servico AS "codigoServico",
+          b.fonte AS "fonte",
+          b.servico AS "servico",
+          b.travado AS "travado",
+          b.travado_por_cadeia AS "travadoPorCadeia",
+          b.origem_tipo AS "origemTipo",
+          b.origem_chave AS "origemChave",
+          COALESCE(c.qtd_itens, 0) AS "qtdItens",
+          COALESCE(c.total_base, 0) AS "totalComposicao"
+        FROM base b
+        LEFT JOIN comps c ON c.codigo_servico = b.codigo_servico
+        ORDER BY b.codigo_servico
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        limit,
+        offset
+      )) as any[];
+      out = (rows || []).map((r: any) => ({
         codigoServico: String(r.codigoServico || '').trim(),
-        item: String(r.item || '').trim(),
-          fonte: String(r.fonte || '').trim(),
+        fonte: String(r.fonte || '').trim(),
         servico: String(r.servico || ''),
         travado: Boolean(r.travado),
         travadoPorCadeia: Boolean(r.travadoPorCadeia),
         origemTipo: String(r.origemTipo || ''),
         origemChave: String(r.origemChave || ''),
-        totalPlanilha,
-        totalComposicao: Number(totalComLSComBDI.toFixed(6)),
-        diff: Number(diff.toFixed(6)),
-        status,
+        totalComposicao: r.totalComposicao == null ? 0 : Number(r.totalComposicao),
         qtdItens: Number(r.qtdItens || 0),
-      };
-    });
+      }));
+    } else {
+      const rows = (await prisma.$queryRawUnsafe(
+        `
+        WITH planilha_params AS (
+          SELECT
+            COALESCE(p.bdi_servicos_sinapi, p.bdi_servicos_sbc, 0) AS bdi,
+            COALESCE(p.enc_sociais_sem_des_sinapi, p.enc_sociais_sem_des_sbc, 0) AS ls
+          FROM tab_planilhas v
+          LEFT JOIN tab_parametros p
+            ON p.tenant_id = v.tenant_id AND p.id_parametros = v.id_parametros
+          WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
+          LIMIT 1
+        ),
+        svc_page AS (
+          SELECT
+            UPPER(COALESCE(s.codigo,'')) AS codigo_servico,
+            COALESCE(s.fonte,'') AS fonte,
+            COALESCE(s.servico,'') AS servico
+          FROM tab_servicos s
+          WHERE s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3
+          ORDER BY UPPER(COALESCE(s.codigo,''))
+          LIMIT $4 OFFSET $5
+        ),
+        planilha_servicos AS (
+          SELECT
+            sp.codigo_servico AS codigo_servico,
+            COALESCE(MIN(i.item) FILTER (WHERE COALESCE(i.item,'') <> ''), '') AS item,
+            SUM(COALESCE(i.valor_parcial, 0)) AS total_planilha
+          FROM tab_planilha_itens i
+          JOIN tab_servicos s
+            ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
+          JOIN svc_page sp
+            ON sp.codigo_servico = UPPER(COALESCE(s.codigo,''))
+          WHERE i.tenant_id = $1 AND i.id_planilha = $3 AND i.tipo_linha = 'SERVICO'
+          GROUP BY sp.codigo_servico
+        ),
+        base AS (
+          SELECT
+            sp.codigo_servico AS codigo_servico,
+            sp.fonte AS fonte,
+            sp.servico AS servico,
+            COALESCE(ps.item,'') AS item,
+            COALESCE(ps.total_planilha, 0) AS total_planilha,
+            EXISTS (
+              SELECT 1
+              FROM tab_travas t
+              WHERE t.tenant_id = $1
+                AND t.entidade_tipo = 'SERVICO'
+                AND t.entidade_chave = sp.codigo_servico
+            ) AS travado,
+            EXISTS (
+              SELECT 1
+              FROM tab_travas t
+              WHERE t.tenant_id = $1
+                AND t.entidade_tipo = 'SERVICO'
+                AND t.entidade_chave = sp.codigo_servico
+                AND t.origem_tipo NOT LIKE 'MANUAL_%'
+            ) AS travado_por_cadeia,
+            COALESCE(
+              (
+                SELECT t.origem_tipo
+                FROM tab_travas t
+                WHERE t.tenant_id = $1
+                  AND t.entidade_tipo = 'SERVICO'
+                  AND t.entidade_chave = sp.codigo_servico
+                  AND t.origem_tipo NOT LIKE 'MANUAL_%'
+                ORDER BY t.criado_em DESC
+                LIMIT 1
+              ),
+              ''
+            ) AS origem_tipo,
+            COALESCE(
+              (
+                SELECT t.origem_chave
+                FROM tab_travas t
+                WHERE t.tenant_id = $1
+                  AND t.entidade_tipo = 'SERVICO'
+                  AND t.entidade_chave = sp.codigo_servico
+                  AND t.origem_tipo NOT LIKE 'MANUAL_%'
+                ORDER BY t.criado_em DESC
+                LIMIT 1
+              ),
+              ''
+            ) AS origem_chave
+          FROM svc_page sp
+          LEFT JOIN planilha_servicos ps ON ps.codigo_servico = sp.codigo_servico
+        ),
+        comps AS (
+          SELECT
+            UPPER(COALESCE(ci.codigo_servico,'')) AS codigo_servico,
+            COUNT(ci.id_item) AS qtd_itens,
+            SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
+            SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
+          FROM tab_composicoes ci
+          JOIN svc_page sp
+            ON sp.codigo_servico = UPPER(COALESCE(ci.codigo_servico,''))
+          WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+          GROUP BY UPPER(COALESCE(ci.codigo_servico,''))
+        )
+        SELECT
+          b.codigo_servico AS "codigoServico",
+          b.item AS "item",
+          b.fonte AS "fonte",
+          b.servico AS "servico",
+          b.travado AS "travado",
+          b.travado_por_cadeia AS "travadoPorCadeia",
+          b.origem_tipo AS "origemTipo",
+          b.origem_chave AS "origemChave",
+          b.total_planilha AS "totalPlanilha",
+          COALESCE(c.qtd_itens, 0) AS "qtdItens",
+          COALESCE(c.total_base, 0) AS "totalBase",
+          COALESCE(c.total_mao_base, 0) AS "totalMaoBase",
+          (SELECT bdi FROM planilha_params) AS "bdiPercent",
+          (SELECT ls FROM planilha_params) AS "lsPercent"
+        FROM base b
+        LEFT JOIN comps c ON c.codigo_servico = b.codigo_servico
+        ORDER BY b.codigo_servico
+        `,
+        ctx.tenantId,
+        idObra,
+        idPlanilha,
+        limit,
+        offset
+      )) as any[];
+
+      bdiPercent = rows?.[0]?.bdiPercent == null ? 0 : Number(rows[0].bdiPercent);
+      lsPercent = rows?.[0]?.lsPercent == null ? 0 : Number(rows[0].lsPercent);
+
+      out = (rows || []).map((r: any) => {
+        const totalPlanilha = r.totalPlanilha == null ? 0 : Number(r.totalPlanilha);
+        const totalBase = r.totalBase == null ? 0 : Number(r.totalBase);
+        const totalMaoBase = r.totalMaoBase == null ? 0 : Number(r.totalMaoBase);
+        const totalComLS = (totalBase - totalMaoBase) + totalMaoBase * (1 + (lsPercent || 0) / 100);
+        const totalComLSComBDI = totalComLS * (1 + (bdiPercent || 0) / 100);
+        const diff = totalPlanilha - totalComLSComBDI;
+        const hasComposicao = Number(r.qtdItens || 0) > 0;
+        const status = !hasComposicao ? 'SEM_COMPOSICAO' : Math.abs(diff) > 0.01 ? 'DIVERGENTE' : 'OK';
+        return {
+          codigoServico: String(r.codigoServico || '').trim(),
+          item: String(r.item || '').trim(),
+          fonte: String(r.fonte || '').trim(),
+          servico: String(r.servico || ''),
+          travado: Boolean(r.travado),
+          travadoPorCadeia: Boolean(r.travadoPorCadeia),
+          origemTipo: String(r.origemTipo || ''),
+          origemChave: String(r.origemChave || ''),
+          totalPlanilha,
+          totalComposicao: Number(totalComLSComBDI.toFixed(6)),
+          diff: Number(diff.toFixed(6)),
+          status,
+          qtdItens: Number(r.qtdItens || 0),
+        };
+      });
+    }
 
     const nextOffset = offset + out.length;
     const hasMore = nextOffset < total;
-    return ok(reply, { planilhaId: idPlanilha, bdiPercent, lsPercent, total, offset, limit, nextOffset, hasMore, rows: out });
+    return ok(reply, { planilhaId: idPlanilha, total, offset, limit, nextOffset, hasMore, ...(mode === 'CATALOGO' ? {} : { bdiPercent, lsPercent }), rows: out });
   });
 
   server.post('/engenharia/obras/:id/planilha/servicos/copiar', async (request, reply) => {

@@ -1768,6 +1768,7 @@ ETAPA 2 — O que clicar
 ETAPA 3 — O que esperar
 - Se estiver travado por cadeia, o cadeado fica **cinza/desabilitado** e mostra o motivo ao passar o mouse
 - Se a planilha estiver travada, campos e ações de edição ficam bloqueados
+- Na grade da planilha, o card **Colunas — largura e visibilidade** organiza as configurações em **4 colunas** (para caber os 10 cards) e o campo de largura fica na **mesma linha** do checkbox.
 
 ETAPA 4 — Como validar
 - Tente editar um item/serviço/insumo e confirme que o sistema bloqueia e informa o motivo
@@ -1811,7 +1812,7 @@ ETAPA 5 — Como validar
 - Lógica de criação de uma planilha (obra):
   - 1) Planilha: a planilha combina **Obra + Parâmetros + Catálogo (único da obra)**.
   - 2) Parâmetros: ao criar/clonar uma planilha, define-se o conjunto de **parâmetros** (UF, data-base, BDI, encargos e descontos). Eles determinam como os custos são calculados na planilha.
-  - 3) Serviços (catálogo da obra): é o **catálogo único de serviços** da obra. Ele é alimentado automaticamente quando:
+  - 3) Serviços cadastrados (catálogo da obra): é o **catálogo único de serviços** da obra. Ele é alimentado automaticamente quando:
     - você cria um serviço na Planilha (Adicionar linha) com um CÓDIGO novo; ou
     - você cria/edita na Composição e salva (atualiza também o catálogo); ou
     - você importa serviços (CSV / outra planilha).
@@ -1851,8 +1852,8 @@ ETAPA 4 — O que esperar
 - Ao clicar em **Salvar**, o serviço entra na planilha e também é criado/atualizado no catálogo da obra.
 
 ETAPA 5 — Como validar
-- Clique em **Serviços** e confirme se o serviço aparece pelo **código**.
-- Duplo clique no serviço na planilha abre **Serviços** já focado no código selecionado.
+- Clique em **Serviços cadastrados** e confirme se o serviço aparece pelo **código**.
+- Duplo clique no serviço na planilha abre **Serviços cadastrados** já focado no código selecionado.
 
 
 #### Como usar — Tela Importações (Planilha orçamentária)

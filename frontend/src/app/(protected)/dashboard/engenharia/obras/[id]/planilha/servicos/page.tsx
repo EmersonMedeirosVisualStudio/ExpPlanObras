@@ -6,7 +6,6 @@ import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
 import { Lock, Copy, Pencil, X } from "lucide-react";
 
 type ValidacaoRow = {
-  item: string;
   codigoServico: string;
   fonte: string;
   servico: string;
@@ -14,17 +13,13 @@ type ValidacaoRow = {
   travadoPorCadeia: boolean;
   origemTipo: string;
   origemChave: string;
-  totalPlanilha: number;
   totalComposicao: number;
-  diff: number;
-  status: "SEM_COMPOSICAO" | "DIVERGENTE" | "OK";
   qtdItens: number;
 };
 
 type RefRow = { codigo: string; tipo: string; definida: boolean };
 type CatalogListRow = {
   kind: "SERVICO" | "REF";
-  item: string;
   codigo: string;
   tipo: string;
   fonte: string;
@@ -33,10 +28,7 @@ type CatalogListRow = {
   travadoPorCadeia: boolean | null;
   origemTipo: string | null;
   origemChave: string | null;
-  totalPlanilha: number | null;
   totalComposicao: number | null;
-  diff: number | null;
-  status: "SEM_COMPOSICAO" | "DIVERGENTE" | "OK";
   definida: boolean | null;
 };
 type VersaoRow = {
@@ -49,7 +41,7 @@ type VersaoRow = {
   parametrosNome?: string;
 };
 
-type ColKey = "item" | "codigo" | "tipo" | "fonte" | "servico" | "planilha" | "composicao" | "dif" | "status" | "acao";
+type ColKey = "codigo" | "tipo" | "fonte" | "servico" | "composicao" | "acao";
 
 function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -98,39 +90,23 @@ export default function Page() {
   const [rowsHasMore, setRowsHasMore] = useState(false);
   const [rowsLoading, setRowsLoading] = useState(false);
   const [obraNome, setObraNome] = useState<string>("");
-  const [statusFilter, setStatusFilter] = useState<{ OK: boolean; SEM_COMPOSICAO: boolean; DIVERGENTE: boolean }>({
-    OK: true,
-    SEM_COMPOSICAO: true,
-    DIVERGENTE: true,
-  });
-  const [statusSel, setStatusSel] = useState<"TODOS" | "OK" | "SEM_COMPOSICAO" | "DIVERGENTE">("TODOS");
-  const [listMode, setListMode] = useState<"TODOS" | "PLANILHADOS" | "NAO_PLANILHADOS">("TODOS");
-  const [orderBy, setOrderBy] = useState<"ITEM" | "CODIGO">("ITEM");
   const [textFilter, setTextFilter] = useState("");
   const [fonteFilter, setFonteFilter] = useState<string>("");
   const [showColsCard, setShowColsCard] = useState(false);
   const [colWidths, setColWidths] = useState<Record<ColKey, number>>({
-    item: 90,
     codigo: 100,
     tipo: 120,
     fonte: 90,
     servico: 520,
-    planilha: 120,
     composicao: 130,
-    dif: 110,
-    status: 120,
     acao: 90,
   });
   const [colFixed, setColFixed] = useState<Record<ColKey, boolean>>({
-    item: false,
     codigo: false,
     tipo: false,
     fonte: false,
     servico: false,
-    planilha: false,
     composicao: false,
-    dif: false,
-    status: false,
     acao: false,
   });
   const [refs, setRefs] = useState<RefRow[]>([]);
@@ -245,15 +221,11 @@ export default function Page() {
         return Number.isFinite(x) ? Math.max(10, Math.min(1200, Math.round(x))) : fallback;
       };
       setColWidths((cur) => ({
-        item: n(p?.item, cur.item),
         codigo: n(p?.codigo, cur.codigo),
         tipo: n(p?.tipo, cur.tipo),
         fonte: n(p?.fonte, cur.fonte),
         servico: n(p?.servico, cur.servico),
-        planilha: n(p?.planilha, cur.planilha),
         composicao: n(p?.composicao, cur.composicao),
-        dif: n(p?.dif, cur.dif),
-        status: n(p?.status, cur.status),
         acao: n(p?.acao, cur.acao),
       }));
     } catch {}
@@ -279,15 +251,11 @@ export default function Page() {
       const p = JSON.parse(raw) as any;
       const b = (v: any) => Boolean(v);
       setColFixed((cur) => ({
-        item: b(p?.item ?? cur.item),
         codigo: b(p?.codigo ?? cur.codigo),
         tipo: b(p?.tipo ?? cur.tipo),
         fonte: b(p?.fonte ?? cur.fonte),
         servico: b(p?.servico ?? cur.servico),
-        planilha: b(p?.planilha ?? cur.planilha),
         composicao: b(p?.composicao ?? cur.composicao),
-        dif: b(p?.dif ?? cur.dif),
-        status: b(p?.status ?? cur.status),
         acao: b(p?.acao ?? cur.acao),
       }));
     } catch {}
@@ -299,7 +267,7 @@ export default function Page() {
     } catch {}
   }, [colFixed, colFixedKey]);
 
-  const colKeys = useMemo<ColKey[]>(() => ["item", "codigo", "tipo", "fonte", "servico", "planilha", "composicao", "dif", "status", "acao"], []);
+  const colKeys = useMemo<ColKey[]>(() => ["codigo", "tipo", "fonte", "servico", "composicao", "acao"], []);
 
   function setColWidthWithRedistribution(key: ColKey, nextWidth: number) {
     const min = 10;
@@ -470,13 +438,14 @@ export default function Page() {
     try {
       setRowsLoading(true);
       const res = await authFetch(
-        `/api/v1/engenharia/obras/${idObra}/planilha/composicoes/validacao?planilhaId=${pid}&limit=50&offset=${encodeURIComponent(String(offset || 0))}`
+        `/api/v1/engenharia/obras/${idObra}/planilha/composicoes/validacao?mode=CATALOGO&planilhaId=${pid}&limit=50&offset=${encodeURIComponent(
+          String(offset || 0)
+        )}`
       );
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao validar serviços");
       const list = Array.isArray(json.data?.rows) ? (json.data.rows as any[]) : [];
       const mapped = list.map((r) => ({
-        item: String(r.item || "").trim(),
         codigoServico: String(r.codigoServico || "").trim().toUpperCase(),
         fonte: String(r.fonte || "").trim().toUpperCase(),
         servico: String(r.servico || ""),
@@ -484,10 +453,7 @@ export default function Page() {
         travadoPorCadeia: Boolean(r.travadoPorCadeia),
         origemTipo: String(r.origemTipo || ""),
         origemChave: String(r.origemChave || ""),
-        totalPlanilha: Number(r.totalPlanilha || 0),
         totalComposicao: Number(r.totalComposicao || 0),
-        diff: Number(r.diff || 0),
-        status: String(r.status || "OK") as any,
         qtdItens: Number(r.qtdItens || 0),
       }));
       const total = Number(json.data?.total || 0);
@@ -597,37 +563,9 @@ export default function Page() {
   }, [idObra]);
 
   const filteredRows = useMemo(() => {
-    const parseItemParts = (s: string) =>
-      String(s || "")
-        .trim()
-        .split(".")
-        .filter(Boolean)
-        .map((x) => Number(x))
-        .map((n) => (Number.isFinite(n) ? n : NaN));
-    const cmpItem = (a: string, b: string) => {
-      const aa = parseItemParts(a);
-      const bb = parseItemParts(b);
-      const n = Math.max(aa.length, bb.length);
-      for (let i = 0; i < n; i++) {
-        const av = aa[i];
-        const bv = bb[i];
-        const aOk = Number.isFinite(av);
-        const bOk = Number.isFinite(bv);
-        if (aOk && bOk) {
-          if (av !== bv) return av - bv;
-          continue;
-        }
-        const as = String(a || "").trim();
-        const bs = String(b || "").trim();
-        return as.localeCompare(bs);
-      }
-      return aa.length - bb.length;
-    };
-
     const merged: CatalogListRow[] = [
       ...rows.map((r) => ({
         kind: "SERVICO" as const,
-        item: String(r.item || "").trim(),
         codigo: String(r.codigoServico || "").trim().toUpperCase(),
         tipo: "Serviço",
         fonte: String(r.fonte || "").trim().toUpperCase(),
@@ -636,15 +574,11 @@ export default function Page() {
         travadoPorCadeia: Boolean(r.travadoPorCadeia),
         origemTipo: String(r.origemTipo || ""),
         origemChave: String(r.origemChave || ""),
-        totalPlanilha: Number(r.totalPlanilha || 0),
         totalComposicao: Number(r.totalComposicao || 0),
-        diff: Number(r.diff || 0),
-        status: r.status,
         definida: null,
       })),
       ...refs.map((r) => ({
         kind: "REF" as const,
-        item: "",
         codigo: String(r.codigo || "").trim().toUpperCase(),
         tipo: String(r.tipo || ""),
         fonte: "",
@@ -653,17 +587,12 @@ export default function Page() {
         travadoPorCadeia: null,
         origemTipo: null,
         origemChave: null,
-        totalPlanilha: null,
         totalComposicao: null,
-        diff: null,
-        status: r.definida ? ("OK" as const) : ("SEM_COMPOSICAO" as const),
         definida: Boolean(r.definida),
       })),
     ];
 
-    let out = merged.filter((r) => Boolean(statusFilter[r.status]));
-    if (listMode === "PLANILHADOS") out = out.filter((r) => r.kind === "REF" || Boolean(String(r.item || "").trim()));
-    if (listMode === "NAO_PLANILHADOS") out = out.filter((r) => r.kind === "SERVICO" && !String(r.item || "").trim());
+    let out = merged;
 
     const fonteSel = String(fonteFilter || "").trim().toUpperCase();
     if (fonteSel) {
@@ -682,24 +611,9 @@ export default function Page() {
     }
     if (focusCodigo) out = out.filter((r) => String(r.codigo || "").trim().toUpperCase() === focusCodigo);
 
-    out = [...out].sort((a, b) => {
-      if (orderBy === "CODIGO") {
-        const c = String(a.codigo || "").localeCompare(String(b.codigo || ""), "pt-BR", { numeric: true, sensitivity: "base" });
-        if (c !== 0) return c;
-      } else {
-        const ai = String(a.item || "").trim();
-        const bi = String(b.item || "").trim();
-        if (ai && bi) {
-          const c = cmpItem(ai, bi);
-          if (c !== 0) return c;
-        } else if (ai && !bi) return -1;
-        else if (!ai && bi) return 1;
-      }
-      return String(a.codigo || "").localeCompare(String(b.codigo || ""), "pt-BR", { numeric: true, sensitivity: "base" });
-    });
-
+    out = [...out].sort((a, b) => String(a.codigo || "").localeCompare(String(b.codigo || ""), "pt-BR", { numeric: true, sensitivity: "base" }));
     return out;
-  }, [rows, refs, statusFilter, focusCodigo, listMode, textFilter, fonteFilter, orderBy]);
+  }, [rows, refs, focusCodigo, textFilter, fonteFilter]);
 
   async function toggleTravaServico(codigoServico: string) {
     if (!idObra) return;
@@ -821,14 +735,6 @@ export default function Page() {
     return () => clearTimeout(t);
   }, [bootDone, focusCodigo, filteredRows.length]);
 
-  useEffect(() => {
-    setStatusFilter({
-      OK: statusSel === "TODOS" ? true : statusSel === "OK",
-      SEM_COMPOSICAO: statusSel === "TODOS" ? true : statusSel === "SEM_COMPOSICAO",
-      DIVERGENTE: statusSel === "TODOS" ? true : statusSel === "DIVERGENTE",
-    });
-  }, [statusSel]);
-
   async function criarNovoServico() {
     if (planilhaTravada) {
       setErr("Esta planilha está travada. Não é permitido criar/editar serviços.");
@@ -928,7 +834,7 @@ export default function Page() {
       const warnings: string[] = [];
       warnings.push("Se a Fonte do destino for diferente, a cópia cria/atualiza o serviço na Fonte destino (impacta todas as planilhas que usam essa Fonte).");
       if (copyForm.replaceComposicao) warnings.push('Substituir composição pode sobrescrever a composição do serviço na Fonte destino (impacta todas as planilhas que usam essa Fonte).');
-      if (copyForm.replaceServico) warnings.push("Substituir serviço no destino irá sobrescrever ITEM/QUANT. do serviço na planilha destino (versão).");
+      if (copyForm.replaceServico) warnings.push("Substituir serviço no destino irá sobrescrever a linha do serviço na versão destino (quando já existir).");
       if (warnings.length) {
         const ok = window.confirm(`${warnings.join("\n\n")}\n\nDeseja continuar?`);
         if (!ok) return;
@@ -1006,8 +912,8 @@ export default function Page() {
             <span aria-hidden="true">→</span>
             <span>Serviços</span>
           </div>
-          <h1 className="text-2xl font-semibold">Serviços</h1>
-          <div className="text-sm text-slate-600">Catálogo técnico de serviços da planilha selecionada.</div>
+          <h1 className="text-2xl font-semibold">Serviços cadastrados</h1>
+          <div className="text-sm text-slate-600">Catálogo técnico de serviços da obra (por Fonte).</div>
           <div className="mt-1 text-sm text-slate-700">
             {selectedVersao?.idPlanilha ? <div className="font-semibold">{`Planilha: #${selectedVersao.idPlanilha} - ${selectedVersao.nome || "—"}`}</div> : null}
             {selectedVersao?.idParametros ? <div>{`Parâmetros: #${selectedVersao.idParametros} - ${selectedVersao.parametrosNome || "—"}`}</div> : null}
@@ -1086,7 +992,7 @@ export default function Page() {
           type="button"
           onClick={() => setShowNovoServicoCard((v) => !v)}
           disabled={loading}
-          title={showNovoServicoCard ? "Ocultar card de cadastro de serviço" : "Cadastrar um serviço no catálogo da planilha"}
+          title={showNovoServicoCard ? "Ocultar card de cadastro de serviço" : "Cadastrar um serviço no catálogo da obra (Fonte)"}
         >
           Novo Serviço
         </button>
@@ -1106,7 +1012,7 @@ export default function Page() {
         Atenção: alterações aqui são compartilhadas. Se você alterar Serviço/Insumo/Composição da Fonte, muda em TODAS as planilhas que usam essa Fonte. Se você alterar um
         Parâmetro, muda em TODAS as planilhas que usam esse Parâmetro.
         <div className="mt-2">
-          <div className="font-semibold">Para criar um serviço novo no catálogo da planilha:</div>
+          <div className="font-semibold">Para criar um serviço novo no catálogo da obra (Fonte):</div>
           <div className="mt-1">1 - Crie o serviço na Planilha (Adicionar linha);</div>
           <div>2 - Ou através do botão Novo Serviço.</div>
           <div>3 - Crie o serviço direto na composição.</div>
@@ -1153,8 +1059,8 @@ export default function Page() {
       {showNovoServicoCard ? (
         <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
           <div>
-            <div className="text-lg font-semibold">Novo serviço (catálogo da planilha)</div>
-            <div className="text-sm text-slate-600">Cria/atualiza um serviço no catálogo da planilha selecionada.</div>
+            <div className="text-lg font-semibold">Novo serviço (catálogo da obra)</div>
+            <div className="text-sm text-slate-600">Cria/atualiza um serviço no catálogo da obra (por Fonte).</div>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
             <div className="md:col-span-3 space-y-1">
@@ -1216,7 +1122,7 @@ export default function Page() {
         <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div>
           <div className="text-lg font-semibold">Copiar serviço/composição entre planilhas (versões)</div>
-          <div className="text-sm text-slate-600">Copia a linha do serviço (ITEM/QUANT.) entre versões. Se a Fonte do destino for diferente, o sistema também pode copiar o serviço e a composição para a Fonte destino.</div>
+          <div className="text-sm text-slate-600">Copia o serviço entre versões. Se a Fonte do destino for diferente, o sistema também pode copiar o serviço e a composição para a Fonte destino.</div>
         </div>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
@@ -1273,7 +1179,7 @@ export default function Page() {
                 checked={copyForm.replaceServico}
                 onChange={(e) => setCopyForm((p) => ({ ...p, replaceServico: Boolean(e.target.checked) }))}
                 disabled={loading}
-                title="Se marcado, sobrescreve ITEM/QUANT. do serviço na planilha destino quando já existir."
+                title="Se marcado, sobrescreve a linha do serviço na versão destino quando já existir."
               />
               <span>Substituir serviço no destino</span>
             </label>
@@ -1371,11 +1277,10 @@ export default function Page() {
           <div>
             <div className="text-lg font-semibold">Serviços cadastrados</div>
             <div className="text-sm text-slate-600">
-              Lista os serviços cadastrados no catálogo da planilha e também serviços/composições referenciadas (usadas indiretamente), marcando: sem composição/não definida e divergente entre total da planilha e total calculado pela composição.
+              Lista os serviços cadastrados e permite abrir a composição no duplo clique. O carregamento é feito em páginas (50 de cada vez).
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="text-sm text-slate-600">Planilha: {planilhaId ? `#${planilhaId}` : "—"}</div>
             <button
               className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
               type="button"
@@ -1389,15 +1294,8 @@ export default function Page() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 text-sm">
-          <label className="flex items-center gap-2">
-            <span className="text-slate-700">Ordenar:</span>
-            <select className="input bg-white" value={orderBy} onChange={(e) => setOrderBy(e.target.value as any)} disabled={loading} title="Ordenar a lista">
-              <option value="ITEM">Item</option>
-              <option value="CODIGO">Código</option>
-            </select>
-          </label>
           <div className="text-slate-500">
-            Mostrando: {filteredRows.length} / {rows.length + refs.length}
+            Mostrando: {filteredRows.length} (carregado: {rows.length})
           </div>
           {focusCodigo ? (
             <button
@@ -1435,23 +1333,6 @@ export default function Page() {
               ))}
             </select>
           </label>
-          <label className="space-y-1" style={{ width: "240px" }} title="Define se a lista mostra todos, somente planilhados (direto/indireto) ou não planilhados">
-            <div className="text-xs text-slate-500">Itens planilhados</div>
-            <select className="input bg-white w-full" value={listMode} onChange={(e) => setListMode(e.target.value as any)} disabled={loading}>
-              <option value="TODOS">Todos</option>
-              <option value="PLANILHADOS">Somente usados na planilha (direto ou indiretamente)</option>
-              <option value="NAO_PLANILHADOS">Não planilhados</option>
-            </select>
-          </label>
-          <label className="space-y-1" style={{ width: "200px" }} title="Filtra por status. Em referências: OK=Definida e Sem composição=Não definida.">
-            <div className="text-xs text-slate-500">Status</div>
-            <select className="input bg-white w-full" value={statusSel} onChange={(e) => setStatusSel(e.target.value as any)} disabled={loading}>
-              <option value="TODOS">Todos</option>
-              <option value="OK">OK / Definida</option>
-              <option value="SEM_COMPOSICAO">Sem composição / Não definida</option>
-              <option value="DIVERGENTE">Divergente</option>
-            </select>
-          </label>
         </div>
 
         {showColsCard ? (
@@ -1464,15 +1345,11 @@ export default function Page() {
             </div>
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
               {[
-                { key: "item", label: "ITEM" },
                 { key: "codigo", label: "CÓDIGO" },
                 { key: "tipo", label: "TIPO" },
                 { key: "fonte", label: "FONTE" },
                 { key: "servico", label: "SERVIÇO" },
-                { key: "planilha", label: "PLANILHA" },
                 { key: "composicao", label: "COMPOSIÇÃO" },
-                { key: "dif", label: "DIF." },
-                { key: "status", label: "STATUS" },
                 { key: "acao", label: "AÇÃO" },
               ].map((c) => (
                 <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-2 py-1.5">
@@ -1509,22 +1386,15 @@ export default function Page() {
         <div className="overflow-auto">
           <table className="min-w-[1180px] w-full text-xs" style={{ tableLayout: "fixed" }}>
             <colgroup>
-              <col style={{ width: `${colWidths.item}px` }} />
               <col style={{ width: `${colWidths.codigo}px` }} />
               <col style={{ width: `${colWidths.tipo}px` }} />
               <col style={{ width: `${colWidths.fonte}px` }} />
               <col style={{ width: `${colWidths.servico}px` }} />
-              <col style={{ width: `${colWidths.planilha}px` }} />
               <col style={{ width: `${colWidths.composicao}px` }} />
-              <col style={{ width: `${colWidths.dif}px` }} />
-              <col style={{ width: `${colWidths.status}px` }} />
               <col style={{ width: `${colWidths.acao}px` }} />
             </colgroup>
             <thead className="bg-slate-50 text-left text-slate-700">
               <tr>
-                <th className="px-2 py-1.5" style={{ width: `${colWidths.item}px` }}>
-                  ITEM
-                </th>
                 <th className="px-2 py-1.5" style={{ width: `${colWidths.codigo}px` }}>
                   CÓDIGO
                 </th>
@@ -1537,17 +1407,8 @@ export default function Page() {
                 <th className="px-2 py-1.5" style={{ width: `${colWidths.servico}px` }}>
                   SERVIÇO
                 </th>
-                <th className="px-2 py-1.5 text-right" style={{ width: `${colWidths.planilha}px` }}>
-                  PLANILHA
-                </th>
                 <th className="px-2 py-1.5 text-right" style={{ width: `${colWidths.composicao}px` }}>
                   COMPOSIÇÃO
-                </th>
-                <th className="px-2 py-1.5 text-right" style={{ width: `${colWidths.dif}px` }}>
-                  DIF.
-                </th>
-                <th className="px-2 py-1.5" style={{ width: `${colWidths.status}px` }}>
-                  STATUS
                 </th>
                 <th className="px-2 py-1.5" style={{ width: `${colWidths.acao}px` }}>
                   Ação
@@ -1569,9 +1430,6 @@ export default function Page() {
                     router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}?${qs.toString()}`);
                   }}
                 >
-                  <td className="px-2 py-1.5 font-medium" style={{ width: `${colWidths.item}px` }}>
-                    {r.item || "—"}
-                  </td>
                   <td className="px-2 py-1.5 font-medium" style={{ width: `${colWidths.codigo}px` }}>
                     {r.codigo || "—"}
                   </td>
@@ -1584,29 +1442,8 @@ export default function Page() {
                   <td className="px-2 py-1.5" style={{ width: `${colWidths.servico}px` }}>
                     {r.descricao || "—"}
                   </td>
-                  <td className="px-2 py-1.5 text-right" style={{ width: `${colWidths.planilha}px` }}>
-                    {r.totalPlanilha == null ? "—" : moeda(Number(r.totalPlanilha || 0))}
-                  </td>
                   <td className="px-2 py-1.5 text-right" style={{ width: `${colWidths.composicao}px` }}>
                     {r.totalComposicao == null ? "—" : moeda(Number(r.totalComposicao || 0))}
-                  </td>
-                  <td className="px-2 py-1.5 text-right" style={{ width: `${colWidths.dif}px` }}>
-                    {r.diff == null ? "—" : moeda(Number(r.diff || 0))}
-                  </td>
-                  <td className="px-2 py-1.5">
-                    {r.kind === "REF" ? (
-                      r.definida ? (
-                        <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Definida</span>
-                      ) : (
-                        <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Não definida</span>
-                      )
-                    ) : r.status === "OK" ? (
-                      <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">OK</span>
-                    ) : r.status === "SEM_COMPOSICAO" ? (
-                      <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Sem composição</span>
-                    ) : (
-                      <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">Divergente</span>
-                    )}
                   </td>
                   <td className="px-2 py-1.5" style={{ width: `${colWidths.acao}px` }}>
                     <div className="flex items-center gap-1">
@@ -1673,7 +1510,7 @@ export default function Page() {
               ))}
               {!filteredRows.length ? (
                 <tr>
-                  <td colSpan={10} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={6} className="px-3 py-6 text-center text-slate-500">
                     Sem dados.
                   </td>
                 </tr>
@@ -1683,7 +1520,7 @@ export default function Page() {
         </div>
         <div className="mt-2 flex items-center justify-between text-xs text-slate-600">
           <div>
-            {rowsTotal > 0 ? `Mostrando ${Math.min(filteredRows.length, rows.length)} de ${rowsTotal} (carregado: ${rows.length})` : rows.length ? `Carregado: ${rows.length}` : ""}
+            {rowsTotal > 0 ? `Carregado: ${rows.length} / ${rowsTotal}` : rows.length ? `Carregado: ${rows.length}` : ""}
           </div>
           {rowsHasMore ? (
             <button
