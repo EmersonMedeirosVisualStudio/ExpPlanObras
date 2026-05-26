@@ -93,6 +93,10 @@ export default function Page() {
   const [planilhaId, setPlanilhaId] = useState<number | null>(null);
   const [versoes, setVersoes] = useState<VersaoRow[]>([]);
   const [rows, setRows] = useState<ValidacaoRow[]>([]);
+  const [rowsTotal, setRowsTotal] = useState(0);
+  const [rowsOffset, setRowsOffset] = useState(0);
+  const [rowsHasMore, setRowsHasMore] = useState(false);
+  const [rowsLoading, setRowsLoading] = useState(false);
   const [obraNome, setObraNome] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<{ OK: boolean; SEM_COMPOSICAO: boolean; DIVERGENTE: boolean }>({
     OK: true,
@@ -460,32 +464,47 @@ export default function Page() {
     }
   }
 
-  async function carregarValidacao(pid: number) {
+  async function carregarValidacao(pid: number, opts?: { offset?: number; append?: boolean }) {
+    const offset = opts?.offset != null ? Number(opts.offset) : 0;
+    const append = Boolean(opts?.append);
     try {
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/validacao?planilhaId=${pid}`);
+      setRowsLoading(true);
+      const res = await authFetch(
+        `/api/v1/engenharia/obras/${idObra}/planilha/composicoes/validacao?planilhaId=${pid}&limit=50&offset=${encodeURIComponent(String(offset || 0))}`
+      );
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao validar serviços");
       const list = Array.isArray(json.data?.rows) ? (json.data.rows as any[]) : [];
-      setRows(
-        list.map((r) => ({
-          item: String(r.item || "").trim(),
-          codigoServico: String(r.codigoServico || "").trim().toUpperCase(),
-          fonte: String(r.fonte || "").trim().toUpperCase(),
-          servico: String(r.servico || ""),
-          travado: Boolean(r.travado),
-          travadoPorCadeia: Boolean(r.travadoPorCadeia),
-          origemTipo: String(r.origemTipo || ""),
-          origemChave: String(r.origemChave || ""),
-          totalPlanilha: Number(r.totalPlanilha || 0),
-          totalComposicao: Number(r.totalComposicao || 0),
-          diff: Number(r.diff || 0),
-          status: String(r.status || "OK") as any,
-          qtdItens: Number(r.qtdItens || 0),
-        }))
-      );
+      const mapped = list.map((r) => ({
+        item: String(r.item || "").trim(),
+        codigoServico: String(r.codigoServico || "").trim().toUpperCase(),
+        fonte: String(r.fonte || "").trim().toUpperCase(),
+        servico: String(r.servico || ""),
+        travado: Boolean(r.travado),
+        travadoPorCadeia: Boolean(r.travadoPorCadeia),
+        origemTipo: String(r.origemTipo || ""),
+        origemChave: String(r.origemChave || ""),
+        totalPlanilha: Number(r.totalPlanilha || 0),
+        totalComposicao: Number(r.totalComposicao || 0),
+        diff: Number(r.diff || 0),
+        status: String(r.status || "OK") as any,
+        qtdItens: Number(r.qtdItens || 0),
+      }));
+      const total = Number(json.data?.total || 0);
+      const nextOffset = json.data?.nextOffset != null ? Number(json.data.nextOffset) : offset + mapped.length;
+      const hasMore = Boolean(json.data?.hasMore) || nextOffset < total;
+      setRowsTotal(total);
+      setRowsOffset(nextOffset);
+      setRowsHasMore(hasMore);
+      setRows((prev) => (append ? [...prev, ...mapped] : mapped));
     } catch (e: any) {
       setErr(e?.message || "Erro ao validar serviços");
       setRows([]);
+      setRowsTotal(0);
+      setRowsOffset(0);
+      setRowsHasMore(false);
+    } finally {
+      setRowsLoading(false);
     }
   }
 
@@ -538,7 +557,10 @@ export default function Page() {
       setErr(null);
       setOkMsg(null);
       const pid = await carregarPlanilhaAtual();
-      await Promise.all([carregarReferencias(), pid ? Promise.all([carregarValidacao(pid), carregarComposicoesSemServico(pid)]) : Promise.resolve()]);
+      setRowsTotal(0);
+      setRowsOffset(0);
+      setRowsHasMore(false);
+      await Promise.all([carregarReferencias(), pid ? Promise.all([carregarValidacao(pid, { offset: 0, append: false }), carregarComposicoesSemServico(pid)]) : Promise.resolve()]);
     } finally {
       setLoading(false);
     }
@@ -1658,6 +1680,25 @@ export default function Page() {
               ) : null}
             </tbody>
           </table>
+        </div>
+        <div className="mt-2 flex items-center justify-between text-xs text-slate-600">
+          <div>
+            {rowsTotal > 0 ? `Mostrando ${Math.min(filteredRows.length, rows.length)} de ${rowsTotal} (carregado: ${rows.length})` : rows.length ? `Carregado: ${rows.length}` : ""}
+          </div>
+          {rowsHasMore ? (
+            <button
+              className="rounded border bg-white px-3 py-1.5 hover:bg-slate-50 disabled:opacity-60"
+              type="button"
+              onClick={() => {
+                if (!planilhaId) return;
+                void carregarValidacao(planilhaId, { offset: rowsOffset, append: true });
+              }}
+              disabled={loading || rowsLoading}
+              title="Carregar mais 50 itens"
+            >
+              {rowsLoading ? "Carregando..." : "Carregar mais (50)"}
+            </button>
+          ) : null}
         </div>
       </section>
 

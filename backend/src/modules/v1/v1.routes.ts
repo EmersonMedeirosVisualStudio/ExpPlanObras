@@ -5924,6 +5924,9 @@ export default async function v1Routes(server: FastifyInstance) {
             view: z.string().optional().nullable(),
             planilhaId: z.coerce.number().int().positive().optional().nullable(),
             includeCatalog: z.string().optional().nullable(),
+            includeLinhas: z.string().optional().nullable(),
+            limit: z.coerce.number().int().positive().optional().nullable(),
+            offset: z.coerce.number().int().min(0).optional().nullable(),
           })
           .optional(),
       },
@@ -5941,6 +5944,10 @@ export default async function v1Routes(server: FastifyInstance) {
         String(q.includeCatalog || '').trim() === '1' ||
         String(q.includeCatalog || '').trim().toLowerCase() === 'true' ||
         String(q.includeCatalog || '').trim().toLowerCase() === 'yes';
+      const includeLinhas =
+        !(String(q.includeLinhas || '').trim() === '0' ||
+          String(q.includeLinhas || '').trim().toLowerCase() === 'false' ||
+          String(q.includeLinhas || '').trim().toLowerCase() === 'no');
 
       const scope = (request.user as any)?.abrangencia as any;
       if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
@@ -6155,6 +6162,79 @@ export default async function v1Routes(server: FastifyInstance) {
         });
       }
 
+      if (view === 'linhas') {
+        const limit = q.limit != null ? Math.max(1, Math.min(200, Number(q.limit))) : 50;
+        const offset = q.offset != null ? Math.max(0, Math.min(1_000_000, Number(q.offset))) : 0;
+        const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, planilhaIdParam);
+        if (!idPlanilha) return ok(reply, { planilhaId: null, total: 0, offset, limit, rows: [] });
+
+        const totalRows = (await prisma.$queryRawUnsafe(
+          `
+          SELECT COUNT(1)::int AS total
+          FROM tab_planilha_itens
+          WHERE tenant_id = $1 AND id_planilha = $2
+          `,
+          ctx.tenantId,
+          idPlanilha
+        )) as any[];
+        const total = totalRows?.[0]?.total == null ? 0 : Number(totalRows[0].total);
+
+        const rows = (await prisma.$queryRawUnsafe(
+          `
+          SELECT
+            i.id_planilha_item AS "idLinha",
+            i.ordem AS "ordem",
+            COALESCE(i.item,'') AS "item",
+            COALESCE(s.codigo,'') AS "codigo",
+            COALESCE(s.fonte,'') AS "fonte",
+            CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(s.servico,'') ELSE COALESCE(i.observacao,'') END AS "servico",
+            COALESCE(s.und,'') AS "und",
+            i.quantidade AS "quantidade",
+            i.valor_unitario AS "valorUnitario",
+            i.valor_parcial AS "valorParcial",
+            i.nivel AS "nivel",
+            i.travado AS "travado",
+            i.travado_por_cadeia AS "travadoPorCadeia",
+            i.origem_travamento AS "origemTravamento",
+            i.tipo_linha AS "tipoLinha"
+          FROM tab_planilha_itens i
+          LEFT JOIN tab_servicos s
+            ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
+          WHERE i.tenant_id = $1 AND i.id_planilha = $2
+          ORDER BY i.ordem ASC, i.id_planilha_item ASC
+          LIMIT $3 OFFSET $4
+          `,
+          ctx.tenantId,
+          idPlanilha,
+          limit,
+          offset
+        )) as any[];
+
+        return ok(reply, {
+          planilhaId: idPlanilha,
+          total,
+          offset,
+          limit,
+          rows: (rows || []).map((r: any) => ({
+            idLinha: Number(r.idLinha),
+            ordem: Number(r.ordem || 0),
+            item: r.item ? String(r.item) : '',
+            codigo: r.codigo ? String(r.codigo) : '',
+            fonte: r.fonte ? String(r.fonte) : '',
+            servicos: r.servico ? String(r.servico) : '',
+            und: r.und ? String(r.und) : '',
+            quant: r.quantidade == null ? '' : String(r.quantidade),
+            valorUnitario: r.valorUnitario == null ? '' : String(r.valorUnitario),
+            valorParcial: r.valorParcial == null ? '' : String(r.valorParcial),
+            nivel: Number(r.nivel || 0),
+            tipoLinha: String(r.tipoLinha || 'ITEM'),
+            travado: Boolean(r.travado),
+            travadoPorCadeia: Boolean(r.travadoPorCadeia),
+            origemTravamento: r.origemTravamento != null ? String(r.origemTravamento || '') : '',
+          })),
+        });
+      }
+
       const idPlanilhaFromQuery = planilhaIdParam && Number.isFinite(planilhaIdParam) && planilhaIdParam > 0 ? planilhaIdParam : null;
       let idPlanilha: number | null = idPlanilhaFromQuery;
       if (!idPlanilha) {
@@ -6228,41 +6308,43 @@ export default async function v1Routes(server: FastifyInstance) {
         : [];
       const pRow = parametrosRows?.[0] || null;
 
-      const linhas = (await prisma.$queryRawUnsafe(
-        `
-        SELECT
-          i.id_planilha_item AS "idLinha",
-          ordem,
-          item,
-          COALESCE(s.codigo,'') AS codigo,
-          COALESCE(s.fonte,'') AS fonte,
-          CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(s.servico,'') ELSE COALESCE(i.observacao,'') END AS servico,
-          COALESCE(s.und,'') AS und,
-          quantidade,
-          i.valor_unitario AS "valorUnitario",
-          i.valor_parcial AS "valorParcial",
-          nivel,
-          i.travado AS "travado",
-          i.travado_por_cadeia AS "travadoPorCadeia",
-          i.origem_travamento AS "origemTravamento",
-          i.tipo_linha AS "tipoLinha"
-        FROM tab_planilha_itens i
-        LEFT JOIN tab_servicos s
-          ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
-        WHERE i.tenant_id = $1 AND i.id_planilha = $2
-        ORDER BY
-          CASE
-            WHEN COALESCE(item, '') ~ E'^[0-9]+(\\.[0-9]+)*$' THEN (
-              SELECT array_agg(NULLIF(trim(p), '')::int ORDER BY ord)
-              FROM unnest(regexp_split_to_array(item, E'\\.')) WITH ORDINALITY AS t(p, ord)
-            )
-            ELSE ARRAY[2147483647]::int[]
-          END ASC,
-          i.id_planilha_item ASC
-        `,
-        ctx.tenantId,
-        idPlanilha
-      )) as any[];
+      const linhas = includeLinhas
+        ? ((await prisma.$queryRawUnsafe(
+          `
+          SELECT
+            i.id_planilha_item AS "idLinha",
+            ordem,
+            item,
+            COALESCE(s.codigo,'') AS codigo,
+            COALESCE(s.fonte,'') AS fonte,
+            CASE WHEN i.tipo_linha = 'SERVICO' THEN COALESCE(s.servico,'') ELSE COALESCE(i.observacao,'') END AS servico,
+            COALESCE(s.und,'') AS und,
+            quantidade,
+            i.valor_unitario AS "valorUnitario",
+            i.valor_parcial AS "valorParcial",
+            nivel,
+            i.travado AS "travado",
+            i.travado_por_cadeia AS "travadoPorCadeia",
+            i.origem_travamento AS "origemTravamento",
+            i.tipo_linha AS "tipoLinha"
+          FROM tab_planilha_itens i
+          LEFT JOIN tab_servicos s
+            ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
+          WHERE i.tenant_id = $1 AND i.id_planilha = $2
+          ORDER BY
+            CASE
+              WHEN COALESCE(item, '') ~ E'^[0-9]+(\\.[0-9]+)*$' THEN (
+                SELECT array_agg(NULLIF(trim(p), '')::int ORDER BY ord)
+                FROM unnest(regexp_split_to_array(item, E'\\.')) WITH ORDINALITY AS t(p, ord)
+              )
+              ELSE ARRAY[2147483647]::int[]
+            END ASC,
+            i.id_planilha_item ASC
+          `,
+          ctx.tenantId,
+          idPlanilha
+        )) as any[])
+        : [];
 
       const totalsRows = (await prisma.$queryRawUnsafe(
         `
@@ -8858,7 +8940,13 @@ export default async function v1Routes(server: FastifyInstance) {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
     const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(request.params || {});
-    const q = z.object({ planilhaId: z.coerce.number().int().positive().optional() }).parse(request.query || {});
+    const q = z
+      .object({
+        planilhaId: z.coerce.number().int().positive().optional(),
+        limit: z.coerce.number().int().positive().optional(),
+        offset: z.coerce.number().int().min(0).optional(),
+      })
+      .parse(request.query || {});
     const idObra = Number(id);
 
     const scope = (request.user as any)?.abrangencia as any;
@@ -8867,6 +8955,20 @@ export default async function v1Routes(server: FastifyInstance) {
     await ensurePlanilhaEstruturaUnicaTables(prisma);
     const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
     if (!idPlanilha) return ok(reply, { planilhaId: null, bdiPercent: 0, lsPercent: 0, rows: [] });
+
+    const limit = q.limit != null ? Math.max(1, Math.min(200, Number(q.limit))) : 50;
+    const offset = q.offset != null ? Math.max(0, Math.min(1_000_000, Number(q.offset))) : 0;
+    const totalRows = (await prisma.$queryRawUnsafe(
+      `
+      SELECT COUNT(1)::int AS total
+      FROM tab_servicos
+      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+      `,
+      ctx.tenantId,
+      idObra,
+      idPlanilha
+    )) as any[];
+    const total = totalRows?.[0]?.total == null ? 0 : Number(totalRows[0].total);
 
     const rows = (await prisma.$queryRawUnsafe(
       `
@@ -8880,45 +8982,58 @@ export default async function v1Routes(server: FastifyInstance) {
         WHERE v.tenant_id = $1 AND v.id_obra = $2 AND v.id_planilha = $3
         LIMIT 1
       ),
-      planilha_servicos AS (
-        SELECT
-          UPPER(COALESCE(s.codigo,'')) AS codigo_servico,
-          COALESCE(MIN(i.item) FILTER (WHERE COALESCE(i.item,'') <> ''), '') AS item,
-          SUM(COALESCE(i.valor_parcial, 0)) AS total_planilha
-        FROM tab_planilha_itens i
-        LEFT JOIN tab_servicos s ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
-        WHERE i.tenant_id = $1 AND i.id_planilha = $3 AND i.tipo_linha = 'SERVICO'
-        GROUP BY UPPER(COALESCE(s.codigo,''))
-      ),
-      base AS (
+      svc_page AS (
         SELECT
           UPPER(COALESCE(s.codigo,'')) AS codigo_servico,
           COALESCE(s.fonte,'') AS fonte,
-          COALESCE(s.servico,'') AS servico,
+          COALESCE(s.servico,'') AS servico
+        FROM tab_servicos s
+        WHERE s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3
+        ORDER BY UPPER(COALESCE(s.codigo,''))
+        LIMIT $4 OFFSET $5
+      ),
+      planilha_servicos AS (
+        SELECT
+          sp.codigo_servico AS codigo_servico,
+          COALESCE(MIN(i.item) FILTER (WHERE COALESCE(i.item,'') <> ''), '') AS item,
+          SUM(COALESCE(i.valor_parcial, 0)) AS total_planilha
+        FROM tab_planilha_itens i
+        JOIN tab_servicos s
+          ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
+        JOIN svc_page sp
+          ON sp.codigo_servico = UPPER(COALESCE(s.codigo,''))
+        WHERE i.tenant_id = $1 AND i.id_planilha = $3 AND i.tipo_linha = 'SERVICO'
+        GROUP BY sp.codigo_servico
+      ),
+      base AS (
+        SELECT
+          sp.codigo_servico AS codigo_servico,
+          sp.fonte AS fonte,
+          sp.servico AS servico,
           COALESCE(ps.item,'') AS item,
           COALESCE(ps.total_planilha, 0) AS total_planilha,
           EXISTS (
             SELECT 1
             FROM tab_travas t
-            WHERE t.tenant_id = s.tenant_id
+            WHERE t.tenant_id = $1
               AND t.entidade_tipo = 'SERVICO'
-              AND t.entidade_chave = UPPER(COALESCE(s.codigo,''))
+              AND t.entidade_chave = sp.codigo_servico
           ) AS travado,
           EXISTS (
             SELECT 1
             FROM tab_travas t
-            WHERE t.tenant_id = s.tenant_id
+            WHERE t.tenant_id = $1
               AND t.entidade_tipo = 'SERVICO'
-              AND t.entidade_chave = UPPER(COALESCE(s.codigo,''))
+              AND t.entidade_chave = sp.codigo_servico
               AND t.origem_tipo NOT LIKE 'MANUAL_%'
           ) AS travado_por_cadeia,
           COALESCE(
             (
               SELECT t.origem_tipo
               FROM tab_travas t
-              WHERE t.tenant_id = s.tenant_id
+              WHERE t.tenant_id = $1
                 AND t.entidade_tipo = 'SERVICO'
-                AND t.entidade_chave = UPPER(COALESCE(s.codigo,''))
+                AND t.entidade_chave = sp.codigo_servico
                 AND t.origem_tipo NOT LIKE 'MANUAL_%'
               ORDER BY t.criado_em DESC
               LIMIT 1
@@ -8929,18 +9044,17 @@ export default async function v1Routes(server: FastifyInstance) {
             (
               SELECT t.origem_chave
               FROM tab_travas t
-              WHERE t.tenant_id = s.tenant_id
+              WHERE t.tenant_id = $1
                 AND t.entidade_tipo = 'SERVICO'
-                AND t.entidade_chave = UPPER(COALESCE(s.codigo,''))
+                AND t.entidade_chave = sp.codigo_servico
                 AND t.origem_tipo NOT LIKE 'MANUAL_%'
               ORDER BY t.criado_em DESC
               LIMIT 1
             ),
             ''
           ) AS origem_chave
-        FROM tab_servicos s
-        LEFT JOIN planilha_servicos ps ON ps.codigo_servico = UPPER(COALESCE(s.codigo,''))
-        WHERE s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3
+        FROM svc_page sp
+        LEFT JOIN planilha_servicos ps ON ps.codigo_servico = sp.codigo_servico
       ),
       comps AS (
         SELECT
@@ -8949,6 +9063,8 @@ export default async function v1Routes(server: FastifyInstance) {
           SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
           SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
         FROM tab_composicoes ci
+        JOIN svc_page sp
+          ON sp.codigo_servico = UPPER(COALESCE(ci.codigo_servico,''))
         WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
         GROUP BY UPPER(COALESCE(ci.codigo_servico,''))
       )
@@ -8973,7 +9089,9 @@ export default async function v1Routes(server: FastifyInstance) {
       `,
       ctx.tenantId,
       idObra,
-      idPlanilha
+      idPlanilha,
+      limit,
+      offset
     )) as any[];
 
     const bdiPercent = rows?.[0]?.bdiPercent == null ? 0 : Number(rows[0].bdiPercent);
@@ -9005,7 +9123,9 @@ export default async function v1Routes(server: FastifyInstance) {
       };
     });
 
-    return ok(reply, { planilhaId: idPlanilha, bdiPercent, lsPercent, rows: out });
+    const nextOffset = offset + out.length;
+    const hasMore = nextOffset < total;
+    return ok(reply, { planilhaId: idPlanilha, bdiPercent, lsPercent, total, offset, limit, nextOffset, hasMore, rows: out });
   });
 
   server.post('/engenharia/obras/:id/planilha/servicos/copiar', async (request, reply) => {

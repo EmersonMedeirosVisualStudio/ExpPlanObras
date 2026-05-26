@@ -511,6 +511,10 @@ export default function PlanilhaObraClient({
   const [empresaDocumentosLayout, setEmpresaDocumentosLayout] = useState<EmpresaDocumentosLayout | null>(null);
   const [versoes, setVersoes] = useState<VersaoRow[]>([]);
   const [planilha, setPlanilha] = useState<Planilha | null>(null);
+  const [linhasTotal, setLinhasTotal] = useState(0);
+  const [linhasOffset, setLinhasOffset] = useState(0);
+  const [linhasHasMore, setLinhasHasMore] = useState(false);
+  const [linhasLoading, setLinhasLoading] = useState(false);
   const [planilhaId, setPlanilhaId] = useState<number | null>(initialPlanilhaId);
   const [showPrintConfig, setShowPrintConfig] = useState(false);
   const [showColumnsConfig, setShowColumnsConfig] = useState(false);
@@ -1327,7 +1331,7 @@ export default function PlanilhaObraClient({
     try {
       setLoading(true);
       setErr(null);
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${idPlanilha}&includeCatalog=0`);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${idPlanilha}&includeCatalog=0&includeLinhas=0`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) {
         const msg = json?.message ? String(json.message) : `Erro ao carregar planilha (HTTP ${res.status})`;
@@ -1336,11 +1340,49 @@ export default function PlanilhaObraClient({
       const data = json.data || {};
       setObraStatus(data.obraStatus ?? null);
       setObraResumo((data.obra as any) || null);
-      setPlanilha((data.planilha as any) || null);
+      const p = (data.planilha as any) || null;
+      if (p && Array.isArray(p.linhas)) p.linhas = [];
+      setPlanilha(p);
+      if (p?.idPlanilha) await carregarLinhasPage(Number(p.idPlanilha), 0, false);
     } catch (e: any) {
       setErr(e?.message || "Erro ao salvar item");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function carregarLinhasPage(idPlanilha: number, offset: number, append: boolean) {
+    if (!idPlanilha) return;
+    try {
+      setLinhasLoading(true);
+      const res = await authFetch(
+        `/api/v1/engenharia/obras/${idObra}/planilha?view=linhas&planilhaId=${encodeURIComponent(String(idPlanilha))}&limit=50&offset=${encodeURIComponent(
+          String(offset || 0)
+        )}`
+      );
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        const msg = json?.message ? String(json.message) : `Erro ao carregar itens da planilha (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
+      const total = Number(json.data?.total || 0);
+      const rows = Array.isArray(json.data?.rows) ? (json.data.rows as PlanilhaLinha[]) : [];
+      const nextOffset = Number(json.data?.offset || 0) + rows.length;
+      setLinhasTotal(total);
+      setLinhasOffset(nextOffset);
+      setLinhasHasMore(nextOffset < total);
+      setPlanilha((cur) => {
+        if (!cur) return cur;
+        const merged = append ? [...(cur.linhas || []), ...rows] : rows;
+        return { ...cur, linhas: merged };
+      });
+    } catch (e: any) {
+      setErr(e?.message || "Erro ao carregar itens da planilha");
+      setLinhasTotal(0);
+      setLinhasOffset(0);
+      setLinhasHasMore(false);
+    } finally {
+      setLinhasLoading(false);
     }
   }
 
@@ -3867,8 +3909,9 @@ export default function PlanilhaObraClient({
               };
 
               return (
-                <div className="overflow-auto max-h-[70vh]">
-                  <table className="min-w-[1100px] w-full" style={tableStyle}>
+                <div>
+                  <div className="overflow-auto max-h-[70vh]">
+                    <table className="min-w-[1100px] w-full" style={tableStyle}>
                     <colgroup>
                       {visible.map((k) => (
                         <col key={k} style={{ width: `${uiPrefs.grid.colWidth[k]}px` }} />
@@ -4102,7 +4145,22 @@ export default function PlanilhaObraClient({
                         </tr>
                       ) : null}
                     </tbody>
-                  </table>
+                    </table>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-xs text-slate-600">
+                    <div>{linhasTotal > 0 ? `Mostrando ${planilha.linhas.length} de ${linhasTotal}` : planilha.linhas.length ? `Carregado: ${planilha.linhas.length}` : ""}</div>
+                    {linhasHasMore ? (
+                      <button
+                        className="rounded border bg-white px-3 py-1.5 hover:bg-slate-50 disabled:opacity-60"
+                        type="button"
+                        onClick={() => carregarLinhasPage(Number(planilha.idPlanilha), linhasOffset, true)}
+                        disabled={loading || linhasLoading}
+                        title="Carregar mais 50 itens"
+                      >
+                        {linhasLoading ? "Carregando..." : "Carregar mais (50)"}
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               );
             })()}
