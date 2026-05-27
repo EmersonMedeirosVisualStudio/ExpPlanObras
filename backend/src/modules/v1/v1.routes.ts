@@ -773,57 +773,6 @@ async function clonarEstruturaPlanilha(
     input.targetPlanilhaId,
     input.sourcePlanilhaId
   );
-
-  await tx.$executeRawUnsafe(
-    `
-    INSERT INTO tab_composicoes
-      (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo, criado_em, atualizado_em)
-    SELECT
-      tenant_id,
-      id_obra,
-      $3 AS id_planilha,
-      codigo_servico,
-      etapa,
-      tipo_item,
-      codigo_item,
-      banco,
-      descricao,
-      und,
-      quantidade,
-      valor_unitario,
-      perda_percentual,
-      codigo_centro_custo,
-      criado_em,
-      atualizado_em
-    FROM tab_composicoes
-    WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
-    `,
-    input.tenantId,
-    input.idObra,
-    input.targetPlanilhaId,
-    input.sourcePlanilhaId
-  );
-
-  const primitivaExists = (await tx.$queryRawUnsafe(
-    `SELECT to_regclass(current_schema() || '.obras_planilhas_composicoes_primitivas')::text AS "t"`
-  )) as any[];
-  const hasPrimitivaTable = Boolean(primitivaExists?.[0]?.t);
-  if (hasPrimitivaTable) {
-    await tx.$executeRawUnsafe(
-      `
-      INSERT INTO obras_planilhas_composicoes_primitivas
-        (tenant_id, id_obra, id_planilha, codigo_servico, descricao_servico, und_servico, itens_json, atualizado_em)
-      SELECT
-        tenant_id, id_obra, $3 AS id_planilha, codigo_servico, descricao_servico, und_servico, itens_json, atualizado_em
-      FROM obras_planilhas_composicoes_primitivas
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
-      `,
-      input.tenantId,
-      input.idObra,
-      input.targetPlanilhaId,
-      input.sourcePlanilhaId
-    );
-  }
 }
 
 async function ensurePlanilhaServicosTables(tx: any) {
@@ -1551,7 +1500,7 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
     CREATE TABLE IF NOT EXISTS tab_composicoes (
       id_item BIGSERIAL PRIMARY KEY,
       tenant_id BIGINT NOT NULL,
-      id_obra BIGINT NOT NULL,
+      id_obra BIGINT NOT NULL DEFAULT 0,
       id_planilha BIGINT NOT NULL DEFAULT 0,
       codigo_servico VARCHAR(80) NOT NULL,
       etapa VARCHAR(120) NULL,
@@ -1572,6 +1521,8 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
     )
   `);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS id_planilha BIGINT NOT NULL DEFAULT 0`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_composicoes ALTER COLUMN id_obra SET DEFAULT 0`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_composicoes ALTER COLUMN id_planilha SET DEFAULT 0`);
   await safeExecuteRawUnsafe(
     tx,
     `
@@ -1618,18 +1569,29 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
   await safeExecuteRawUnsafe(
     tx,
     `
-    UPDATE tab_composicoes t
-    SET id_planilha = v.id_planilha
-    FROM (
-      SELECT tenant_id, id_obra, id_planilha
-      FROM tab_planilhas
-      WHERE atual = TRUE
-    ) v
-    WHERE t.tenant_id = v.tenant_id
-      AND t.id_obra = v.id_obra
-      AND COALESCE(t.id_planilha,0) = 0
+    WITH ranked AS (
+      SELECT
+        id_item,
+        ROW_NUMBER() OVER (
+          PARTITION BY
+            tenant_id,
+            UPPER(COALESCE(codigo_servico,'')),
+            COALESCE(etapa,''),
+            UPPER(COALESCE(tipo_item,'')),
+            UPPER(COALESCE(codigo_item,''))
+          ORDER BY atualizado_em DESC NULLS LAST, id_item DESC
+        ) AS rn
+      FROM tab_composicoes
+      WHERE COALESCE(codigo_servico,'') <> ''
+        AND COALESCE(codigo_item,'') <> ''
+    )
+    DELETE FROM tab_composicoes t
+    USING ranked r
+    WHERE t.id_item = r.id_item
+      AND r.rn > 1
     `
   );
+  await safeExecuteRawUnsafe(tx, `UPDATE tab_composicoes SET id_obra = 0, id_planilha = 0 WHERE id_obra <> 0 OR id_planilha <> 0`);
   await safeExecuteRawUnsafe(tx, `CREATE OR REPLACE VIEW obras_planilhas_composicoes_itens AS SELECT * FROM tab_composicoes`);
 }
 
@@ -6848,10 +6810,23 @@ export default async function v1Routes(server: FastifyInstance) {
               SELECT
                 UPPER(COALESCE(ci.codigo_servico,'')) AS codigo_servico,
                 COUNT(ci.id_item) AS qtd_itens,
-                SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
-                SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
+                SUM(
+                  COALESCE(ci.quantidade, 0)
+                  * (1 + (COALESCE(ci.perda_percentual, 0) / 100.0))
+                  * COALESCE(p.valor_unitario, 0)
+                ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
+                SUM(
+                  COALESCE(ci.quantidade, 0)
+                  * (1 + (COALESCE(ci.perda_percentual, 0) / 100.0))
+                  * COALESCE(p.valor_unitario, 0)
+                ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
               FROM tab_composicoes ci
-              WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+              LEFT JOIN tab_insumos p
+                ON p.tenant_id = $1
+                AND p.id_obra = $2
+                AND p.id_planilha = $3
+                AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(ci.codigo_item,''))
+              WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
                 AND UPPER(COALESCE(ci.codigo_servico,'')) = ANY($4)
               GROUP BY 1
               `,
@@ -7212,10 +7187,23 @@ export default async function v1Routes(server: FastifyInstance) {
               SELECT
                 UPPER(COALESCE(ci.codigo_servico,'')) AS codigo_servico,
                 COUNT(ci.id_item) AS qtd_itens,
-                SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
-                SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
+                SUM(
+                  COALESCE(ci.quantidade, 0)
+                  * (1 + (COALESCE(ci.perda_percentual, 0) / 100.0))
+                  * COALESCE(p.valor_unitario, 0)
+                ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
+                SUM(
+                  COALESCE(ci.quantidade, 0)
+                  * (1 + (COALESCE(ci.perda_percentual, 0) / 100.0))
+                  * COALESCE(p.valor_unitario, 0)
+                ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
               FROM tab_composicoes ci
-              WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+              LEFT JOIN tab_insumos p
+                ON p.tenant_id = $1
+                AND p.id_obra = $2
+                AND p.id_planilha = $3
+                AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(ci.codigo_item,''))
+              WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
                 AND UPPER(COALESCE(ci.codigo_servico,'')) = ANY($4)
               GROUP BY 1
               `,
@@ -8406,15 +8394,22 @@ export default async function v1Routes(server: FastifyInstance) {
               SELECT
                 COUNT(ci.id_item) AS qtd,
                 SUM(
-                  COALESCE(ci.quantidade,0)
-                  * COALESCE(ci.valor_unitario, 0)
+                  COALESCE(ci.quantidade, 0)
+                  * (1 + (COALESCE(ci.perda_percentual, 0) / 100.0))
+                  * COALESCE(p.valor_unitario, 0)
                 ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
                 SUM(
-                  COALESCE(ci.quantidade,0)
-                  * COALESCE(ci.valor_unitario, 0)
+                  COALESCE(ci.quantidade, 0)
+                  * (1 + (COALESCE(ci.perda_percentual, 0) / 100.0))
+                  * COALESCE(p.valor_unitario, 0)
                 ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
               FROM tab_composicoes ci
-              WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3 AND UPPER(COALESCE(ci.codigo_servico,'')) = $4
+              LEFT JOIN tab_insumos p
+                ON p.tenant_id = $1
+                AND p.id_obra = $2
+                AND p.id_planilha = $3
+                AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(ci.codigo_item,''))
+              WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0 AND UPPER(COALESCE(ci.codigo_servico,'')) = $4
             )
             SELECT
               (SELECT bdi FROM planilha_params) AS bdi,
@@ -8608,15 +8603,22 @@ export default async function v1Routes(server: FastifyInstance) {
         SELECT
           COUNT(ci.id_item) AS qtd,
           SUM(
-            COALESCE(ci.quantidade,0)
-            * COALESCE(ci.valor_unitario, 0)
+            COALESCE(ci.quantidade, 0)
+            * (1 + (COALESCE(ci.perda_percentual, 0) / 100.0))
+            * COALESCE(p.valor_unitario, 0)
           ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
           SUM(
-            COALESCE(ci.quantidade,0)
-            * COALESCE(ci.valor_unitario, 0)
+            COALESCE(ci.quantidade, 0)
+            * (1 + (COALESCE(ci.perda_percentual, 0) / 100.0))
+            * COALESCE(p.valor_unitario, 0)
           ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
         FROM tab_composicoes ci
-        WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3 AND UPPER(COALESCE(ci.codigo_servico,'')) = $4
+        LEFT JOIN tab_insumos p
+          ON p.tenant_id = $1
+          AND p.id_obra = $2
+          AND p.id_planilha = $3
+          AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(ci.codigo_item,''))
+        WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0 AND UPPER(COALESCE(ci.codigo_servico,'')) = $4
       )
       SELECT
         (SELECT bdi FROM planilha_params) AS bdi,
@@ -9105,7 +9107,7 @@ export default async function v1Routes(server: FastifyInstance) {
           UPPER(COALESCE(ci.codigo_item,'')) AS codigo,
           MAX(ci.tipo_item) AS tipo
         FROM tab_composicoes ci
-        WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+        WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
           AND COALESCE(ci.tipo_item,'') IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
           AND COALESCE(ci.codigo_item,'') <> ''
         GROUP BY UPPER(COALESCE(ci.codigo_item,''))
@@ -9113,7 +9115,7 @@ export default async function v1Routes(server: FastifyInstance) {
       defs AS (
         SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS codigo
         FROM tab_composicoes
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND COALESCE(codigo_servico,'') <> ''
+        WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND COALESCE(codigo_servico,'') <> ''
       )
       SELECT
         r.codigo AS "codigo",
@@ -9215,12 +9217,12 @@ export default async function v1Routes(server: FastifyInstance) {
               $6 = '' OR
               ($6 = 'COM' AND EXISTS (
                 SELECT 1 FROM tab_composicoes ci
-                WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+                WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
                   AND UPPER(COALESCE(ci.codigo_servico,'')) = sp.codigo_servico
               )) OR
               ($6 = 'SEM' AND NOT EXISTS (
                 SELECT 1 FROM tab_composicoes ci
-                WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+                WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
                   AND UPPER(COALESCE(ci.codigo_servico,'')) = sp.codigo_servico
               ))
             )
@@ -9297,12 +9299,25 @@ export default async function v1Routes(server: FastifyInstance) {
           SELECT
             UPPER(COALESCE(ci.codigo_servico,'')) AS codigo_servico,
             COUNT(ci.id_item) AS qtd_itens,
-            SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
-            SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
+            SUM(
+              COALESCE(ci.quantidade, 0)
+              * (1 + (COALESCE(ci.perda_percentual, 0) / 100.0))
+              * COALESCE(p.valor_unitario, 0)
+            ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
+            SUM(
+              COALESCE(ci.quantidade, 0)
+              * (1 + (COALESCE(ci.perda_percentual, 0) / 100.0))
+              * COALESCE(p.valor_unitario, 0)
+            ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
           FROM tab_composicoes ci
+          LEFT JOIN tab_insumos p
+            ON p.tenant_id = $1
+            AND p.id_obra = $2
+            AND p.id_planilha = $3
+            AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(ci.codigo_item,''))
           JOIN svc_page sp
             ON sp.codigo_servico = UPPER(COALESCE(ci.codigo_servico,''))
-          WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+          WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
           GROUP BY UPPER(COALESCE(ci.codigo_servico,''))
         )
         SELECT
@@ -9386,12 +9401,12 @@ export default async function v1Routes(server: FastifyInstance) {
             $6 = '' OR
             ($6 = 'COM' AND EXISTS (
               SELECT 1 FROM tab_composicoes ci
-              WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+              WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
                 AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
             )) OR
             ($6 = 'SEM' AND NOT EXISTS (
               SELECT 1 FROM tab_composicoes ci
-              WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+              WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
                 AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
             ))
           )
@@ -9430,12 +9445,12 @@ export default async function v1Routes(server: FastifyInstance) {
               $8 = '' OR
               ($8 = 'COM' AND EXISTS (
                 SELECT 1 FROM tab_composicoes ci
-                WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+                WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
                   AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
               )) OR
               ($8 = 'SEM' AND NOT EXISTS (
                 SELECT 1 FROM tab_composicoes ci
-                WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+                WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
                   AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
               ))
             )
@@ -9495,11 +9510,20 @@ export default async function v1Routes(server: FastifyInstance) {
           SELECT
             UPPER(COALESCE(ci.codigo_servico,'')) AS codigo_servico,
             COUNT(ci.id_item) AS qtd_itens,
-            SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base
+            SUM(
+              COALESCE(ci.quantidade, 0)
+              * (1 + (COALESCE(ci.perda_percentual, 0) / 100.0))
+              * COALESCE(p.valor_unitario, 0)
+            ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base
           FROM tab_composicoes ci
+          LEFT JOIN tab_insumos p
+            ON p.tenant_id = $1
+            AND p.id_obra = $2
+            AND p.id_planilha = $3
+            AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(ci.codigo_item,''))
           JOIN svc_page sp
             ON sp.codigo_servico = UPPER(COALESCE(ci.codigo_servico,''))
-          WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+          WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
           GROUP BY UPPER(COALESCE(ci.codigo_servico,''))
         )
         SELECT
@@ -9559,12 +9583,12 @@ export default async function v1Routes(server: FastifyInstance) {
             $6 = '' OR
             ($6 = 'COM' AND EXISTS (
               SELECT 1 FROM tab_composicoes ci
-              WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+              WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
                 AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
             )) OR
             ($6 = 'SEM' AND NOT EXISTS (
               SELECT 1 FROM tab_composicoes ci
-              WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+              WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
                 AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
             ))
           )
@@ -9612,12 +9636,12 @@ export default async function v1Routes(server: FastifyInstance) {
               $8 = '' OR
               ($8 = 'COM' AND EXISTS (
                 SELECT 1 FROM tab_composicoes ci
-                WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+                WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
                   AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
               )) OR
               ($8 = 'SEM' AND NOT EXISTS (
                 SELECT 1 FROM tab_composicoes ci
-                WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+                WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
                   AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
               ))
             )
@@ -9694,12 +9718,25 @@ export default async function v1Routes(server: FastifyInstance) {
           SELECT
             UPPER(COALESCE(ci.codigo_servico,'')) AS codigo_servico,
             COUNT(ci.id_item) AS qtd_itens,
-            SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
-            SUM(COALESCE(ci.quantidade,0) * COALESCE(ci.valor_unitario,0)) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
+            SUM(
+              COALESCE(ci.quantidade, 0)
+              * (1 + (COALESCE(ci.perda_percentual, 0) / 100.0))
+              * COALESCE(p.valor_unitario, 0)
+            ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
+            SUM(
+              COALESCE(ci.quantidade, 0)
+              * (1 + (COALESCE(ci.perda_percentual, 0) / 100.0))
+              * COALESCE(p.valor_unitario, 0)
+            ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
           FROM tab_composicoes ci
+          LEFT JOIN tab_insumos p
+            ON p.tenant_id = $1
+            AND p.id_obra = $2
+            AND p.id_planilha = $3
+            AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(ci.codigo_item,''))
           JOIN svc_page sp
             ON sp.codigo_servico = UPPER(COALESCE(ci.codigo_servico,''))
-          WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+          WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
           GROUP BY UPPER(COALESCE(ci.codigo_servico,''))
         )
         SELECT
@@ -9846,10 +9883,8 @@ export default async function v1Routes(server: FastifyInstance) {
     const existsServicoTarget = Boolean(dstSvcExists?.[0]?.ok);
 
     const dstCompExists = (await prisma.$queryRawUnsafe(
-      `SELECT 1 AS ok FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4 LIMIT 1`,
+      `SELECT 1 AS ok FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(COALESCE(codigo_servico,'')) = $2 LIMIT 1`,
       ctx.tenantId,
-      idObra,
-      targetPlanilhaId,
       codigoServico
     )) as any[];
     const existsComposicaoTarget = Boolean(dstCompExists?.[0]?.ok);
@@ -9974,7 +10009,7 @@ export default async function v1Routes(server: FastifyInstance) {
         `
         SELECT etapa, tipo_item AS "tipoItem", codigo_item AS "codigoItem", banco, descricao, und, quantidade, valor_unitario AS "valorUnitario", perda_percentual AS "perdaPercentual", codigo_centro_custo AS "codigoCentroCusto"
         FROM tab_composicoes
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
+        WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(COALESCE(codigo_servico,'')) = $4
         ORDER BY COALESCE(etapa,''), tipo_item, codigo_item, id_item
         `,
         ctx.tenantId,
@@ -9982,40 +10017,6 @@ export default async function v1Routes(server: FastifyInstance) {
         sourcePlanilhaId,
         codigoServico
       )) as any[];
-
-      if (replaceComposicao || !existsComposicaoTarget) {
-        await tx.$executeRawUnsafe(
-          `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4`,
-          ctx.tenantId,
-          idObra,
-          targetPlanilhaId,
-          codigoServico
-        );
-        for (const r of srcComp || []) {
-          await tx.$executeRawUnsafe(
-            `
-            INSERT INTO tab_composicoes
-              (tenant_id, id_obra, id_planilha, codigo_servico, etapa, tipo_item, codigo_item, banco, descricao, und, quantidade, valor_unitario, perda_percentual, codigo_centro_custo)
-            VALUES
-              ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-            `,
-            ctx.tenantId,
-            idObra,
-            targetPlanilhaId,
-            codigoServico,
-            r.etapa == null ? null : String(r.etapa || '').trim() || null,
-            r.tipoItem == null ? null : String(r.tipoItem || '').trim(),
-            r.codigoItem == null ? null : String(r.codigoItem || '').trim(),
-            r.banco == null ? null : String(r.banco || '').trim() || null,
-            r.descricao == null ? null : String(r.descricao || '').trim() || null,
-            r.und == null ? null : String(r.und || '').trim() || null,
-            r.quantidade == null ? null : toDec(r.quantidade),
-            r.valorUnitario == null ? null : toDec(r.valorUnitario),
-            r.perdaPercentual == null ? null : toDec(r.perdaPercentual),
-            r.codigoCentroCusto == null ? null : String(r.codigoCentroCusto || '').trim() || null
-          );
-        }
-      }
 
       if (insumosPrecoMode === 'SUBSTITUIR' && (srcComp || []).length) {
         const insCodes = Array.from(
@@ -10247,10 +10248,8 @@ export default async function v1Routes(server: FastifyInstance) {
 
       for (const [codigoServico, itens] of grouped.entries()) {
         await tx.$executeRawUnsafe(
-          `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4`,
+          `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(COALESCE(codigo_servico,'')) = $2`,
           ctx.tenantId,
-          idObra,
-          idPlanilha,
           codigoServico
         );
 
@@ -10288,8 +10287,6 @@ export default async function v1Routes(server: FastifyInstance) {
             priceByCodigo.set(codigoItem, Number(r.valorUnitario));
           }
 
-          const valorUnitarioResolved = isComp ? null : r.valorUnitario != null ? Number(r.valorUnitario) : priceByCodigo.get(codigoItem) ?? null;
-
           await tx.$executeRawUnsafe(
             `
             INSERT INTO tab_composicoes
@@ -10298,8 +10295,8 @@ export default async function v1Routes(server: FastifyInstance) {
               ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
             `,
             ctx.tenantId,
-            idObra,
-            idPlanilha,
+            0,
+            0,
             codigoServico,
             r.etapa == null ? null : String(r.etapa || '').trim() || null,
             tipoItemRaw.slice(0, 32) || 'INSUMO',
@@ -10308,7 +10305,7 @@ export default async function v1Routes(server: FastifyInstance) {
             r.descricao == null ? null : String(r.descricao || '').trim() || null,
             r.und == null ? null : String(r.und || '').trim() || null,
             r.quantidade == null ? toDec(0) : toDec(r.quantidade),
-            valorUnitarioResolved == null ? null : toDec(valorUnitarioResolved),
+            null,
             r.perda == null ? toDec(0) : toDec(r.perda),
             r.codigoCentroCusto == null ? null : String(r.codigoCentroCusto || '').trim() || null
           );
@@ -10352,7 +10349,7 @@ export default async function v1Routes(server: FastifyInstance) {
         quantidade AS "quantidade",
         valor_unitario AS "valorUnitario"
       FROM tab_composicoes
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
+      WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(codigo_servico) = $4
       ORDER BY COALESCE(etapa,''), tipo_item, codigo_item, id_item
       `,
       tenantId,
@@ -10436,7 +10433,7 @@ export default async function v1Routes(server: FastifyInstance) {
         `
         UPDATE tab_composicoes
         SET valor_unitario = $5, atualizado_em = NOW()
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND id_item = $4
+        WHERE tenant_id = $1 AND id_item = $4
         `,
         tenantId,
         idObra,
@@ -10458,8 +10455,8 @@ export default async function v1Routes(server: FastifyInstance) {
       SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS "codigoServico"
       FROM tab_composicoes
       WHERE tenant_id = $1
-        AND id_obra = $2
-        AND id_planilha = $3
+        AND id_obra = 0
+        AND id_planilha = 0
         AND UPPER(COALESCE(codigo_item,'')) = $4
         AND UPPER(COALESCE(tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
       `,
@@ -10527,13 +10524,29 @@ export default async function v1Routes(server: FastifyInstance) {
       ),
       comp AS (
         SELECT
-          UPPER(COALESCE(codigo_servico,'')) AS codigo,
+          UPPER(COALESCE(ci.codigo_servico,'')) AS codigo,
           COUNT(*) AS qtd,
-          SUM(COALESCE(quantidade,0) * COALESCE(valor_unitario,0)) FILTER (WHERE COALESCE(tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
-          SUM(COALESCE(quantidade,0) * COALESCE(valor_unitario,0)) FILTER (WHERE COALESCE(tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
-        FROM tab_composicoes
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = ANY($4::text[])
-        GROUP BY UPPER(COALESCE(codigo_servico,''))
+          SUM(
+            COALESCE(ci.quantidade, 0)
+            * (1 + (COALESCE(ci.perda_percentual, 0) / 100.0))
+            * COALESCE(p.valor_unitario, 0)
+          ) FILTER (WHERE COALESCE(ci.tipo_item,'') NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')) AS total_base,
+          SUM(
+            COALESCE(ci.quantidade, 0)
+            * (1 + (COALESCE(ci.perda_percentual, 0) / 100.0))
+            * COALESCE(p.valor_unitario, 0)
+          ) FILTER (WHERE COALESCE(ci.tipo_item,'') = 'MAO_DE_OBRA') AS total_mao_base
+        FROM tab_composicoes ci
+        LEFT JOIN tab_insumos p
+          ON p.tenant_id = $1
+          AND p.id_obra = $2
+          AND p.id_planilha = $3
+          AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(ci.codigo_item,''))
+        WHERE ci.tenant_id = $1
+          AND ci.id_obra = 0
+          AND ci.id_planilha = 0
+          AND UPPER(COALESCE(ci.codigo_servico,'')) = ANY($4::text[])
+        GROUP BY UPPER(COALESCE(ci.codigo_servico,''))
       ),
       calc AS (
         SELECT
@@ -10721,7 +10734,7 @@ export default async function v1Routes(server: FastifyInstance) {
           perda_percentual AS "perdaPercentual",
           codigo_centro_custo AS "codigoCentroCusto"
         FROM tab_composicoes
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
+        WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(COALESCE(codigo_servico,'')) = $4
         ORDER BY id_item ASC
         `,
         ctx.tenantId,
@@ -10862,8 +10875,8 @@ export default async function v1Routes(server: FastifyInstance) {
             ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
           `,
           ctx.tenantId,
-          idObra,
-          idPlanilha,
+          0,
+          0,
           codigoServicoNovo,
           r?.etapa != null ? String(r.etapa || '').trim() || null : null,
           tipoItemRaw,
@@ -10872,7 +10885,7 @@ export default async function v1Routes(server: FastifyInstance) {
           r?.descricao != null ? String(r.descricao || '').trim().slice(0, 255) || null : null,
           r?.und != null ? String(r.und || '').trim().slice(0, 40) || null : null,
           r?.quantidade == null ? null : toDec(r.quantidade),
-          r?.valorUnitario == null ? null : toDec(r.valorUnitario),
+          null,
           r?.perdaPercentual == null ? toDec(0) : toDec(r.perdaPercentual),
           r?.codigoCentroCusto != null ? String(r.codigoCentroCusto || '').trim().slice(0, 120) || null : null
         );
@@ -10917,7 +10930,7 @@ export default async function v1Routes(server: FastifyInstance) {
         COALESCE(i.descricao,'') AS "descricao",
         COALESCE(i.und,'') AS "und",
         i.quantidade AS "quantidade",
-        i.valor_unitario AS "valorUnitario",
+        COALESCE(p.valor_unitario, 0) AS "valorUnitario",
         i.perda_percentual AS "perdaPercentual",
         i.codigo_centro_custo AS "codigoCentroCusto",
         EXISTS (
@@ -10974,7 +10987,12 @@ export default async function v1Routes(server: FastifyInstance) {
           ''
         ) AS "origemChave"
       FROM tab_composicoes i
-      WHERE i.tenant_id = $1 AND i.id_obra = $2 AND i.id_planilha = $3 AND UPPER(COALESCE(i.codigo_servico,'')) = $4
+      LEFT JOIN tab_insumos p
+        ON p.tenant_id = $1
+        AND p.id_obra = $2
+        AND p.id_planilha = $3
+        AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(i.codigo_item,''))
+      WHERE i.tenant_id = $1 AND i.id_obra = 0 AND i.id_planilha = 0 AND UPPER(COALESCE(i.codigo_servico,'')) = $4
       ORDER BY COALESCE(i.etapa,'') ASC, i.id_item ASC
       `,
       ctx.tenantId,
@@ -11074,10 +11092,8 @@ export default async function v1Routes(server: FastifyInstance) {
           }
         }
         await tx.$executeRawUnsafe(
-          `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4`,
+          `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(COALESCE(codigo_servico,'')) = $2`,
           ctx.tenantId,
-          idObra,
-          idPlanilha,
           codigoServico
         );
 
@@ -11187,8 +11203,8 @@ export default async function v1Routes(server: FastifyInstance) {
               ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
             `,
             ctx.tenantId,
-            idObra,
-            idPlanilha,
+            0,
+            0,
             codigoServico,
             null,
             tipoItemRaw.slice(0, 32) || 'INSUMO',
@@ -11197,7 +11213,7 @@ export default async function v1Routes(server: FastifyInstance) {
             r.descricao || null,
             r.und || null,
             r.quantidade,
-            r.valorUnitario,
+            null,
             toDec(0),
             null
           );
@@ -11549,10 +11565,8 @@ export default async function v1Routes(server: FastifyInstance) {
       await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
 
       await tx.$executeRawUnsafe(
-        `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4`,
+        `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(codigo_servico) = $2`,
         ctx.tenantId,
-        idObra,
-        idPlanilha,
         codigoServico
       );
 
@@ -11565,8 +11579,8 @@ export default async function v1Routes(server: FastifyInstance) {
           .map((r) => {
             const base = [
               ctx.tenantId,
-              idObra,
-              idPlanilha,
+              0,
+              0,
               codigoServico,
               r.etapa ?? '',
               r.tipoItem,
@@ -11575,7 +11589,7 @@ export default async function v1Routes(server: FastifyInstance) {
               r.descricao,
               r.und,
               r.quantidade,
-              r.valorUnitario,
+              null,
               r.perda,
               r.codigoCentroCusto,
             ];
@@ -12540,7 +12554,7 @@ export default async function v1Routes(server: FastifyInstance) {
         if (!itens.length) continue;
         if (mode === 'UPSERT') {
           await tx.$executeRawUnsafe(
-            `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4`,
+            `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(codigo_servico) = $4`,
             ctx.tenantId,
             obraId,
             planilhaId,
@@ -12595,8 +12609,8 @@ export default async function v1Routes(server: FastifyInstance) {
             .map((r) => {
               const base = [
                 ctx.tenantId,
-                obraId,
-                planilhaId,
+                0,
+                0,
                 code,
                 r.etapa,
                 r.tipoItem,
@@ -12605,7 +12619,7 @@ export default async function v1Routes(server: FastifyInstance) {
                 r.descricao,
                 r.und,
                 r.quantidade,
-                r.valorUnitario,
+                null,
                 r.perda,
                 r.codigoCentroCusto,
               ];
@@ -12976,7 +12990,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
       if (mode === 'UPSERT') {
         await tx.$executeRawUnsafe(
-          `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4`,
+          `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(codigo_servico) = $4`,
           ctx.tenantId,
           obraId,
           planilhaId,
@@ -13009,8 +13023,8 @@ export default async function v1Routes(server: FastifyInstance) {
             .map((r) => {
               const base = [
                 ctx.tenantId,
-                obraId,
-                planilhaId,
+                0,
+                0,
                 codigoServico,
                 r.etapa,
                 r.tipoItem,
@@ -13019,7 +13033,7 @@ export default async function v1Routes(server: FastifyInstance) {
                 r.descricao,
                 r.und,
                 r.quantidade,
-                r.valorUnitario,
+                null,
                 r.perda,
                 r.codigoCentroCusto,
               ];
@@ -13823,7 +13837,7 @@ export default async function v1Routes(server: FastifyInstance) {
 
       if (mode === 'UPSERT') {
         await tx.$executeRawUnsafe(
-          `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4`,
+          `DELETE FROM tab_composicoes WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(codigo_servico) = $4`,
           ctx.tenantId,
           obraId,
           planilhaId,
@@ -13850,8 +13864,8 @@ export default async function v1Routes(server: FastifyInstance) {
             .map((r) => {
             const base = [
               ctx.tenantId,
-              obraId,
-              planilhaId,
+              0,
+              0,
               codigoServico,
               r.etapa,
               r.tipoItem,
@@ -13860,7 +13874,7 @@ export default async function v1Routes(server: FastifyInstance) {
               r.descricao,
               r.und,
               r.quantidade,
-              r.valorUnitario,
+              null,
               r.perda,
               r.codigoCentroCusto,
             ];
@@ -14278,11 +14292,10 @@ export default async function v1Routes(server: FastifyInstance) {
           UPPER(COALESCE(ci.codigo_item,'')) AS codigo_item,
           MAX(COALESCE(ci.descricao,'')) AS descricao,
           MAX(COALESCE(ci.und,'')) AS und,
-          MAX(COALESCE(ci.valor_unitario, 0)) AS max_valor_unitario,
           SUM(s.quant_servico * ci.quantidade * (1 + (ci.perda_percentual / 100.0))) AS quantidade_total
         FROM servicos s
         JOIN tab_composicoes ci
-          ON ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3 AND UPPER(ci.codigo_servico) = s.codigo_servico
+          ON ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0 AND UPPER(ci.codigo_servico) = s.codigo_servico
         WHERE COALESCE(ci.tipo_item,'INSUMO') NOT IN ('COMPOSICAO', 'COMPOSICAO_AUXILIAR')
           AND COALESCE(ci.codigo_item,'') <> ''
         GROUP BY UPPER(COALESCE(ci.codigo_item,''))
@@ -14291,7 +14304,7 @@ export default async function v1Routes(server: FastifyInstance) {
         i.codigo_item AS "codigoItem",
         i.descricao AS "descricao",
         i.und AS "und",
-        COALESCE(p.valor_unitario, i.max_valor_unitario, 0) AS "valorUnitario",
+        COALESCE(p.valor_unitario, 0) AS "valorUnitario",
         COALESCE(p.travado, FALSE) AS "travado",
         CASE WHEN lt.origem_tipo IS NULL THEN FALSE ELSE TRUE END AS "travadoPorCadeia",
         COALESCE(lt.origem_tipo,'') AS "origemTipo",
@@ -14981,8 +14994,8 @@ export default async function v1Routes(server: FastifyInstance) {
           COALESCE(NULLIF(trim(und),''),'') AS und
         FROM tab_composicoes
         WHERE tenant_id = $1
-          AND id_obra = $2
-          AND id_planilha = $3
+          AND id_obra = 0
+          AND id_planilha = 0
           AND UPPER(COALESCE(codigo_item,'')) = $4
           AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
           AND (COALESCE(NULLIF(trim(descricao),''),'') <> '' OR COALESCE(NULLIF(trim(und),''),'') <> '')
@@ -15005,8 +15018,8 @@ export default async function v1Routes(server: FastifyInstance) {
         SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS codigo
         FROM tab_composicoes
         WHERE tenant_id = $1
-          AND id_obra = $2
-          AND id_planilha = $3
+          AND id_obra = 0
+          AND id_planilha = 0
           AND UPPER(COALESCE(codigo_item,'')) = $4
           AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
         `,
@@ -15026,8 +15039,8 @@ export default async function v1Routes(server: FastifyInstance) {
           COALESCE(NULLIF(trim(und),''),'') AS und
         FROM tab_composicoes
         WHERE tenant_id = $1
-          AND id_obra = $2
-          AND id_planilha = $3
+          AND id_obra = 0
+          AND id_planilha = 0
           AND UPPER(COALESCE(codigo_item,'')) = $4
           AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
         ORDER BY id_item DESC
@@ -15063,23 +15076,6 @@ export default async function v1Routes(server: FastifyInstance) {
         meta?.banco ? String(meta.banco || '').trim().slice(0, 60) : null,
         meta?.descricao ? String(meta.descricao || '').trim().slice(0, 255) : null,
         meta?.und ? String(meta.und || '').trim().slice(0, 40) : null,
-        toDec(valorUnitario)
-      );
-
-      await tx.$executeRawUnsafe(
-        `
-        UPDATE tab_composicoes
-        SET valor_unitario = $5, atualizado_em = NOW()
-        WHERE tenant_id = $1
-          AND id_obra = $2
-          AND id_planilha = $3
-          AND UPPER(COALESCE(codigo_item,'')) = $4
-          AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
-        `,
-        ctx.tenantId,
-        idObra,
-        idPlanilha,
-        codigoItem,
         toDec(valorUnitario)
       );
 
