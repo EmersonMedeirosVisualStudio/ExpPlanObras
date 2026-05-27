@@ -1679,8 +1679,32 @@ async function ensurePlanilhaComposicaoPrimitivaTables(tx: any) {
     `
   );
   await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_composicoes_primitivas ADD COLUMN IF NOT EXISTS id_planilha BIGINT NOT NULL DEFAULT 0`);
-  await safeExecuteRawUnsafe(tx, `DROP INDEX IF EXISTS obras_planilhas_composicoes_primitivas_uk`);
-  await tx.$executeRawUnsafe(
+  await safeExecuteRawUnsafe(
+    tx,
+    `
+    DO $$
+    DECLARE
+      idxdef TEXT;
+    BEGIN
+      SELECT indexdef INTO idxdef
+      FROM pg_indexes
+      WHERE schemaname = current_schema()
+        AND indexname = 'obras_planilhas_composicoes_primitivas_uk';
+      IF idxdef IS NOT NULL AND idxdef NOT ILIKE '%id_planilha%' THEN
+        EXECUTE 'DROP INDEX IF EXISTS obras_planilhas_composicoes_primitivas_uk';
+      END IF;
+    EXCEPTION
+      WHEN undefined_table THEN
+        NULL;
+      WHEN undefined_object THEN
+        NULL;
+      WHEN OTHERS THEN
+        NULL;
+    END $$;
+    `
+  );
+  await safeExecuteRawUnsafe(
+    tx,
     `CREATE UNIQUE INDEX IF NOT EXISTS obras_planilhas_composicoes_primitivas_uk ON obras_planilhas_composicoes_primitivas (tenant_id, id_obra, id_planilha, codigo_servico)`
   );
   await safeExecuteRawUnsafe(
