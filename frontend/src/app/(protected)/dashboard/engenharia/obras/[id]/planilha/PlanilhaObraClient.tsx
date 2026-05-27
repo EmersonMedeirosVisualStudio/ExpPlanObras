@@ -1441,17 +1441,9 @@ export default function PlanilhaObraClient({
         return;
       }
       const map: Record<string, ComposicaoValidacaoRow> = {};
-      let offset = 0;
-      let guard = 0;
-      while (guard < 200) {
-        guard++;
-        const res = await authFetch(
-          `/api/v1/engenharia/obras/${idObra}/planilha/composicoes/validacao?planilhaId=${planilhaIdQuery}&limit=200&offset=${encodeURIComponent(
-            String(offset)
-          )}`
-        );
-        const json = await res.json().catch(() => null);
-        if (!res.ok || !json?.success) break;
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/validacao?mode=PLANILHA&planilhaId=${planilhaIdQuery}&limit=5000`);
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.success) {
         const rows = Array.isArray(json.data?.rows) ? (json.data.rows as any[]) : [];
         for (const r of rows) {
           const code = String(r.codigoServico || "").trim().toUpperCase();
@@ -1467,10 +1459,6 @@ export default function PlanilhaObraClient({
             qtdItens: Number(r.qtdItens || 0),
           };
         }
-        const hasMore = Boolean(json.data?.hasMore);
-        const nextOffset = json.data?.nextOffset != null ? Number(json.data.nextOffset) : offset + rows.length;
-        if (!hasMore || rows.length <= 0) break;
-        offset = Math.max(offset + 1, nextOffset);
       }
       setComposicaoValidacaoByCodigo(map);
     } catch {
