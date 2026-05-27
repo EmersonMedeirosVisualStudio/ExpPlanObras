@@ -612,7 +612,7 @@ export default function FichaRhClient() {
                 <button
                   type="button"
                   className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
-                  onClick={() => router.push('/dashboard/documentos')}
+                  onClick={() => router.push(`/dashboard/documentos?tipo=${encodeURIComponent(tipoPessoa)}&id=${encodeURIComponent(String(idNum))}`)}
                 >
                   <FileText size={16} />
                   Abrir módulo de documentos

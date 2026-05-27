@@ -722,8 +722,8 @@ export default function EngenhariaObrasPage() {
                       ev.stopPropagation();
                       abrirObraSelecionada(o.id, o.name);
                     }}
-                    title="Selecionar obra"
-                    aria-label="Selecionar obra"
+                    title="Editar obra"
+                    aria-label="Editar obra"
                   >
                     <CheckCircle2 className="h-5 w-5" />
                   </button>
@@ -822,8 +822,8 @@ export default function EngenhariaObrasPage() {
                             ev.stopPropagation();
                             abrirObraSelecionada(o.id, o.name);
                           }}
-                          title="Selecionar obra"
-                          aria-label="Selecionar obra"
+                          title="Editar obra"
+                          aria-label="Editar obra"
                         >
                           <CheckCircle2 className="h-5 w-5" />
                         </button>

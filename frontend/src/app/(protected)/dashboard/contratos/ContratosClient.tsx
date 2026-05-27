@@ -335,6 +335,8 @@ export default function ContratosClient() {
   const returnToStorageKey = "exp:returnTo:contratos";
   const [returnToStored, setReturnToStored] = useState<string | null>(null);
   const effectiveReturnTo = returnToParam || returnToStored;
+  const [returnToObraId, setReturnToObraId] = useState<number>(0);
+  const [returnToObraNome, setReturnToObraNome] = useState<string | null>(null);
   const contratoId = sp.get("id");
   const saved = sp.get("saved");
   const urlStatus = sp.get("status");
@@ -356,8 +358,41 @@ export default function ContratosClient() {
     try {
       sessionStorage.setItem(returnToStorageKey, returnToParam);
       setReturnToStored(returnToParam);
-    } catch {}
+    } catch {
+      setReturnToStored(returnToParam);
+    }
   }, [returnToParam]);
+
+  useEffect(() => {
+    const parsed = parseInternalPath(effectiveReturnTo);
+    const path = parsed?.pathname || "";
+    const obraMatch = path.match(/^\/dashboard\/engenharia\/obras\/(\d+)(?:\/|$)/i);
+    const obraId = obraMatch?.[1] ? Number(obraMatch[1]) : 0;
+    if (!obraId || !Number.isFinite(obraId)) {
+      setReturnToObraId(0);
+      setReturnToObraNome(null);
+      return;
+    }
+    if (obraId === returnToObraId) return;
+    setReturnToObraId(obraId);
+    setReturnToObraNome(null);
+    let active = true;
+    api
+      .get(`/api/obras/${obraId}`)
+      .then((res) => {
+        if (!active) return;
+        const data = res?.data && typeof res.data === "object" && "data" in res.data ? (res.data as any).data : res.data;
+        const nome = data?.name != null ? String(data.name || "").trim() : "";
+        setReturnToObraNome(nome || null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setReturnToObraNome(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [effectiveReturnTo, returnToObraId]);
 
   const [loading, setLoading] = useState(false);
   const [bootLoading, setBootLoading] = useState(false);
@@ -634,12 +669,31 @@ export default function ContratosClient() {
     return !!detail;
   }, [detail]);
 
-  const breadcrumbContrato = useMemo(() => {
-    if (!contratoId) return "";
-    const labels = labelsFromPath(effectiveReturnTo);
-    const base = labels.length ? labels.join(" → ") : "Contratos";
-    return `${base} → Contrato #${contratoId}`;
-  }, [contratoId, effectiveReturnTo]);
+  const breadcrumbButtonsContrato = useMemo(() => {
+    if (!contratoId) return [];
+    const out: { label: string; href: string; active?: boolean }[] = [];
+
+    const parsed = parseInternalPath(effectiveReturnTo);
+    const path = parsed?.pathname || "";
+    const obraMatch = path.match(/^\/dashboard\/engenharia\/obras\/(\d+)(?:\/|$)/i);
+    const obraId = obraMatch?.[1] ? Number(obraMatch[1]) : 0;
+    const fromEngenharia = path.startsWith("/dashboard/engenharia");
+
+    if (fromEngenharia) out.push({ label: "Engenharia", href: "/dashboard/engenharia" });
+    if (obraId) {
+      out.push({ label: "Obras", href: "/dashboard/engenharia/obras" });
+      const obraLabel = returnToObraNome ? `Obra #${obraId} - ${returnToObraNome}` : `Obra #${obraId}`;
+      out.push({ label: obraLabel, href: `/dashboard/engenharia/obras/${obraId}` });
+    }
+
+    out.push({ label: "Contratos", href: "/dashboard/contratos" });
+
+    const numero = String((detail as any)?.numeroContrato || "").trim();
+    const contratoLabel = numero ? `Contrato ${numero}` : `Contrato #${contratoId}`;
+    out.push({ label: contratoLabel, href: `/dashboard/contratos?id=${contratoId}`, active: true });
+
+    return out;
+  }, [contratoId, detail, effectiveReturnTo, returnToObraNome]);
 
   function limparFiltros() {
     setQ("");
@@ -905,7 +959,23 @@ export default function ContratosClient() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <PageLoadStatusBadge loading={bootLoading || loading} done={bootDone && !bootLoading && !loading} />
-              {breadcrumbContrato ? <div className="text-xs text-[#6B7280]">{breadcrumbContrato}</div> : null}
+              {breadcrumbButtonsContrato.length ? (
+                <div className="text-xs text-[#6B7280] flex flex-wrap items-center gap-1">
+                  {breadcrumbButtonsContrato.map((b, idx) => (
+                    <span key={`${b.href}-${idx}`} className="inline-flex items-center gap-1">
+                      {idx ? <span aria-hidden="true">→</span> : null}
+                      <button
+                        className={b.active ? "hover:underline text-blue-600" : "hover:underline"}
+                        type="button"
+                        onClick={() => router.push(b.href)}
+                        title={`Ir para ${b.label}`}
+                      >
+                        {b.label}
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               <h1 className="text-2xl font-semibold">Contrato #{contratoId}</h1>
               <div className="text-sm text-[#6B7280]">Detalhes, financeiro e vínculos com obras.</div>
             </div>

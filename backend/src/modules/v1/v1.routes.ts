@@ -700,14 +700,38 @@ async function clonarEstruturaPlanilha(
 ) {
   await tx.$executeRawUnsafe(
     `
+    WITH src_codes AS (
+      SELECT DISTINCT
+        UPPER(COALESCE(s.codigo,'')) AS codigo,
+        COALESCE(NULLIF(trim(s.fonte),''), '') AS fonte,
+        COALESCE(NULLIF(trim(s.servico),''), '') AS servico,
+        COALESCE(NULLIF(trim(s.und),''), '') AS und
+      FROM tab_planilha_itens i
+      LEFT JOIN tab_servicos s
+        ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
+      WHERE i.tenant_id = $1
+        AND i.id_planilha = $2
+        AND i.tipo_linha = 'SERVICO'
+        AND COALESCE(s.codigo,'') <> ''
+    )
     INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
-    SELECT tenant_id, id_obra, $3 AS id_planilha, codigo, fonte, servico, und
-    FROM tab_servicos
-    WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $4
+    SELECT
+      $1,
+      0,
+      0,
+      sc.codigo,
+      NULLIF(sc.fonte,''),
+      NULLIF(sc.servico,''),
+      NULLIF(sc.und,'')
+    FROM src_codes sc
+    ON CONFLICT (tenant_id, codigo)
+    DO UPDATE SET
+      fonte = COALESCE(NULLIF(tab_servicos.fonte,''), NULLIF(EXCLUDED.fonte,'')),
+      servico = COALESCE(NULLIF(tab_servicos.servico,''), NULLIF(EXCLUDED.servico,'')),
+      und = COALESCE(NULLIF(tab_servicos.und,''), NULLIF(EXCLUDED.und,'')),
+      atualizado_em = NOW()
     `,
     input.tenantId,
-    input.idObra,
-    input.targetPlanilhaId,
     input.sourcePlanilhaId
   );
 
@@ -732,13 +756,13 @@ async function clonarEstruturaPlanilha(
     dst_serv AS (
       SELECT id_servico, UPPER(COALESCE(codigo,'')) AS codigo
       FROM tab_servicos
-      WHERE tenant_id = $1 AND id_obra = $3 AND id_planilha = $4
+      WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0
     )
     INSERT INTO tab_planilha_itens
       (tenant_id, id_planilha, ordem, item, id_servico, quantidade, valor_unitario, valor_parcial, nivel, tipo_linha, observacao)
     SELECT
       $1 AS tenant_id,
-      $4 AS id_planilha,
+      $3 AS id_planilha,
       src.ordem,
       src.item,
       CASE WHEN src.tipo_linha = 'SERVICO' THEN ds.id_servico ELSE NULL END AS id_servico,
@@ -755,7 +779,6 @@ async function clonarEstruturaPlanilha(
     `,
     input.tenantId,
     input.sourcePlanilhaId,
-    input.idObra,
     input.targetPlanilhaId
   );
 
@@ -781,8 +804,8 @@ async function ensurePlanilhaServicosTables(tx: any) {
     CREATE TABLE IF NOT EXISTS tab_servicos (
       id_servico BIGSERIAL PRIMARY KEY,
       tenant_id BIGINT NOT NULL,
-      id_obra BIGINT NOT NULL,
-      id_planilha BIGINT NOT NULL,
+      id_obra BIGINT NOT NULL DEFAULT 0,
+      id_planilha BIGINT NOT NULL DEFAULT 0,
       codigo VARCHAR(80) NOT NULL,
       fonte VARCHAR(80) NULL,
       servico VARCHAR(800) NULL,
@@ -794,8 +817,30 @@ async function ensurePlanilhaServicosTables(tx: any) {
       atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await safeExecuteRawUnsafe(tx, `CREATE UNIQUE INDEX IF NOT EXISTS tab_servicos_uk ON tab_servicos (tenant_id, id_obra, id_planilha, codigo)`);
-  await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_servicos_idx ON tab_servicos (tenant_id, id_obra, id_planilha)`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ALTER COLUMN id_obra SET DEFAULT 0`);
+  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ALTER COLUMN id_planilha SET DEFAULT 0`);
+  await safeExecuteRawUnsafe(
+    tx,
+    `
+    DO $$
+    DECLARE
+      idxdef TEXT;
+    BEGIN
+      SELECT indexdef INTO idxdef
+      FROM pg_indexes
+      WHERE schemaname = current_schema()
+        AND indexname = 'tab_servicos_uk';
+      IF idxdef IS NOT NULL AND (idxdef ILIKE '%id_planilha%' OR idxdef ILIKE '%id_obra%') THEN
+        EXECUTE 'DROP INDEX IF EXISTS tab_servicos_uk';
+      END IF;
+    EXCEPTION
+      WHEN undefined_table THEN NULL;
+      WHEN undefined_object THEN NULL;
+      WHEN OTHERS THEN NULL;
+    END $$;
+    `
+  );
+  await safeExecuteRawUnsafe(tx, `DROP INDEX IF EXISTS tab_servicos_idx`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ALTER COLUMN codigo TYPE VARCHAR(80)`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ALTER COLUMN fonte TYPE VARCHAR(80)`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ALTER COLUMN servico TYPE VARCHAR(800)`);
@@ -803,6 +848,63 @@ async function ensurePlanilhaServicosTables(tx: any) {
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ADD COLUMN IF NOT EXISTS travado BOOLEAN NOT NULL DEFAULT FALSE`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ADD COLUMN IF NOT EXISTS travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE`);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_servicos ADD COLUMN IF NOT EXISTS origem_travamento VARCHAR(200) NULL`);
+  await safeExecuteRawUnsafe(tx, `UPDATE tab_servicos SET codigo = UPPER(TRIM(codigo)) WHERE codigo <> UPPER(TRIM(codigo))`);
+  await safeExecuteRawUnsafe(tx, `UPDATE tab_servicos SET id_obra = 0 WHERE COALESCE(id_obra,0) <> 0`);
+  await safeExecuteRawUnsafe(tx, `UPDATE tab_servicos SET id_planilha = 0 WHERE COALESCE(id_planilha,0) <> 0`);
+  await safeExecuteRawUnsafe(
+    tx,
+    `
+    WITH ranked AS (
+      SELECT
+        id_servico,
+        tenant_id,
+        codigo,
+        FIRST_VALUE(id_servico) OVER (
+          PARTITION BY tenant_id, codigo
+          ORDER BY atualizado_em DESC NULLS LAST, id_servico DESC
+        ) AS canonical_id,
+        ROW_NUMBER() OVER (
+          PARTITION BY tenant_id, codigo
+          ORDER BY atualizado_em DESC NULLS LAST, id_servico DESC
+        ) AS rn
+      FROM tab_servicos
+      WHERE COALESCE(codigo,'') <> ''
+    ),
+    dups AS (
+      SELECT id_servico, tenant_id, canonical_id
+      FROM ranked
+      WHERE rn > 1 AND canonical_id IS NOT NULL AND canonical_id <> id_servico
+    )
+    UPDATE tab_planilha_itens i
+    SET id_servico = d.canonical_id
+    FROM dups d
+    WHERE i.tenant_id = d.tenant_id
+      AND i.id_servico = d.id_servico
+    `
+  );
+  await safeExecuteRawUnsafe(
+    tx,
+    `
+    WITH ranked AS (
+      SELECT
+        id_servico,
+        tenant_id,
+        codigo,
+        ROW_NUMBER() OVER (
+          PARTITION BY tenant_id, codigo
+          ORDER BY atualizado_em DESC NULLS LAST, id_servico DESC
+        ) AS rn
+      FROM tab_servicos
+      WHERE COALESCE(codigo,'') <> ''
+    )
+    DELETE FROM tab_servicos s
+    USING ranked r
+    WHERE s.id_servico = r.id_servico
+      AND r.rn > 1
+    `
+  );
+  await safeExecuteRawUnsafe(tx, `CREATE UNIQUE INDEX IF NOT EXISTS tab_servicos_uk ON tab_servicos (tenant_id, codigo)`);
+  await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_servicos_idx ON tab_servicos (tenant_id, codigo)`);
   await safeExecuteRawUnsafe(tx, `CREATE OR REPLACE VIEW obras_planilhas_servicos AS SELECT * FROM tab_servicos`);
 }
 
@@ -1009,10 +1111,8 @@ async function ensurePlanilhaMigratedToEstruturaUnica(tx: any, tenantId: number,
     idPlanilha
   )) as any[];
   const svcExists = (await tx.$queryRawUnsafe(
-    `SELECT 1 AS ok FROM tab_servicos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 LIMIT 1`,
-    tenantId,
-    idObra,
-    idPlanilha
+    `SELECT 1 AS ok FROM tab_servicos WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 LIMIT 1`,
+    tenantId
   )) as any[];
 
   const linhasExists = (await tx.$queryRawUnsafe(
@@ -1045,14 +1145,14 @@ async function ensurePlanilhaMigratedToEstruturaUnica(tx: any, tenantId: number,
       INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
       SELECT
         $1,
-        $3,
-        $2,
+        0,
+        0,
         s.codigo,
         NULLIF(s.fonte,''),
         NULLIF(s.servico,''),
         NULLIF(s.und,'')
       FROM src s
-      ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+      ON CONFLICT (tenant_id, codigo)
       DO UPDATE SET
         fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
         servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
@@ -1087,7 +1187,7 @@ async function ensurePlanilhaMigratedToEstruturaUnica(tx: any, tenantId: number,
           NULL
         FROM obras_planilhas_linhas l
         LEFT JOIN tab_servicos s
-          ON s.tenant_id = l.tenant_id AND s.id_obra = $3 AND s.id_planilha = $2 AND s.codigo = UPPER(COALESCE(l.codigo,''))
+          ON s.tenant_id = l.tenant_id AND s.id_obra = 0 AND s.id_planilha = 0 AND s.codigo = UPPER(COALESCE(l.codigo,''))
         WHERE l.tenant_id = $1 AND l.id_planilha = $2
         ORDER BY l.id_linha ASC
         `,
@@ -1137,10 +1237,10 @@ async function ensurePlanilhaMigratedToEstruturaUnica(tx: any, tenantId: number,
           WHERE sf.tenant_id = $1
         )
         INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
-        SELECT $1, $3, $2, s.codigo, NULLIF(s.fonte,''), NULLIF(s.servico,''), NULLIF(s.und,'')
+        SELECT $1, 0, 0, s.codigo, NULLIF(s.fonte,''), NULLIF(s.servico,''), NULLIF(s.und,'')
         FROM src s
         WHERE COALESCE(s.codigo,'') <> ''
-        ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+        ON CONFLICT (tenant_id, codigo)
         DO UPDATE SET
           fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
           servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
@@ -1163,7 +1263,7 @@ async function ensurePlanilhaMigratedToEstruturaUnica(tx: any, tenantId: number,
           JOIN obras_servicos_fonte sf
             ON sf.tenant_id = i.tenant_id AND sf.id_servico = i.id_servico
           JOIN tab_servicos s2
-            ON s2.tenant_id = i.tenant_id AND s2.id_obra = $3 AND s2.id_planilha = $2 AND s2.codigo = UPPER(COALESCE(sf.codigo,''))
+            ON s2.tenant_id = i.tenant_id AND s2.id_obra = 0 AND s2.id_planilha = 0 AND s2.codigo = UPPER(COALESCE(sf.codigo,''))
           WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO'
         )
         UPDATE tab_planilha_itens i
@@ -1220,14 +1320,14 @@ async function syncServicosCatalogoFromLinhas(tx: any, tenantId: number, idObra:
       (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
     SELECT
       $1 AS tenant_id,
-      $2 AS id_obra,
-      $3 AS id_planilha,
+      0 AS id_obra,
+      0 AS id_planilha,
       d.codigo,
       d.fonte,
       d.servico,
       d.und
     FROM dedup d
-    ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+    ON CONFLICT (tenant_id, codigo)
     DO UPDATE SET
       fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
       servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
@@ -1254,8 +1354,8 @@ async function syncServicosCatalogoFromComposicoesRefs(tx: any, tenantId: number
         i.id_item AS id_item
       FROM tab_composicoes i
       WHERE i.tenant_id = $1
-        AND i.id_obra = $2
-        AND i.id_planilha = $3
+        AND i.id_obra = 0
+        AND i.id_planilha = 0
         AND UPPER(COALESCE(i.tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
         AND COALESCE(i.codigo_item,'') <> ''
     ),
@@ -1278,14 +1378,14 @@ async function syncServicosCatalogoFromComposicoesRefs(tx: any, tenantId: number
       (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
     SELECT
       $1 AS tenant_id,
-      $2 AS id_obra,
-      $3 AS id_planilha,
+      0 AS id_obra,
+      0 AS id_planilha,
       d.codigo,
       d.fonte,
       d.servico,
       d.und
     FROM dedup d
-    ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+    ON CONFLICT (tenant_id, codigo)
     DO UPDATE SET
       fonte = CASE
         WHEN COALESCE(NULLIF(tab_servicos.fonte,''), '') <> '' THEN tab_servicos.fonte
@@ -1350,8 +1450,8 @@ async function assertPlanilhaServicosCompletos(tx: any, tenantId: number, idObra
       COALESCE(und,'') AS und
     FROM tab_servicos
     WHERE tenant_id = $1
-      AND id_obra = $2
-      AND id_planilha = $3
+      AND id_obra = 0
+      AND id_planilha = 0
       AND COALESCE(codigo,'') <> ''
       AND (
         COALESCE(NULLIF(trim(servico),''), '') = ''
@@ -1360,9 +1460,7 @@ async function assertPlanilhaServicosCompletos(tx: any, tenantId: number, idObra
     ORDER BY id_servico ASC
     LIMIT 1
     `,
-    tenantId,
-    idObra,
-    idPlanilha
+    tenantId
   )) as any[];
   const r = rows?.[0] || null;
   if (!r) return;
@@ -1382,22 +1480,20 @@ async function assertServicoExisteECompleto(tx: any, tenantId: number, idObra: n
       COALESCE(und,'') AS und
     FROM tab_servicos
     WHERE tenant_id = $1
-      AND id_obra = $2
-      AND id_planilha = $3
-      AND UPPER(COALESCE(codigo,'')) = $4
+      AND id_obra = 0
+      AND id_planilha = 0
+      AND UPPER(COALESCE(codigo,'')) = $2
     ORDER BY id_servico ASC
     LIMIT 1
     `,
     tenantId,
-    idObra,
-    idPlanilha,
     code
   )) as any[];
   const r = rows?.[0] || null;
-  if (!r) throw new Error(`Serviço não existe na planilha: ${code}`);
+  if (!r) throw new Error(`Serviço não existe no catálogo: ${code}`);
   const nome = String(r.servico || '').trim();
   const und = String(r.und || '').trim();
-  if (!nome || !und) throw new Error(`Serviço na planilha está sem nome e/ou unidade: ${code}`);
+  if (!nome || !und) throw new Error(`Serviço no catálogo está sem nome e/ou unidade: ${code}`);
 }
 
 async function tryUpsertServicoCatalogoFromSinapiBase(tx: any, tenantId: number, idObra: number, idPlanilha: number, codigoServico: string) {
@@ -1445,8 +1541,8 @@ async function tryUpsertServicoCatalogoFromSinapiBase(tx: any, tenantId: number,
       INSERT INTO tab_servicos
         (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
       VALUES
-        ($1, $2, $3, $4, 'SINAPI', $5, $6)
-      ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+        ($1, 0, 0, $2, 'SINAPI', $3, $4)
+      ON CONFLICT (tenant_id, codigo)
       DO UPDATE SET
         fonte = COALESCE(NULLIF(tab_servicos.fonte,''), EXCLUDED.fonte),
         servico = COALESCE(NULLIF(tab_servicos.servico,''), EXCLUDED.servico),
@@ -1454,8 +1550,6 @@ async function tryUpsertServicoCatalogoFromSinapiBase(tx: any, tenantId: number,
         atualizado_em = NOW()
       `,
       tenantId,
-      idObra,
-      idPlanilha,
       code,
       desc,
       und
@@ -1473,12 +1567,12 @@ async function assertComposicoesVinculadasAServicos(tx: any, tenantId: number, i
     FROM tab_composicoes i
     LEFT JOIN tab_servicos s
       ON s.tenant_id = i.tenant_id
-      AND s.id_obra = i.id_obra
-      AND s.id_planilha = i.id_planilha
+      AND s.id_obra = 0
+      AND s.id_planilha = 0
       AND UPPER(COALESCE(s.codigo,'')) = UPPER(COALESCE(i.codigo_servico,''))
     WHERE i.tenant_id = $1
-      AND i.id_obra = $2
-      AND i.id_planilha = $3
+      AND i.id_obra = 0
+      AND i.id_planilha = 0
       AND COALESCE(i.codigo_servico,'') <> ''
       AND s.id_servico IS NULL
     ORDER BY i.codigo_servico
@@ -6386,12 +6480,10 @@ export default async function v1Routes(server: FastifyInstance) {
           COALESCE(servico,'') AS servico,
           COALESCE(und,'') AS und
         FROM tab_servicos
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+        WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0
         ORDER BY UPPER(COALESCE(codigo,''))
         `,
-        ctx.tenantId,
-        idObra,
-        idPlanilha
+        ctx.tenantId
       )) as any[])
         : [];
 
@@ -6884,8 +6976,8 @@ export default async function v1Routes(server: FastifyInstance) {
               await tx.$executeRawUnsafe(
                 `
                 INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
-                VALUES ($1,$2,$3,$4,$5,$6,$7)
-                ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+                VALUES ($1,0,0,$2,$3,$4,$5)
+                ON CONFLICT (tenant_id, codigo)
                 DO UPDATE SET
                   fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
                   servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
@@ -6893,8 +6985,6 @@ export default async function v1Routes(server: FastifyInstance) {
                   atualizado_em = NOW()
                 `,
                 ctx.tenantId,
-                idObra,
-                idPlanilha,
                 s.codigo,
                 s.fonte || null,
                 s.servico || null,
@@ -6943,11 +7033,10 @@ export default async function v1Routes(server: FastifyInstance) {
                 NULLIF(v.observacao,'') AS observacao
               FROM v
               LEFT JOIN tab_servicos s
-                ON s.tenant_id = $1 AND s.id_obra = $3 AND s.id_planilha = $2 AND UPPER(COALESCE(s.codigo,'')) = UPPER(COALESCE(v.codigo,''))
+                ON s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0 AND s.codigo = UPPER(COALESCE(v.codigo,''))
               `,
               ctx.tenantId,
               idPlanilha,
-              idObra,
               ...params
             );
           }
@@ -7244,8 +7333,8 @@ export default async function v1Routes(server: FastifyInstance) {
               await tx.$executeRawUnsafe(
                 `
                 INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
-                VALUES ($1,$2,$3,$4,$5,$6,$7)
-                ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+                VALUES ($1,0,0,$2,$3,$4,$5)
+                ON CONFLICT (tenant_id, codigo)
                 DO UPDATE SET
                   fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
                   servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
@@ -7253,8 +7342,6 @@ export default async function v1Routes(server: FastifyInstance) {
                   atualizado_em = NOW()
                 `,
                 ctx.tenantId,
-                idObra,
-                Number(payload.idPlanilhaTarget),
                 codigo,
                 String((s as any)?.banco || '') || null,
                 String((s as any)?.descricao || '') || null,
@@ -7303,11 +7390,10 @@ export default async function v1Routes(server: FastifyInstance) {
                 NULLIF(v.observacao,'') AS observacao
               FROM v
               LEFT JOIN tab_servicos s
-                ON s.tenant_id = $1 AND s.id_obra = $3 AND s.id_planilha = $2 AND UPPER(COALESCE(s.codigo,'')) = UPPER(COALESCE(v.codigo,''))
+                ON s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0 AND s.codigo = UPPER(COALESCE(v.codigo,''))
               `,
               ctx.tenantId,
               Number(payload.idPlanilhaTarget),
-              idObra,
               ...params
             );
           }
@@ -7601,11 +7687,9 @@ export default async function v1Routes(server: FastifyInstance) {
                 `
                 SELECT tipo_item AS "tipoItem", codigo_item AS "codigoItem"
                 FROM tab_composicoes
-                WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
+                WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(codigo_servico) = $2
                 `,
                 ctx.tenantId,
-                idObra,
-                idPlanilha,
                 code
               )) as any[];
               for (const it of itens || []) {
@@ -7711,12 +7795,10 @@ export default async function v1Routes(server: FastifyInstance) {
               `
               SELECT UPPER(COALESCE(codigo,'')) AS codigo
               FROM tab_servicos
-              WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND id_servico = $4
+              WHERE tenant_id = $1 AND id_servico = $2
               LIMIT 1
               `,
               ctx.tenantId,
-              idObra,
-              idPlanilha,
               idServico
             )) as any[];
             const codigoServico = normalizeCodigoKey(svcRows?.[0]?.codigo);
@@ -7734,11 +7816,9 @@ export default async function v1Routes(server: FastifyInstance) {
                 `
                 SELECT tipo_item AS "tipoItem", codigo_item AS "codigoItem"
                 FROM tab_composicoes
-                WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
+                WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(codigo_servico) = $2
                 `,
                 ctx.tenantId,
-                idObra,
-                idPlanilha,
                 code
               )) as any[];
               for (const it of itens || []) {
@@ -7848,11 +7928,9 @@ export default async function v1Routes(server: FastifyInstance) {
                   `
                   SELECT tipo_item AS "tipoItem", codigo_item AS "codigoItem"
                   FROM tab_composicoes
-                  WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
+                  WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(codigo_servico) = $2
                   `,
                   ctx.tenantId,
-                  idObra,
-                  resolvedPlanilhaId,
                   code
                 )) as any[];
                 for (const it of itens || []) {
@@ -8267,7 +8345,7 @@ export default async function v1Routes(server: FastifyInstance) {
                 END,
                 atualizado_em = NOW()
               FROM calc
-              LEFT JOIN tab_servicos s ON s.tenant_id = $1 AND s.id_planilha = calc.id_planilha AND UPPER(COALESCE(s.codigo,'')) = calc.codigo
+              LEFT JOIN tab_servicos s ON s.tenant_id = $1 AND s.id_servico = i.id_servico AND UPPER(COALESCE(s.codigo,'')) = calc.codigo
               WHERE i.tenant_id = $1
                 AND i.id_planilha = calc.id_planilha
                 AND i.tipo_linha = 'SERVICO'
@@ -8346,8 +8424,8 @@ export default async function v1Routes(server: FastifyInstance) {
             INSERT INTO tab_servicos
               (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
             VALUES
-              ($1,$2,$3,$4,$5,$6,$7)
-            ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+              ($1,0,0,$2,$3,$4,$5)
+            ON CONFLICT (tenant_id, codigo)
             DO UPDATE SET
               fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
               servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
@@ -8356,8 +8434,6 @@ export default async function v1Routes(server: FastifyInstance) {
             RETURNING id_servico AS "idServico"
             `,
             ctx.tenantId,
-            idObra,
-            idPlanilha,
             code,
             fonteLinha || null,
             servicoLinha || null,
@@ -8670,13 +8746,11 @@ export default async function v1Routes(server: FastifyInstance) {
         COALESCE(servico,'') AS servico,
         COALESCE(und,'') AS und
       FROM tab_servicos
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4
+      WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(COALESCE(codigo,'')) = $2
       ORDER BY id_servico ASC
       LIMIT 1
       `,
       ctx.tenantId,
-      idObra,
-      idPlanilha,
       codigoServico
     )) as any[];
     const r = rows?.[0] || null;
@@ -8798,8 +8872,8 @@ export default async function v1Routes(server: FastifyInstance) {
       const rows = (await tx.$queryRawUnsafe(
         `
         INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
-        VALUES ($1,$2,$3,$4,$5,$6,$7)
-        ON CONFLICT (tenant_id, id_obra, id_planilha, codigo) DO UPDATE
+        VALUES ($1,0,0,$2,$3,$4,$5)
+        ON CONFLICT (tenant_id, codigo) DO UPDATE
         SET
           fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
           servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
@@ -8808,8 +8882,6 @@ export default async function v1Routes(server: FastifyInstance) {
         RETURNING id_servico AS "idServico"
         `,
         ctx.tenantId,
-        idObra,
-        idPlanilha,
         codigoServico,
         banco,
         descricao,
@@ -8887,13 +8959,11 @@ export default async function v1Routes(server: FastifyInstance) {
         `
         SELECT servico AS "servico", und AS "und", fonte AS "fonte"
         FROM tab_servicos
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4
+        WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(COALESCE(codigo,'')) = $2
         ORDER BY id_servico DESC
         LIMIT 1
         `,
         ctx.tenantId,
-        idObra,
-        idPlanilha,
         codigoServico
       )) as any[];
       if (l?.[0]) {
@@ -8975,15 +9045,13 @@ export default async function v1Routes(server: FastifyInstance) {
         `
         SELECT banco, descricao, und
         FROM tab_composicoes
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
-          AND UPPER(COALESCE(codigo_item,'')) = $4
+        WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0
+          AND UPPER(COALESCE(codigo_item,'')) = $2
           AND UPPER(COALESCE(tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
         ORDER BY id_item DESC
         LIMIT 1
         `,
         ctx.tenantId,
-        idObra,
-        idPlanilha,
         codigoInsumo
       )) as any[];
       if (rows?.[0]) {
@@ -9017,10 +9085,9 @@ export default async function v1Routes(server: FastifyInstance) {
         DISTINCT UPPER(COALESCE(s.codigo,'')) AS "codigoServico"
       FROM tab_planilha_itens i
       INNER JOIN tab_servicos s
-        ON s.tenant_id = i.tenant_id AND s.id_planilha = i.id_planilha AND s.id_servico = i.id_servico
-        AND s.id_obra = $3
+        ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
       INNER JOIN tab_composicoes ci
-        ON ci.tenant_id = s.tenant_id AND ci.id_obra = s.id_obra AND ci.id_planilha = s.id_planilha
+        ON ci.tenant_id = s.tenant_id AND ci.id_obra = 0 AND ci.id_planilha = 0
         AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
       WHERE i.tenant_id = $1
         AND i.id_planilha = $2
@@ -9028,8 +9095,7 @@ export default async function v1Routes(server: FastifyInstance) {
         AND i.id_servico IS NOT NULL
       `,
       ctx.tenantId,
-      idPlanilha,
-      idObra
+      idPlanilha
     )) as any[];
     const codes = (rows || []).map((r: any) => String(r.codigoServico || '').trim()).filter(Boolean);
     return ok(reply, { codes, orfas: [], orfasCount: 0 });
@@ -9054,12 +9120,12 @@ export default async function v1Routes(server: FastifyInstance) {
       WITH comps AS (
         SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS codigo
         FROM tab_composicoes
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+        WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0
       ),
       servs AS (
         SELECT DISTINCT UPPER(COALESCE(codigo,'')) AS codigo
         FROM tab_servicos
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+        WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0
       )
       SELECT c.codigo AS "codigo"
       FROM comps c
@@ -9067,20 +9133,16 @@ export default async function v1Routes(server: FastifyInstance) {
       WHERE c.codigo <> '' AND s.codigo IS NULL
       ORDER BY c.codigo
       `,
-      ctx.tenantId,
-      idObra,
-      idPlanilha
+      ctx.tenantId
     )) as any[];
 
     const blank = (await prisma.$queryRawUnsafe(
       `
       SELECT COUNT(*)::int AS "cnt"
       FROM tab_composicoes
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND COALESCE(codigo_servico,'') = ''
+      WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND COALESCE(codigo_servico,'') = ''
       `,
-      ctx.tenantId,
-      idObra,
-      idPlanilha
+      ctx.tenantId
     )) as any[];
 
     const codes = (rows || []).map((r: any) => String(r.codigo || '').trim()).filter(Boolean);
@@ -9205,7 +9267,7 @@ export default async function v1Routes(server: FastifyInstance) {
             COALESCE(s.servico,'') AS servico
           FROM svc_planilha sp
           JOIN tab_servicos s
-            ON s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3 AND UPPER(COALESCE(s.codigo,'')) = sp.codigo_servico
+            ON s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0 AND UPPER(COALESCE(s.codigo,'')) = sp.codigo_servico
           WHERE
             ($4 = '' OR sp.codigo_servico LIKE UPPER($4) OR UPPER(COALESCE(s.fonte,'')) LIKE UPPER($4) OR UPPER(COALESCE(s.servico,'')) LIKE UPPER($4))
             AND (
@@ -9385,7 +9447,7 @@ export default async function v1Routes(server: FastifyInstance) {
         `
         SELECT COUNT(1)::int AS total
         FROM tab_servicos s
-        WHERE s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3
+        WHERE s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0
           AND (
             $4 = '' OR
             UPPER(COALESCE(s.codigo,'')) LIKE UPPER($4) OR
@@ -9429,7 +9491,7 @@ export default async function v1Routes(server: FastifyInstance) {
             COALESCE(s.servico,'') AS servico,
             COALESCE(s.und,'') AS und
           FROM tab_servicos s
-          WHERE s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3
+          WHERE s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0
             AND (
               $6 = '' OR
               UPPER(COALESCE(s.codigo,'')) LIKE UPPER($6) OR
@@ -9567,7 +9629,7 @@ export default async function v1Routes(server: FastifyInstance) {
         `
         SELECT COUNT(1)::int AS total
         FROM tab_servicos s
-        WHERE s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3
+        WHERE s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0
           AND (
             $4 = '' OR
             UPPER(COALESCE(s.codigo,'')) LIKE UPPER($4) OR
@@ -9620,7 +9682,7 @@ export default async function v1Routes(server: FastifyInstance) {
             COALESCE(s.fonte,'') AS fonte,
             COALESCE(s.servico,'') AS servico
           FROM tab_servicos s
-          WHERE s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3
+          WHERE s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0
             AND (
               $6 = '' OR
               UPPER(COALESCE(s.codigo,'')) LIKE UPPER($6) OR
@@ -9847,13 +9909,11 @@ export default async function v1Routes(server: FastifyInstance) {
       `
       SELECT COALESCE(fonte,'') AS fonte, COALESCE(servico,'') AS servico, COALESCE(und,'') AS und
       FROM tab_servicos
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4
+      WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(COALESCE(codigo,'')) = $2
       ORDER BY id_servico DESC
       LIMIT 1
       `,
       ctx.tenantId,
-      idObra,
-      sourcePlanilhaId,
       codigoServico
     )) as any[];
     const srcMeta = srcMetaRows?.[0] || null;
@@ -9874,10 +9934,8 @@ export default async function v1Routes(server: FastifyInstance) {
     const srcLinha = srcLinhaRows?.[0] || null;
 
     const dstSvcExists = (await prisma.$queryRawUnsafe(
-      `SELECT 1 AS ok FROM tab_servicos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4 LIMIT 1`,
+      `SELECT 1 AS ok FROM tab_servicos WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(COALESCE(codigo,'')) = $2 LIMIT 1`,
       ctx.tenantId,
-      idObra,
-      targetPlanilhaId,
       codigoServico
     )) as any[];
     const existsServicoTarget = Boolean(dstSvcExists?.[0]?.ok);
@@ -9925,8 +9983,8 @@ export default async function v1Routes(server: FastifyInstance) {
         await tx.$executeRawUnsafe(
           `
           INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
-          VALUES ($1,$2,$3,$4,$5,$6,$7)
-          ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+          VALUES ($1,0,0,$2,$3,$4,$5)
+          ON CONFLICT (tenant_id, codigo)
           DO UPDATE SET
             fonte = EXCLUDED.fonte,
             servico = EXCLUDED.servico,
@@ -9934,8 +9992,6 @@ export default async function v1Routes(server: FastifyInstance) {
             atualizado_em = NOW()
           `,
           ctx.tenantId,
-          idObra,
-          targetPlanilhaId,
           codigoServico,
           srcMeta?.fonte != null ? String(srcMeta.fonte || '').trim() || null : null,
           srcMeta?.servico != null ? String(srcMeta.servico || '').trim() || null : null,
@@ -9980,10 +10036,8 @@ export default async function v1Routes(server: FastifyInstance) {
           const ordem = maxOrd?.[0]?.m == null ? 0 : Number(maxOrd[0].m);
 
           const svcIdRows = (await tx.$queryRawUnsafe(
-            `SELECT id_servico FROM tab_servicos WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo) = $4 LIMIT 1`,
+            `SELECT id_servico FROM tab_servicos WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(codigo) = $2 LIMIT 1`,
             ctx.tenantId,
-            idObra,
-            targetPlanilhaId,
             codigoServico
           )) as any[];
           const targetSvcId = svcIdRows?.[0]?.id_servico;
@@ -10185,23 +10239,21 @@ export default async function v1Routes(server: FastifyInstance) {
         `
         WITH codes AS (
           SELECT DISTINCT UPPER(c) AS codigo
-          FROM unnest($3::text[]) AS t(c)
+          FROM unnest($2::text[]) AS t(c)
         )
         SELECT c.codigo AS "codigo"
         FROM codes c
         LEFT JOIN tab_servicos s
-          ON s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $4 AND UPPER(COALESCE(s.codigo,'')) = c.codigo
+          ON s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0 AND UPPER(COALESCE(s.codigo,'')) = c.codigo
         WHERE s.id_servico IS NULL
         ORDER BY c.codigo
         LIMIT 1
         `,
         ctx.tenantId,
-        idObra,
-        codigos,
-        idPlanilha
+        codigos
       )) as any[];
       const r = bad?.[0] || null;
-      if (r) return fail(reply, 422, `Não é permitido importar composição para serviço inexistente na planilha. Serviço: ${String(r.codigo || '').trim().toUpperCase()}`);
+      if (r) return fail(reply, 422, `Não é permitido importar composição para serviço inexistente no catálogo. Serviço: ${String(r.codigo || '').trim().toUpperCase()}`);
     }
 
     const grouped = new Map<string, typeof preparedOk>();
@@ -10583,7 +10635,7 @@ export default async function v1Routes(server: FastifyInstance) {
         END,
         atualizado_em = NOW()
       FROM calc
-      LEFT JOIN tab_servicos s ON s.tenant_id = $1 AND s.id_planilha = $3 AND UPPER(COALESCE(s.codigo,'')) = calc.codigo
+      LEFT JOIN tab_servicos s ON s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0 AND UPPER(COALESCE(s.codigo,'')) = calc.codigo
       WHERE i.tenant_id = $1
         AND i.id_planilha = $3
         AND i.tipo_linha = 'SERVICO'
@@ -10652,31 +10704,27 @@ export default async function v1Routes(server: FastifyInstance) {
         `
         SELECT 1 AS ok
         FROM tab_servicos
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4
+        WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(COALESCE(codigo,'')) = $2
         LIMIT 1
         `,
         ctx.tenantId,
-        idObra,
-        idPlanilha,
         codigoServicoNovo
       )) as any[];
-      if (Boolean(existsNew?.[0]?.ok)) throw new Error('Já existe um serviço com esse código nesta planilha');
+      if (Boolean(existsNew?.[0]?.ok)) throw new Error('Já existe um serviço com esse código no catálogo');
 
       const srcMetaRows = (await tx.$queryRawUnsafe(
         `
         SELECT COALESCE(fonte,'') AS fonte, COALESCE(servico,'') AS servico, COALESCE(und,'') AS und
         FROM tab_servicos
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4
+        WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(COALESCE(codigo,'')) = $2
         ORDER BY id_servico DESC
         LIMIT 1
         `,
         ctx.tenantId,
-        idObra,
-        idPlanilha,
         codigoServicoOrig
       )) as any[];
       const srcMeta = srcMetaRows?.[0] || null;
-      if (!srcMeta) throw new Error('Serviço de origem não encontrado no catálogo desta planilha');
+      if (!srcMeta) throw new Error('Serviço de origem não encontrado no catálogo');
 
       const rawServicoDesc = String(srcMeta.servico || '').trim();
       const baseServicoDesc = rawServicoDesc.replace(/\s*-\s*v\d+\s*$/i, '').trim();
@@ -10686,11 +10734,9 @@ export default async function v1Routes(server: FastifyInstance) {
           `
           SELECT COALESCE(servico,'') AS servico
           FROM tab_servicos
-          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND COALESCE(servico,'') ILIKE $4
+          WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND COALESCE(servico,'') ILIKE $2
           `,
           ctx.tenantId,
-          idObra,
-          idPlanilha,
           `${baseServicoDesc}%`
         )) as any[];
         for (const r of descRows || []) {
@@ -10709,11 +10755,9 @@ export default async function v1Routes(server: FastifyInstance) {
       await tx.$executeRawUnsafe(
         `
         INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
-        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        VALUES ($1,0,0,$2,$3,$4,$5)
         `,
         ctx.tenantId,
-        idObra,
-        idPlanilha,
         codigoServicoNovo,
         String(srcMeta.fonte || '').trim() || null,
         servicoDescNovo ? String(servicoDescNovo || '').trim().slice(0, 800) : null,
@@ -11073,8 +11117,8 @@ export default async function v1Routes(server: FastifyInstance) {
             await tx.$executeRawUnsafe(
               `
               INSERT INTO tab_servicos (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
-              VALUES ($1,$2,$3,$4,$5,$6,$7)
-              ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+              VALUES ($1,0,0,$2,$3,$4,$5)
+              ON CONFLICT (tenant_id, codigo)
               DO UPDATE SET
                 fonte = COALESCE(NULLIF(EXCLUDED.fonte,''), tab_servicos.fonte),
                 servico = COALESCE(NULLIF(EXCLUDED.servico,''), tab_servicos.servico),
@@ -11082,8 +11126,6 @@ export default async function v1Routes(server: FastifyInstance) {
                 atualizado_em = NOW()
               `,
               ctx.tenantId,
-              idObra,
-              idPlanilha,
               codigoServico,
               sBanco || null,
               sDesc || null,
@@ -11307,13 +11349,11 @@ export default async function v1Routes(server: FastifyInstance) {
           `
           SELECT COALESCE(servico,'') AS "servico", COALESCE(und,'') AS "und"
           FROM tab_servicos
-          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo,'')) = $4
+          WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(COALESCE(codigo,'')) = $2
           ORDER BY id_servico DESC
           LIMIT 1
           `,
           ctx.tenantId,
-          idObra,
-          idPlanilha,
           codigoServico
         )) as any[];
         const serv = row?.[0]?.servico != null ? String(row[0].servico || '').trim() : '';
@@ -11368,12 +11408,10 @@ export default async function v1Routes(server: FastifyInstance) {
               quantidade AS "quantidade",
               valor_unitario AS "valorUnitario"
             FROM tab_composicoes
-            WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
+            WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(codigo_servico) = $2
             ORDER BY COALESCE(etapa,''), tipo_item, codigo_item, id_item
             `,
             ctx.tenantId,
-            idObra,
-            idPlanilha,
             String(code || '').trim().toUpperCase()
           )) as any[];
           return (rows || []).map((r: any) => ({
@@ -12144,11 +12182,9 @@ export default async function v1Routes(server: FastifyInstance) {
       `
       SELECT DISTINCT UPPER(codigo_servico) AS codigo
       FROM tab_composicoes
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+      WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0
       `,
-      ctx.tenantId,
-      obraId,
-      planilhaId
+      ctx.tenantId
     )) as any[];
     const existing = new Set((existingRows || []).map((r: any) => String(r.codigo || '').trim()).filter(Boolean));
 
@@ -13413,8 +13449,8 @@ export default async function v1Routes(server: FastifyInstance) {
       INSERT INTO tab_servicos
         (tenant_id, id_obra, id_planilha, codigo, fonte, servico, und)
       VALUES
-        ($1, $2, $3, $4, 'SINAPI', $5, $6)
-      ON CONFLICT (tenant_id, id_obra, id_planilha, codigo)
+        ($1, 0, 0, $2, 'SINAPI', $3, $4)
+      ON CONFLICT (tenant_id, codigo)
       DO UPDATE SET
         fonte = COALESCE(NULLIF(tab_servicos.fonte,''), EXCLUDED.fonte),
         servico = COALESCE(NULLIF(tab_servicos.servico,''), EXCLUDED.servico),
@@ -13422,8 +13458,6 @@ export default async function v1Routes(server: FastifyInstance) {
         atualizado_em = NOW()
       `,
       ctx.tenantId,
-      obraId,
-      planilhaId,
       codigoServico,
       desc,
       und
@@ -13523,12 +13557,10 @@ export default async function v1Routes(server: FastifyInstance) {
       `
       SELECT 1 AS ok
       FROM tab_composicoes
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(codigo_servico) = $4
+      WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(codigo_servico) = $2
       LIMIT 1
       `,
       ctx.tenantId,
-      obraId,
-      planilhaId,
       codigoServico
     )) as any[];
     const already = Boolean(existing?.[0]?.ok);
@@ -13647,15 +13679,13 @@ export default async function v1Routes(server: FastifyInstance) {
         SELECT id_item AS "idItem", UPPER(COALESCE(codigo_item,'')) AS "codigoItem", valor_unitario AS "valorUnitario"
         FROM tab_composicoes
         WHERE tenant_id = $1
-          AND id_obra = $2
-          AND id_planilha = $3
-          AND UPPER(codigo_servico) = $4
+          AND id_obra = 0
+          AND id_planilha = 0
+          AND UPPER(codigo_servico) = $2
           AND UPPER(COALESCE(tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
         ORDER BY id_item ASC
         `,
         args.tenantId,
-        args.idObra,
-        args.idPlanilha,
         String(args.codigoServico || '').trim().toUpperCase()
       )) as any[];
       if (!itensRef?.length) return { atualizados: 0 };
@@ -13676,12 +13706,10 @@ export default async function v1Routes(server: FastifyInstance) {
         await tx.$executeRawUnsafe(
           `
           UPDATE tab_composicoes
-          SET valor_unitario = $5, atualizado_em = NOW()
-          WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND id_item = $4
+          SET valor_unitario = $3, atualizado_em = NOW()
+          WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND id_item = $2
           `,
           args.tenantId,
-          args.idObra,
-          args.idPlanilha,
           Number(it.idItem),
           toDec(totalRef)
         );
@@ -13781,8 +13809,8 @@ export default async function v1Routes(server: FastifyInstance) {
         const list = Array.from(chosenInsumoPrices.entries());
         for (let start = 0; start < list.length; start += chunkSize) {
           const chunk = list.slice(start, start + chunkSize);
-          const params: any[] = [ctx.tenantId, obraId, planilhaId];
-          let p = 4;
+          const params: any[] = [ctx.tenantId];
+          let p = 2;
           const values = chunk
             .map(([codigoItem, valorUnitario]) => {
               params.push(codigoItem);
@@ -13799,8 +13827,8 @@ export default async function v1Routes(server: FastifyInstance) {
             SET valor_unitario = v.valor_unitario, atualizado_em = NOW()
             FROM (VALUES ${values}) AS v(codigo_item, valor_unitario)
             WHERE i.tenant_id = $1
-              AND i.id_obra = $2
-              AND i.id_planilha = $3
+              AND i.id_obra = 0
+              AND i.id_planilha = 0
               AND UPPER(COALESCE(i.codigo_item,'')) = v.codigo_item
               AND UPPER(COALESCE(i.tipo_item,'')) NOT IN ('COMPOSICAO','COMPOSICAO_AUXILIAR')
             `,
@@ -13813,13 +13841,11 @@ export default async function v1Routes(server: FastifyInstance) {
           SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS "codigoServico"
           FROM tab_composicoes
           WHERE tenant_id = $1
-            AND id_obra = $2
-            AND id_planilha = $3
-            AND UPPER(COALESCE(codigo_item,'')) = ANY($4::text[])
+            AND id_obra = 0
+            AND id_planilha = 0
+            AND UPPER(COALESCE(codigo_item,'')) = ANY($2::text[])
           `,
           ctx.tenantId,
-          obraId,
-          planilhaId,
           Array.from(chosenInsumoPrices.keys())
         )) as any[];
         const affectedCodes = Array.from(
@@ -14816,12 +14842,12 @@ export default async function v1Routes(server: FastifyInstance) {
         FROM tab_servicos s
         LEFT JOIN tab_planilha_itens i
           ON i.tenant_id = s.tenant_id
-          AND i.id_planilha = s.id_planilha
+          AND i.id_planilha = $3
           AND i.id_servico = s.id_servico
           AND i.tipo_linha = 'SERVICO'
         WHERE s.tenant_id = $1
-          AND s.id_obra = $2
-          AND s.id_planilha = $3
+          AND s.id_obra = 0
+          AND s.id_planilha = 0
           AND UPPER(COALESCE(s.codigo,'')) = $4
         GROUP BY s.id_servico, s.codigo, s.fonte, s.servico, s.und
         LIMIT 1
@@ -14845,12 +14871,12 @@ export default async function v1Routes(server: FastifyInstance) {
               FROM tab_servicos s
               LEFT JOIN tab_planilha_itens i
                 ON i.tenant_id = s.tenant_id
-                AND i.id_planilha = s.id_planilha
+                AND i.id_planilha = $3
                 AND i.id_servico = s.id_servico
                 AND i.tipo_linha = 'SERVICO'
               WHERE s.tenant_id = $1
-                AND s.id_obra = $2
-                AND s.id_planilha = $3
+                AND s.id_obra = 0
+                AND s.id_planilha = 0
                 AND UPPER(COALESCE(s.codigo,'')) = $4
               GROUP BY s.id_servico, s.codigo, s.fonte, s.servico, s.und
               LIMIT 1
@@ -14872,9 +14898,14 @@ export default async function v1Routes(server: FastifyInstance) {
           COALESCE(NULLIF(trim(descricao),''),'') AS descricao,
           COALESCE(NULLIF(trim(und),''),'') AS und,
           quantidade AS quantidade,
-          COALESCE(valor_unitario, 0) AS "valorUnitario"
-        FROM tab_composicoes
-        WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
+          COALESCE(p.valor_unitario, 0) AS "valorUnitario"
+        FROM tab_composicoes ci
+        LEFT JOIN tab_insumos p
+          ON p.tenant_id = $1
+          AND p.id_obra = $2
+          AND p.id_planilha = $3
+          AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(ci.codigo_item,''))
+        WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0 AND UPPER(COALESCE(ci.codigo_servico,'')) = $4
         ORDER BY id_item ASC
         `,
         ctx.tenantId,
@@ -14893,9 +14924,14 @@ export default async function v1Routes(server: FastifyInstance) {
                 COALESCE(NULLIF(trim(descricao),''),'') AS descricao,
                 COALESCE(NULLIF(trim(und),''),'') AS und,
                 quantidade AS quantidade,
-                COALESCE(valor_unitario, 0) AS "valorUnitario"
-              FROM tab_composicoes
-              WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3 AND UPPER(COALESCE(codigo_servico,'')) = $4
+                COALESCE(p.valor_unitario, 0) AS "valorUnitario"
+              FROM tab_composicoes ci
+              LEFT JOIN tab_insumos p
+                ON p.tenant_id = $1
+                AND p.id_obra = $2
+                AND p.id_planilha = $3
+                AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(ci.codigo_item,''))
+              WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0 AND UPPER(COALESCE(ci.codigo_servico,'')) = $4
               ORDER BY id_item ASC
               `,
               ctx.tenantId,

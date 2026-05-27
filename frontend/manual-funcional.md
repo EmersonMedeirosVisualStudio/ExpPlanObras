@@ -1703,9 +1703,8 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
   - Para cadastrar/clonar Parâmetros (biblioteca), use **Engenharia → Planilhas → Parâmetros**.
 - Clonagem (com dependências): no card **Versões cadastradas**, a ação **Clonar** cria uma nova versão copiando:
   - itens da planilha (itens, subitens e serviços utilizados na planilha);
-  - catálogo de serviços da planilha;
-  - composições vinculadas aos serviços da planilha;
   - preços de insumos da planilha.
+  - Importante: **Serviços e Composições são universais (catálogo global da empresa/tenant)**. A clonagem não duplica catálogo/composição; ela apenas copia a estrutura (linhas) e os preços de insumos da versão.
   - Importante: por padrão, a clonagem **reusa** o mesmo **id de Parâmetros** (não clona). Se você quiser manter versões totalmente independentes, use **Clonar Parâmetros** para gerar um novo id e vincular à nova versão.
 
 #### Nova planilha x Clonar (Duplicar versão)
@@ -1715,7 +1714,6 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
   A versão nova pode ser criada **vazia** (sem itens) ou com opção de **Clonar de outra planilha**.
 - **Clonar (Duplicar versão)**: cria uma versão nova, define como **Atual**, e duplica:
   - **itens** da planilha (estrutura e quantidades);
-  - **catálogo de serviços** e **composições**;
   - **preços de insumos** da planilha.
   Reusa (não clona) o mesmo **id de Parâmetros** (a menos que você opte por clonar).
 
@@ -1740,13 +1738,14 @@ Hierarquia de travamento (herança):
 Efeitos por tipo:
 
 - **Travar Planilha** (card “Versões cadastradas”):
-  - trava parâmetros, itens, serviços, composições/subcomposições, insumos e preços de insumos (no contexto daquela planilha);
+  - trava parâmetros, itens e preços de insumos (no contexto daquela planilha);
+  - trava também os **serviços e composições** usados na planilha no **catálogo global** (impacta outras planilhas que usem os mesmos códigos) enquanto a trava estiver ativa;
   - impede destravar itens internos individualmente enquanto a planilha estiver travada.
 - **Travar Item da planilha** (cadeado na grade da planilha, linha de Serviço):
-  - trava o serviço do item e sua composição/subcomposições/insumos;
+  - trava o serviço do item e sua composição/subcomposições/insumos (catálogo global);
   - trava também os preços de insumos associados àquele serviço (no contexto da planilha).
 - **Travar Serviço** (tela Serviços):
-  - trava serviço, composição, subcomposições e insumos;
+  - trava serviço, composição, subcomposições e insumos (catálogo global);
   - não trava automaticamente o preço do insumo da planilha (o preço pertence ao contexto da planilha e continua editável se a planilha não estiver travada).
 - **Travar Parâmetro** (Engenharia → Planilhas → Parâmetros):
   - trava o parâmetro manualmente;
@@ -1810,19 +1809,19 @@ ETAPA 5 — Como validar
   - selecione **Parâmetro** (em formato **#id - nome**)
   - confirme e veja se a coluna **Parâmetros** aparece preenchida na versão criada
 - Lógica de criação de uma planilha (obra):
-  - 1) Planilha: a planilha combina **Obra + Parâmetros + Catálogo (único da obra)**.
+  - 1) Planilha: a planilha combina **Obra + Parâmetros + Catálogo global de serviços/composições (empresa/tenant)**.
   - 2) Parâmetros: ao criar/clonar uma planilha, define-se o conjunto de **parâmetros** (UF, data-base, BDI, encargos e descontos). Eles determinam como os custos são calculados na planilha.
-  - 3) Serviços cadastrados (catálogo da obra): é o **catálogo único de serviços** da obra. Ele é alimentado automaticamente quando:
+  - 3) Serviços cadastrados (catálogo global): é o **catálogo único de serviços da empresa/tenant**. Ele é alimentado automaticamente quando:
     - você cria um serviço na Planilha (Adicionar linha) com um CÓDIGO novo; ou
     - você cria/edita na Composição e salva (atualiza também o catálogo); ou
     - você importa serviços (CSV / outra planilha).
-    Para criar um serviço novo no catálogo da obra:
+    Para criar um serviço novo no catálogo global:
       1 - Crie o serviço na Planilha (Adicionar linha);
       2 - Ou através do botão Novo Serviço;
       3 - Crie o serviço direto na composição.
     Informando o CÓDIGO/Fonte/descrição/UND.
-  - 4) Planilha (itens): o usuário decide quais serviços do catálogo viram **itens** na planilha. Todo item de serviço referencia um serviço do catálogo da obra.
-  - 5) Composições: para cada serviço do catálogo da obra, cadastra-se/importa-se sua **composição** (itens, subcomposições e insumos), sempre vinculada ao serviço (pai).
+  - 4) Planilha (itens): o usuário decide quais serviços do catálogo viram **itens** na planilha. Todo item de serviço referencia um serviço do catálogo global.
+  - 5) Composições: para cada serviço do catálogo global, cadastra-se/importa-se sua **composição** (itens, subcomposições e insumos), sempre vinculada ao serviço (pai).
   - 6) Insumos consolidados: a lista de insumos é derivada das composições dos serviços e é recalculada sempre que uma composição muda.
 - Regra: ao salvar/importar uma composição (ou importar um serviço que traga composição), o sistema refaz o consolidado de insumos e atualiza os valores do serviço na própria versão da planilha.
 - Regra: ao trocar Parâmetros (BDI/LS/Descontos/Data-base/UF) de uma versão, o sistema recalcula automaticamente os valores unitários e parciais dos serviços daquela versão (isso alimenta também telas derivadas como Adequação e, no futuro, Medição).
@@ -1831,8 +1830,8 @@ ETAPA 5 — Como validar
   - Observação: na prévia, o sistema pode calcular um **valor parcial de referência** (quant × valor_unitario) apenas para conferência.
   - Observação: na planilha (após importar), o **VALOR UNIT.** e o **VALOR PARCIAL** do orçamento são vinculados ao valor calculado pela **composição** do serviço (quando existir).
   - Observação de compatibilidade: leitura “smart” de encoding (UTF-8 / Windows-1252) para reduzir erros de acentuação no texto importado.
-  - Observação: ao importar itens do tipo Serviço, o sistema garante que o serviço exista no catálogo da obra (Serviços).
-  - Observação: ao salvar/importar composições, o sistema garante que subcomposições referenciadas existam no catálogo da obra (reduz “cadastros órfãos”).
+  - Observação: ao importar itens do tipo Serviço, o sistema garante que o serviço exista no catálogo global (Serviços).
+  - Observação: ao salvar/importar composições, o sistema garante que subcomposições referenciadas existam no catálogo global (reduz “cadastros órfãos”).
 - Regra importante (catálogo): um serviço pode chegar na planilha por CSV/cópia mesmo que ainda não exista no catálogo. Ao **importar** (ou ao **salvar** um serviço criado na planilha), o sistema cria/atualiza automaticamente o registro em **Serviços** usando o mesmo **código**.
 - Importações (tela dedicada): as importações ficam na tela **Importações** (botão no card **Adicionar serviço**). O botão **Importar** só aparece quando a **prévia** estiver aberta.
 
@@ -1847,6 +1846,7 @@ ETAPA 2 — O que clicar
 ETAPA 3 — O que preencher
 - Sempre preencha: **ITEM**, **CÓDIGO** e **QUANT.**
 - Os campos **Fonte**, **Serviços (descrição)** e **UND** vêm do **catálogo da obra** e ficam travados quando o código já existe no catálogo.
+- Observação: o catálogo é global (empresa/tenant). Se um código já existe, os dados de Fonte/descrição/UND vêm do catálogo e não são alterados pela Planilha.
 - O campo **VLR UNIT REF.** é opcional e serve como referência de comparação para o indicador **COMP.**
 - O campo **VALOR UNIT.** não é digitável e representa o valor calculado pela **composição** do serviço (com BDI/LS da versão).
 - Se o código ainda não existir no catálogo, você poderá preencher **Fonte/descrição/UND** uma única vez para cadastrar o serviço. Ao salvar, o serviço passa a existir no catálogo e, a partir daí, esses campos ficam travados na Planilha.
@@ -1988,7 +1988,7 @@ ETAPA 5 — Como validar
   - Indicador de carregamento: a tela exibe “Carregando página…” e “Página carregada” para deixar claro quando o carregamento inicial terminou.
 - Insumos consolidados:
   - A lista é derivada das **composições do catálogo** aplicadas aos **serviços existentes na versão selecionada**.
-  - O preço do insumo é do escopo da planilha (versão). Quando um preço de insumo é alterado (via composição/importação), isso recalcula automaticamente os serviços afetados na própria versão.
+- O preço do insumo é do escopo da planilha (versão). Quando um insumo não tem preço cadastrado na versão, o valor considerado no cálculo é **0**. Quando um preço de insumo é alterado, isso recalcula automaticamente os serviços afetados na própria versão.
 
 #### Validação
 

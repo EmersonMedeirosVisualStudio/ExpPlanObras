@@ -2768,7 +2768,10 @@ export default function PlanilhaObraClient({
               {(obraResumo.valorAtual != null || (diffPrevistoPlanilha != null && Math.abs(diffPrevistoPlanilha) >= 0.01)) ? (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {obraResumo.valorAtual != null ? (
-                    <div className="rounded-lg border bg-white px-3 py-2" title="Valor atual controlado pela planilha vigente (versão marcada como atual)">
+                    <div
+                      className="rounded-lg border bg-white px-3 py-2"
+                      title="Valor atual da obra, calculado a partir da planilha vigente (versão marcada como Atual). É a soma dos valores parciais das linhas de SERVIÇO dessa versão e serve como referência financeira do contrato/obra."
+                    >
                       <div className="text-[11px] uppercase tracking-wide text-slate-500">Valor atual (planilha vigente)</div>
                       <div className="text-sm font-semibold text-slate-900">{moeda(Number(obraResumo.valorAtual || 0))}</div>
                     </div>
@@ -2776,7 +2779,7 @@ export default function PlanilhaObraClient({
                   {diffPrevistoPlanilha != null && Math.abs(diffPrevistoPlanilha) >= 0.01 ? (
                     <div
                       className="rounded-lg border bg-white px-3 py-2"
-                      title="Diferença entre o valor atual da obra (planilha vigente) e o valor total calculado na planilha selecionada"
+                      title="Diferença (vigente - planilha): pega o valor atual da obra (planilha vigente) e subtrai o valor total calculado da versão selecionada. Se positivo, a vigente está maior; se negativo, a vigente está menor. O valor total da versão selecionada é calculado pela soma dos valores parciais das linhas de SERVIÇO."
                     >
                       <div className="text-[11px] uppercase tracking-wide text-slate-500">Diferença (vigente - planilha)</div>
                       <div className="text-sm font-semibold text-red-700">{moeda(Number(diffPrevistoPlanilha || 0))}</div>
@@ -2931,7 +2934,12 @@ export default function PlanilhaObraClient({
                 <th className="px-3 py-2">Nome</th>
                 <th className="px-3 py-2">Parâmetros</th>
                 <th className="px-3 py-2 text-right">Serviços</th>
-                <th className="px-3 py-2 text-right">Valor total</th>
+                <th
+                  className="px-3 py-2 text-right"
+                  title="Valor total calculado desta versão (não é valor fixo do cadastro): soma dos VALOR PARCIAL das linhas de SERVIÇO da própria versão. Esse total muda conforme quantidades, composição, parâmetros (LS/BDI/Desconto) e preços de insumos. Arredonda para 2 casas."
+                >
+                  Valor total
+                </th>
                 <th className="px-3 py-2">Atual</th>
                 <th className="px-3 py-2">Ações</th>
               </tr>

@@ -102,11 +102,13 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 - A grade mostra as linhas do CSV antes de gravar
 - Campos com erro ficam destacados (ex.: item vazio, serviço sem código, quant inválida)
 - Na prévia, o sistema pode calcular o **valor parcial de referência** (quant × valor_unitario) apenas para conferência
-- Se o **código do serviço** não existir no **catálogo de serviços da obra**, o sistema cria/atualiza automaticamente o serviço no catálogo quando você confirma a importação
+- Se o **código do serviço** não existir no **catálogo global de serviços (empresa/tenant)**, o sistema cria/atualiza automaticamente o serviço no catálogo quando você confirma a importação
 - Itens e subitens ficam em **negrito** para facilitar leitura
 - A grade tem **rolagem vertical** com **cabeçalho fixo** para facilitar leitura
 - Você pode ajustar o **tamanho da fonte**, **fontes (dados/cabeçalho)**, **negrito do cabeçalho**, **cores de fundo** de Item/Subitem, além de **exibir/ocultar colunas** e ajustar **larguras** (essas preferências ficam salvas no seu usuário)
 - Na planilha (após importar), o **VALOR UNIT.** e o **VALOR PARCIAL** ficam vinculados ao valor calculado pela **composição** do serviço (quando existir)
+- Regra: **Serviço e Composição são universais** — para o mesmo **código do serviço**, existe **uma única composição** no sistema (não existe “composição por planilha/obra/versão”)
+- Regra de cálculo: o **preço do insumo** usado no cálculo é o **preço da planilha (versão) selecionada**; quando um insumo não tem preço cadastrado nessa planilha, o valor considerado é **0**
 - A coluna **VLR UNIT REF.** (ao lado de **VALOR UNIT.**) guarda o valor de referência (quando informado)
 - A coluna **COMP.** compara **Sistema (VALOR UNIT.)** × **Referência (VLR UNIT REF.)** para marcar divergência
 - A tela mostra o **Valor total** da planilha com base nos valores do sistema (composição)
@@ -149,7 +151,9 @@ Indicador **COMP.** (na planilha):
 ### ETAPA 4 — O que esperar
 - O sistema mostra um aviso de compartilhamento:
   - Alterar um **Parâmetro** afeta todas as planilhas que usam esse Parâmetro (e o sistema recalcula automaticamente os valores unitários/parciais vinculados)
-- Ao editar um serviço existente na planilha, **Fonte** (SBC/SINAPI), **nome** e **UND** vêm do **catálogo de serviços da obra** e não são alterados pela planilha.
+- Ao clonar uma versão, o sistema copia as linhas (itens, subitens e serviços) e também copia os preços de insumos daquela versão para a nova versão.
+- Ao editar um serviço existente na planilha, **Fonte** (SBC/SINAPI), **nome** e **UND** vêm do **catálogo global de serviços (empresa/tenant)** e não são alterados pela planilha.
+- Ao salvar uma composição, ela passa a valer para todas as planilhas que usam o mesmo código do serviço.
 
 ### ETAPA 5 — Como validar
 - Volte em **Versões cadastradas** e confirme que a coluna **Parâmetros** aparece preenchida na versão criada/editada
@@ -179,7 +183,7 @@ ETAPA 2 — O que clicar
 - Para **duplicar**: use os botões de duplicar nas telas de **Serviços** e **Insumos**
 
 ETAPA 3 — O que esperar
-- Ao travar a planilha, tudo fica bloqueado (serviços, composições, insumos e preços do contexto daquela planilha)
+- Ao travar a planilha, tudo fica bloqueado (serviços e composições do catálogo global usados na planilha; insumos e preços de insumos do contexto daquela planilha)
 - Itens travados por cadeia ficam com cadeado desabilitado e tooltip explicando a origem
 - Ao duplicar, o novo item nasce destravado e recebe nome automático no formato: **Nome original - vX**
 
@@ -187,7 +191,7 @@ ETAPA 3 — O que esperar
 
 ## 3.2 SINAPI (Excel) — Importar composições para a obra (com prévia)
 
-Use esta tela quando você precisa trazer a composição de um serviço do SINAPI para a planilha da obra.
+Use esta tela quando você precisa trazer a composição de um serviço do SINAPI para o sistema (composição universal do código do serviço) e recalcular a planilha da obra com os preços da versão selecionada.
 
 ### ETAPA 1 — Onde acessar
 - Engenharia → Obras → (abra a obra) → **Planilha orçamentária** → **Sinapi**

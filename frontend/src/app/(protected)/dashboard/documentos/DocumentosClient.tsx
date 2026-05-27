@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { DocumentosApi } from "@/lib/modules/documentos/api";
 import type { DocumentoRegistroDTO } from "@/lib/modules/documentos/types";
 
@@ -14,6 +14,9 @@ function fmtDateTime(v?: string | null) {
 
 export default function DocumentosClient() {
   const router = useRouter();
+  const sp = useSearchParams();
+  const entidadeTipo = (sp.get("tipo") || "").trim().toUpperCase();
+  const entidadeId = Number(sp.get("id") || 0) || 0;
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [rows, setRows] = useState<DocumentoRegistroDTO[]>([]);
@@ -22,7 +25,11 @@ export default function DocumentosClient() {
     setLoading(true);
     setErro(null);
     try {
-      const d = await DocumentosApi.listar({ limit: 100 });
+      const d = await DocumentosApi.listar({
+        limit: 100,
+        entidadeTipo: entidadeTipo || null,
+        entidadeId: entidadeTipo && entidadeId > 0 ? entidadeId : null,
+      });
       setRows(Array.isArray(d) ? d : []);
     } catch (e: any) {
       setErro(e?.message || "Erro ao carregar documentos.");
@@ -68,7 +75,10 @@ export default function DocumentosClient() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold">Processos → Documentos</h1>
-          <p className="text-sm text-[#6B7280]">Versionamento, assinatura eletrônica, carimbo e verificação.</p>
+          <p className="text-sm text-[#6B7280]">
+            {entidadeTipo && entidadeId > 0 ? `Listando documentos vinculados a ${entidadeTipo}:${entidadeId}. ` : ""}
+            Versionamento, assinatura eletrônica, carimbo e verificação.
+          </p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <button type="button" className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-2 text-sm text-[#111827] hover:bg-[#F9FAFB]" onClick={carregar} disabled={loading}>
