@@ -102,7 +102,7 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 - A grade mostra as linhas do CSV antes de gravar
 - Campos com erro ficam destacados (ex.: item vazio, serviço sem código, quant inválida)
 - Na prévia, o sistema pode calcular o **valor parcial de referência** (quant × valor_unitario) apenas para conferência
-- Se o **código do serviço** não existir no **catálogo global de serviços (empresa/tenant)**, o sistema cria/atualiza automaticamente o serviço no catálogo quando você confirma a importação
+- Se o **código do serviço** não existir no **catálogo global de serviços do seu tenant**, o sistema cria/atualiza automaticamente o serviço no catálogo quando você confirma a importação
 - Itens e subitens ficam em **negrito** para facilitar leitura
 - A grade tem **rolagem vertical** com **cabeçalho fixo** para facilitar leitura
 - Você pode ajustar o **tamanho da fonte**, **fontes (dados/cabeçalho)**, **negrito do cabeçalho**, **cores de fundo** de Item/Subitem, além de **exibir/ocultar colunas** e ajustar **larguras** (essas preferências ficam salvas no seu usuário)
@@ -152,7 +152,7 @@ Indicador **COMP.** (na planilha):
 - O sistema mostra um aviso de compartilhamento:
   - Alterar um **Parâmetro** afeta todas as planilhas que usam esse Parâmetro (e o sistema recalcula automaticamente os valores unitários/parciais vinculados)
 - Ao clonar uma versão, o sistema copia as linhas (itens, subitens e serviços) e também copia os preços de insumos daquela versão para a nova versão.
-- Ao editar um serviço existente na planilha, **Fonte** (SBC/SINAPI), **nome** e **UND** vêm do **catálogo global de serviços (empresa/tenant)** e não são alterados pela planilha.
+- Ao editar um serviço existente na planilha, **Fonte** (SBC/SINAPI), **nome** e **UND** vêm do **catálogo global de serviços do seu tenant** e não são alterados pela planilha.
 - Ao salvar uma composição, ela passa a valer para todas as planilhas que usam o mesmo código do serviço.
 
 ### ETAPA 5 — Como validar
@@ -183,7 +183,7 @@ ETAPA 2 — O que clicar
 - Para **duplicar**: use os botões de duplicar nas telas de **Serviços** e **Insumos**
 
 ETAPA 3 — O que esperar
-- Ao travar a planilha, tudo fica bloqueado (serviços e composições do catálogo global usados na planilha; insumos e preços de insumos do contexto daquela planilha)
+- Ao travar a planilha, tudo fica bloqueado (serviços e composições do catálogo global do seu tenant usados na planilha; insumos e preços de insumos do contexto daquela planilha)
 - Itens travados por cadeia ficam com cadeado desabilitado e tooltip explicando a origem
 - Ao duplicar, o novo item nasce destravado e recebe nome automático no formato: **Nome original - vX**
 

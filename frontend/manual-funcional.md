@@ -654,7 +654,7 @@ O primeiro acesso ao sistema acontece por meio do **cadastro da empresa**, reali
 
 Esse cadastro cria automaticamente:
 
-- o ambiente da empresa (empresa/tenant);
+- o ambiente do tenant (empresa);
 - o primeiro usuário do sistema (Representante), que passa a ser o usuário com maior autoridade para iniciar a implantação.
 
 Como acessar:
@@ -1704,7 +1704,7 @@ Ela é a base da leitura de custo, planejamento e comparação com o executado.
 - Clonagem (com dependências): no card **Versões cadastradas**, a ação **Clonar** cria uma nova versão copiando:
   - itens da planilha (itens, subitens e serviços utilizados na planilha);
   - preços de insumos da planilha.
-  - Importante: **Serviços e Composições são universais (catálogo global da empresa/tenant)**. A clonagem não duplica catálogo/composição; ela apenas copia a estrutura (linhas) e os preços de insumos da versão.
+  - Importante: **Serviços e Composições são universais dentro do tenant** (catálogo global do tenant). A clonagem não duplica catálogo/composição; ela apenas copia a estrutura (linhas) e os preços de insumos da versão.
   - Importante: por padrão, a clonagem **reusa** o mesmo **id de Parâmetros** (não clona). Se você quiser manter versões totalmente independentes, use **Clonar Parâmetros** para gerar um novo id e vincular à nova versão.
 
 #### Nova planilha x Clonar (Duplicar versão)
@@ -1739,13 +1739,13 @@ Efeitos por tipo:
 
 - **Travar Planilha** (card “Versões cadastradas”):
   - trava parâmetros, itens e preços de insumos (no contexto daquela planilha);
-  - trava também os **serviços e composições** usados na planilha no **catálogo global** (impacta outras planilhas que usem os mesmos códigos) enquanto a trava estiver ativa;
+  - trava também os **serviços e composições** usados na planilha no **catálogo global do tenant** (impacta outras planilhas do mesmo tenant que usem os mesmos códigos) enquanto a trava estiver ativa;
   - impede destravar itens internos individualmente enquanto a planilha estiver travada.
 - **Travar Item da planilha** (cadeado na grade da planilha, linha de Serviço):
-  - trava o serviço do item e sua composição/subcomposições/insumos (catálogo global);
+  - trava o serviço do item e sua composição/subcomposições/insumos (catálogo global do tenant);
   - trava também os preços de insumos associados àquele serviço (no contexto da planilha).
 - **Travar Serviço** (tela Serviços):
-  - trava serviço, composição, subcomposições e insumos (catálogo global);
+  - trava serviço, composição, subcomposições e insumos (catálogo global do tenant);
   - não trava automaticamente o preço do insumo da planilha (o preço pertence ao contexto da planilha e continua editável se a planilha não estiver travada).
 - **Travar Parâmetro** (Engenharia → Planilhas → Parâmetros):
   - trava o parâmetro manualmente;
@@ -1809,9 +1809,9 @@ ETAPA 5 — Como validar
   - selecione **Parâmetro** (em formato **#id - nome**)
   - confirme e veja se a coluna **Parâmetros** aparece preenchida na versão criada
 - Lógica de criação de uma planilha (obra):
-  - 1) Planilha: a planilha combina **Obra + Parâmetros + Catálogo global de serviços/composições (empresa/tenant)**.
+  - 1) Planilha: a planilha combina **Obra + Parâmetros + Catálogo global de serviços/composições do tenant**.
   - 2) Parâmetros: ao criar/clonar uma planilha, define-se o conjunto de **parâmetros** (UF, data-base, BDI, encargos e descontos). Eles determinam como os custos são calculados na planilha.
-  - 3) Serviços cadastrados (catálogo global): é o **catálogo único de serviços da empresa/tenant**. Ele é alimentado automaticamente quando:
+  - 3) Serviços cadastrados (catálogo global): é o **catálogo único de serviços do tenant**. Ele é alimentado automaticamente quando:
     - você cria um serviço na Planilha (Adicionar linha) com um CÓDIGO novo; ou
     - você cria/edita na Composição e salva (atualiza também o catálogo); ou
     - você importa serviços (CSV / outra planilha).
@@ -1846,7 +1846,7 @@ ETAPA 2 — O que clicar
 ETAPA 3 — O que preencher
 - Sempre preencha: **ITEM**, **CÓDIGO** e **QUANT.**
 - Os campos **Fonte**, **Serviços (descrição)** e **UND** vêm do **catálogo da obra** e ficam travados quando o código já existe no catálogo.
-- Observação: o catálogo é global (empresa/tenant). Se um código já existe, os dados de Fonte/descrição/UND vêm do catálogo e não são alterados pela Planilha.
+- Observação: o catálogo é global dentro do tenant. Se um código já existe, os dados de Fonte/descrição/UND vêm do catálogo e não são alterados pela Planilha.
 - O campo **VLR UNIT REF.** é opcional e serve como referência de comparação para o indicador **COMP.**
 - O campo **VALOR UNIT.** não é digitável e representa o valor calculado pela **composição** do serviço (com BDI/LS da versão).
 - Se o código ainda não existir no catálogo, você poderá preencher **Fonte/descrição/UND** uma única vez para cadastrar o serviço. Ao salvar, o serviço passa a existir no catálogo e, a partir daí, esses campos ficam travados na Planilha.
