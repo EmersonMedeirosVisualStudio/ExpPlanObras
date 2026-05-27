@@ -1573,14 +1573,40 @@ async function ensurePlanilhaComposicaoTables(tx: any) {
     )
   `);
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_composicoes ADD COLUMN IF NOT EXISTS id_planilha BIGINT NOT NULL DEFAULT 0`);
-  await safeExecuteRawUnsafe(tx, `DROP INDEX IF EXISTS tab_composicoes_uk`);
-  await tx.$executeRawUnsafe(
+  await safeExecuteRawUnsafe(
+    tx,
+    `
+    DO $$
+    DECLARE
+      idxdef TEXT;
+    BEGIN
+      SELECT indexdef INTO idxdef
+      FROM pg_indexes
+      WHERE schemaname = current_schema()
+        AND indexname = 'tab_composicoes_uk';
+      IF idxdef IS NOT NULL AND idxdef NOT ILIKE '%id_planilha%' THEN
+        EXECUTE 'DROP INDEX IF EXISTS tab_composicoes_uk';
+      END IF;
+    EXCEPTION
+      WHEN undefined_table THEN
+        NULL;
+      WHEN undefined_object THEN
+        NULL;
+      WHEN OTHERS THEN
+        NULL;
+    END $$;
+    `
+  );
+  await safeExecuteRawUnsafe(
+    tx,
     `CREATE UNIQUE INDEX IF NOT EXISTS tab_composicoes_uk ON tab_composicoes (tenant_id, id_obra, id_planilha, codigo_servico, COALESCE(etapa,''), tipo_item, codigo_item)`
   );
-  await tx.$executeRawUnsafe(
+  await safeExecuteRawUnsafe(
+    tx,
     `CREATE INDEX IF NOT EXISTS tab_composicoes_idx_servico ON tab_composicoes (tenant_id, id_obra, id_planilha, codigo_servico)`
   );
-  await tx.$executeRawUnsafe(
+  await safeExecuteRawUnsafe(
+    tx,
     `CREATE INDEX IF NOT EXISTS tab_composicoes_idx_item ON tab_composicoes (tenant_id, id_obra, id_planilha, codigo_item)`
   );
   await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_composicoes ALTER COLUMN tipo_item TYPE VARCHAR(32)`);
