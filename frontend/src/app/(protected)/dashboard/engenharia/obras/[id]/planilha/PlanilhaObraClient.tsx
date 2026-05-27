@@ -3955,6 +3955,7 @@ export default function PlanilhaObraClient({
             {(() => {
               const order: PlanilhaGridColKey[] = ["item", "comp", "codigo", "fonte", "servicos", "und", "quant", "valorUnitario", "valorUnitReferencia", "valorParcial", "acoes"];
               const visible = order.filter((k) => uiPrefs.grid.colVisible[k]);
+              const widthSum = visible.reduce((acc, k) => acc + Number(uiPrefs.grid.colWidth[k] || 0), 0);
               const thStyle: CSSProperties = {
                 fontFamily: uiPrefs.grid.headerFontFamily === "inherit" ? undefined : uiPrefs.grid.headerFontFamily,
                 fontWeight: uiPrefs.grid.headerBold ? 700 : 400,
@@ -3962,11 +3963,13 @@ export default function PlanilhaObraClient({
               const tableStyle: CSSProperties = {
                 fontSize: `${uiPrefs.fontSizePx}px`,
                 fontFamily: uiPrefs.grid.dataFontFamily === "inherit" ? undefined : uiPrefs.grid.dataFontFamily,
+                tableLayout: "fixed",
+                width: `${Math.max(1100, widthSum || 0)}px`,
               };
 
               return (
                 <div className="overflow-auto max-h-[70vh]">
-                  <table className="min-w-[1100px] w-full" style={tableStyle}>
+                  <table className="min-w-[1100px]" style={tableStyle}>
                     <colgroup>
                       {visible.map((k) => (
                         <col key={k} style={{ width: `${uiPrefs.grid.colWidth[k]}px` }} />
