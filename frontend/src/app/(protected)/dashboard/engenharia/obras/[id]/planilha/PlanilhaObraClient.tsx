@@ -1419,6 +1419,10 @@ export default function PlanilhaObraClient({
   async function carregarComposicaoStatus(pid?: number | null) {
     try {
       const planilhaIdQuery = pid != null ? Number(pid) : planilhaId != null ? Number(planilhaId) : 0;
+      if (!planilhaIdQuery) {
+        setComposicaoServicoCodes(new Set());
+        return;
+      }
       const qs = planilhaIdQuery ? `?planilhaId=${planilhaIdQuery}` : "";
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/status${qs}`);
       const json = await res.json().catch(() => null);
@@ -1474,8 +1478,7 @@ export default function PlanilhaObraClient({
     setBootDone(false);
     void (async () => {
       try {
-        await Promise.all([carregarVersoes("INFO"), carregarEmpresaDocumentosLayout()]);
-        void carregarVersoes("FULL", { silent: true });
+        await carregarVersoes("INFO");
       } finally {
         if (!cancelled) {
           bootPendingRef.current = Math.max(0, bootPendingRef.current - 1);
@@ -1496,7 +1499,14 @@ export default function PlanilhaObraClient({
     let cancelled = false;
     void (async () => {
       try {
-        await Promise.all([planilhaId ? carregarPlanilha(planilhaId) : Promise.resolve(), carregarComposicaoStatus(planilhaId), carregarComposicaoValidacao(planilhaId)]);
+        if (!planilhaId) {
+          setPlanilha(null);
+          setComposicaoServicoCodes(new Set());
+          setComposicaoValidacaoByCodigo({});
+          return;
+        }
+        await Promise.all([carregarPlanilha(planilhaId), carregarComposicaoStatus(planilhaId), carregarComposicaoValidacao(planilhaId)]);
+        void carregarVersoes("FULL", { silent: true });
       } finally {
         if (!cancelled) {
           bootPendingRef.current = Math.max(0, bootPendingRef.current - 1);
@@ -1511,6 +1521,12 @@ export default function PlanilhaObraClient({
       cancelled = true;
     };
   }, [idObra, planilhaId]);
+
+  useEffect(() => {
+    if (!showPrintConfig) return;
+    if (empresaDocumentosLayout) return;
+    void carregarEmpresaDocumentosLayout();
+  }, [showPrintConfig, empresaDocumentosLayout]);
 
   if (!idObra) return <div className="p-6 rounded-xl border bg-white">Obra inválida.</div>;
 
