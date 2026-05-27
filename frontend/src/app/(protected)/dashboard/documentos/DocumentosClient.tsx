@@ -47,10 +47,11 @@ export default function DocumentosClient() {
     if (!categoria) return;
     const titulo = (prompt("Título:") || "").trim();
     if (!titulo) return;
-    const entidadeTipo = (prompt("Entidade tipo (opcional, ex: CONTRATO, MEDICAO):") || "").trim();
-    const entidadeIdRaw = (prompt("Entidade id (opcional):") || "").trim();
-    const entidadeId = entidadeIdRaw ? Number(entidadeIdRaw) : null;
-    if (entidadeIdRaw && !Number.isFinite(entidadeId as any)) {
+    const hasContext = Boolean(entidadeTipo && entidadeId > 0);
+    const entidadeTipoCreate = hasContext ? entidadeTipo : (prompt("Entidade tipo (opcional, ex: CONTRATO, OBRA, FUNCIONARIO):") || "").trim().toUpperCase();
+    const entidadeIdCreateRaw = hasContext ? String(entidadeId) : (prompt("Entidade id (opcional):") || "").trim();
+    const entidadeIdCreate = entidadeIdCreateRaw ? Number(entidadeIdCreateRaw) : null;
+    if (entidadeIdCreateRaw && !Number.isFinite(entidadeIdCreate as any)) {
       alert("Entidade id inválido");
       return;
     }
@@ -59,8 +60,8 @@ export default function DocumentosClient() {
       const res = await DocumentosApi.criar({
         categoriaDocumento: categoria,
         tituloDocumento: titulo,
-        entidadeTipo: entidadeTipo || null,
-        entidadeId: entidadeIdRaw ? (Number(entidadeIdRaw) as any) : null,
+        entidadeTipo: entidadeTipoCreate || null,
+        entidadeId: entidadeIdCreateRaw ? (Number(entidadeIdCreateRaw) as any) : null,
       });
       router.push(`/dashboard/documentos/${res.id}`);
     } catch (e: any) {

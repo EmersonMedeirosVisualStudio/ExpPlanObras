@@ -253,13 +253,25 @@ export default function FichaRhClient() {
         const end = await FuncionariosApi.listarEnderecos(idNum).catch(() => []);
         setEnderecos(Array.isArray(end) ? end : []);
         const docs = await DocumentosApi.listar({ entidadeTipo: 'FUNCIONARIO', entidadeId: idNum, limit: 50 }).catch(() => []);
-        setDocumentos(Array.isArray(docs) ? docs : []);
+        const list = Array.isArray(docs) ? docs : [];
+        const filtered = list.filter((d: any) => {
+          const t = d?.entidadeTipo != null ? String(d.entidadeTipo || '').trim().toUpperCase() : '';
+          const i = d?.entidadeId != null ? Number(d.entidadeId) : 0;
+          return t === 'FUNCIONARIO' && i === idNum;
+        });
+        setDocumentos(filtered);
         setTerceirizado(null);
       } else {
         const t = await TerceirizadosApi.obter(idNum);
         setTerceirizado(t);
         const docs = await DocumentosApi.listar({ entidadeTipo: 'TERCEIRIZADO', entidadeId: idNum, limit: 50 }).catch(() => []);
-        setDocumentos(Array.isArray(docs) ? docs : []);
+        const list = Array.isArray(docs) ? docs : [];
+        const filtered = list.filter((d: any) => {
+          const t = d?.entidadeTipo != null ? String(d.entidadeTipo || '').trim().toUpperCase() : '';
+          const i = d?.entidadeId != null ? Number(d.entidadeId) : 0;
+          return t === 'TERCEIRIZADO' && i === idNum;
+        });
+        setDocumentos(filtered);
         setFuncionario(null);
         setEnderecos([]);
       }
