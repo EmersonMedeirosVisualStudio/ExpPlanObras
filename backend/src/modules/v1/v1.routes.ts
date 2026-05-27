@@ -9097,6 +9097,9 @@ export default async function v1Routes(server: FastifyInstance) {
         limit: z.coerce.number().int().positive().optional(),
         offset: z.coerce.number().int().min(0).optional(),
         mode: z.string().optional(),
+        q: z.string().optional().nullable(),
+        fonte: z.string().optional().nullable(),
+        status: z.string().optional().nullable(),
       })
       .parse(request.query || {});
     const idObra = Number(id);
@@ -9110,15 +9113,47 @@ export default async function v1Routes(server: FastifyInstance) {
 
     const limit = q.limit != null ? Math.max(1, Math.min(200, Number(q.limit))) : 50;
     const offset = q.offset != null ? Math.max(0, Math.min(1_000_000, Number(q.offset))) : 0;
+    const qText = q.q != null ? String(q.q || '').trim() : '';
+    const qLike = qText ? `%${qText}%` : '';
+    const fonteFilter = q.fonte != null ? String(q.fonte || '').trim() : '';
+    const statusFilterRaw = q.status != null ? String(q.status || '').trim().toUpperCase() : '';
+    const statusFilter = statusFilterRaw === 'COM' || statusFilterRaw === 'SEM' ? statusFilterRaw : '';
     const totalRows = (await prisma.$queryRawUnsafe(
       `
       SELECT COUNT(1)::int AS total
-      FROM tab_servicos
-      WHERE tenant_id = $1 AND id_obra = $2 AND id_planilha = $3
+      FROM tab_servicos s
+      WHERE s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3
+        AND (
+          $4 = '' OR
+          UPPER(COALESCE(s.codigo,'')) LIKE UPPER($4) OR
+          UPPER(COALESCE(s.fonte,'')) LIKE UPPER($4) OR
+          UPPER(COALESCE(s.servico,'')) LIKE UPPER($4)
+        )
+        AND (
+          $5 = '' OR
+          ($5 = '__SEM_FONTE__' AND COALESCE(s.fonte,'') = '') OR
+          ($5 <> '__SEM_FONTE__' AND UPPER(COALESCE(s.fonte,'')) = UPPER($5))
+        )
+        AND (
+          $6 = '' OR
+          ($6 = 'COM' AND EXISTS (
+            SELECT 1 FROM tab_composicoes ci
+            WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+              AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
+          )) OR
+          ($6 = 'SEM' AND NOT EXISTS (
+            SELECT 1 FROM tab_composicoes ci
+            WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+              AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
+          ))
+        )
       `,
       ctx.tenantId,
       idObra,
-      idPlanilha
+      idPlanilha,
+      qLike,
+      fonteFilter,
+      statusFilter
     )) as any[];
     const total = totalRows?.[0]?.total == null ? 0 : Number(totalRows[0].total);
 
@@ -9138,6 +9173,30 @@ export default async function v1Routes(server: FastifyInstance) {
             COALESCE(s.servico,'') AS servico
           FROM tab_servicos s
           WHERE s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3
+            AND (
+              $6 = '' OR
+              UPPER(COALESCE(s.codigo,'')) LIKE UPPER($6) OR
+              UPPER(COALESCE(s.fonte,'')) LIKE UPPER($6) OR
+              UPPER(COALESCE(s.servico,'')) LIKE UPPER($6)
+            )
+            AND (
+              $7 = '' OR
+              ($7 = '__SEM_FONTE__' AND COALESCE(s.fonte,'') = '') OR
+              ($7 <> '__SEM_FONTE__' AND UPPER(COALESCE(s.fonte,'')) = UPPER($7))
+            )
+            AND (
+              $8 = '' OR
+              ($8 = 'COM' AND EXISTS (
+                SELECT 1 FROM tab_composicoes ci
+                WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+                  AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
+              )) OR
+              ($8 = 'SEM' AND NOT EXISTS (
+                SELECT 1 FROM tab_composicoes ci
+                WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+                  AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
+              ))
+            )
           ORDER BY UPPER(COALESCE(s.codigo,''))
           LIMIT $4 OFFSET $5
         ),
@@ -9218,7 +9277,10 @@ export default async function v1Routes(server: FastifyInstance) {
         idObra,
         idPlanilha,
         limit,
-        offset
+        offset,
+        qLike,
+        fonteFilter,
+        statusFilter
       )) as any[];
       out = (rows || []).map((r: any) => ({
         codigoServico: String(r.codigoServico || '').trim(),
@@ -9251,6 +9313,30 @@ export default async function v1Routes(server: FastifyInstance) {
             COALESCE(s.servico,'') AS servico
           FROM tab_servicos s
           WHERE s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3
+            AND (
+              $6 = '' OR
+              UPPER(COALESCE(s.codigo,'')) LIKE UPPER($6) OR
+              UPPER(COALESCE(s.fonte,'')) LIKE UPPER($6) OR
+              UPPER(COALESCE(s.servico,'')) LIKE UPPER($6)
+            )
+            AND (
+              $7 = '' OR
+              ($7 = '__SEM_FONTE__' AND COALESCE(s.fonte,'') = '') OR
+              ($7 <> '__SEM_FONTE__' AND UPPER(COALESCE(s.fonte,'')) = UPPER($7))
+            )
+            AND (
+              $8 = '' OR
+              ($8 = 'COM' AND EXISTS (
+                SELECT 1 FROM tab_composicoes ci
+                WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+                  AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
+              )) OR
+              ($8 = 'SEM' AND NOT EXISTS (
+                SELECT 1 FROM tab_composicoes ci
+                WHERE ci.tenant_id = $1 AND ci.id_obra = $2 AND ci.id_planilha = $3
+                  AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
+              ))
+            )
           ORDER BY UPPER(COALESCE(s.codigo,''))
           LIMIT $4 OFFSET $5
         ),
@@ -9356,7 +9442,10 @@ export default async function v1Routes(server: FastifyInstance) {
         idObra,
         idPlanilha,
         limit,
-        offset
+        offset,
+        qLike,
+        fonteFilter,
+        statusFilter
       )) as any[];
 
       bdiPercent = rows?.[0]?.bdiPercent == null ? 0 : Number(rows[0].bdiPercent);

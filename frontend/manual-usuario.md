@@ -116,11 +116,12 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 ### ETAPA 5 — Como validar
 - Clique em **Confirmar importação**
 - A nova versão aparece na lista de versões e pode ser selecionada
-- Na planilha, dê **duplo clique** em um serviço para abrir **Serviços cadastrados** já focado no código selecionado
+- Na planilha, dê **duplo clique** em um serviço para abrir direto a tela de **Composição** do serviço
 - Em **Serviços cadastrados**, você também pode cadastrar pelo botão **Novo Serviço** (informando CÓDIGO/Fonte/descrição/UND)
 - Você também pode cadastrar/atualizar o serviço direto na tela de **Composição** (ao salvar a composição, o serviço é atualizado no catálogo)
 - Na tela **Serviços cadastrados**, o carregamento é feito **de 50 em 50**. Use o botão **Carregar mais (50)** para continuar.
-- Na lista de serviços, as colunas exibidas são: **CÓDIGO**, **TIPO**, **FONTE**, **SERVIÇO**, **COMPOSIÇÃO** e **Ações**.
+- Na lista de serviços, as colunas exibidas são: **CÓDIGO**, **FONTE**, **SERVIÇO**, **STATUS** e **Ações**.
+- Filtros em **Serviços cadastrados**: **Filtrar por código, fonte ou serviço**, **Status** e **Fonte** (digitável com sugestões).
 
 Indicador **COMP.** (na planilha):
 

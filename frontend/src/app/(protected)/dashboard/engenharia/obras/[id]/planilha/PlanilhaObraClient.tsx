@@ -4039,6 +4039,14 @@ export default function PlanilhaObraClient({
                             if (!code) return;
                             const qs = new URLSearchParams();
                             if (effectivePlanilhaId) qs.set("planilhaId", String(effectivePlanilhaId));
+                            const item = String(l.item || "").trim();
+                            if (item) qs.set("item", item);
+                            const fonte = String(l.fonte || "").trim();
+                            if (fonte) qs.set("fonte", fonte);
+                            const servicos = String(l.servicos || "").trim();
+                            if (servicos) qs.set("servicos", servicos);
+                            const und = String(l.und || "").trim();
+                            if (und) qs.set("und", und);
                             qs.set("returnTo", selfHref);
                             router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}?${qs.toString()}`);
                           }}

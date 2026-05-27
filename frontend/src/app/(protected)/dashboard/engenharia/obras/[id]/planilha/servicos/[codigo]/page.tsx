@@ -184,6 +184,10 @@ async function readTextSmart(file: File) {
     const n = Number(planilhaIdParam || 0);
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [planilhaIdParam]);
+  const itemFromPlanilhaParam = useMemo(() => String(search.get("item") || "").trim(), [search]);
+  const fonteFromPlanilhaParam = useMemo(() => String(search.get("fonte") || "").trim(), [search]);
+  const servicosFromPlanilhaParam = useMemo(() => String(search.get("servicos") || "").trim(), [search]);
+  const undFromPlanilhaParam = useMemo(() => String(search.get("und") || "").trim(), [search]);
   const trailParam = search.get("trail");
   const trailCodes = useMemo(() => {
     const raw = String(trailParam || "").trim();
@@ -219,6 +223,7 @@ async function readTextSmart(file: File) {
   const [previstoRows, setPrevistoRows] = useState<PrevistoPlanilhaRow[]>([]);
   const [previstoServicoMeta, setPrevistoServicoMeta] = useState<{ descricao: string; und: string; fonte: string } | null>(null);
   const [previstoAlert, setPrevistoAlert] = useState<string | null>(null);
+  const [servicoCatalogoMsg, setServicoCatalogoMsg] = useState<string | null>(null);
   const [navPlanilhaServicos, setNavPlanilhaServicos] = useState<Array<{ item: string; codigo: string; servicos: string }>>([]);
   const [navIdx, setNavIdx] = useState<number>(-1);
   const [planilhaParams, setPlanilhaParams] = useState<PlanilhaParams | null>(null);
@@ -432,7 +437,23 @@ async function readTextSmart(file: File) {
       const qs = planilhaId ? `?planilhaId=${encodeURIComponent(String(planilhaId))}` : "";
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-itens${qs}`);
        const json = await res.json().catch(() => null);
-       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar composição");
+      if (!res.ok || !json?.success) {
+        const msg = String(json?.message || "Erro ao carregar composição");
+        const missing =
+          res.status === 404 ||
+          msg.toLowerCase().includes("sem composição") ||
+          msg.toLowerCase().includes("nao ha composicao") ||
+          msg.toLowerCase().includes("não há composição") ||
+          msg.toLowerCase().includes("nenhuma composição");
+        if (missing) {
+          setErr(null);
+          setItens([]);
+          itensSavedRef.current = [];
+          if (!silent) setOkMsg("Sem composição cadastrada para este serviço nesta planilha. Você pode importar/criar uma composição.");
+          return;
+        }
+        throw new Error(msg || "Erro ao carregar composição");
+      }
        const list = Array.isArray(json.data?.itens) ? json.data.itens : [];
       const mapped = list.map((i: any) => ({
         idItemBase: Number(i.idItemBase || 0),
@@ -793,6 +814,7 @@ async function readTextSmart(file: File) {
     try {
       setPrevistoServicoMeta(null);
       setPrevistoAlert(null);
+      setServicoCatalogoMsg(null);
       const resV = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?view=versoes-info`);
       const jsonV = await resV.json().catch(() => null);
       if (!resV.ok || !jsonV?.success) throw new Error(jsonV?.message || "Erro ao carregar versões");
@@ -821,12 +843,17 @@ async function readTextSmart(file: File) {
         return;
       }
 
+      let metaFound = false;
+      let metaDesc = "";
+      let metaUnd = "";
+      let metaFonte = "";
       try {
         const qsMeta = new URLSearchParams();
         qsMeta.set("planilhaId", String(pid));
         const resMeta = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/meta?${qsMeta.toString()}`);
         const jsonMeta = await resMeta.json().catch(() => null);
         if (resMeta.ok && jsonMeta?.success) {
+          metaFound = true;
           setServicoTravado(Boolean(jsonMeta?.data?.travado));
           setServicoTravadoPorCadeia(Boolean(jsonMeta?.data?.travadoPorCadeia));
           setServicoOrigemTipo(String(jsonMeta?.data?.origemTipo || ""));
@@ -834,18 +861,24 @@ async function readTextSmart(file: File) {
           const desc = jsonMeta?.data?.descricao != null ? String(jsonMeta.data.descricao || "").trim() : "";
           const und = jsonMeta?.data?.und != null ? String(jsonMeta.data.und || "").trim() : "";
           const fonte = jsonMeta?.data?.fonte != null ? String(jsonMeta.data.fonte || "").trim().toUpperCase() : "";
-          if (desc || und) setPrevistoServicoMeta({ descricao: desc, und, fonte });
+          metaDesc = desc;
+          metaUnd = und;
+          metaFonte = fonte;
+          setServicoCatalogoMsg("Serviço cadastrado no catálogo (tab_servicos).");
+          if (desc || und || fonte) setPrevistoServicoMeta({ descricao: desc, und, fonte });
         } else {
           setServicoTravado(false);
           setServicoTravadoPorCadeia(false);
           setServicoOrigemTipo("");
           setServicoOrigemChave("");
+          setServicoCatalogoMsg("Serviço NÃO cadastrado no catálogo (tab_servicos). Usando dados da planilha.");
         }
       } catch {
         setServicoTravado(false);
         setServicoTravadoPorCadeia(false);
         setServicoOrigemTipo("");
         setServicoOrigemChave("");
+        setServicoCatalogoMsg("Não foi possível verificar o catálogo (tab_servicos). Usando dados da planilha.");
       }
 
       const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${pid}`);
@@ -900,35 +933,43 @@ async function readTextSmart(file: File) {
         }));
       const precisaMeta = !rows.length || !String(rows?.[0]?.servicos || "").trim() || !String(rows?.[0]?.und || "").trim();
       let usedMeta = false;
-      let metaDesc = "";
-      let metaUnd = "";
-      let metaFonte = "";
-      if (precisaMeta) {
-        try {
-          const qs = new URLSearchParams();
-          qs.set("planilhaId", String(pid));
-          const resMeta = await authFetch(
-            `/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/meta?${qs.toString()}`
-          );
-          const jsonMeta = await resMeta.json().catch(() => null);
-          if (resMeta.ok && jsonMeta?.success) {
-            const desc = jsonMeta.data?.descricao != null ? String(jsonMeta.data.descricao || "").trim() : "";
-            const und = jsonMeta.data?.und != null ? String(jsonMeta.data.und || "").trim() : "";
-            const fonte = jsonMeta.data?.fonte != null ? String(jsonMeta.data.fonte || "").trim().toUpperCase() : "";
-            metaDesc = desc;
-            metaUnd = und;
-            metaFonte = fonte;
-            if (desc || und) {
-              setPrevistoServicoMeta({ descricao: desc, und, fonte });
-              usedMeta = true;
-              rows = rows.map((r: PrevistoPlanilhaRow) => ({
-                ...r,
-                servicos: String(r.servicos || "").trim() ? r.servicos : desc,
-                und: String(r.und || "").trim() ? r.und : und,
-              }));
-            }
+      if (precisaMeta && metaFound && (metaDesc || metaUnd || metaFonte)) {
+        setPrevistoServicoMeta({ descricao: metaDesc, und: metaUnd, fonte: metaFonte });
+        usedMeta = true;
+        rows = rows.map((r: PrevistoPlanilhaRow) => ({
+          ...r,
+          servicos: String(r.servicos || "").trim() ? r.servicos : metaDesc,
+          und: String(r.und || "").trim() ? r.und : metaUnd,
+        }));
+      }
+
+      if (!metaFound && (servicosFromPlanilhaParam || undFromPlanilhaParam || fonteFromPlanilhaParam)) {
+        const fonteQ = String(fonteFromPlanilhaParam || "").trim().toUpperCase();
+        const descQ = String(servicosFromPlanilhaParam || "").trim();
+        const undQ = String(undFromPlanilhaParam || "").trim();
+        if (descQ || undQ || fonteQ) {
+          setPrevistoServicoMeta((cur) => cur || { descricao: descQ, und: undQ, fonte: fonteQ });
+          if (rows.length) {
+            rows = rows.map((r: PrevistoPlanilhaRow) => ({
+              ...r,
+              fonte: String(r.fonte || "").trim() ? r.fonte : fonteQ,
+              servicos: String(r.servicos || "").trim() ? r.servicos : descQ,
+              und: String(r.und || "").trim() ? r.und : undQ,
+            }));
+          } else if (itemFromPlanilhaParam || descQ || undQ || fonteQ) {
+            rows = [
+              {
+                item: itemFromPlanilhaParam || "",
+                fonte: fonteQ,
+                servicos: descQ,
+                und: undQ,
+                quant: "",
+                valorUnitario: "",
+                valorParcial: "",
+              },
+            ];
           }
-        } catch {}
+        }
       }
       if (!rows.length) {
         setPrevistoAlert(null);
@@ -2665,12 +2706,6 @@ async function readTextSmart(file: File) {
          </div>
        </div>
  
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-        <div>Atenção: alterações aqui são compartilhadas.</div>
-        <div>Se você alterar Serviço/Insumo/Composição da Fonte, muda em TODAS as planilhas que usam essa Fonte.</div>
-        <div>Se você alterar um Parâmetro, muda em TODAS as planilhas que usam esse Parâmetro.</div>
-      </div>
-
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex flex-wrap gap-2">
           <button className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50" type="button" onClick={baixarModeloComposicoesCsv} disabled={loading} title="Baixar um modelo de CSV para importar composição">
@@ -2725,6 +2760,7 @@ async function readTextSmart(file: File) {
         </div>
       </div>
 
+      {servicoCatalogoMsg ? <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">{servicoCatalogoMsg}</div> : null}
       {okMsg ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{okMsg}</div> : null}
       {err ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div> : null}
 

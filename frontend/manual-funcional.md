@@ -1857,7 +1857,8 @@ ETAPA 4 — O que esperar
 
 ETAPA 5 — Como validar
 - Clique em **Serviços cadastrados** e confirme se o serviço aparece pelo **código**.
-- Duplo clique no serviço na planilha abre **Serviços cadastrados** já focado no código selecionado.
+- Duplo clique no serviço na planilha abre direto a tela de **Composição** do serviço.
+- Em **Serviços cadastrados**, os filtros são: **Filtrar por código, fonte ou serviço**, **Status** e **Fonte** (digitável com sugestões).
 
 
 #### Como usar — Tela Importações (Planilha orçamentária)

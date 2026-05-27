@@ -17,21 +17,6 @@ type ValidacaoRow = {
   qtdItens: number;
 };
 
-type RefRow = { codigo: string; tipo: string; definida: boolean };
-type CatalogListRow = {
-  kind: "SERVICO" | "REF";
-  codigo: string;
-  tipo: string;
-  fonte: string;
-  descricao: string;
-  travado: boolean | null;
-  travadoPorCadeia: boolean | null;
-  origemTipo: string | null;
-  origemChave: string | null;
-  totalComposicao: number | null;
-  qtdItens: number | null;
-  definida: boolean | null;
-};
 type VersaoRow = {
   idPlanilha: number;
   numeroVersao: number;
@@ -42,7 +27,7 @@ type VersaoRow = {
   parametrosNome?: string;
 };
 
-type ColKey = "codigo" | "tipo" | "fonte" | "servico" | "composicao" | "acao";
+type ColKey = "codigo" | "fonte" | "servico" | "composicao" | "acao";
 
 function moeda(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -64,6 +49,7 @@ function normalizeFilterChoice(v: string) {
   const n = normalizeHeader(raw);
   if (n === "todas") return "";
   if (n === "nenhuma") return "__NONE__";
+  if (n === "sem_fonte" || n === "semfonte") return "__SEM_FONTE__";
   return raw;
 }
 
@@ -111,13 +97,11 @@ export default function Page() {
   const [rowsLoading, setRowsLoading] = useState(false);
   const [obraNome, setObraNome] = useState<string>("");
   const [textFilter, setTextFilter] = useState("");
-  const [tipoFilter, setTipoFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [fonteFilter, setFonteFilter] = useState<string>("");
   const [showColsCard, setShowColsCard] = useState(false);
   const [colWidths, setColWidths] = useState<Record<ColKey, number>>({
     codigo: 100,
-    tipo: 120,
     fonte: 90,
     servico: 520,
     composicao: 130,
@@ -125,13 +109,11 @@ export default function Page() {
   });
   const [colFixed, setColFixed] = useState<Record<ColKey, boolean>>({
     codigo: false,
-    tipo: false,
     fonte: false,
     servico: false,
     composicao: false,
     acao: false,
   });
-  const [refs, setRefs] = useState<RefRow[]>([]);
   const [composicoesSemServico, setComposicoesSemServico] = useState<{ total: number; codes: string[]; blankCount: number } | null>(null);
   const [copyForm, setCopyForm] = useState<{
     sourcePlanilhaId: number | null;
@@ -244,7 +226,6 @@ export default function Page() {
       };
       setColWidths((cur) => ({
         codigo: n(p?.codigo, cur.codigo),
-        tipo: n(p?.tipo, cur.tipo),
         fonte: n(p?.fonte, cur.fonte),
         servico: n(p?.servico, cur.servico),
         composicao: n(p?.composicao, cur.composicao),
@@ -274,7 +255,6 @@ export default function Page() {
       const b = (v: any) => Boolean(v);
       setColFixed((cur) => ({
         codigo: b(p?.codigo ?? cur.codigo),
-        tipo: b(p?.tipo ?? cur.tipo),
         fonte: b(p?.fonte ?? cur.fonte),
         servico: b(p?.servico ?? cur.servico),
         composicao: b(p?.composicao ?? cur.composicao),
@@ -289,7 +269,7 @@ export default function Page() {
     } catch {}
   }, [colFixed, colFixedKey]);
 
-  const colKeys = useMemo<ColKey[]>(() => ["codigo", "tipo", "fonte", "servico", "composicao", "acao"], []);
+  const colKeys = useMemo<ColKey[]>(() => ["codigo", "fonte", "servico", "composicao", "acao"], []);
 
   function setColWidthWithRedistribution(key: ColKey, nextWidth: number) {
     const min = 10;
@@ -329,9 +309,8 @@ export default function Page() {
   const [editOpen, setEditOpen] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
   const [editErr, setEditErr] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<{ codigoServico: string; tipo: string; fonte: string; servico: string; undHidden: string }>({
+  const [editForm, setEditForm] = useState<{ codigoServico: string; fonte: string; servico: string; undHidden: string }>({
     codigoServico: "",
-    tipo: "Serviço",
     fonte: "",
     servico: "",
     undHidden: "",
@@ -356,7 +335,6 @@ export default function Page() {
       const d = json.data || {};
       setEditForm({
         codigoServico: code,
-        tipo: "Serviço",
         fonte: String(d?.fonte || "").trim().toUpperCase(),
         servico: String(d?.descricao || "").trim(),
         undHidden: String(d?.und || "").trim().toUpperCase(),
@@ -459,11 +437,30 @@ export default function Page() {
     const append = Boolean(opts?.append);
     try {
       setRowsLoading(true);
-      const res = await authFetch(
-        `/api/v1/engenharia/obras/${idObra}/planilha/composicoes/validacao?mode=CATALOGO&planilhaId=${pid}&limit=50&offset=${encodeURIComponent(
-          String(offset || 0)
-        )}`
-      );
+      const qText = String(textFilter || "").trim();
+      const fonteChoice = normalizeFilterChoice(fonteFilter);
+      const statusChoice = normalizeFilterChoice(statusFilter);
+      if (fonteChoice === "__NONE__" || statusChoice === "__NONE__") {
+        setRowsTotal(0);
+        setRowsOffset(0);
+        setRowsHasMore(false);
+        setRows([]);
+        return;
+      }
+      const fonteParam = fonteChoice === "__SEM_FONTE__" ? "__SEM_FONTE__" : fonteChoice ? String(fonteChoice).trim().toUpperCase() : "";
+      const statusNorm = normalizeHeader(statusChoice);
+      const statusParam =
+        !statusChoice ? "" : statusNorm.includes("com") && statusNorm.includes("compos") ? "COM" : statusNorm.includes("sem") && statusNorm.includes("compos") ? "SEM" : "";
+
+      const qs = new URLSearchParams();
+      qs.set("mode", "CATALOGO");
+      qs.set("planilhaId", String(pid));
+      qs.set("limit", "50");
+      qs.set("offset", String(offset || 0));
+      if (qText) qs.set("q", qText);
+      if (fonteParam) qs.set("fonte", fonteParam);
+      if (statusParam) qs.set("status", statusParam);
+      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/validacao?${qs.toString()}`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao validar serviços");
       const list = Array.isArray(json.data?.rows) ? (json.data.rows as any[]) : [];
@@ -493,27 +490,6 @@ export default function Page() {
       setRowsHasMore(false);
     } finally {
       setRowsLoading(false);
-    }
-  }
-
-  async function carregarReferencias() {
-    try {
-      const qs = new URLSearchParams();
-      const effectivePid = planilhaIdFromQuery ?? planilhaId ?? null;
-      if (effectivePid) qs.set("planilhaId", String(effectivePid));
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/composicoes/referencias?${qs.toString()}`);
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar referências");
-      const list = Array.isArray(json.data?.referencias) ? (json.data.referencias as any[]) : [];
-      setRefs(
-        list.map((r) => ({
-          codigo: String(r.codigo || "").trim().toUpperCase(),
-          tipo: String(r.tipo || ""),
-          definida: Boolean(r.definida),
-        }))
-      );
-    } catch {
-      setRefs([]);
     }
   }
 
@@ -548,7 +524,7 @@ export default function Page() {
       setRowsTotal(0);
       setRowsOffset(0);
       setRowsHasMore(false);
-      await Promise.all([carregarReferencias(), pid ? Promise.all([carregarValidacao(pid, { offset: 0, append: false }), carregarComposicoesSemServico(pid)]) : Promise.resolve()]);
+      await Promise.all([pid ? Promise.all([carregarValidacao(pid, { offset: 0, append: false }), carregarComposicoesSemServico(pid)]) : Promise.resolve()]);
     } finally {
       setLoading(false);
     }
@@ -585,92 +561,37 @@ export default function Page() {
   }, [idObra]);
 
   const filteredRows = useMemo(() => {
-    const merged: CatalogListRow[] = [
-      ...rows.map((r) => ({
-        kind: "SERVICO" as const,
-        codigo: String(r.codigoServico || "").trim().toUpperCase(),
-        tipo: "Serviço",
-        fonte: String(r.fonte || "").trim().toUpperCase(),
-        descricao: String(r.servico || ""),
-        travado: Boolean(r.travado),
-        travadoPorCadeia: Boolean(r.travadoPorCadeia),
-        origemTipo: String(r.origemTipo || ""),
-        origemChave: String(r.origemChave || ""),
-        totalComposicao: Number(r.totalComposicao || 0),
-        qtdItens: Number(r.qtdItens || 0),
-        definida: null,
-      })),
-      ...refs.map((r) => ({
-        kind: "REF" as const,
-        codigo: String(r.codigo || "").trim().toUpperCase(),
-        tipo: String(r.tipo || ""),
-        fonte: "",
-        descricao: "",
-        travado: null,
-        travadoPorCadeia: null,
-        origemTipo: null,
-        origemChave: null,
-        totalComposicao: null,
-        qtdItens: null,
-        definida: Boolean(r.definida),
-      })),
-    ];
-
-    let out = merged;
-
-    const tipoSel = normalizeFilterChoice(tipoFilter);
-    if (tipoSel === "__NONE__") return [];
-    if (tipoSel) {
-      const selNorm = normalizeHeader(tipoSel);
-      out = out.filter((r) => normalizeHeader(String(r.tipo || "")) === selNorm);
-    }
-
-    const statusSel = normalizeFilterChoice(statusFilter);
-    if (statusSel === "__NONE__") return [];
-    if (statusSel) {
-      const st = normalizeHeader(statusSel);
-      const wantsCom = st.startsWith("com");
-      const wantsSem = st.startsWith("sem");
-      out = out.filter((r) => {
-        const hasComp = r.kind === "SERVICO" ? Number(r.qtdItens || 0) > 0 : Boolean(r.definida);
-        if (wantsCom) return hasComp;
-        if (wantsSem) return !hasComp;
-        return true;
-      });
-    }
-
-    const fonteSel = String(fonteFilter || "").trim().toUpperCase();
-    if (fonteSel) {
-      if (fonteSel === "__SEM_FONTE__") out = out.filter((r) => !String(r.fonte || "").trim());
-      else out = out.filter((r) => String(r.fonte || "").trim().toUpperCase() === fonteSel);
-    }
-    const q = String(textFilter || "").trim().toLowerCase();
-    if (q) {
-      out = out.filter((r) => {
-        const code = String(r.codigo || "").trim().toLowerCase();
-        const fonte = String(r.fonte || "").trim().toLowerCase();
-        const desc = String(r.descricao || "").trim().toLowerCase();
-        const tipo = String(r.tipo || "").trim().toLowerCase();
-        return code.includes(q) || fonte.includes(q) || desc.includes(q) || tipo.includes(q);
-      });
-    }
-    if (focusCodigo) out = out.filter((r) => String(r.codigo || "").trim().toUpperCase() === focusCodigo);
-
-    out = [...out].sort((a, b) => String(a.codigo || "").localeCompare(String(b.codigo || ""), "pt-BR", { numeric: true, sensitivity: "base" }));
+    let out = rows;
+    if (focusCodigo) out = out.filter((r) => String(r.codigoServico || "").trim().toUpperCase() === focusCodigo);
     return out;
-  }, [rows, refs, focusCodigo, textFilter, tipoFilter, statusFilter, fonteFilter]);
-
-  const tipoOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of rows || []) set.add("Serviço");
-    for (const r of refs || []) {
-      const t = String((r as any)?.tipo || "").trim();
-      if (t) set.add(t);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [rows, refs]);
+  }, [rows, focusCodigo]);
 
   const statusOptions = useMemo(() => ["todas", "nenhuma", "Com composição", "Sem composição"], []);
+
+  const fonteOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      const f = String(r.fonte || "").trim().toUpperCase();
+      if (f) set.add(f);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
+  useEffect(() => {
+    if (!focusCodigo) return;
+    if (String(textFilter || "").trim()) return;
+    setTextFilter(focusCodigo);
+  }, [focusCodigo, textFilter]);
+
+  useEffect(() => {
+    if (!bootDone) return;
+    const pid = planilhaIdFromQuery ?? planilhaId ?? null;
+    if (!pid) return;
+    const t = window.setTimeout(() => {
+      void carregarValidacao(pid, { offset: 0, append: false });
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, [bootDone, planilhaIdFromQuery, planilhaId, textFilter, statusFilter, fonteFilter]);
 
   async function toggleTravaServico(codigoServico: string) {
     if (!idObra) return;
@@ -714,8 +635,7 @@ export default function Page() {
     }
   }
 
-  function tooltipTravaServico(r: CatalogListRow) {
-    if (r.kind !== "SERVICO") return "Trava disponível apenas para serviços.";
+  function tooltipTravaServico(r: ValidacaoRow) {
     if (planilhaTravada) return "Planilha travada: não é permitido alterar travas.";
     if (!r.travado) return "Duplo-clique para travar/destravar o serviço (com travas em cadeia).";
     if (r.travadoPorCadeia) {
@@ -770,15 +690,6 @@ export default function Page() {
       setLoading(false);
     }
   }
-
-  const fonteOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of rows) {
-      const f = String(r.fonte || "").trim().toUpperCase();
-      if (f) set.add(f);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [rows]);
 
   useEffect(() => {
     if (!bootDone || !focusCodigo) return;
@@ -1352,7 +1263,7 @@ export default function Page() {
 
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <div className="text-slate-500">
-            Mostrando: {filteredRows.length} (carregado: {rows.length})
+            Mostrando: {filteredRows.length} (total: {rowsTotal})
           </div>
           {focusCodigo ? (
             <button
@@ -1368,33 +1279,15 @@ export default function Page() {
         </div>
 
         <div className="flex flex-wrap lg:flex-nowrap items-end gap-2">
-          <label className="space-y-1" style={{ width: "280px" }} title="Filtra a lista por código do serviço ou descrição (texto livre)">
-            <div className="text-xs text-slate-500">Código / Serviço</div>
+          <label className="space-y-1" style={{ width: "360px" }} title="Filtra a lista por código, fonte ou serviço (texto livre)">
+            <div className="text-xs text-slate-500">Filtrar por código, fonte ou serviço</div>
             <input
               className="input bg-white w-full"
               value={textFilter}
               onChange={(e) => setTextFilter(e.target.value)}
-              placeholder="Filtrar por código, fonte ou serviço"
+              placeholder="Digite para filtrar…"
               disabled={loading}
             />
-          </label>
-          <label className="space-y-1" style={{ width: "170px" }} title="Filtra por tipo (selecione ou digite)">
-            <div className="text-xs text-slate-500">Tipo</div>
-            <input
-              className="input bg-white w-full"
-              value={tipoFilter}
-              onChange={(e) => setTipoFilter(e.target.value)}
-              placeholder="todas"
-              list="exp-servicos-tipo-options"
-              disabled={loading}
-            />
-            <datalist id="exp-servicos-tipo-options">
-              <option value="todas" />
-              <option value="nenhuma" />
-              {tipoOptions.map((t) => (
-                <option key={t} value={t} />
-              ))}
-            </datalist>
           </label>
           <label className="space-y-1" style={{ width: "170px" }} title="Filtra por status de composição (selecione ou digite)">
             <div className="text-xs text-slate-500">Status</div>
@@ -1412,17 +1305,24 @@ export default function Page() {
               ))}
             </datalist>
           </label>
-          <label className="space-y-1" style={{ width: "160px" }} title="Filtra a lista pela fonte (banco) do serviço">
+          <label className="space-y-1" style={{ width: "170px" }} title="Filtra a lista pela fonte (selecione ou digite)">
             <div className="text-xs text-slate-500">Fonte</div>
-            <select className="input bg-white w-full" value={fonteFilter} onChange={(e) => setFonteFilter(e.target.value)} disabled={loading}>
-              <option value="">(todas as fontes)</option>
-              <option value="__SEM_FONTE__">(sem fonte)</option>
+            <input
+              className="input bg-white w-full"
+              value={fonteFilter}
+              onChange={(e) => setFonteFilter(e.target.value)}
+              placeholder="todas"
+              list="exp-servicos-fonte-options"
+              disabled={loading}
+            />
+            <datalist id="exp-servicos-fonte-options">
+              <option value="todas" />
+              <option value="nenhuma" />
+              <option value="sem fonte" />
               {fonteOptions.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
+                <option key={f} value={f} />
               ))}
-            </select>
+            </datalist>
           </label>
         </div>
 
@@ -1437,10 +1337,9 @@ export default function Page() {
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
               {[
                 { key: "codigo", label: "CÓDIGO" },
-                { key: "tipo", label: "TIPO" },
                 { key: "fonte", label: "FONTE" },
                 { key: "servico", label: "SERVIÇO" },
-                { key: "composicao", label: "COMPOSIÇÃO" },
+                { key: "composicao", label: "STATUS" },
                 { key: "acao", label: "AÇÃO" },
               ].map((c) => (
                 <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-2 py-1.5">
@@ -1478,7 +1377,6 @@ export default function Page() {
           <table className="min-w-[1180px] w-full text-xs" style={{ tableLayout: "fixed" }}>
             <colgroup>
               <col style={{ width: `${colWidths.codigo}px` }} />
-              <col style={{ width: `${colWidths.tipo}px` }} />
               <col style={{ width: `${colWidths.fonte}px` }} />
               <col style={{ width: `${colWidths.servico}px` }} />
               <col style={{ width: `${colWidths.composicao}px` }} />
@@ -1488,9 +1386,6 @@ export default function Page() {
               <tr>
                 <th className="px-2 py-1.5" style={{ width: `${colWidths.codigo}px` }}>
                   CÓDIGO
-                </th>
-                <th className="px-2 py-1.5" style={{ width: `${colWidths.tipo}px` }}>
-                  TIPO
                 </th>
                 <th className="px-2 py-1.5" style={{ width: `${colWidths.fonte}px` }}>
                   FONTE
@@ -1509,11 +1404,11 @@ export default function Page() {
             <tbody>
               {filteredRows.map((r) => (
                 <tr
-                  key={`${r.kind}-${r.codigo}`}
-                  id={`row-${String(r.codigo || "").trim().toUpperCase()}`}
-                  className={`border-t ${focusCodigo && String(r.codigo || "").trim().toUpperCase() === focusCodigo ? "bg-red-50" : ""}`}
+                  key={r.codigoServico}
+                  id={`row-${String(r.codigoServico || "").trim().toUpperCase()}`}
+                  className={`border-t ${focusCodigo && String(r.codigoServico || "").trim().toUpperCase() === focusCodigo ? "bg-red-50" : ""}`}
                   onDoubleClick={() => {
-                    const code = String(r.codigo || "").trim();
+                    const code = String(r.codigoServico || "").trim();
                     if (!code) return;
                     const qs = new URLSearchParams();
                     if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
@@ -1522,41 +1417,24 @@ export default function Page() {
                   }}
                 >
                   <td className="px-2 py-1.5 font-medium" style={{ width: `${colWidths.codigo}px` }}>
-                    {r.codigo || "—"}
-                  </td>
-                  <td className="px-2 py-1.5" style={{ width: `${colWidths.tipo}px` }}>
-                    {r.tipo || "—"}
+                    {r.codigoServico || "—"}
                   </td>
                   <td className="px-2 py-1.5" style={{ width: `${colWidths.fonte}px` }}>
                     {r.fonte || "—"}
                   </td>
                   <td className="px-2 py-1.5" style={{ width: `${colWidths.servico}px` }}>
-                    {r.descricao || "—"}
+                    {r.servico || "—"}
                   </td>
                   <td className="px-2 py-1.5 text-right" style={{ width: `${colWidths.composicao}px` }}>
                     {(() => {
-                      if (r.kind === "SERVICO") {
-                        const has = Number(r.qtdItens || 0) > 0;
-                        const total = r.totalComposicao == null ? null : Number(r.totalComposicao || 0);
-                        const title = has
-                          ? `Composição cadastrada (${Number(r.qtdItens || 0)} itens)${total != null ? ` | Total base: ${moeda(total)}` : ""}`
-                          : "Sem composição cadastrada";
-                        return (
-                          <span title={title} className="inline-flex items-center justify-end w-full">
-                            {has ? <Check className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
-                          </span>
-                        );
-                      }
-                      if (r.kind === "REF") {
-                        const has = Boolean(r.definida);
-                        const title = has ? "Composição definida" : "Composição não definida";
-                        return (
-                          <span title={title} className="inline-flex items-center justify-end w-full">
-                            {has ? <Check className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
-                          </span>
-                        );
-                      }
-                      return "—";
+                      const has = Number(r.qtdItens || 0) > 0;
+                      const total = Number(r.totalComposicao || 0);
+                      const title = has ? `Composição cadastrada (${Number(r.qtdItens || 0)} itens) | Total base: ${moeda(total)}` : "Sem composição cadastrada";
+                      return (
+                        <span title={title} className="inline-flex items-center justify-end w-full">
+                          {has ? <Check className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
+                        </span>
+                      );
                     })()}
                   </td>
                   <td className="px-2 py-1.5" style={{ width: `${colWidths.acao}px` }}>
@@ -1569,9 +1447,9 @@ export default function Page() {
                         onDoubleClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          if (r.kind === "SERVICO") toggleTravaServico(r.codigo);
+                          toggleTravaServico(r.codigoServico);
                         }}
-                        disabled={loading || planilhaTravada || r.kind !== "SERVICO" || Boolean(r.travadoPorCadeia)}
+                        disabled={loading || planilhaTravada || Boolean(r.travadoPorCadeia)}
                         title={tooltipTravaServico(r)}
                       >
                         <Lock className={`h-4 w-4 ${r.travado ? "" : "opacity-30"} ${r.travadoPorCadeia ? "opacity-40" : ""}`} />
@@ -1582,15 +1460,11 @@ export default function Page() {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          duplicarServico(r.codigo);
+                          duplicarServico(r.codigoServico);
                         }}
-                        disabled={loading || planilhaTravada || r.kind !== "SERVICO"}
+                        disabled={loading || planilhaTravada}
                         title={
-                          r.kind !== "SERVICO"
-                            ? "Duplicação disponível apenas para serviços."
-                            : planilhaTravada
-                              ? "Planilha travada: não é permitido duplicar serviços."
-                              : "Duplicar serviço (copia serviço e composição; opcionalmente duplica insumos manuais)."
+                          planilhaTravada ? "Planilha travada: não é permitido duplicar serviços." : "Duplicar serviço (copia serviço e composição; opcionalmente duplica insumos manuais)."
                         }
                       >
                         <Copy className="h-4 w-4" />
@@ -1601,19 +1475,17 @@ export default function Page() {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          abrirEditarServico(r.codigo);
+                          abrirEditarServico(r.codigoServico);
                         }}
-                        disabled={loading || planilhaTravada || r.kind !== "SERVICO" || Boolean(r.travado) || Boolean(r.travadoPorCadeia)}
+                        disabled={loading || planilhaTravada || Boolean(r.travado) || Boolean(r.travadoPorCadeia)}
                         title={
-                          r.kind !== "SERVICO"
-                            ? "Edição disponível apenas para serviços."
-                            : planilhaTravada
-                              ? "Planilha travada: não é permitido editar serviços."
-                              : r.travadoPorCadeia
-                                ? "Serviço travado em cadeia: não é permitido editar."
-                                : r.travado
-                                  ? "Serviço travado: não é permitido editar."
-                                  : "Editar serviço (abre um card nesta tela)."
+                          planilhaTravada
+                            ? "Planilha travada: não é permitido editar serviços."
+                            : r.travadoPorCadeia
+                              ? "Serviço travado em cadeia: não é permitido editar."
+                              : r.travado
+                                ? "Serviço travado: não é permitido editar."
+                                : "Editar serviço (abre um card nesta tela)."
                         }
                       >
                         <Pencil className="h-4 w-4" />
@@ -1624,7 +1496,7 @@ export default function Page() {
               ))}
               {!filteredRows.length ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={5} className="px-3 py-6 text-center text-slate-500">
                     Sem dados.
                   </td>
                 </tr>
@@ -1641,8 +1513,9 @@ export default function Page() {
               className="rounded border bg-white px-3 py-1.5 hover:bg-slate-50 disabled:opacity-60"
               type="button"
               onClick={() => {
-                if (!planilhaId) return;
-                void carregarValidacao(planilhaId, { offset: rowsOffset, append: true });
+                const pid = planilhaIdFromQuery ?? planilhaId ?? null;
+                if (!pid) return;
+                void carregarValidacao(pid, { offset: rowsOffset, append: true });
               }}
               disabled={loading || rowsLoading}
               title="Carregar mais 50 itens"
@@ -1677,10 +1550,6 @@ export default function Page() {
                 <label className="space-y-1">
                   <div className="text-xs text-slate-500">CÓDIGO</div>
                   <input className="input bg-white w-full" value={editForm.codigoServico} disabled title="Código não é alterável aqui. Use Duplicar para gerar um novo código." />
-                </label>
-                <label className="space-y-1">
-                  <div className="text-xs text-slate-500">TIPO</div>
-                  <input className="input bg-white w-full" value={editForm.tipo} disabled />
                 </label>
                 <label className="space-y-1">
                   <div className="text-xs text-slate-500">FONTE</div>
