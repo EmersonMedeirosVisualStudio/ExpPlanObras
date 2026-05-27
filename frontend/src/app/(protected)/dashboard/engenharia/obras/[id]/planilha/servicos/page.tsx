@@ -316,7 +316,7 @@ export default function Page() {
     servico: "",
     undHidden: "",
   });
-  const fonteOptions = useMemo(() => {
+  const fonteOptionsEdit = useMemo(() => {
     const set = new Set<string>();
     for (const r of rows) {
       const f = String(r.fonte || "").trim().toUpperCase();
@@ -1611,7 +1611,7 @@ export default function Page() {
               </div>
             </div>
             <datalist id="servicos-fonte-options">
-              {fonteOptions.map((f) => (
+              {fonteOptionsEdit.map((f) => (
                 <option key={f} value={f} />
               ))}
             </datalist>
