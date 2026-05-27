@@ -9411,7 +9411,8 @@ export default async function v1Routes(server: FastifyInstance) {
           SELECT
             UPPER(COALESCE(s.codigo,'')) AS codigo_servico,
             COALESCE(s.fonte,'') AS fonte,
-            COALESCE(s.servico,'') AS servico
+            COALESCE(s.servico,'') AS servico,
+            COALESCE(s.und,'') AS und
           FROM tab_servicos s
           WHERE s.tenant_id = $1 AND s.id_obra = $2 AND s.id_planilha = $3
             AND (
@@ -9446,6 +9447,7 @@ export default async function v1Routes(server: FastifyInstance) {
             sp.codigo_servico AS codigo_servico,
             sp.fonte AS fonte,
             sp.servico AS servico,
+            sp.und AS und,
             EXISTS (
               SELECT 1
               FROM tab_travas t
@@ -9504,6 +9506,7 @@ export default async function v1Routes(server: FastifyInstance) {
           b.codigo_servico AS "codigoServico",
           b.fonte AS "fonte",
           b.servico AS "servico",
+          b.und AS "und",
           b.travado AS "travado",
           b.travado_por_cadeia AS "travadoPorCadeia",
           b.origem_tipo AS "origemTipo",
@@ -9527,6 +9530,7 @@ export default async function v1Routes(server: FastifyInstance) {
         codigoServico: String(r.codigoServico || '').trim(),
         fonte: String(r.fonte || '').trim(),
         servico: String(r.servico || ''),
+        und: String(r.und || '').trim(),
         travado: Boolean(r.travado),
         travadoPorCadeia: Boolean(r.travadoPorCadeia),
         origemTipo: String(r.origemTipo || ''),

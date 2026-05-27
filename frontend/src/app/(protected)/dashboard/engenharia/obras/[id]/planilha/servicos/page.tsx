@@ -9,6 +9,7 @@ type ValidacaoRow = {
   codigoServico: string;
   fonte: string;
   servico: string;
+  und: string;
   travado: boolean;
   travadoPorCadeia: boolean;
   origemTipo: string;
@@ -315,12 +316,33 @@ export default function Page() {
     servico: "",
     undHidden: "",
   });
+  const fonteOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      const f = String(r.fonte || "").trim().toUpperCase();
+      if (f) set.add(f);
+    }
+    for (const extra of ["PRÓPRIO", "SINAPI", "SBC"]) set.add(extra);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
 
   async function abrirEditarServico(codigo: string) {
     const code = String(codigo || "").trim().toUpperCase();
     if (!code) return;
     if (planilhaTravada) {
       setErr("Esta planilha está travada. Não é permitido editar serviços.");
+      return;
+    }
+    const existing = rows.find((r) => String(r.codigoServico || "").trim().toUpperCase() === code) || null;
+    if (existing?.und) {
+      setEditErr(null);
+      setEditForm({
+        codigoServico: code,
+        fonte: String(existing.fonte || "").trim().toUpperCase(),
+        servico: String(existing.servico || "").trim(),
+        undHidden: String(existing.und || "").trim().toUpperCase(),
+      });
+      setEditOpen(true);
       return;
     }
     try {
@@ -468,6 +490,7 @@ export default function Page() {
         codigoServico: String(r.codigoServico || "").trim().toUpperCase(),
         fonte: String(r.fonte || "").trim().toUpperCase(),
         servico: String(r.servico || ""),
+        und: String(r.und || "").trim().toUpperCase(),
         travado: Boolean(r.travado),
         travadoPorCadeia: Boolean(r.travadoPorCadeia),
         origemTipo: String(r.origemTipo || ""),
@@ -960,7 +983,7 @@ export default function Page() {
           type="button"
           onClick={() => setShowNovoServicoCard((v) => !v)}
           disabled={loading}
-          title={showNovoServicoCard ? "Ocultar card de cadastro de serviço" : "Cadastrar um serviço no catálogo da obra (Fonte)"}
+          title={showNovoServicoCard ? "Ocultar card de cadastro de serviço" : "Novo serviço (cria/atualiza no catálogo). Você pode digitar uma Fonte nova."}
         >
           Novo Serviço
         </button>
@@ -1532,7 +1555,6 @@ export default function Page() {
             <div className="flex items-start justify-between gap-3 border-b bg-slate-50 p-4">
               <div>
                 <div className="text-lg font-semibold">Editar serviço</div>
-                <div className="text-sm text-slate-600">Edição desacoplada da tela (sem navegar).</div>
               </div>
               <button
                 className="rounded border bg-white p-2 hover:bg-slate-50 disabled:opacity-60"
@@ -1555,6 +1577,7 @@ export default function Page() {
                   <div className="text-xs text-slate-500">FONTE</div>
                   <input
                     className="input bg-white w-full"
+                    list="servicos-fonte-options"
                     value={editForm.fonte}
                     onChange={(e) => setEditForm((p) => ({ ...p, fonte: e.target.value }))}
                     disabled={editLoading}
@@ -1587,6 +1610,11 @@ export default function Page() {
                 </button>
               </div>
             </div>
+            <datalist id="servicos-fonte-options">
+              {fonteOptions.map((f) => (
+                <option key={f} value={f} />
+              ))}
+            </datalist>
           </div>
         </div>
       ) : null}

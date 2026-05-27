@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Filter, Plus, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MoreHorizontal, Filter, Plus, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { setActiveObra } from "@/lib/obra/active";
 import api from "@/lib/api";
 import { PageLoadStatusBadge } from "@/components/PageLoadStatus";
@@ -717,25 +717,27 @@ export default function EngenhariaObrasPage() {
                   </div>
                   <button
                     type="button"
-                    className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
+                    className="rounded-lg border bg-white p-2 text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
                     onClick={(ev) => {
                       ev.stopPropagation();
                       abrirObraSelecionada(o.id, o.name);
                     }}
+                    title="Selecionar obra"
+                    aria-label="Selecionar obra"
                   >
-                    Selecionar obra
-                    <ChevronRight className="h-4 w-4" />
+                    <CheckCircle2 className="h-5 w-5" />
                   </button>
                   <button
                     type="button"
-                    className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
+                    className="rounded-lg border bg-white p-2 text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
                     onClick={(ev) => {
                       ev.stopPropagation();
                       abrirMenuDiversos(o.id, o.name, o.contratoId, contrato?.numeroContrato || null);
                     }}
+                    title="Menu Diversos"
+                    aria-label="Menu Diversos"
                   >
-                    Menu Diversos
-                    <ChevronRight className="h-4 w-4" />
+                    <MoreHorizontal className="h-5 w-5" />
                   </button>
                 </div>
                 <div className="mt-2 flex items-center gap-2 text-sm">
@@ -815,25 +817,27 @@ export default function EngenhariaObrasPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
+                          className="rounded-lg border bg-white p-2 text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
                           onClick={(ev) => {
                             ev.stopPropagation();
                             abrirObraSelecionada(o.id, o.name);
                           }}
+                          title="Selecionar obra"
+                          aria-label="Selecionar obra"
                         >
-                          Selecionar obra
-                          <ChevronRight className="h-4 w-4" />
+                          <CheckCircle2 className="h-5 w-5" />
                         </button>
                         <button
                           type="button"
-                          className="rounded-lg border bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
+                          className="rounded-lg border bg-white p-2 text-slate-700 hover:bg-slate-50 inline-flex items-center gap-2"
                           onClick={(ev) => {
                             ev.stopPropagation();
                             abrirMenuDiversos(o.id, o.name, o.contratoId, contrato?.numeroContrato || null);
                           }}
+                          title="Menu Diversos"
+                          aria-label="Menu Diversos"
                         >
-                          Menu Diversos
-                          <ChevronRight className="h-4 w-4" />
+                          <MoreHorizontal className="h-5 w-5" />
                         </button>
                       </div>
                     </td>

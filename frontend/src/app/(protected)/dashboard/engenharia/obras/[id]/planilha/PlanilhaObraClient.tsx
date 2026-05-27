@@ -623,7 +623,7 @@ export default function PlanilhaObraClient({
         und: true,
         quant: true,
         valorUnitario: true,
-        valorUnitReferencia: true,
+        valorUnitReferencia: false,
         valorParcial: true,
         acoes: true,
       },
@@ -4016,7 +4016,7 @@ export default function PlanilhaObraClient({
                           </th>
                         ) : null}
                         {visible.includes("valorUnitReferencia") ? (
-                          <th className="px-3 py-2 text-right border-r border-slate-200" style={thStyle}>
+                          <th className="px-3 py-2 text-right border-r border-slate-200" style={{ ...thStyle, backgroundColor: "#FFFBEB" }}>
                             VLR UNIT REF.
                           </th>
                         ) : null}
@@ -4144,7 +4144,9 @@ export default function PlanilhaObraClient({
                             <td className="px-3 py-2 text-right border-r border-slate-200">{fmtCellNumber(l.valorUnitario, 2)}</td>
                           ) : null}
                           {visible.includes("valorUnitReferencia") ? (
-                            <td className="px-3 py-2 text-right border-r border-slate-200">{fmtCellNumber(l.valorUnitReferencia, 2)}</td>
+                            <td className="px-3 py-2 text-right border-r border-slate-200" style={{ backgroundColor: "#FFFBEB" }}>
+                              {fmtCellNumber(l.valorUnitReferencia, 2)}
+                            </td>
                           ) : null}
                           {visible.includes("valorParcial") ? (
                             <td className="px-3 py-2 text-right border-r border-slate-200">
