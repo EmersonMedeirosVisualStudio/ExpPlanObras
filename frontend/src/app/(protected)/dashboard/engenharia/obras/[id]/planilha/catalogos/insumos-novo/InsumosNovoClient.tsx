@@ -62,10 +62,10 @@ export default function InsumosNovoClient() {
     try {
       token = localStorage.getItem("token");
     } catch {}
-    const apiOrigin = String(process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "");
     const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input);
-    const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : apiOrigin ? `${apiOrigin}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}` : rawUrl;
-    return fetch(url, {
+    const isRelativeApi = rawUrl.startsWith("/api/v1/") || rawUrl === "/api/v1";
+    const url = isRelativeApi ? rawUrl : rawUrl;
+    const res = await fetch(url, {
       ...init,
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -73,6 +73,27 @@ export default function InsumosNovoClient() {
       },
       cache: "no-store",
     });
+    if (res.status === 401 || res.status === 402) {
+      if (typeof window !== "undefined") {
+        const onLoginPage = window.location?.pathname === "/login";
+        if (!onLoginPage) {
+          try {
+            const msg = await res
+              .clone()
+              .json()
+              .then((j: any) => String(j?.message || "").trim())
+              .catch(() => "");
+            localStorage.setItem("auth_error", msg || "Sua sessão expirou. Faça login novamente.");
+          } catch {}
+          try {
+            localStorage.removeItem("token");
+            localStorage.removeItem("user");
+          } catch {}
+          window.location.href = "/login";
+        }
+      }
+    }
+    return res;
   }
 
   async function carregarVersoes() {
@@ -314,4 +335,3 @@ export default function InsumosNovoClient() {
     </div>
   );
 }
-
