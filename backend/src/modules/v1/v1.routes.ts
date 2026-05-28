@@ -305,7 +305,17 @@ function normalizeHeader(h: string) {
 }
 
 function normalizeCodigoKey(v: unknown) {
-  return String(v || '').trim().toUpperCase();
+  return String(v || '')
+    .normalize('NFKC')
+    .replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]+/g, '')
+    .trim()
+    .toUpperCase();
+}
+
+function sqlNormalizeCodigoExpr(exprSql: string) {
+  const e = String(exprSql || '').trim();
+  if (!e) return `UPPER('')`;
+  return `UPPER(regexp_replace(replace(replace(replace(COALESCE(${e},''), chr(160), ''), chr(8203), ''), chr(65279), ''), '\\s+', '', 'g'))`;
 }
 
 async function lockExists(tx: any, tenantId: number, entidadeTipo: string, entidadeChave: string) {
@@ -8654,7 +8664,7 @@ export default async function v1Routes(server: FastifyInstance) {
       .parse(request.params || {});
     const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
     const idObra = Number(id);
-    const codigoServico = String(codigo || '').trim().toUpperCase();
+    const codigoServico = normalizeCodigoKey(codigo);
 
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
@@ -8693,8 +8703,8 @@ export default async function v1Routes(server: FastifyInstance) {
           ON p.tenant_id = $1
           AND p.id_obra = $2
           AND p.id_planilha = $3
-          AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(ci.codigo_item,''))
-        WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0 AND UPPER(COALESCE(ci.codigo_servico,'')) = $4
+          AND ${sqlNormalizeCodigoExpr('p.codigo_item')} = ${sqlNormalizeCodigoExpr('ci.codigo_item')}
+        WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0 AND ${sqlNormalizeCodigoExpr('ci.codigo_servico')} = $4
       )
       SELECT
         (SELECT bdi FROM planilha_params) AS bdi,
@@ -8730,7 +8740,7 @@ export default async function v1Routes(server: FastifyInstance) {
     const { id, codigo } = z.object({ id: z.coerce.number().int().positive(), codigo: z.string().min(1) }).parse(request.params || {});
     const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
     const idObra = Number(id);
-    const codigoServico = String(codigo || '').trim().toUpperCase();
+    const codigoServico = normalizeCodigoKey(codigo);
 
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
@@ -8746,7 +8756,7 @@ export default async function v1Routes(server: FastifyInstance) {
         COALESCE(servico,'') AS servico,
         COALESCE(und,'') AS und
       FROM tab_servicos
-      WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(TRIM(COALESCE(codigo,''))) = $2
+      WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND ${sqlNormalizeCodigoExpr('codigo')} = $2
       ORDER BY id_servico ASC
       LIMIT 1
       `,
@@ -8802,7 +8812,7 @@ export default async function v1Routes(server: FastifyInstance) {
       SELECT 1 AS ok
       FROM tab_planilha_itens i
       LEFT JOIN tab_servicos s ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
-      WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND UPPER(TRIM(COALESCE(s.codigo,''))) = $3
+      WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND ${sqlNormalizeCodigoExpr('s.codigo')} = $3
       LIMIT 1
       `,
       ctx.tenantId,
@@ -9150,77 +9160,6 @@ export default async function v1Routes(server: FastifyInstance) {
     return ok(reply, { planilhaId: idPlanilha, total: codes.length, codes, blankCount });
   });
 
-  server.get('/engenharia/catalogo/servicos/auditoria-composicoes', async (request, reply) => {
-    const ctx = await requireTenantUser(request, reply);
-    if (!ctx || (ctx as any).success === false) return;
-
-    await ensurePlanilhaServicosTables(prisma);
-    await ensurePlanilhaComposicaoTables(prisma);
-
-    const q = z.object({ limit: z.coerce.number().int().positive().optional() }).parse(request.query || {});
-    const limit = q.limit != null ? Math.max(1, Math.min(5000, Number(q.limit))) : 2000;
-
-    const rows = (await prisma.$queryRawUnsafe(
-      `
-      WITH servs AS (
-        SELECT
-          UPPER(TRIM(COALESCE(codigo,''))) AS codigo,
-          COALESCE(fonte,'') AS fonte,
-          COALESCE(servico,'') AS servico,
-          COALESCE(und,'') AS und
-        FROM tab_servicos
-        WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND TRIM(COALESCE(codigo,'')) <> ''
-      ),
-      comps AS (
-        SELECT DISTINCT UPPER(TRIM(COALESCE(codigo_servico,''))) AS codigo
-        FROM tab_composicoes
-        WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND TRIM(COALESCE(codigo_servico,'')) <> ''
-      ),
-      serv_sem_comp AS (
-        SELECT s.codigo, s.fonte, s.servico, s.und
-        FROM servs s
-        LEFT JOIN comps c ON c.codigo = s.codigo
-        WHERE c.codigo IS NULL
-        ORDER BY s.codigo
-        LIMIT $2
-      ),
-      comp_sem_serv AS (
-        SELECT c.codigo
-        FROM comps c
-        LEFT JOIN servs s ON s.codigo = c.codigo
-        WHERE s.codigo IS NULL
-        ORDER BY c.codigo
-        LIMIT $2
-      )
-      SELECT
-        (SELECT COUNT(1)::int FROM servs) AS "totalServicos",
-        (SELECT COUNT(1)::int FROM comps) AS "totalCodigosComposicao",
-        (SELECT COUNT(1)::int FROM servs s JOIN comps c ON c.codigo = s.codigo) AS "servicosComComposicao",
-        (SELECT COUNT(1)::int FROM servs s LEFT JOIN comps c ON c.codigo = s.codigo WHERE c.codigo IS NULL) AS "servicosSemComposicao",
-        (SELECT COUNT(1)::int FROM comps c LEFT JOIN servs s ON s.codigo = c.codigo WHERE s.codigo IS NULL) AS "composicoesSemServico",
-        (SELECT json_agg(json_build_object('codigo', codigo, 'fonte', fonte, 'servico', servico, 'und', und)) FROM serv_sem_comp) AS "amostraServicosSemComposicao",
-        (SELECT json_agg(codigo) FROM comp_sem_serv) AS "amostraComposicoesSemServico"
-      `,
-      ctx.tenantId,
-      limit
-    )) as any[];
-
-    const r = rows?.[0] || {};
-    const amostraServicosSemComposicao = Array.isArray(r?.amostraServicosSemComposicao) ? r.amostraServicosSemComposicao : [];
-    const amostraComposicoesSemServico = Array.isArray(r?.amostraComposicoesSemServico) ? r.amostraComposicoesSemServico : [];
-
-    return ok(reply, {
-      totalServicos: Number(r.totalServicos || 0),
-      totalCodigosComposicao: Number(r.totalCodigosComposicao || 0),
-      servicosComComposicao: Number(r.servicosComComposicao || 0),
-      servicosSemComposicao: Number(r.servicosSemComposicao || 0),
-      composicoesSemServico: Number(r.composicoesSemServico || 0),
-      amostraServicosSemComposicao,
-      amostraComposicoesSemServico,
-      limiteAmostra: limit,
-    });
-  });
-
   server.get('/engenharia/obras/:id/planilha/composicoes/referencias', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;
@@ -9325,7 +9264,7 @@ export default async function v1Routes(server: FastifyInstance) {
         ),
         svc_planilha AS (
           SELECT DISTINCT
-            UPPER(TRIM(COALESCE(s.codigo,''))) AS codigo_servico
+            ${sqlNormalizeCodigoExpr('s.codigo')} AS codigo_servico
           FROM tab_planilha_itens i
           JOIN tab_servicos s
             ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
@@ -9338,7 +9277,7 @@ export default async function v1Routes(server: FastifyInstance) {
             COALESCE(s.servico,'') AS servico
           FROM svc_planilha sp
           JOIN tab_servicos s
-            ON s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0 AND UPPER(TRIM(COALESCE(s.codigo,''))) = sp.codigo_servico
+            ON s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0 AND ${sqlNormalizeCodigoExpr('s.codigo')} = sp.codigo_servico
           WHERE
             ($4 = '' OR sp.codigo_servico LIKE UPPER($4) OR UPPER(COALESCE(s.fonte,'')) LIKE UPPER($4) OR UPPER(COALESCE(s.servico,'')) LIKE UPPER($4))
             AND (
@@ -9351,12 +9290,12 @@ export default async function v1Routes(server: FastifyInstance) {
               ($6 = 'COM' AND EXISTS (
                 SELECT 1 FROM tab_composicoes ci
                 WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
-                  AND UPPER(TRIM(COALESCE(ci.codigo_servico,''))) = sp.codigo_servico
+                  AND ${sqlNormalizeCodigoExpr('ci.codigo_servico')} = sp.codigo_servico
               )) OR
               ($6 = 'SEM' AND NOT EXISTS (
                 SELECT 1 FROM tab_composicoes ci
                 WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
-                  AND UPPER(TRIM(COALESCE(ci.codigo_servico,''))) = sp.codigo_servico
+                  AND ${sqlNormalizeCodigoExpr('ci.codigo_servico')} = sp.codigo_servico
               ))
             )
           ORDER BY sp.codigo_servico
@@ -9372,7 +9311,7 @@ export default async function v1Routes(server: FastifyInstance) {
           JOIN tab_servicos s
             ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
           JOIN svc_page sp
-            ON sp.codigo_servico = UPPER(COALESCE(s.codigo,''))
+            ON sp.codigo_servico = ${sqlNormalizeCodigoExpr('s.codigo')}
           WHERE i.tenant_id = $1 AND i.id_planilha = $3 AND i.tipo_linha = 'SERVICO'
           GROUP BY sp.codigo_servico
         ),
@@ -9430,7 +9369,7 @@ export default async function v1Routes(server: FastifyInstance) {
         ),
         comps AS (
           SELECT
-            UPPER(TRIM(COALESCE(ci.codigo_servico,''))) AS codigo_servico,
+            ${sqlNormalizeCodigoExpr('ci.codigo_servico')} AS codigo_servico,
             COUNT(ci.id_item) AS qtd_itens,
             SUM(
               COALESCE(ci.quantidade, 0)
@@ -9447,11 +9386,11 @@ export default async function v1Routes(server: FastifyInstance) {
             ON p.tenant_id = $1
             AND p.id_obra = $2
             AND p.id_planilha = $3
-            AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(ci.codigo_item,''))
+            AND ${sqlNormalizeCodigoExpr('p.codigo_item')} = ${sqlNormalizeCodigoExpr('ci.codigo_item')}
           JOIN svc_page sp
-            ON sp.codigo_servico = UPPER(TRIM(COALESCE(ci.codigo_servico,'')))
+            ON sp.codigo_servico = ${sqlNormalizeCodigoExpr('ci.codigo_servico')}
           WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
-          GROUP BY UPPER(TRIM(COALESCE(ci.codigo_servico,'')))
+          GROUP BY ${sqlNormalizeCodigoExpr('ci.codigo_servico')}
         )
         SELECT
           b.codigo_servico AS "codigoServico",
@@ -9521,7 +9460,7 @@ export default async function v1Routes(server: FastifyInstance) {
         WHERE s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0
           AND (
             $4 = '' OR
-            UPPER(TRIM(COALESCE(s.codigo,''))) LIKE UPPER($4) OR
+            ${sqlNormalizeCodigoExpr('s.codigo')} LIKE UPPER($4) OR
             UPPER(COALESCE(s.fonte,'')) LIKE UPPER($4) OR
             UPPER(COALESCE(s.servico,'')) LIKE UPPER($4)
           )
@@ -9535,12 +9474,12 @@ export default async function v1Routes(server: FastifyInstance) {
             ($6 = 'COM' AND EXISTS (
               SELECT 1 FROM tab_composicoes ci
               WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
-                AND UPPER(TRIM(COALESCE(ci.codigo_servico,''))) = UPPER(TRIM(COALESCE(s.codigo,'')))
+                AND ${sqlNormalizeCodigoExpr('ci.codigo_servico')} = ${sqlNormalizeCodigoExpr('s.codigo')}
             )) OR
             ($6 = 'SEM' AND NOT EXISTS (
               SELECT 1 FROM tab_composicoes ci
               WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
-                AND UPPER(TRIM(COALESCE(ci.codigo_servico,''))) = UPPER(TRIM(COALESCE(s.codigo,'')))
+                AND ${sqlNormalizeCodigoExpr('ci.codigo_servico')} = ${sqlNormalizeCodigoExpr('s.codigo')}
             ))
           )
         `,
@@ -9557,7 +9496,7 @@ export default async function v1Routes(server: FastifyInstance) {
         `
         WITH svc_page AS (
           SELECT
-            UPPER(TRIM(COALESCE(s.codigo,''))) AS codigo_servico,
+            ${sqlNormalizeCodigoExpr('s.codigo')} AS codigo_servico,
             COALESCE(s.fonte,'') AS fonte,
             COALESCE(s.servico,'') AS servico,
             COALESCE(s.und,'') AS und
@@ -9565,7 +9504,7 @@ export default async function v1Routes(server: FastifyInstance) {
           WHERE s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0
             AND (
               $6 = '' OR
-              UPPER(TRIM(COALESCE(s.codigo,''))) LIKE UPPER($6) OR
+              ${sqlNormalizeCodigoExpr('s.codigo')} LIKE UPPER($6) OR
               UPPER(COALESCE(s.fonte,'')) LIKE UPPER($6) OR
               UPPER(COALESCE(s.servico,'')) LIKE UPPER($6)
             )
@@ -9579,15 +9518,15 @@ export default async function v1Routes(server: FastifyInstance) {
               ($8 = 'COM' AND EXISTS (
                 SELECT 1 FROM tab_composicoes ci
                 WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
-                  AND UPPER(TRIM(COALESCE(ci.codigo_servico,''))) = UPPER(TRIM(COALESCE(s.codigo,'')))
+                  AND ${sqlNormalizeCodigoExpr('ci.codigo_servico')} = ${sqlNormalizeCodigoExpr('s.codigo')}
               )) OR
               ($8 = 'SEM' AND NOT EXISTS (
                 SELECT 1 FROM tab_composicoes ci
                 WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
-                  AND UPPER(TRIM(COALESCE(ci.codigo_servico,''))) = UPPER(TRIM(COALESCE(s.codigo,'')))
+                  AND ${sqlNormalizeCodigoExpr('ci.codigo_servico')} = ${sqlNormalizeCodigoExpr('s.codigo')}
               ))
             )
-          ORDER BY UPPER(COALESCE(s.codigo,''))
+          ORDER BY ${sqlNormalizeCodigoExpr('s.codigo')}
           LIMIT $4 OFFSET $5
         ),
         base AS (
@@ -9641,7 +9580,7 @@ export default async function v1Routes(server: FastifyInstance) {
         ),
         comps AS (
           SELECT
-            UPPER(COALESCE(ci.codigo_servico,'')) AS codigo_servico,
+            ${sqlNormalizeCodigoExpr('ci.codigo_servico')} AS codigo_servico,
             COUNT(ci.id_item) AS qtd_itens,
             SUM(
               COALESCE(ci.quantidade, 0)
@@ -9653,11 +9592,11 @@ export default async function v1Routes(server: FastifyInstance) {
             ON p.tenant_id = $1
             AND p.id_obra = $2
             AND p.id_planilha = $3
-            AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(ci.codigo_item,''))
+            AND ${sqlNormalizeCodigoExpr('p.codigo_item')} = ${sqlNormalizeCodigoExpr('ci.codigo_item')}
           JOIN svc_page sp
-            ON sp.codigo_servico = UPPER(COALESCE(ci.codigo_servico,''))
+            ON sp.codigo_servico = ${sqlNormalizeCodigoExpr('ci.codigo_servico')}
           WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
-          GROUP BY UPPER(COALESCE(ci.codigo_servico,''))
+          GROUP BY ${sqlNormalizeCodigoExpr('ci.codigo_servico')}
         )
         SELECT
           b.codigo_servico AS "codigoServico",
@@ -11023,7 +10962,7 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!ctx || (ctx as any).success === false) return;
     const { id, codigo } = z.object({ id: z.coerce.number().int().positive(), codigo: z.string().min(1) }).parse(request.params || {});
     const idObra = Number(id);
-    const codigoServico = String(codigo).trim().toUpperCase();
+    const codigoServico = normalizeCodigoKey(codigo);
     const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
 
     const scope = (request.user as any)?.abrangencia as any;
@@ -11052,7 +10991,7 @@ export default async function v1Routes(server: FastifyInstance) {
           SELECT 1
           FROM tab_travas t
           WHERE t.tenant_id = i.tenant_id
-            AND t.entidade_chave = UPPER(COALESCE(i.codigo_item,''))
+            AND t.entidade_chave = ${sqlNormalizeCodigoExpr('i.codigo_item')}
             AND t.entidade_tipo = CASE
               WHEN UPPER(COALESCE(i.tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN 'COMPOSICAO'
               ELSE 'INSUMO'
@@ -11062,7 +11001,7 @@ export default async function v1Routes(server: FastifyInstance) {
           SELECT 1
           FROM tab_travas t
           WHERE t.tenant_id = i.tenant_id
-            AND t.entidade_chave = UPPER(COALESCE(i.codigo_item,''))
+            AND t.entidade_chave = ${sqlNormalizeCodigoExpr('i.codigo_item')}
             AND t.entidade_tipo = CASE
               WHEN UPPER(COALESCE(i.tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN 'COMPOSICAO'
               ELSE 'INSUMO'
@@ -11074,7 +11013,7 @@ export default async function v1Routes(server: FastifyInstance) {
             SELECT t.origem_tipo
             FROM tab_travas t
             WHERE t.tenant_id = i.tenant_id
-              AND t.entidade_chave = UPPER(COALESCE(i.codigo_item,''))
+              AND t.entidade_chave = ${sqlNormalizeCodigoExpr('i.codigo_item')}
               AND t.entidade_tipo = CASE
                 WHEN UPPER(COALESCE(i.tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN 'COMPOSICAO'
                 ELSE 'INSUMO'
@@ -11090,7 +11029,7 @@ export default async function v1Routes(server: FastifyInstance) {
             SELECT t.origem_chave
             FROM tab_travas t
             WHERE t.tenant_id = i.tenant_id
-              AND t.entidade_chave = UPPER(COALESCE(i.codigo_item,''))
+              AND t.entidade_chave = ${sqlNormalizeCodigoExpr('i.codigo_item')}
               AND t.entidade_tipo = CASE
                 WHEN UPPER(COALESCE(i.tipo_item,'')) IN ('COMPOSICAO','COMPOSICAO_AUXILIAR') THEN 'COMPOSICAO'
                 ELSE 'INSUMO'
@@ -11106,8 +11045,8 @@ export default async function v1Routes(server: FastifyInstance) {
         ON p.tenant_id = $1
         AND p.id_obra = $2
         AND p.id_planilha = $3
-        AND UPPER(TRIM(COALESCE(p.codigo_item,''))) = UPPER(TRIM(COALESCE(i.codigo_item,'')))
-      WHERE i.tenant_id = $1 AND i.id_obra = 0 AND i.id_planilha = 0 AND UPPER(TRIM(COALESCE(i.codigo_servico,''))) = $4
+        AND ${sqlNormalizeCodigoExpr('p.codigo_item')} = ${sqlNormalizeCodigoExpr('i.codigo_item')}
+      WHERE i.tenant_id = $1 AND i.id_obra = 0 AND i.id_planilha = 0 AND ${sqlNormalizeCodigoExpr('i.codigo_servico')} = $4
       ORDER BY COALESCE(i.etapa,'') ASC, i.id_item ASC
       `,
       ctx.tenantId,
@@ -11135,7 +11074,7 @@ export default async function v1Routes(server: FastifyInstance) {
     if (!ctx || (ctx as any).success === false) return;
     const { id, codigo } = z.object({ id: z.coerce.number().int().positive(), codigo: z.string().min(1) }).parse(request.params || {});
     const idObra = Number(id);
-    const codigoServico = String(codigo).trim().toUpperCase();
+    const codigoServico = normalizeCodigoKey(codigo);
     const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
 
     const scope = (request.user as any)?.abrangencia as any;

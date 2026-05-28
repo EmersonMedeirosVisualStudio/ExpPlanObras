@@ -239,6 +239,17 @@ async function readTextSmart(file: File) {
     dataBaseSinapi: string | null;
     ufSinapi: string | null;
   } | null>(null);
+  const [planilhaVersoes, setPlanilhaVersoes] = useState<
+    Array<{
+      idPlanilha: number;
+      numeroVersao: number;
+      nome: string;
+      atual: boolean;
+      travado: boolean;
+      idParametros: number | null;
+      parametrosNome: string;
+    }>
+  >([]);
   const [definedComposicoesCodes, setDefinedComposicoesCodes] = useState<Set<string>>(new Set());
   const [empresaDocumentosLayout, setEmpresaDocumentosLayout] = useState<EmpresaDocumentosLayout | null>(null);
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
@@ -418,10 +429,26 @@ async function readTextSmart(file: File) {
      try {
        token = localStorage.getItem("token");
      } catch {}
+      if (!token && typeof document !== "undefined") {
+        try {
+          const m = document.cookie.match(/(?:^|;\s*)exp_token=([^;]+)/);
+          const v = m?.[1] ? decodeURIComponent(m[1]) : "";
+          if (v) {
+            token = v;
+            try {
+              localStorage.setItem("token", v);
+            } catch {}
+          }
+        } catch {}
+      }
 
      const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input);
+     const apiOrigin = String(process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "");
+     const apiMode = String(process.env.NEXT_PUBLIC_API_MODE || "").trim().toLowerCase();
+     const isAbs = /^https?:\/\//i.test(rawUrl);
      const isRelativeApi = rawUrl.startsWith("/api/v1/") || rawUrl === "/api/v1";
-     const url = isRelativeApi ? rawUrl : rawUrl;
+     const shouldBypassNextApi = apiMode === "next" && Boolean(apiOrigin) && isRelativeApi;
+     const url = isAbs ? rawUrl : shouldBypassNextApi ? `${apiOrigin}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}` : rawUrl;
 
      const res = await fetch(url, {
        ...init,
@@ -849,8 +876,18 @@ async function readTextSmart(file: File) {
       const obra = jsonV?.data?.obra || null;
       setObraNome(String(obra?.nome || obra?.name || "").trim());
       const versoes = Array.isArray(jsonV.data?.versoes) ? jsonV.data.versoes : [];
-      const byQuery = planilhaId != null ? versoes.find((v: any) => Number(v?.idPlanilha || 0) === Number(planilhaId)) : null;
-      const atual = versoes.find((v: any) => Boolean(v.atual)) || versoes[0] || null;
+      const mappedVersoes = versoes.map((v: any) => ({
+        idPlanilha: Number(v?.idPlanilha || 0),
+        numeroVersao: Number(v?.numeroVersao || 0),
+        nome: String(v?.nome || ""),
+        atual: Boolean(v?.atual),
+        travado: Boolean(v?.travado),
+        idParametros: v?.idParametros == null ? null : Number(v.idParametros),
+        parametrosNome: String(v?.parametrosNome || ""),
+      }));
+      setPlanilhaVersoes(mappedVersoes.filter((v: any) => Number.isFinite(v.idPlanilha) && v.idPlanilha > 0));
+      const byQuery = planilhaId != null ? mappedVersoes.find((v: any) => Number(v?.idPlanilha || 0) === Number(planilhaId)) : null;
+      const atual = mappedVersoes.find((v: any) => Boolean(v.atual)) || mappedVersoes[0] || null;
       const pick = byQuery || atual || null;
       setPlanilhaTravada(Boolean(pick?.travado));
       const pid = pick?.idPlanilha != null ? Number(pick.idPlanilha) : 0;
@@ -1340,7 +1377,7 @@ async function readTextSmart(file: File) {
     return () => {
       cancelled = true;
     };
-  }, [idObra, codigoServico]);
+  }, [idObra, codigoServico, planilhaIdParam]);
 
   useEffect(() => {
     try {
@@ -3343,6 +3380,8 @@ async function readTextSmart(file: File) {
         </div>
       ) : null}
  
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch">
+        <div className="flex-1 min-w-0 space-y-4">
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
@@ -3584,8 +3623,8 @@ async function readTextSmart(file: File) {
       </section>
 
       <section className="rounded-xl border bg-white p-4 shadow-sm space-y-3">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex-1 min-w-[280px]">
+        <div className="space-y-3">
+          <div>
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>
                 <div className="text-lg font-semibold">Itens (composição)</div>
@@ -3712,92 +3751,6 @@ async function readTextSmart(file: File) {
                 <div className="text-[13px] font-semibold text-slate-900">{moeda(Number(totalComDesconto || 0))}</div>
               </div>
             </div>
-          </div>
-          <div className="w-full md:w-[420px]">
-            <div className="rounded-lg border bg-white p-3">
-              {(() => {
-                const p = planilhaParams;
-                const hasSinapi = Boolean(
-                  String(p?.ufSinapi || "").trim() ||
-                    String(p?.dataBaseSinapi || "").trim() ||
-                    p?.bdiServicosSinapi != null ||
-                    p?.bdiDiferenciadoSinapi != null ||
-                    p?.encSociaisSemDesSinapi != null ||
-                    p?.descontoSinapi != null
-                );
-                const hasSbc = Boolean(
-                  String(p?.dataBaseSbc || "").trim() ||
-                    p?.bdiServicosSbc != null ||
-                    p?.bdiDiferenciadoSbc != null ||
-                    p?.encSociaisSemDesSbc != null ||
-                    p?.descontoSbc != null
-                );
-                const tipoBase = hasSinapi ? "SINAPI" : hasSbc ? "SBC" : "";
-                const dataBase = tipoBase === "SINAPI" ? String(p?.dataBaseSinapi || "").trim() : tipoBase === "SBC" ? String(p?.dataBaseSbc || "").trim() : "";
-                const bdiServicos = tipoBase === "SINAPI" ? p?.bdiServicosSinapi : p?.bdiServicosSbc;
-                const bdiDiferenciado = tipoBase === "SINAPI" ? p?.bdiDiferenciadoSinapi : p?.bdiDiferenciadoSbc;
-                const encSociais = tipoBase === "SINAPI" ? p?.encSociaisSemDesSinapi : p?.encSociaisSemDesSbc;
-                const desconto = tipoBase === "SINAPI" ? p?.descontoSinapi : p?.descontoSbc;
-
-                return (
-                  <div className="space-y-3">
-                    <div className="text-sm font-semibold text-slate-800">Parâmetros</div>
-
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <div className="rounded border bg-slate-50 px-2 py-2 text-xs">
-                        <div className="text-[10px] text-slate-500">id do parâmetro</div>
-                        <div className="font-semibold text-slate-900">{planilhaCtx?.idParametros ? `#${planilhaCtx.idParametros}` : "—"}</div>
-                      </div>
-                      <div className="rounded border bg-slate-50 px-2 py-2 text-xs">
-                        <div className="text-[10px] text-slate-500">Nome</div>
-                        <div className="font-semibold text-slate-900">{planilhaCtx?.parametrosNome || "—"}</div>
-                      </div>
-                    </div>
-
-                    <div className="rounded border bg-slate-50 p-2">
-                      <div className="text-xs font-semibold text-slate-800">1 - Usado em insumos</div>
-                      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                        <div className="rounded border bg-white px-2 py-2 text-xs">
-                          <div className="text-[10px] text-slate-500">UF</div>
-                          <div className="font-semibold text-slate-900">{String(p?.ufSinapi || "").trim() ? String(p?.ufSinapi || "").trim() : "—"}</div>
-                        </div>
-                        <div className="rounded border bg-white px-2 py-2 text-xs">
-                          <div className="text-[10px] text-slate-500">Sinapi ou SBC</div>
-                          <div className="font-semibold text-slate-900">{tipoBase || "—"}</div>
-                        </div>
-                        <div className="rounded border bg-white px-2 py-2 text-xs">
-                          <div className="text-[10px] text-slate-500">Data-base</div>
-                          <div className="font-semibold text-slate-900">{dataBase || "—"}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded border bg-slate-50 p-2">
-                      <div className="text-xs font-semibold text-slate-800">2 - Usado em Composições</div>
-                      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        <div className="rounded border bg-white px-2 py-2 text-xs">
-                          <div className="text-[10px] text-slate-500">BDI de Serviços (%)</div>
-                          <div className="font-semibold text-slate-900">{bdiServicos == null ? "—" : Number(bdiServicos).toFixed(2)}</div>
-                        </div>
-                        <div className="rounded border bg-white px-2 py-2 text-xs">
-                          <div className="text-[10px] text-slate-500">BDI Diferenciado (%)</div>
-                          <div className="font-semibold text-slate-900">{bdiDiferenciado == null ? "—" : Number(bdiDiferenciado).toFixed(2)}</div>
-                        </div>
-                        <div className="rounded border bg-white px-2 py-2 text-xs">
-                          <div className="text-[10px] text-slate-500">Enc. Sociais (%)</div>
-                          <div className="font-semibold text-slate-900">{encSociais == null ? "—" : Number(encSociais).toFixed(2)}</div>
-                        </div>
-                        <div className="rounded border bg-white px-2 py-2 text-xs">
-                          <div className="text-[10px] text-slate-500">Desconto (%)</div>
-                          <div className="font-semibold text-slate-900">{desconto == null ? "—" : Number(desconto).toFixed(2)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
         </div>
 
         <div className="space-y-4">
@@ -3810,6 +3763,134 @@ async function readTextSmart(file: File) {
           }, { showFiltro: true })}
         </div>
       </section>
+        </div>
+        <aside className="w-full lg:w-[20%] lg:min-w-[300px] lg:max-w-[420px]">
+          <div className="rounded-xl border bg-white p-4 shadow-sm lg:sticky lg:top-6 lg:h-[calc(100vh-140px)] overflow-auto space-y-3">
+            <div className="space-y-2">
+              <div className="text-sm font-semibold text-slate-900">Planilha</div>
+              <select
+                className="input bg-white w-full"
+                value={String(planilhaInfo?.idPlanilha || planilhaId || planilhaVersoes[0]?.idPlanilha || "")}
+                onChange={(e) => {
+                  const pid = Number(e.target.value || 0);
+                  if (!Number.isFinite(pid) || pid <= 0) return;
+                  const qs = new URLSearchParams();
+                  if (trailCodes.length) qs.set("trail", trailCodes.join(","));
+                  qs.set("planilhaId", String(pid));
+                  const rt = getBackTargetUrl();
+                  qs.set("returnTo", rt);
+                  if (itemFromPlanilhaParam) qs.set("item", itemFromPlanilhaParam);
+                  if (fonteFromPlanilhaParam) qs.set("fonte", fonteFromPlanilhaParam);
+                  if (servicosFromPlanilhaParam) qs.set("servicos", servicosFromPlanilhaParam);
+                  if (undFromPlanilhaParam) qs.set("und", undFromPlanilhaParam);
+                  router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}?${qs.toString()}`);
+                }}
+                disabled={loading || planilhaVersoes.length === 0}
+              >
+                {planilhaVersoes.map((v) => (
+                  <option key={v.idPlanilha} value={String(v.idPlanilha)}>
+                    {`v${v.numeroVersao} — #${v.idPlanilha} - ${v.nome || "—"}${v.atual ? " (Atual)" : ""}`}
+                  </option>
+                ))}
+              </select>
+              <div className="text-xs text-slate-600">
+                {planilhaInfo?.idPlanilha ? `Usando: #${planilhaInfo.idPlanilha} - ${planilhaInfo.nome || "—"} (v${planilhaInfo.numeroVersao})` : "—"}
+              </div>
+            </div>
+
+            {(() => {
+              const p = planilhaParams;
+              const hasSinapi = Boolean(
+                String(p?.ufSinapi || "").trim() ||
+                  String(p?.dataBaseSinapi || "").trim() ||
+                  p?.bdiServicosSinapi != null ||
+                  p?.bdiDiferenciadoSinapi != null ||
+                  p?.encSociaisSemDesSinapi != null ||
+                  p?.descontoSinapi != null
+              );
+              const hasSbc = Boolean(
+                String(p?.dataBaseSbc || "").trim() ||
+                  p?.bdiServicosSbc != null ||
+                  p?.bdiDiferenciadoSbc != null ||
+                  p?.encSociaisSemDesSbc != null ||
+                  p?.descontoSbc != null
+              );
+              const tipoBase = hasSinapi ? "SINAPI" : hasSbc ? "SBC" : "";
+              const dataBase = tipoBase === "SINAPI" ? String(p?.dataBaseSinapi || "").trim() : tipoBase === "SBC" ? String(p?.dataBaseSbc || "").trim() : "";
+              const bdiServicos = tipoBase === "SINAPI" ? p?.bdiServicosSinapi : p?.bdiServicosSbc;
+              const bdiDiferenciado = tipoBase === "SINAPI" ? p?.bdiDiferenciadoSinapi : p?.bdiDiferenciadoSbc;
+              const encSociais = tipoBase === "SINAPI" ? p?.encSociaisSemDesSinapi : p?.encSociaisSemDesSbc;
+              const desconto = tipoBase === "SINAPI" ? p?.descontoSinapi : p?.descontoSbc;
+
+              return (
+                <div className="space-y-3">
+                  <div className="text-sm font-semibold text-slate-800">Parâmetros</div>
+
+                  <div className="grid grid-cols-1 gap-2">
+                    <div className="rounded border bg-slate-50 px-2 py-2 text-xs">
+                      <div className="text-[10px] text-slate-500">Planilha dos parâmetros</div>
+                      <div className="font-semibold text-slate-900">
+                        {planilhaInfo?.idPlanilha ? `#${planilhaInfo.idPlanilha} - ${planilhaInfo.nome || "—"} (v${planilhaInfo.numeroVersao})` : "—"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2">
+                    <div className="rounded border bg-slate-50 px-2 py-2 text-xs">
+                      <div className="text-[10px] text-slate-500">id do parâmetro</div>
+                      <div className="font-semibold text-slate-900">{planilhaCtx?.idParametros ? `#${planilhaCtx.idParametros}` : "—"}</div>
+                    </div>
+                    <div className="rounded border bg-slate-50 px-2 py-2 text-xs">
+                      <div className="text-[10px] text-slate-500">Nome</div>
+                      <div className="font-semibold text-slate-900">{planilhaCtx?.parametrosNome || "—"}</div>
+                    </div>
+                  </div>
+
+                  <div className="rounded border bg-slate-50 p-2">
+                    <div className="text-xs font-semibold text-slate-800">1 - Usado em insumos</div>
+                    <div className="mt-2 grid grid-cols-1 gap-2">
+                      <div className="rounded border bg-white px-2 py-2 text-xs">
+                        <div className="text-[10px] text-slate-500">UF</div>
+                        <div className="font-semibold text-slate-900">{String(p?.ufSinapi || "").trim() ? String(p?.ufSinapi || "").trim() : "—"}</div>
+                      </div>
+                      <div className="rounded border bg-white px-2 py-2 text-xs">
+                        <div className="text-[10px] text-slate-500">Sinapi ou SBC</div>
+                        <div className="font-semibold text-slate-900">{tipoBase || "—"}</div>
+                      </div>
+                      <div className="rounded border bg-white px-2 py-2 text-xs">
+                        <div className="text-[10px] text-slate-500">Data-base</div>
+                        <div className="font-semibold text-slate-900">{dataBase || "—"}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded border bg-slate-50 p-2">
+                    <div className="text-xs font-semibold text-slate-800">2 - Usado em Composições</div>
+                    <div className="mt-2 grid grid-cols-1 gap-2">
+                      <div className="rounded border bg-white px-2 py-2 text-xs">
+                        <div className="text-[10px] text-slate-500">BDI de Serviços (%)</div>
+                        <div className="font-semibold text-slate-900">{bdiServicos == null ? "—" : Number(bdiServicos).toFixed(2)}</div>
+                      </div>
+                      <div className="rounded border bg-white px-2 py-2 text-xs">
+                        <div className="text-[10px] text-slate-500">BDI Diferenciado (%)</div>
+                        <div className="font-semibold text-slate-900">{bdiDiferenciado == null ? "—" : Number(bdiDiferenciado).toFixed(2)}</div>
+                      </div>
+                      <div className="rounded border bg-white px-2 py-2 text-xs">
+                        <div className="text-[10px] text-slate-500">Enc. Sociais (%)</div>
+                        <div className="font-semibold text-slate-900">{encSociais == null ? "—" : Number(encSociais).toFixed(2)}</div>
+                      </div>
+                      <div className="rounded border bg-white px-2 py-2 text-xs">
+                        <div className="text-[10px] text-slate-500">Desconto (%)</div>
+                        <div className="font-semibold text-slate-900">{desconto == null ? "—" : Number(desconto).toFixed(2)}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </aside>
+      </div>
      </div>
    );
  }

@@ -1436,7 +1436,8 @@ export default function Page() {
                     const qs = new URLSearchParams();
                     if (planilhaIdFromQuery) qs.set("planilhaId", String(planilhaIdFromQuery));
                     qs.set("returnTo", selfHref);
-                    router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}?${qs.toString()}`);
+                    const url = `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}?${qs.toString()}`;
+                    window.open(url, "_blank", "noopener,noreferrer");
                   }}
                 >
                   <td className="px-2 py-1.5 font-medium" style={{ width: `${colWidths.codigo}px` }}>

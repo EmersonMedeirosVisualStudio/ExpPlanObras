@@ -2816,48 +2816,6 @@ export default function PlanilhaObraClient({
               Serviços
             </button>
             <button
-              className="rounded-lg border bg-orange-500 px-4 py-2 text-sm text-white border-orange-500 hover:bg-orange-600 disabled:opacity-60"
-              type="button"
-              onClick={() => {
-                const qs = new URLSearchParams();
-                if (effectivePlanilhaId) qs.set("planilhaId", String(effectivePlanilhaId));
-                qs.set("returnTo", selfHref);
-                router.push(`/dashboard/engenharia/obras/${idObra}/planilha/catalogos/servicos-novo?${qs.toString()}`);
-              }}
-              disabled={loading}
-              title="Abrir novo CRUD de Serviços (catálogo do tenant)"
-            >
-              Serviços (Novo)
-            </button>
-            <button
-              className="rounded-lg border bg-orange-500 px-4 py-2 text-sm text-white border-orange-500 hover:bg-orange-600 disabled:opacity-60"
-              type="button"
-              onClick={() => {
-                const qs = new URLSearchParams();
-                if (effectivePlanilhaId) qs.set("planilhaId", String(effectivePlanilhaId));
-                qs.set("returnTo", selfHref);
-                router.push(`/dashboard/engenharia/obras/${idObra}/planilha/catalogos/composicoes-novo?${qs.toString()}`);
-              }}
-              disabled={loading}
-              title="Abrir novo CRUD de Composições (catálogo do tenant)"
-            >
-              Composições (Novo)
-            </button>
-            <button
-              className="rounded-lg border bg-orange-500 px-4 py-2 text-sm text-white border-orange-500 hover:bg-orange-600 disabled:opacity-60"
-              type="button"
-              onClick={() => {
-                const qs = new URLSearchParams();
-                if (effectivePlanilhaId) qs.set("planilhaId", String(effectivePlanilhaId));
-                qs.set("returnTo", selfHref);
-                router.push(`/dashboard/engenharia/obras/${idObra}/planilha/catalogos/insumos-novo?${qs.toString()}`);
-              }}
-              disabled={loading}
-              title="Abrir novo CRUD de Insumos e preços (planilha selecionada)"
-            >
-              Insumos (Novo)
-            </button>
-            <button
               className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
               type="button"
               onClick={() => {
@@ -2992,6 +2950,12 @@ export default function PlanilhaObraClient({
                   key={v.idPlanilha}
                   className={`border-t cursor-pointer ${planilhaId === v.idPlanilha ? "bg-blue-50" : "hover:bg-slate-50"}`}
                   onClick={() => setPlanilhaId(v.idPlanilha)}
+                  onDoubleClick={() => {
+                    const pid = Number(v.idPlanilha || 0);
+                    if (!Number.isFinite(pid) || pid <= 0) return;
+                    const url = `/dashboard/engenharia/obras/${idObra}/planilha?planilhaId=${encodeURIComponent(String(pid))}`;
+                    window.open(url, "_blank", "noopener,noreferrer");
+                  }}
                 >
                   <td className="px-3 py-2 font-semibold">v{v.numeroVersao}</td>
                   <td className="px-3 py-2">{v.nome}</td>
@@ -4105,7 +4069,8 @@ export default function PlanilhaObraClient({
                             const und = String(l.und || "").trim();
                             if (und) qs.set("und", und);
                             qs.set("returnTo", selfHref);
-                            router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}?${qs.toString()}`);
+                            const url = `/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(code)}?${qs.toString()}`;
+                            window.open(url, "_blank", "noopener,noreferrer");
                           }}
                         >
                           {visible.includes("item") ? (
