@@ -2816,6 +2816,48 @@ export default function PlanilhaObraClient({
               Serviços
             </button>
             <button
+              className="rounded-lg border bg-orange-500 px-4 py-2 text-sm text-white border-orange-500 hover:bg-orange-600 disabled:opacity-60"
+              type="button"
+              onClick={() => {
+                const qs = new URLSearchParams();
+                if (effectivePlanilhaId) qs.set("planilhaId", String(effectivePlanilhaId));
+                qs.set("returnTo", selfHref);
+                router.push(`/dashboard/engenharia/obras/${idObra}/planilha/catalogos/servicos-novo?${qs.toString()}`);
+              }}
+              disabled={loading}
+              title="Abrir novo CRUD de Serviços (catálogo do tenant)"
+            >
+              Serviços (Novo)
+            </button>
+            <button
+              className="rounded-lg border bg-orange-500 px-4 py-2 text-sm text-white border-orange-500 hover:bg-orange-600 disabled:opacity-60"
+              type="button"
+              onClick={() => {
+                const qs = new URLSearchParams();
+                if (effectivePlanilhaId) qs.set("planilhaId", String(effectivePlanilhaId));
+                qs.set("returnTo", selfHref);
+                router.push(`/dashboard/engenharia/obras/${idObra}/planilha/catalogos/composicoes-novo?${qs.toString()}`);
+              }}
+              disabled={loading}
+              title="Abrir novo CRUD de Composições (catálogo do tenant)"
+            >
+              Composições (Novo)
+            </button>
+            <button
+              className="rounded-lg border bg-orange-500 px-4 py-2 text-sm text-white border-orange-500 hover:bg-orange-600 disabled:opacity-60"
+              type="button"
+              onClick={() => {
+                const qs = new URLSearchParams();
+                if (effectivePlanilhaId) qs.set("planilhaId", String(effectivePlanilhaId));
+                qs.set("returnTo", selfHref);
+                router.push(`/dashboard/engenharia/obras/${idObra}/planilha/catalogos/insumos-novo?${qs.toString()}`);
+              }}
+              disabled={loading}
+              title="Abrir novo CRUD de Insumos e preços (planilha selecionada)"
+            >
+              Insumos (Novo)
+            </button>
+            <button
               className="rounded-lg border bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
               type="button"
               onClick={() => {

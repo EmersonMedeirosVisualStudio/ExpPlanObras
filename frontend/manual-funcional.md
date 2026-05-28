@@ -1868,6 +1868,10 @@ ETAPA 5 — Como validar
 - Clique em **Serviços cadastrados** e confirme se o serviço aparece pelo **código**.
 - Duplo clique no serviço na planilha abre direto a tela de **Composição** do serviço.
 - Em **Serviços cadastrados**, os filtros são: **Filtrar por código, fonte ou serviço**, **Status** e **Fonte** (digitável com sugestões).
+- Também existem telas novas (botões laranja no topo da Planilha):
+  - **Serviços (Novo)**: CRUD do catálogo + auditoria “Serviços x Composições”
+  - **Composições (Novo)**: editor de composição por código do serviço
+  - **Insumos (Novo)**: edição de preços de insumos da versão selecionada
 
 
 #### Como usar — Tela Importações (Planilha orçamentária)

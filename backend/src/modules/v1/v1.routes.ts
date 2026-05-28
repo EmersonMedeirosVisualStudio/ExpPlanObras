@@ -8746,7 +8746,7 @@ export default async function v1Routes(server: FastifyInstance) {
         COALESCE(servico,'') AS servico,
         COALESCE(und,'') AS und
       FROM tab_servicos
-      WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(COALESCE(codigo,'')) = $2
+      WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND UPPER(TRIM(COALESCE(codigo,''))) = $2
       ORDER BY id_servico ASC
       LIMIT 1
       `,
@@ -8802,7 +8802,7 @@ export default async function v1Routes(server: FastifyInstance) {
       SELECT 1 AS ok
       FROM tab_planilha_itens i
       LEFT JOIN tab_servicos s ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
-      WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND UPPER(COALESCE(s.codigo,'')) = $3
+      WHERE i.tenant_id = $1 AND i.id_planilha = $2 AND i.tipo_linha = 'SERVICO' AND UPPER(TRIM(COALESCE(s.codigo,''))) = $3
       LIMIT 1
       `,
       ctx.tenantId,
@@ -9082,13 +9082,13 @@ export default async function v1Routes(server: FastifyInstance) {
     const rows = (await prisma.$queryRawUnsafe(
       `
       SELECT
-        DISTINCT UPPER(COALESCE(s.codigo,'')) AS "codigoServico"
+        DISTINCT UPPER(TRIM(COALESCE(s.codigo,''))) AS "codigoServico"
       FROM tab_planilha_itens i
       INNER JOIN tab_servicos s
         ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
       INNER JOIN tab_composicoes ci
         ON ci.tenant_id = s.tenant_id AND ci.id_obra = 0 AND ci.id_planilha = 0
-        AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
+        AND UPPER(TRIM(COALESCE(ci.codigo_servico,''))) = UPPER(TRIM(COALESCE(s.codigo,'')))
       WHERE i.tenant_id = $1
         AND i.id_planilha = $2
         AND i.tipo_linha = 'SERVICO'
@@ -9118,12 +9118,12 @@ export default async function v1Routes(server: FastifyInstance) {
     const rows = (await prisma.$queryRawUnsafe(
       `
       WITH comps AS (
-        SELECT DISTINCT UPPER(COALESCE(codigo_servico,'')) AS codigo
+        SELECT DISTINCT UPPER(TRIM(COALESCE(codigo_servico,''))) AS codigo
         FROM tab_composicoes
         WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0
       ),
       servs AS (
-        SELECT DISTINCT UPPER(COALESCE(codigo,'')) AS codigo
+        SELECT DISTINCT UPPER(TRIM(COALESCE(codigo,''))) AS codigo
         FROM tab_servicos
         WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0
       )
@@ -9148,6 +9148,77 @@ export default async function v1Routes(server: FastifyInstance) {
     const codes = (rows || []).map((r: any) => String(r.codigo || '').trim()).filter(Boolean);
     const blankCount = blank?.[0]?.cnt == null ? 0 : Number(blank[0].cnt);
     return ok(reply, { planilhaId: idPlanilha, total: codes.length, codes, blankCount });
+  });
+
+  server.get('/engenharia/catalogo/servicos/auditoria-composicoes', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+
+    await ensurePlanilhaServicosTables(prisma);
+    await ensurePlanilhaComposicaoTables(prisma);
+
+    const q = z.object({ limit: z.coerce.number().int().positive().optional() }).parse(request.query || {});
+    const limit = q.limit != null ? Math.max(1, Math.min(5000, Number(q.limit))) : 2000;
+
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      WITH servs AS (
+        SELECT
+          UPPER(TRIM(COALESCE(codigo,''))) AS codigo,
+          COALESCE(fonte,'') AS fonte,
+          COALESCE(servico,'') AS servico,
+          COALESCE(und,'') AS und
+        FROM tab_servicos
+        WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND TRIM(COALESCE(codigo,'')) <> ''
+      ),
+      comps AS (
+        SELECT DISTINCT UPPER(TRIM(COALESCE(codigo_servico,''))) AS codigo
+        FROM tab_composicoes
+        WHERE tenant_id = $1 AND id_obra = 0 AND id_planilha = 0 AND TRIM(COALESCE(codigo_servico,'')) <> ''
+      ),
+      serv_sem_comp AS (
+        SELECT s.codigo, s.fonte, s.servico, s.und
+        FROM servs s
+        LEFT JOIN comps c ON c.codigo = s.codigo
+        WHERE c.codigo IS NULL
+        ORDER BY s.codigo
+        LIMIT $2
+      ),
+      comp_sem_serv AS (
+        SELECT c.codigo
+        FROM comps c
+        LEFT JOIN servs s ON s.codigo = c.codigo
+        WHERE s.codigo IS NULL
+        ORDER BY c.codigo
+        LIMIT $2
+      )
+      SELECT
+        (SELECT COUNT(1)::int FROM servs) AS "totalServicos",
+        (SELECT COUNT(1)::int FROM comps) AS "totalCodigosComposicao",
+        (SELECT COUNT(1)::int FROM servs s JOIN comps c ON c.codigo = s.codigo) AS "servicosComComposicao",
+        (SELECT COUNT(1)::int FROM servs s LEFT JOIN comps c ON c.codigo = s.codigo WHERE c.codigo IS NULL) AS "servicosSemComposicao",
+        (SELECT COUNT(1)::int FROM comps c LEFT JOIN servs s ON s.codigo = c.codigo WHERE s.codigo IS NULL) AS "composicoesSemServico",
+        (SELECT json_agg(json_build_object('codigo', codigo, 'fonte', fonte, 'servico', servico, 'und', und)) FROM serv_sem_comp) AS "amostraServicosSemComposicao",
+        (SELECT json_agg(codigo) FROM comp_sem_serv) AS "amostraComposicoesSemServico"
+      `,
+      ctx.tenantId,
+      limit
+    )) as any[];
+
+    const r = rows?.[0] || {};
+    const amostraServicosSemComposicao = Array.isArray(r?.amostraServicosSemComposicao) ? r.amostraServicosSemComposicao : [];
+    const amostraComposicoesSemServico = Array.isArray(r?.amostraComposicoesSemServico) ? r.amostraComposicoesSemServico : [];
+
+    return ok(reply, {
+      totalServicos: Number(r.totalServicos || 0),
+      totalCodigosComposicao: Number(r.totalCodigosComposicao || 0),
+      servicosComComposicao: Number(r.servicosComComposicao || 0),
+      servicosSemComposicao: Number(r.servicosSemComposicao || 0),
+      composicoesSemServico: Number(r.composicoesSemServico || 0),
+      amostraServicosSemComposicao,
+      amostraComposicoesSemServico,
+      limiteAmostra: limit,
+    });
   });
 
   server.get('/engenharia/obras/:id/planilha/composicoes/referencias', async (request, reply) => {
@@ -9254,7 +9325,7 @@ export default async function v1Routes(server: FastifyInstance) {
         ),
         svc_planilha AS (
           SELECT DISTINCT
-            UPPER(COALESCE(s.codigo,'')) AS codigo_servico
+            UPPER(TRIM(COALESCE(s.codigo,''))) AS codigo_servico
           FROM tab_planilha_itens i
           JOIN tab_servicos s
             ON s.tenant_id = i.tenant_id AND s.id_servico = i.id_servico
@@ -9267,7 +9338,7 @@ export default async function v1Routes(server: FastifyInstance) {
             COALESCE(s.servico,'') AS servico
           FROM svc_planilha sp
           JOIN tab_servicos s
-            ON s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0 AND UPPER(COALESCE(s.codigo,'')) = sp.codigo_servico
+            ON s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0 AND UPPER(TRIM(COALESCE(s.codigo,''))) = sp.codigo_servico
           WHERE
             ($4 = '' OR sp.codigo_servico LIKE UPPER($4) OR UPPER(COALESCE(s.fonte,'')) LIKE UPPER($4) OR UPPER(COALESCE(s.servico,'')) LIKE UPPER($4))
             AND (
@@ -9280,12 +9351,12 @@ export default async function v1Routes(server: FastifyInstance) {
               ($6 = 'COM' AND EXISTS (
                 SELECT 1 FROM tab_composicoes ci
                 WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
-                  AND UPPER(COALESCE(ci.codigo_servico,'')) = sp.codigo_servico
+                  AND UPPER(TRIM(COALESCE(ci.codigo_servico,''))) = sp.codigo_servico
               )) OR
               ($6 = 'SEM' AND NOT EXISTS (
                 SELECT 1 FROM tab_composicoes ci
                 WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
-                  AND UPPER(COALESCE(ci.codigo_servico,'')) = sp.codigo_servico
+                  AND UPPER(TRIM(COALESCE(ci.codigo_servico,''))) = sp.codigo_servico
               ))
             )
           ORDER BY sp.codigo_servico
@@ -9359,7 +9430,7 @@ export default async function v1Routes(server: FastifyInstance) {
         ),
         comps AS (
           SELECT
-            UPPER(COALESCE(ci.codigo_servico,'')) AS codigo_servico,
+            UPPER(TRIM(COALESCE(ci.codigo_servico,''))) AS codigo_servico,
             COUNT(ci.id_item) AS qtd_itens,
             SUM(
               COALESCE(ci.quantidade, 0)
@@ -9378,9 +9449,9 @@ export default async function v1Routes(server: FastifyInstance) {
             AND p.id_planilha = $3
             AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(ci.codigo_item,''))
           JOIN svc_page sp
-            ON sp.codigo_servico = UPPER(COALESCE(ci.codigo_servico,''))
+            ON sp.codigo_servico = UPPER(TRIM(COALESCE(ci.codigo_servico,'')))
           WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
-          GROUP BY UPPER(COALESCE(ci.codigo_servico,''))
+          GROUP BY UPPER(TRIM(COALESCE(ci.codigo_servico,'')))
         )
         SELECT
           b.codigo_servico AS "codigoServico",
@@ -9450,7 +9521,7 @@ export default async function v1Routes(server: FastifyInstance) {
         WHERE s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0
           AND (
             $4 = '' OR
-            UPPER(COALESCE(s.codigo,'')) LIKE UPPER($4) OR
+            UPPER(TRIM(COALESCE(s.codigo,''))) LIKE UPPER($4) OR
             UPPER(COALESCE(s.fonte,'')) LIKE UPPER($4) OR
             UPPER(COALESCE(s.servico,'')) LIKE UPPER($4)
           )
@@ -9464,12 +9535,12 @@ export default async function v1Routes(server: FastifyInstance) {
             ($6 = 'COM' AND EXISTS (
               SELECT 1 FROM tab_composicoes ci
               WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
-                AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
+                AND UPPER(TRIM(COALESCE(ci.codigo_servico,''))) = UPPER(TRIM(COALESCE(s.codigo,'')))
             )) OR
             ($6 = 'SEM' AND NOT EXISTS (
               SELECT 1 FROM tab_composicoes ci
               WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
-                AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
+                AND UPPER(TRIM(COALESCE(ci.codigo_servico,''))) = UPPER(TRIM(COALESCE(s.codigo,'')))
             ))
           )
         `,
@@ -9486,7 +9557,7 @@ export default async function v1Routes(server: FastifyInstance) {
         `
         WITH svc_page AS (
           SELECT
-            UPPER(COALESCE(s.codigo,'')) AS codigo_servico,
+            UPPER(TRIM(COALESCE(s.codigo,''))) AS codigo_servico,
             COALESCE(s.fonte,'') AS fonte,
             COALESCE(s.servico,'') AS servico,
             COALESCE(s.und,'') AS und
@@ -9494,7 +9565,7 @@ export default async function v1Routes(server: FastifyInstance) {
           WHERE s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0
             AND (
               $6 = '' OR
-              UPPER(COALESCE(s.codigo,'')) LIKE UPPER($6) OR
+              UPPER(TRIM(COALESCE(s.codigo,''))) LIKE UPPER($6) OR
               UPPER(COALESCE(s.fonte,'')) LIKE UPPER($6) OR
               UPPER(COALESCE(s.servico,'')) LIKE UPPER($6)
             )
@@ -9508,12 +9579,12 @@ export default async function v1Routes(server: FastifyInstance) {
               ($8 = 'COM' AND EXISTS (
                 SELECT 1 FROM tab_composicoes ci
                 WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
-                  AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
+                  AND UPPER(TRIM(COALESCE(ci.codigo_servico,''))) = UPPER(TRIM(COALESCE(s.codigo,'')))
               )) OR
               ($8 = 'SEM' AND NOT EXISTS (
                 SELECT 1 FROM tab_composicoes ci
                 WHERE ci.tenant_id = $1 AND ci.id_obra = 0 AND ci.id_planilha = 0
-                  AND UPPER(COALESCE(ci.codigo_servico,'')) = UPPER(COALESCE(s.codigo,''))
+                  AND UPPER(TRIM(COALESCE(ci.codigo_servico,''))) = UPPER(TRIM(COALESCE(s.codigo,'')))
               ))
             )
           ORDER BY UPPER(COALESCE(s.codigo,''))
@@ -11035,8 +11106,8 @@ export default async function v1Routes(server: FastifyInstance) {
         ON p.tenant_id = $1
         AND p.id_obra = $2
         AND p.id_planilha = $3
-        AND UPPER(COALESCE(p.codigo_item,'')) = UPPER(COALESCE(i.codigo_item,''))
-      WHERE i.tenant_id = $1 AND i.id_obra = 0 AND i.id_planilha = 0 AND UPPER(COALESCE(i.codigo_servico,'')) = $4
+        AND UPPER(TRIM(COALESCE(p.codigo_item,''))) = UPPER(TRIM(COALESCE(i.codigo_item,'')))
+      WHERE i.tenant_id = $1 AND i.id_obra = 0 AND i.id_planilha = 0 AND UPPER(TRIM(COALESCE(i.codigo_servico,''))) = $4
       ORDER BY COALESCE(i.etapa,'') ASC, i.id_item ASC
       `,
       ctx.tenantId,

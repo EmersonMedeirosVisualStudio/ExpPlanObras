@@ -87,6 +87,10 @@ Use esta tela para cadastrar/atualizar o orçamento da obra por versões (itens,
 ### ETAPA 2 — O que clicar
 - Clique em **Importar CSV**
 - O sistema abre uma **prévia** com uma grade de conferência
+- Para gerenciar cadastros, use os botões **laranja** no topo da planilha:
+  - **Serviços (Novo)**: CRUD do catálogo de serviços
+  - **Composições (Novo)**: CRUD/edição das composições por código de serviço
+  - **Insumos (Novo)**: CRUD dos preços de insumos da versão selecionada
 
 ### ETAPA 3 — O que preencher
 - O CSV deve ter estas colunas (nesta ordem ou com estes nomes):
