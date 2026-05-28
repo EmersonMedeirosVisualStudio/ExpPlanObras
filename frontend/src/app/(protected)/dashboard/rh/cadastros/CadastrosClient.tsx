@@ -3,7 +3,7 @@
 import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Building2, CheckCircle, Download, FileText, IdCard, MoreVertical, Plus, ShieldCheck, TriangleAlert, User, Users, XCircle } from 'lucide-react';
+import { ArrowLeft, Building2, CheckCircle, Download, FileText, IdCard, MapPin, MoreVertical, Plus, ShieldCheck, TriangleAlert, User, Users, XCircle } from 'lucide-react';
 import { FuncionariosApi } from '@/lib/modules/funcionarios/api';
 import { TerceirizadosApi } from '@/lib/modules/terceirizados/api';
 import { OrganogramaApi } from '@/lib/modules/organograma/api';
@@ -45,6 +45,20 @@ type PessoaRow = {
 
 type SelectItem = { id: number; nome: string };
 type ContratoSelectItem = { id: number; numeroContrato: string | null };
+type UnidadeSelectItem = { id: number; nome: string; tipoUnidade: string | null; ativo: boolean };
+
+const TIPOS_UNIDADE = [
+  { value: 'ESCRITORIO', label: 'Escritório' },
+  { value: 'FILIAL', label: 'Filial' },
+  { value: 'LOJA', label: 'Loja' },
+  { value: 'ALMOXARIFADO', label: 'Almoxarifado' },
+  { value: 'GARAGEM', label: 'Garagem' },
+  { value: 'CENTRO_ADMINISTRATIVO', label: 'Centro administrativo' },
+  { value: 'UNIDADE_OPERACIONAL', label: 'Unidade operacional' },
+  { value: 'DEPOSITO', label: 'Depósito' },
+  { value: 'OFICINA', label: 'Oficina' },
+  { value: 'OUTRO_LOCAL_OPERACIONAL', label: 'Outro local operacional' },
+] as const;
 
 type ChecklistAlertaNivel = 'OK' | 'PENDENTE' | 'PENDENTE_OBRIG' | 'A_VENCER' | 'VENCIDO' | 'SEM_VINCULO';
 type ChecklistAlertaDTO = {
@@ -266,6 +280,18 @@ export default function CadastrosClient() {
 
   const [modalFuncionario, setModalFuncionario] = useState(false);
   const [modalTerceirizado, setModalTerceirizado] = useState(false);
+  const [modalLotacao, setModalLotacao] = useState(false);
+  const [lotacaoPessoa, setLotacaoPessoa] = useState<PessoaRow | null>(null);
+  const [lotacaoTipo, setLotacaoTipo] = useState<'OBRA' | 'UNIDADE'>('OBRA');
+  const [lotacaoIdObra, setLotacaoIdObra] = useState<number>(0);
+  const [lotacaoTipoUnidade, setLotacaoTipoUnidade] = useState<string>('UNIDADE_OPERACIONAL');
+  const [lotacaoIdUnidade, setLotacaoIdUnidade] = useState<number>(0);
+  const [lotacaoDataInicio, setLotacaoDataInicio] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [lotacaoObs, setLotacaoObs] = useState<string>('');
+  const [lotacaoErr, setLotacaoErr] = useState<string | null>(null);
+  const [lotacaoSaving, setLotacaoSaving] = useState(false);
+  const [unidades, setUnidades] = useState<UnidadeSelectItem[]>([]);
+  const [unidadesLoading, setUnidadesLoading] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [modalFuncionarioMsg, setModalFuncionarioMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [modalTerceirizadoMsg, setModalTerceirizadoMsg] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
@@ -352,6 +378,40 @@ export default function CadastrosClient() {
     if (cargosDb.length) return;
     carregarCargosDb();
   }, [modalFuncionario, cargosDb.length]);
+
+  useEffect(() => {
+    if (!modalLotacao) return;
+    let active = true;
+    (async () => {
+      try {
+        setUnidadesLoading(true);
+        const res = await api.get('/api/v1/rh/unidades', { params: { ativo: '1' } });
+        const list = Array.isArray(res.data) ? res.data : [];
+        const mapped: UnidadeSelectItem[] = list
+          .map((r: any) => ({
+            id: Number(r.id),
+            nome: String(r.nome || ''),
+            tipoUnidade: r.tipoUnidade ? String(r.tipoUnidade) : null,
+            ativo: Boolean(r.ativo),
+          }))
+          .filter((r: UnidadeSelectItem) => Number.isFinite(r.id) && r.id > 0 && r.ativo);
+        if (!active) return;
+        setUnidades(mapped);
+        const idU = lotacaoPessoa?.idUnidade != null ? Number(lotacaoPessoa.idUnidade) : 0;
+        if (idU) {
+          const found = mapped.find((u) => u.id === idU) || null;
+          if (found?.tipoUnidade) setLotacaoTipoUnidade(String(found.tipoUnidade));
+        }
+      } catch {
+        if (active) setUnidades([]);
+      } finally {
+        if (active) setUnidadesLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [modalLotacao]);
 
   useEffect(() => {
     const enabled = modalTerceirizado;
@@ -669,6 +729,69 @@ export default function CadastrosClient() {
     const returnTo = encodeURIComponent(currentPath());
     const tipo = row.tipo === 'FUNCIONARIO' ? 'funcionario' : 'terceirizado';
     router.push(`/dashboard/rh/pessoas/${tipo}/${row.id}?returnTo=${returnTo}`);
+  }
+
+  function abrirLotacao(row: PessoaRow) {
+    setLotacaoErr(null);
+    setLotacaoPessoa(row);
+    const isUnidade = row.tipoLocal === 'UNIDADE' && row.idUnidade != null;
+    setLotacaoTipo(isUnidade ? 'UNIDADE' : 'OBRA');
+    setLotacaoIdObra(row.idObra != null ? Number(row.idObra) : 0);
+    setLotacaoIdUnidade(row.idUnidade != null ? Number(row.idUnidade) : 0);
+    setLotacaoTipoUnidade('UNIDADE_OPERACIONAL');
+    setLotacaoObs('');
+    setLotacaoDataInicio(new Date().toISOString().slice(0, 10));
+    setModalLotacao(true);
+  }
+
+  async function salvarLotacao() {
+    const row = lotacaoPessoa;
+    if (!row) return;
+    const dataInicio = String(lotacaoDataInicio || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicio)) {
+      setLotacaoErr('Data de início inválida.');
+      return;
+    }
+    if (lotacaoTipo === 'OBRA') {
+      if (!lotacaoIdObra || !Number.isFinite(lotacaoIdObra)) {
+        setLotacaoErr('Selecione a obra.');
+        return;
+      }
+    } else {
+      if (!lotacaoIdUnidade || !Number.isFinite(lotacaoIdUnidade)) {
+        setLotacaoErr('Selecione a unidade.');
+        return;
+      }
+    }
+
+    try {
+      setLotacaoSaving(true);
+      setLotacaoErr(null);
+      if (row.tipo === 'FUNCIONARIO') {
+        await api.post(`/api/v1/rh/funcionarios/${row.id}/lotacoes`, {
+          tipoLotacao: lotacaoTipo,
+          idObra: lotacaoTipo === 'OBRA' ? lotacaoIdObra : null,
+          idUnidade: lotacaoTipo === 'UNIDADE' ? lotacaoIdUnidade : null,
+          dataInicio,
+          observacao: lotacaoObs ? String(lotacaoObs).trim() : null,
+        });
+      } else {
+        await api.post(`/api/v1/rh/terceirizados/${row.id}/alocacoes`, {
+          tipoLocal: lotacaoTipo,
+          idObra: lotacaoTipo === 'OBRA' ? lotacaoIdObra : null,
+          idUnidade: lotacaoTipo === 'UNIDADE' ? lotacaoIdUnidade : null,
+          dataInicio,
+          observacao: lotacaoObs ? String(lotacaoObs).trim() : null,
+        });
+      }
+      setModalLotacao(false);
+      setLotacaoPessoa(null);
+      await carregar();
+    } catch (e: any) {
+      setLotacaoErr(e?.response?.data?.message || e?.message || 'Erro ao salvar lotação.');
+    } finally {
+      setLotacaoSaving(false);
+    }
   }
 
   return (
@@ -1018,6 +1141,14 @@ export default function CadastrosClient() {
                         </button>
                         <button
                           type="button"
+                          title="Definir lotação (Obra ou Unidade)"
+                          className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 inline-flex items-center justify-center"
+                          onClick={() => abrirLotacao(r)}
+                        >
+                          <MapPin size={16} />
+                        </button>
+                        <button
+                          type="button"
                           title="Checklist de documentos"
                           className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 inline-flex items-center justify-center"
                           onClick={() => abrirChecklist(r)}
@@ -1134,6 +1265,103 @@ export default function CadastrosClient() {
           </div>
         </div>
       </div>
+
+      <Modal
+        open={modalLotacao}
+        title="Definir lotação"
+        onClose={() => {
+          if (lotacaoSaving) return;
+          setModalLotacao(false);
+          setLotacaoPessoa(null);
+        }}
+      >
+        <div className="space-y-4">
+          {lotacaoErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{lotacaoErr}</div> : null}
+          <div className="text-sm text-slate-700">
+            {lotacaoPessoa ? `${lotacaoPessoa.tipo === 'FUNCIONARIO' ? 'Funcionário' : 'Terceirizado'}: ${lotacaoPessoa.nome} (${lotacaoPessoa.tipo === 'FUNCIONARIO' ? `#${lotacaoPessoa.id}` : `#T${lotacaoPessoa.id}`})` : ''}
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+            <div className="md:col-span-4">
+              <div className="text-xs text-slate-600 mb-1">Lotação em</div>
+              <select className="input" value={lotacaoTipo} onChange={(e) => setLotacaoTipo(e.target.value as any)}>
+                <option value="OBRA">Obra</option>
+                <option value="UNIDADE">Unidade</option>
+              </select>
+            </div>
+            <div className="md:col-span-4">
+              <div className="text-xs text-slate-600 mb-1">Data de início</div>
+              <input className="input" type="date" value={lotacaoDataInicio} onChange={(e) => setLotacaoDataInicio(e.target.value)} />
+            </div>
+            <div className="md:col-span-4">
+              <div className="text-xs text-slate-600 mb-1">Observação</div>
+              <input className="input" value={lotacaoObs} onChange={(e) => setLotacaoObs(e.target.value)} placeholder="Opcional" />
+            </div>
+          </div>
+
+          {lotacaoTipo === 'OBRA' ? (
+            <div>
+              <div className="text-xs text-slate-600 mb-1">Obra</div>
+              <select className="input" value={String(lotacaoIdObra || '')} onChange={(e) => setLotacaoIdObra(Number(e.target.value) || 0)}>
+                <option value="">Selecione</option>
+                {obras.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+              <div className="md:col-span-5">
+                <div className="text-xs text-slate-600 mb-1">Tipo de unidade</div>
+                <select className="input" value={lotacaoTipoUnidade} onChange={(e) => setLotacaoTipoUnidade(e.target.value)}>
+                  {TIPOS_UNIDADE.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="md:col-span-7">
+                <div className="text-xs text-slate-600 mb-1">Unidade</div>
+                <select
+                  className="input"
+                  value={String(lotacaoIdUnidade || '')}
+                  onChange={(e) => setLotacaoIdUnidade(Number(e.target.value) || 0)}
+                  disabled={unidadesLoading}
+                >
+                  <option value="">{unidadesLoading ? 'Carregando...' : 'Selecione'}</option>
+                  {unidades
+                    .filter((u) => (u.tipoUnidade ? String(u.tipoUnidade) : 'OUTRO_LOCAL_OPERACIONAL') === lotacaoTipoUnidade)
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.nome}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:text-slate-400"
+              disabled={lotacaoSaving}
+              onClick={() => {
+                setModalLotacao(false);
+                setLotacaoPessoa(null);
+              }}
+            >
+              Cancelar
+            </button>
+            <button type="button" className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60" disabled={lotacaoSaving} onClick={salvarLotacao}>
+              {lotacaoSaving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={modalFuncionario}

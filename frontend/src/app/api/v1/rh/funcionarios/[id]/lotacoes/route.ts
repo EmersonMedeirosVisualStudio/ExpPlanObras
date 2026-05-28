@@ -32,6 +32,27 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     ]);
     if (!funcionario) throw new ApiError(404, 'Funcionário não encontrado.');
 
+    if (tipoLotacao === 'OBRA') {
+      const [[obra]]: any = await conn.query(
+        `
+        SELECT o.id_obra
+        FROM obras o
+        INNER JOIN contratos c ON c.id_contrato = o.id_contrato
+        WHERE c.tenant_id = ? AND o.id_obra = ?
+        LIMIT 1
+        `,
+        [user.tenantId, idObra]
+      );
+      if (!obra) throw new ApiError(422, 'Obra inválida.');
+    }
+    if (tipoLotacao === 'UNIDADE') {
+      const [[uni]]: any = await conn.query(`SELECT id_unidade FROM unidades WHERE tenant_id = ? AND id_unidade = ? AND ativo = 1 LIMIT 1`, [
+        user.tenantId,
+        idUnidade,
+      ]);
+      if (!uni) throw new ApiError(422, 'Unidade inválida.');
+    }
+
     await conn.beginTransaction();
     await conn.execute(`UPDATE funcionarios_lotacoes SET atual = 0, data_fim = CURDATE() WHERE id_funcionario = ? AND atual = 1`, [idFuncionario]);
 

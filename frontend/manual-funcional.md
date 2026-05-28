@@ -276,21 +276,28 @@ Representa a organização que utiliza o sistema. Toda informação pertence à 
 
 ### 5.2 Unidades
 
-As unidades são as bases organizacionais e físicas da empresa. Para melhorar a nomenclatura, recomenda-se que as unidades sejam classificadas em tipos claros:
+As unidades representam locais operacionais e administrativos da empresa (diferentes de obra). Elas servem para:
 
-- **Sede Corporativa**  
-  Unidade principal da empresa, de caráter institucional e administrativo.
+- lotação/alocação de pessoas quando não estão em obra;
+- filtros e indicadores (RH/SST) por local;
+- rastreabilidade de presença e produção por unidade.
 
-- **Escritório Administrativo**  
-  Unidade administrativa regional ou local.
+Tipos de unidade (cadastro):
 
-- **Centro de Armazenagem / Almoxarifado**  
-  Unidade destinada a estocagem, guarda, movimentação e distribuição de materiais.
+- Escritório
+- Filial
+- Loja
+- Almoxarifado
+- Garagem
+- Centro administrativo
+- Unidade operacional
+- Depósito
+- Oficina
+- Outro local operacional
 
-- **Base Operacional**  
-  Unidade de apoio operacional da empresa, quando existir.
+Implementação (no sistema):
 
-As **obras** ficam vinculadas a uma unidade responsável ou de apoio, mas continuam sendo entidades próprias, com vida operacional independente.
+- CRUD em **RH → Unidades** (cadastro do nome e tipo, com status ativo/inativo).
 
 ### 5.3 Contratos
 
@@ -825,11 +832,13 @@ Tela principal: **RH → Pessoas**
 #### Implementação (no sistema)
 
 - Lista única de pessoas (funcionários e terceirizados) com coluna de ações para abrir a **Ficha**.
+- A coluna **Ações** inclui botão para **Definir lotação** (obra/unidade) direto da lista.
 - Acesso rápido por botões:
   - Tipo: **Funcionários** / **Terceirizados** / **Todos**
   - Status: **Ativo** / **Inativo** / **Todos**
 - Filtros adicionais: Obra (quando aplicável) e busca por nome/matrícula/CPF.
 - Ações no topo (alinhadas ao título da tela): **Novo funcionário**, **Novo terceirizado**, **Presença da obra**, **Dashboard RH**.
+  - Cadastro de unidades fica em **RH → Unidades**.
 
 #### Fichas (detalhamento)
 

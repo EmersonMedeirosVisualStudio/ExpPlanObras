@@ -1296,9 +1296,9 @@ export default function EngenhariaObraHomePage() {
               {`Obra #${idObra}${String(obra?.name || obraNomeParam || "").trim() ? ` - ${String(obra?.name || obraNomeParam).trim()}` : ""}`}
             </button>
             <span aria-hidden="true">→</span>
-            <button className="hover:underline" type="button" onClick={() => router.push(`/dashboard/engenharia/obras/${idObra}/planilha`)} title="Ir para Planilha orçamentária">
-              Planilha
-            </button>
+            <span className="text-blue-600 font-medium" title="Menu da obra (janelas operacionais)">
+              Menu
+            </span>
           </div>
           <h1 className="text-2xl font-semibold">Obra selecionada</h1>
           <div className="text-sm text-slate-600">
@@ -1421,7 +1421,7 @@ export default function EngenhariaObraHomePage() {
                 type="button"
                 onClick={() => router.push(`/dashboard/engenharia/obras/cadastro?obraId=${idObra}`)}
               >
-                Obra selecionada
+                Editar obra
                 <ExternalLink className="h-3.5 w-3.5" />
               </button>
             </div>

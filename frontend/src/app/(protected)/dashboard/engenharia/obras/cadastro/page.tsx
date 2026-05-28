@@ -236,14 +236,6 @@ export default function EngenhariaCadastroObraPage() {
     return qs ? `?${qs}` : "";
   }, [sp]);
   const selfHref = `/dashboard/engenharia/obras/cadastro${selfQuery}`;
-  const breadcrumb = useMemo(() => {
-    const rt = String(effectiveReturnTo || "").toLowerCase();
-    if (!rt) return "Engenharia → Obras → Obra selecionada";
-    if (rt.includes("/dashboard/engenharia/obras/ativa")) return "Engenharia → Obras → Obra ativa → Obra selecionada";
-    if (rt.includes("/dashboard/engenharia/obras")) return "Engenharia → Obras → Obra selecionada";
-    if (rt.includes("/dashboard/contratos")) return "Contratos → Obra selecionada";
-    return "Engenharia → Obra selecionada";
-  }, [effectiveReturnTo]);
 
   useEffect(() => {
     try {
@@ -875,6 +867,17 @@ export default function EngenhariaCadastroObraPage() {
 
   const contratoSelecionado = useMemo(() => contratos.find((c) => c.id === contratoId) || null, [contratos, contratoId]);
   const obraSelecionada = useMemo(() => obrasContrato.find((o) => o.id === obraId) || null, [obrasContrato, obraId]);
+  const breadcrumbButtons = useMemo(() => {
+    const id = obraId && Number.isFinite(obraId) ? Number(obraId) : 0;
+    const nome = obraSelecionada?.name ? String(obraSelecionada.name || "").trim() : "";
+    const labelObra = id ? `Obra #${id}${nome ? ` - ${nome}` : ""}` : "Obra";
+    return [
+      { label: "Engenharia", href: "/dashboard/engenharia", active: false },
+      { label: "Obras", href: "/dashboard/engenharia/obras", active: false },
+      { label: labelObra, href: id ? `/dashboard/engenharia/obras/${id}` : "/dashboard/engenharia/obras", active: true },
+      { label: "Editar obra", href: selfHref, active: true },
+    ] as { label: string; href: string; active: boolean }[];
+  }, [obraId, obraSelecionada?.name, selfHref]);
   const diasRestantesContrato = useMemo(() => daysDiffFromToday(contratoSelecionado?.vigenciaAtual), [contratoSelecionado?.vigenciaAtual]);
   const totalObrasContrato = useMemo(() => {
     let sum = 0;
@@ -950,7 +953,21 @@ export default function EngenhariaCadastroObraPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Obra selecionada</h1>
-          <div className="text-xs text-slate-500">{breadcrumb}</div>
+          <div className="text-xs text-slate-500 flex flex-wrap items-center gap-1">
+            {breadcrumbButtons.map((b, idx) => (
+              <div key={`${b.href}-${idx}`} className="flex items-center gap-1">
+                {idx > 0 ? <span aria-hidden="true">→</span> : null}
+                <button
+                  type="button"
+                  className={b.active ? "hover:underline text-blue-600" : "hover:underline"}
+                  onClick={() => router.push(b.href)}
+                  title={`Ir para ${b.label}`}
+                >
+                  {b.label}
+                </button>
+              </div>
+            ))}
+          </div>
           <div className="text-sm text-slate-600">Cadastre/edite a obra selecionada.</div>
         </div>
         <div className="flex items-center gap-2">

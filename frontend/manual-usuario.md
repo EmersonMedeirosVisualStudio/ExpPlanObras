@@ -17,10 +17,10 @@ O sistema funciona por contexto. Isso significa:
 ## 2. Como selecionar ou trocar a obra
 
 ### ETAPA 1 — Onde acessar
-- No menu lateral, acesse **Engenharia → Obras → Selecionar Obra**
+- No menu lateral, acesse **Engenharia → Obras**
 
 ### ETAPA 2 — O que clicar
-- Clique na obra desejada para definir como **Obra Ativa**
+- Clique em **Editar obra** na obra desejada (ou use o comportamento padrão de “abrir/selecionar” a obra)
 
 ### ETAPA 3 — O que esperar
 - O sistema passa a operar no modo daquela obra
@@ -57,7 +57,7 @@ Para cadastrar uma obra, primeiro você precisa ter um **contrato** cadastrado.
 - O sistema cria a **planilha mínima** com o serviço `SER-0001` para liberar Programação e Apropriação
 
 ### ETAPA 5 — Como validar
-- Vá em **Engenharia → Obras → Selecionar Obra** e confirme que a obra nova aparece
+- Vá em **Engenharia → Obras** e confirme que a obra nova aparece
 
 ---
 
@@ -213,7 +213,7 @@ Use esta tela quando você precisa trazer a composição de um serviço do SINAP
 - O topo da tela mostra:
   - **Planilha: #id - nome**
   - **Parâmetros: #id - nome**
-- A trilha (subtítulo) mostra o caminho completo até a tela e é clicável (Engenharia → Obras → Obra → Planilha). A **Obra selecionada** e a **planilha selecionada** ficam destacadas em **azul**.
+- A trilha (subtítulo) mostra o caminho completo até a tela e é clicável (ex.: Engenharia → Obras → Obra → Menu/Planilha/Contrato). A **Obra selecionada** (e a **planilha selecionada**, quando existir) ficam destacadas em **azul**.
 - Clique em **Configurar tela** para abrir o card **Configuração de tela** (fica oculto por padrão) e ajustar colunas (exibir/ocultar) e larguras (isso fica gravado).
 - Se os dados da lista “Serviços SINAPI importados” estiverem filtrados, aparece um aviso **Dados filtrados** com os filtros ativos.
 - Quando a planilha tiver **data-base SINAPI** definida, a lista “Serviços SINAPI importados” considera automaticamente essa data-base como filtro (mesmo que você não preencha o campo “Data-base”).
