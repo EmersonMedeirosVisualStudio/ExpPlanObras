@@ -16,7 +16,10 @@
     "seed-demo-tenants": "tsx scripts/seed-demo-tenants.ts",
     "build": "npm run prisma:generate && tsc",
     "start": "npm run prisma:migrate:deploy && node dist/server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
