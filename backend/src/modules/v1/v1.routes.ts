@@ -567,76 +567,95 @@ async function recomputeFinanceiroObraEContratoFromPlanilha(tx: any, input: { te
   return { valorAtual, contratoId, contratoValorTotalAtual };
 }
 
+let ensuredPlanilhaOrcamentariaTables = false;
+let ensuringPlanilhaOrcamentariaTables: Promise<void> | null = null;
+
 async function ensurePlanilhaOrcamentariaTables(tx: any) {
-  await safeExecuteRawUnsafe(tx, `ALTER TABLE IF EXISTS obras_planilhas_versoes RENAME TO tab_planilhas`);
-  await tx.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS tab_planilhas (
-      id_planilha BIGSERIAL PRIMARY KEY,
-      tenant_id BIGINT NOT NULL,
-      id_obra BIGINT NOT NULL,
-      numero_versao INT NOT NULL,
-      nome VARCHAR(120) NOT NULL DEFAULT 'Planilha orçamentária',
-      atual BOOLEAN NOT NULL DEFAULT TRUE,
-      travado BOOLEAN NOT NULL DEFAULT FALSE,
-      travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE,
-      origem_travamento VARCHAR(200) NULL,
-      origem VARCHAR(16) NOT NULL DEFAULT 'MANUAL',
-      id_parametros BIGINT NULL,
-      data_base_sbc VARCHAR(16) NULL,
-      data_base_sinapi VARCHAR(16) NULL,
-      uf_sinapi VARCHAR(2) NULL,
-      bdi_servicos_sbc NUMERIC(10,4) NULL,
-      bdi_servicos_sinapi NUMERIC(10,4) NULL,
-      bdi_diferenciado_sbc NUMERIC(10,4) NULL,
-      bdi_diferenciado_sinapi NUMERIC(10,4) NULL,
-      enc_sociais_sem_des_sbc NUMERIC(10,4) NULL,
-      enc_sociais_sem_des_sinapi NUMERIC(10,4) NULL,
-      desconto_sbc NUMERIC(10,4) NULL,
-      desconto_sinapi NUMERIC(10,4) NULL,
-      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      id_usuario_criador BIGINT NOT NULL
-    )
-  `);
-  await safeExecuteRawUnsafe(tx, `CREATE UNIQUE INDEX IF NOT EXISTS tab_planilhas_uk_versao ON tab_planilhas (tenant_id, id_obra, numero_versao)`);
-  await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_planilhas_idx_atual ON tab_planilhas (tenant_id, id_obra, atual)`);
-  await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_planilhas_idx_obra ON tab_planilhas (tenant_id, id_obra)`);
-  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS travado BOOLEAN NOT NULL DEFAULT FALSE`);
-  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE`);
-  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS origem_travamento VARCHAR(200) NULL`);
-  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS uf_sinapi VARCHAR(2) NULL`);
-  await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS id_parametros BIGINT NULL`);
-  await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_planilhas_idx_parametros ON tab_planilhas (tenant_id, id_parametros)`);
-  await safeExecuteRawUnsafe(tx, `CREATE OR REPLACE VIEW obras_planilhas_versoes AS SELECT * FROM tab_planilhas`);
+  if (ensuredPlanilhaOrcamentariaTables) return;
+  if (ensuringPlanilhaOrcamentariaTables) return ensuringPlanilhaOrcamentariaTables;
 
-  await tx.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS obras_planilhas_linhas (
-      id_linha BIGSERIAL PRIMARY KEY,
-      tenant_id BIGINT NOT NULL,
-      id_planilha BIGINT NOT NULL,
-      ordem INT NOT NULL DEFAULT 0,
-      item VARCHAR(80) NULL,
-      codigo VARCHAR(80) NULL,
-      fonte VARCHAR(80) NULL,
-      servico VARCHAR(800) NULL,
-      und VARCHAR(40) NULL,
-      quantidade NUMERIC(14,4) NULL,
-      valor_unitario NUMERIC(14,6) NULL,
-      valor_parcial NUMERIC(14,6) NULL,
-      nivel INT NOT NULL DEFAULT 0,
-      tipo_linha VARCHAR(16) NOT NULL,
-      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_linhas_idx_planilha ON obras_planilhas_linhas (tenant_id, id_planilha, ordem, id_linha)`);
-  await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_linhas_idx_tipo ON obras_planilhas_linhas (tenant_id, id_planilha, tipo_linha)`);
+  ensuringPlanilhaOrcamentariaTables = (async () => {
+    await safeExecuteRawUnsafe(tx, `ALTER TABLE IF EXISTS obras_planilhas_versoes RENAME TO tab_planilhas`);
+    await tx.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS tab_planilhas (
+        id_planilha BIGSERIAL PRIMARY KEY,
+        tenant_id BIGINT NOT NULL,
+        id_obra BIGINT NOT NULL,
+        numero_versao INT NOT NULL,
+        nome VARCHAR(120) NOT NULL DEFAULT 'Planilha orçamentária',
+        atual BOOLEAN NOT NULL DEFAULT TRUE,
+        travado BOOLEAN NOT NULL DEFAULT FALSE,
+        travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE,
+        origem_travamento VARCHAR(200) NULL,
+        origem VARCHAR(16) NOT NULL DEFAULT 'MANUAL',
+        id_parametros BIGINT NULL,
+        data_base_sbc VARCHAR(16) NULL,
+        data_base_sinapi VARCHAR(16) NULL,
+        uf_sinapi VARCHAR(2) NULL,
+        bdi_servicos_sbc NUMERIC(10,4) NULL,
+        bdi_servicos_sinapi NUMERIC(10,4) NULL,
+        bdi_diferenciado_sbc NUMERIC(10,4) NULL,
+        bdi_diferenciado_sinapi NUMERIC(10,4) NULL,
+        enc_sociais_sem_des_sbc NUMERIC(10,4) NULL,
+        enc_sociais_sem_des_sinapi NUMERIC(10,4) NULL,
+        desconto_sbc NUMERIC(10,4) NULL,
+        desconto_sinapi NUMERIC(10,4) NULL,
+        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        id_usuario_criador BIGINT NOT NULL
+      )
+    `);
+    await safeExecuteRawUnsafe(tx, `CREATE UNIQUE INDEX IF NOT EXISTS tab_planilhas_uk_versao ON tab_planilhas (tenant_id, id_obra, numero_versao)`);
+    await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_planilhas_idx_atual ON tab_planilhas (tenant_id, id_obra, atual)`);
+    await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_planilhas_idx_obra ON tab_planilhas (tenant_id, id_obra)`);
+    await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS travado BOOLEAN NOT NULL DEFAULT FALSE`);
+    await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS travado_por_cadeia BOOLEAN NOT NULL DEFAULT FALSE`);
+    await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS origem_travamento VARCHAR(200) NULL`);
+    await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS uf_sinapi VARCHAR(2) NULL`);
+    await safeExecuteRawUnsafe(tx, `ALTER TABLE tab_planilhas ADD COLUMN IF NOT EXISTS id_parametros BIGINT NULL`);
+    await safeExecuteRawUnsafe(tx, `CREATE INDEX IF NOT EXISTS tab_planilhas_idx_parametros ON tab_planilhas (tenant_id, id_parametros)`);
+    await safeExecuteRawUnsafe(tx, `CREATE OR REPLACE VIEW obras_planilhas_versoes AS SELECT * FROM tab_planilhas`);
 
-  await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN item TYPE VARCHAR(80)`);
-  await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN codigo TYPE VARCHAR(80)`);
-  await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN fonte TYPE VARCHAR(80)`);
-  await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN servico TYPE VARCHAR(800)`);
-  await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN und TYPE VARCHAR(40)`);
+    await tx.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS obras_planilhas_linhas (
+        id_linha BIGSERIAL PRIMARY KEY,
+        tenant_id BIGINT NOT NULL,
+        id_planilha BIGINT NOT NULL,
+        ordem INT NOT NULL DEFAULT 0,
+        item VARCHAR(80) NULL,
+        codigo VARCHAR(80) NULL,
+        fonte VARCHAR(80) NULL,
+        servico VARCHAR(800) NULL,
+        und VARCHAR(40) NULL,
+        quantidade NUMERIC(14,4) NULL,
+        valor_unitario NUMERIC(14,6) NULL,
+        valor_parcial NUMERIC(14,6) NULL,
+        nivel INT NOT NULL DEFAULT 0,
+        tipo_linha VARCHAR(16) NOT NULL,
+        criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_linhas_idx_planilha ON obras_planilhas_linhas (tenant_id, id_planilha, ordem, id_linha)`);
+    await tx.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS obras_planilhas_linhas_idx_tipo ON obras_planilhas_linhas (tenant_id, id_planilha, tipo_linha)`);
+
+    await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN item TYPE VARCHAR(80)`);
+    await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN codigo TYPE VARCHAR(80)`);
+    await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN fonte TYPE VARCHAR(80)`);
+    await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN servico TYPE VARCHAR(800)`);
+    await safeExecuteRawUnsafe(tx, `ALTER TABLE obras_planilhas_linhas ALTER COLUMN und TYPE VARCHAR(40)`);
+
+    ensuredPlanilhaOrcamentariaTables = true;
+  })()
+    .catch((e) => {
+      ensuredPlanilhaOrcamentariaTables = false;
+      throw e;
+    })
+    .finally(() => {
+      ensuringPlanilhaOrcamentariaTables = null;
+    });
+
+  return ensuringPlanilhaOrcamentariaTables;
 }
 
 async function ensureTravasEmCadeiaTables(tx: any) {
@@ -660,14 +679,32 @@ async function ensureTravasEmCadeiaTables(tx: any) {
   );
 }
 
+let ensuredPlanilhaEstruturaUnicaTables = false;
+let ensuringPlanilhaEstruturaUnicaTables: Promise<void> | null = null;
+
 async function ensurePlanilhaEstruturaUnicaTables(tx: any) {
-  await ensurePlanilhaOrcamentariaTables(tx);
-  await ensurePlanilhaParametrosTables(tx);
-  await ensurePlanilhaServicosTables(tx);
-  await ensurePlanilhaItensTables(tx);
-  await ensurePlanilhaComposicaoTables(tx);
-  await ensureInsumosPrecosTables(tx);
-  await ensureTravasEmCadeiaTables(tx);
+  if (ensuredPlanilhaEstruturaUnicaTables) return;
+  if (ensuringPlanilhaEstruturaUnicaTables) return ensuringPlanilhaEstruturaUnicaTables;
+
+  ensuringPlanilhaEstruturaUnicaTables = (async () => {
+    await ensurePlanilhaOrcamentariaTables(tx);
+    await ensurePlanilhaParametrosTables(tx);
+    await ensurePlanilhaServicosTables(tx);
+    await ensurePlanilhaItensTables(tx);
+    await ensurePlanilhaComposicaoTables(tx);
+    await ensureInsumosPrecosTables(tx);
+    await ensureTravasEmCadeiaTables(tx);
+    ensuredPlanilhaEstruturaUnicaTables = true;
+  })()
+    .catch((e) => {
+      ensuredPlanilhaEstruturaUnicaTables = false;
+      throw e;
+    })
+    .finally(() => {
+      ensuringPlanilhaEstruturaUnicaTables = null;
+    });
+
+  return ensuringPlanilhaEstruturaUnicaTables;
 }
 
 async function criarVersaoPlanilha(tx: any, input: { tenantId: number; idObra: number; nome: string; origem: string; idParametros: number | null; userId: number }) {

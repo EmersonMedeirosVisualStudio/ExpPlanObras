@@ -4070,7 +4070,7 @@ async function readTextSmart(file: File) {
               </div>
             </div>
 
-            <div className="mt-3 grid grid-cols-6 gap-2 text-xs">
+            <div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 lg:grid-cols-6">
               <div className="rounded-lg border bg-white px-2 py-2">
                 <div className="text-[10px] text-slate-500">Subtotal</div>
                 <div className="text-[13px] font-semibold text-slate-900">{moeda(Number(totalBase || 0))}</div>

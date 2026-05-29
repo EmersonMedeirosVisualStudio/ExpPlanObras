@@ -1221,7 +1221,7 @@ export default function EngenhariaObraHomePage() {
 
   if (!idObra) {
     return (
-      <div className="p-6 max-w-4xl">
+      <div className="p-4 md:p-6 w-full max-w-none">
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">Obra inválida.</div>
       </div>
     );
@@ -1238,7 +1238,7 @@ export default function EngenhariaObraHomePage() {
   const contratoObjeto = obra?.contrato?.objeto ? String(obra.contrato.objeto) : "";
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl">
+    <div className="p-4 md:p-6 space-y-6 w-full max-w-none">
       <VincularResponsavelObraModal
         open={vincularRespOpen}
         idObra={idObra}
