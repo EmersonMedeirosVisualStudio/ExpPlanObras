@@ -263,8 +263,11 @@ async function readTextSmart(file: File) {
     codigoNormalizado: string;
     servicoCatalogo: null | { codigo: string; fonte: string; servico: string; und: string };
     composicaoCount: number;
+    totalCodigos: number;
+    limite: number;
     rows: Array<{
       idItem: number;
+      codigoServico: string;
       etapa: string;
       tipoItem: string;
       codigoItem: string;
@@ -466,11 +469,9 @@ async function readTextSmart(file: File) {
 
      const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : String(input);
      const apiOrigin = String(process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "");
-     const apiMode = String(process.env.NEXT_PUBLIC_API_MODE || "").trim().toLowerCase();
      const isAbs = /^https?:\/\//i.test(rawUrl);
      const isRelativeApi = rawUrl.startsWith("/api/v1/") || rawUrl === "/api/v1";
-     const shouldBypassNextApi = apiMode === "next" && Boolean(apiOrigin) && isRelativeApi;
-     const url = isAbs ? rawUrl : shouldBypassNextApi ? `${apiOrigin}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}` : rawUrl;
+     const url = isAbs ? rawUrl : apiOrigin && isRelativeApi ? `${apiOrigin}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}` : rawUrl;
 
      const res = await fetch(url, {
        ...init,
@@ -529,6 +530,25 @@ async function readTextSmart(file: File) {
           if (!silent) setOkMsg("Sem composição cadastrada para este serviço nesta planilha. Você pode importar/criar uma composição.");
           return;
         }
+        try {
+          const qs2 = new URLSearchParams();
+          if (planilhaId) qs2.set("planilhaId", String(planilhaId));
+          qs2.set("all", "1");
+          qs2.set("codigo", String(codigoServico || "").trim());
+          qs2.set("limit", "1");
+          const dbgRes = await authFetch(
+            `/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-debug?${qs2.toString()}`
+          );
+          const dbgJson = await dbgRes.json().catch(() => null);
+          const qtd = Number(dbgJson?.data?.composicaoCount || 0);
+          if (dbgRes.ok && dbgJson?.success && qtd === 0) {
+            setErr(null);
+            setItens([]);
+            itensSavedRef.current = [];
+            if (!silent) setOkMsg("Sem composição cadastrada para este serviço nesta planilha. Você pode importar/criar uma composição.");
+            return;
+          }
+        } catch {}
         throw new Error(msg || "Erro ao carregar composição");
       }
        const list = Array.isArray(json.data?.itens) ? json.data.itens : [];
@@ -1485,6 +1505,8 @@ async function readTextSmart(file: File) {
       const qs = new URLSearchParams();
       const pid = planilhaInfo?.idPlanilha || planilhaId;
       if (pid) qs.set("planilhaId", String(pid));
+      qs.set("all", "1");
+      qs.set("limit", "5000");
       const res = await authFetch(
         `/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-debug?${qs.toString()}`
       );
@@ -1503,8 +1525,11 @@ async function readTextSmart(file: File) {
             }
           : null,
         composicaoCount: Number(d.composicaoCount || 0),
+        totalCodigos: Number(d.totalCodigos || 0),
+        limite: Number(d.limite || 0),
         rows: rows.map((r: any) => ({
           idItem: typeof r.idItem === "bigint" ? Number(r.idItem) : Number(r.idItem || 0),
+          codigoServico: String(r.codigoServico || ""),
           etapa: String(r.etapa || ""),
           tipoItem: String(r.tipoItem || ""),
           codigoItem: String(r.codigoItem || ""),
@@ -1554,7 +1579,7 @@ async function readTextSmart(file: File) {
       if (etapa && String(r.etapa || "").trim().toLowerCase() !== etapa) return false;
       if (q) {
         const hay =
-          `${r.etapa} ${r.tipoItem} ${r.codigoItem} ${r.banco} ${r.descricao} ${r.und} ${r.codigoCentroCusto}`.toLowerCase();
+          `${r.codigoServico} ${r.etapa} ${r.tipoItem} ${r.codigoItem} ${r.banco} ${r.descricao} ${r.und} ${r.codigoCentroCusto}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -1754,6 +1779,9 @@ async function readTextSmart(file: File) {
     const t = totalComLSComBDI * (1 - d / 100);
     return Number(t.toFixed(2));
   }, [totalComLSComBDI, descontoPercent]);
+
+  const acrescLS = useMemo(() => Number((Number(totalComLS || 0) - Number(totalBase || 0)).toFixed(2)), [totalComLS, totalBase]);
+  const acrescBDI = useMemo(() => Number((Number(totalComLSComBDI || 0) - Number(totalComLS || 0)).toFixed(2)), [totalComLSComBDI, totalComLS]);
 
   const previstoCalcUnit = useMemo(() => (Number(descontoPercent || 0) > 0 ? Number(totalComDesconto || 0) : Number(totalComLSComBDI || 0)), [descontoPercent, totalComDesconto, totalComLSComBDI]);
 
@@ -3463,7 +3491,7 @@ async function readTextSmart(file: File) {
             <div className="flex items-center justify-between gap-3 border-b p-4">
               <div>
                 <div className="text-lg font-semibold">Diagnóstico da composição</div>
-                <div className="text-sm text-slate-600">{`Código: ${codigoServico || "—"}`}</div>
+                <div className="text-sm text-slate-600">{`Mostrando todos os registros (limite ${debugCompData?.limite ? debugCompData.limite : 5000}). Código atual na análise: ${codigoServico || "—"}`}</div>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -3490,31 +3518,27 @@ async function readTextSmart(file: File) {
 
               <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                 <div className="rounded-lg border bg-slate-50 p-3">
-                  <div className="text-[11px] text-slate-500">Serviço no catálogo (tab_servicos)</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-900">{debugCompData?.servicoCatalogo ? "SIM" : "NÃO"}</div>
-                  {debugCompData?.servicoCatalogo ? (
-                    <div className="mt-1 text-xs text-slate-700">
-                      {`${debugCompData.servicoCatalogo.fonte || "—"} • ${debugCompData.servicoCatalogo.und || "—"} • ${debugCompData.servicoCatalogo.servico || "—"}`}
-                    </div>
-                  ) : null}
+                  <div className="text-[11px] text-slate-500">Registros (tab_composicoes)</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-900">{debugCompData?.composicaoCount ?? 0}</div>
+                  <div className="mt-1 text-xs text-slate-700">{`Retornados neste card: ${debugCompData?.rows?.length ?? 0}`}</div>
                 </div>
                 <div className="rounded-lg border bg-slate-50 p-3">
-                  <div className="text-[11px] text-slate-500">Itens na composição (tab_composicoes)</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-900">{debugCompData?.composicaoCount ?? 0}</div>
-                  <div className="mt-1 text-xs text-slate-700">{debugCompData?.codigoNormalizado ? `Chave normalizada: ${debugCompData.codigoNormalizado}` : "—"}</div>
+                  <div className="text-[11px] text-slate-500">Códigos de serviço distintos</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-900">{debugCompData?.totalCodigos ?? 0}</div>
+                  <div className="mt-1 text-xs text-slate-700">{debugCompData?.codigoNormalizado ? `Exemplo de normalização: ${debugCompData.codigoNormalizado}` : "—"}</div>
                 </div>
                 <div className="rounded-lg border bg-slate-50 p-3">
                   <div className="text-[11px] text-slate-500">Quem está divergindo?</div>
                   <div className="mt-1 text-xs text-slate-700">
-                    A lista de serviços e esta análise devem ler a mesma tabela (tab_composicoes). Se aqui aparecer contagem &gt; 0, a composição existe no banco.
+                    Use o filtro e digite o código do serviço (ex: {codigoServico || "100299"}). Se aparecerem linhas, a composição existe no banco (tab_composicoes) para aquele código/tenant.
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
                 <input
                   className="input bg-white"
-                  placeholder="Filtrar (etapa, tipo, código, banco, descrição...)"
+                  placeholder="Filtrar (serviço, etapa, tipo, código item, banco, descrição...)"
                   value={debugCompFilter.q}
                   onChange={(e) => setDebugCompFilter((p) => ({ ...p, q: e.target.value }))}
                 />
@@ -3545,6 +3569,14 @@ async function readTextSmart(file: File) {
                 <button
                   className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
                   type="button"
+                  onClick={() => setDebugCompFilter((p) => ({ ...p, q: String(codigoServico || "").trim() }))}
+                  title="Filtrar pelo código do serviço atual"
+                >
+                  Filtrar  {codigoServico || "—"}
+                </button>
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                  type="button"
                   onClick={() => setDebugCompFilter({ q: "", tipo: "", etapa: "" })}
                   title="Limpar filtros"
                 >
@@ -3557,6 +3589,7 @@ async function readTextSmart(file: File) {
                   <thead className="bg-slate-50 text-left text-slate-700">
                     <tr>
                       <th className="px-3 py-2">ID</th>
+                      <th className="px-3 py-2">Serviço</th>
                       <th className="px-3 py-2">Etapa</th>
                       <th className="px-3 py-2">Tipo</th>
                       <th className="px-3 py-2">Código</th>
@@ -3570,8 +3603,9 @@ async function readTextSmart(file: File) {
                   </thead>
                   <tbody>
                     {debugCompRowsFiltered.slice(0, 500).map((r) => (
-                      <tr key={`${r.idItem}-${r.codigoItem}-${r.tipoItem}`} className="border-t">
+                      <tr key={`${r.idItem}-${r.codigoServico}-${r.codigoItem}-${r.tipoItem}`} className="border-t">
                         <td className="px-3 py-2 text-xs text-slate-500">{r.idItem || "—"}</td>
+                        <td className="px-3 py-2 font-medium">{r.codigoServico || "—"}</td>
                         <td className="px-3 py-2">{r.etapa || "—"}</td>
                         <td className="px-3 py-2">{r.tipoItem || "—"}</td>
                         <td className="px-3 py-2 font-medium">{r.codigoItem || "—"}</td>
@@ -3589,14 +3623,14 @@ async function readTextSmart(file: File) {
                     ))}
                     {debugCompRowsFiltered.length > 500 ? (
                       <tr className="border-t">
-                        <td colSpan={10} className="px-3 py-3 text-xs text-slate-500">
+                        <td colSpan={11} className="px-3 py-3 text-xs text-slate-500">
                           Mostrando 500 linhas. Total filtrado: {debugCompRowsFiltered.length}.
                         </td>
                       </tr>
                     ) : null}
                     {!debugCompRowsFiltered.length ? (
                       <tr className="border-t">
-                        <td colSpan={10} className="px-3 py-6 text-center text-sm text-slate-500">
+                        <td colSpan={11} className="px-3 py-6 text-center text-sm text-slate-500">
                           Nenhum item encontrado para este filtro.
                         </td>
                       </tr>
@@ -4002,16 +4036,22 @@ async function readTextSmart(file: File) {
                 <div className="text-[13px] font-semibold text-slate-900">{moeda(Number(totalBase || 0))}</div>
               </div>
               <div className="rounded-lg border bg-white px-2 py-2">
-                <div className="text-[10px] text-slate-500">LS</div>
-                <div className="text-[13px] font-semibold text-slate-900">{Number(lsPercent || 0).toFixed(2)}%</div>
+                <div className="text-[10px] text-slate-500 flex items-center justify-between">
+                  <span>LS</span>
+                  <span>{Number(lsPercent || 0).toFixed(2)}%</span>
+                </div>
+                <div className="text-[13px] font-semibold text-slate-900">{moeda(Number(acrescLS || 0))}</div>
               </div>
               <div className="rounded-lg border border-blue-600 bg-blue-600 px-2 py-2 text-white">
                 <div className="text-[10px] opacity-90">Total (c/ LS)</div>
                 <div className="text-[13px] font-semibold">{moeda(Number(totalComLS || 0))}</div>
               </div>
               <div className="rounded-lg border bg-white px-2 py-2">
-                <div className="text-[10px] text-slate-500">BDI</div>
-                <div className="text-[13px] font-semibold text-slate-900">{Number(bdiPercent || 0).toFixed(2)}%</div>
+                <div className="text-[10px] text-slate-500 flex items-center justify-between">
+                  <span>BDI</span>
+                  <span>{Number(bdiPercent || 0).toFixed(2)}%</span>
+                </div>
+                <div className="text-[13px] font-semibold text-slate-900">{moeda(Number(acrescBDI || 0))}</div>
               </div>
               <div className="rounded-lg border bg-white px-2 py-2">
                 <div className="text-[10px] text-slate-500">Total c/ BDI</div>

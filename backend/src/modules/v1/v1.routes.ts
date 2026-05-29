@@ -11075,7 +11075,14 @@ export default async function v1Routes(server: FastifyInstance) {
     const { id, codigo } = z.object({ id: z.coerce.number().int().positive(), codigo: z.string().min(1) }).parse(request.params || {});
     const idObra = Number(id);
     const codigoServico = normalizeCodigoKey(codigo);
-    const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
+    const q = z
+      .object({
+        planilhaId: z.coerce.number().int().positive().optional().nullable(),
+        all: z.coerce.number().int().optional().nullable(),
+        codigo: z.string().optional().nullable(),
+        limit: z.coerce.number().int().positive().optional().nullable(),
+      })
+      .parse(request.query || {});
 
     const scope = (request.user as any)?.abrangencia as any;
     if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
@@ -11088,53 +11095,103 @@ export default async function v1Routes(server: FastifyInstance) {
       await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
     });
 
-    const serv = (await prisma.$queryRawUnsafe(
+    const limit = q.limit != null ? Math.max(1, Math.min(5000, Number(q.limit))) : 5000;
+    const wantsAll = Number(q.all || 0) > 0;
+    const qCodigo = q.codigo != null ? String(q.codigo || '') : '';
+    const filterCodigo = !wantsAll ? codigoServico : qCodigo ? normalizeCodigoKey(qCodigo) : null;
+
+    const serv = filterCodigo
+      ? (((await prisma.$queryRawUnsafe(
+          `
+          SELECT
+            COALESCE(s.codigo,'') AS codigo,
+            COALESCE(s.fonte,'') AS fonte,
+            COALESCE(s.servico,'') AS servico,
+            COALESCE(s.und,'') AS und
+          FROM tab_servicos s
+          WHERE s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0 AND ${sqlNormalizeCodigoExpr('s.codigo')} = $2
+          ORDER BY s.id_servico ASC
+          LIMIT 1
+          `,
+          ctx.tenantId,
+          filterCodigo
+        )) as any[]) || [])
+      : [];
+
+    const compCountRow = filterCodigo
+      ? ((await prisma.$queryRawUnsafe(
+          `
+          SELECT COUNT(1)::int AS qtd
+          FROM tab_composicoes c
+          WHERE c.tenant_id = $1 AND c.id_obra = 0 AND c.id_planilha = 0 AND ${sqlNormalizeCodigoExpr('c.codigo_servico')} = $2
+          `,
+          ctx.tenantId,
+          filterCodigo
+        )) as any[])
+      : ((await prisma.$queryRawUnsafe(
+          `
+          SELECT COUNT(1)::int AS qtd
+          FROM tab_composicoes c
+          WHERE c.tenant_id = $1 AND c.id_obra = 0 AND c.id_planilha = 0
+          `,
+          ctx.tenantId
+        )) as any[]);
+
+    const distinctRow = (await prisma.$queryRawUnsafe(
       `
-      SELECT
-        COALESCE(s.codigo,'') AS codigo,
-        COALESCE(s.fonte,'') AS fonte,
-        COALESCE(s.servico,'') AS servico,
-        COALESCE(s.und,'') AS und
-      FROM tab_servicos s
-      WHERE s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0 AND ${sqlNormalizeCodigoExpr('s.codigo')} = $2
-      ORDER BY s.id_servico ASC
-      LIMIT 1
+      SELECT COUNT(DISTINCT ${sqlNormalizeCodigoExpr('c.codigo_servico')})::int AS qtd
+      FROM tab_composicoes c
+      WHERE c.tenant_id = $1 AND c.id_obra = 0 AND c.id_planilha = 0
       `,
-      ctx.tenantId,
-      codigoServico
+      ctx.tenantId
     )) as any[];
 
-    const compCountRow = (await prisma.$queryRawUnsafe(
-      `
-      SELECT COUNT(1)::int AS qtd
-      FROM tab_composicoes c
-      WHERE c.tenant_id = $1 AND c.id_obra = 0 AND c.id_planilha = 0 AND ${sqlNormalizeCodigoExpr('c.codigo_servico')} = $2
-      `,
-      ctx.tenantId,
-      codigoServico
-    )) as any[];
-
-    const rows = (await prisma.$queryRawUnsafe(
-      `
-      SELECT
-        c.id_item AS "idItem",
-        COALESCE(c.etapa,'') AS "etapa",
-        COALESCE(c.tipo_item,'') AS "tipoItem",
-        COALESCE(c.codigo_item,'') AS "codigoItem",
-        COALESCE(c.banco,'') AS "banco",
-        COALESCE(c.descricao,'') AS "descricao",
-        COALESCE(c.und,'') AS "und",
-        c.quantidade AS "quantidade",
-        c.perda_percentual AS "perdaPercentual",
-        COALESCE(c.codigo_centro_custo,'') AS "codigoCentroCusto"
-      FROM tab_composicoes c
-      WHERE c.tenant_id = $1 AND c.id_obra = 0 AND c.id_planilha = 0 AND ${sqlNormalizeCodigoExpr('c.codigo_servico')} = $2
-      ORDER BY COALESCE(c.etapa,'') ASC, c.id_item ASC
-      LIMIT 5000
-      `,
-      ctx.tenantId,
-      codigoServico
-    )) as any[];
+    const rows = filterCodigo
+      ? ((await prisma.$queryRawUnsafe(
+          `
+          SELECT
+            c.id_item AS "idItem",
+            COALESCE(c.codigo_servico,'') AS "codigoServico",
+            COALESCE(c.etapa,'') AS "etapa",
+            COALESCE(c.tipo_item,'') AS "tipoItem",
+            COALESCE(c.codigo_item,'') AS "codigoItem",
+            COALESCE(c.banco,'') AS "banco",
+            COALESCE(c.descricao,'') AS "descricao",
+            COALESCE(c.und,'') AS "und",
+            c.quantidade AS "quantidade",
+            c.perda_percentual AS "perdaPercentual",
+            COALESCE(c.codigo_centro_custo,'') AS "codigoCentroCusto"
+          FROM tab_composicoes c
+          WHERE c.tenant_id = $1 AND c.id_obra = 0 AND c.id_planilha = 0 AND ${sqlNormalizeCodigoExpr('c.codigo_servico')} = $2
+          ORDER BY COALESCE(c.etapa,'') ASC, c.id_item ASC
+          LIMIT $3
+          `,
+          ctx.tenantId,
+          filterCodigo,
+          limit
+        )) as any[])
+      : ((await prisma.$queryRawUnsafe(
+          `
+          SELECT
+            c.id_item AS "idItem",
+            COALESCE(c.codigo_servico,'') AS "codigoServico",
+            COALESCE(c.etapa,'') AS "etapa",
+            COALESCE(c.tipo_item,'') AS "tipoItem",
+            COALESCE(c.codigo_item,'') AS "codigoItem",
+            COALESCE(c.banco,'') AS "banco",
+            COALESCE(c.descricao,'') AS "descricao",
+            COALESCE(c.und,'') AS "und",
+            c.quantidade AS "quantidade",
+            c.perda_percentual AS "perdaPercentual",
+            COALESCE(c.codigo_centro_custo,'') AS "codigoCentroCusto"
+          FROM tab_composicoes c
+          WHERE c.tenant_id = $1 AND c.id_obra = 0 AND c.id_planilha = 0
+          ORDER BY ${sqlNormalizeCodigoExpr('c.codigo_servico')} ASC, COALESCE(c.etapa,'') ASC, c.id_item ASC
+          LIMIT $2
+          `,
+          ctx.tenantId,
+          limit
+        )) as any[]);
 
     const servicoCatalogo = serv?.[0]
       ? {
@@ -11146,16 +11203,19 @@ export default async function v1Routes(server: FastifyInstance) {
       : null;
 
     return ok(reply, {
-      codigoNormalizado: codigoServico,
+      codigoNormalizado: filterCodigo || codigoServico,
       idPlanilha,
       servicoCatalogo,
       composicaoCount: Number(compCountRow?.[0]?.qtd || 0),
+      totalCodigos: Number(distinctRow?.[0]?.qtd || 0),
       rows: (rows || []).map((r: any) => ({
         ...r,
         idItem: typeof r.idItem === 'bigint' ? Number(r.idItem) : Number(r.idItem || 0),
+        codigoServico: String(r.codigoServico || ''),
         quantidade: r.quantidade == null ? null : Number(r.quantidade),
         perdaPercentual: r.perdaPercentual == null ? null : Number(r.perdaPercentual),
       })),
+      limite: limit,
     });
   });
 
