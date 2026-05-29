@@ -1,0 +1,17 @@
+export const FIELD_POLICY_EFFECTS = ['ALLOW', 'MASK', 'HIDE', 'NULLIFY', 'TRANSFORM'];
+export const FIELD_MASK_STRATEGIES = [
+    'CPF',
+    'CNPJ',
+    'EMAIL',
+    'PHONE',
+    'NAME_INITIALS',
+    'LAST4',
+    'HASH_SHORT',
+    'YEAR_ONLY',
+    'AGE_RANGE',
+    'MONEY_RANGE',
+    'PARTIAL_TEXT',
+    'FULL_REDACT',
+    'CUSTOM',
+];
+export const FIELD_CLASSIFICATIONS = ['PUBLICO', 'INTERNO', 'SENSIVEL', 'RESTRITO'];
