@@ -1,4 +1,4 @@
-import type { AbrangenciaContext, EnderecoObra, Obra, OrigemEndereco } from '../entities/Obra.js'
+import type { AbrangenciaContext, EnderecoObra, Obra, OrigemEndereco } from '@/modules/obras/domain/entities/Obra.js'
 
 export interface CreateObraInput {
   name: string

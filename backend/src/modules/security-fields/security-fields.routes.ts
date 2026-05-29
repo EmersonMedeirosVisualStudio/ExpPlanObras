@@ -1,10 +1,10 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import prisma from '../../plugins/prisma.js';
-import { authenticate } from '../../utils/authenticate.js';
-import { evaluateFieldDecision, loadSubjectContext } from './service.js';
-import { sanitizeResourceObject } from './sanitizer.js';
-import { getCatalogForResource } from './catalog.js';
+import prisma from '@/plugins/prisma.js';
+import { authenticate } from '@/utils/authenticate.js';
+import { evaluateFieldDecision, loadSubjectContext } from '@/modules/security-fields/service.js';
+import { sanitizeResourceObject } from '@/modules/security-fields/sanitizer.js';
+import { getCatalogForResource } from '@/modules/security-fields/catalog.js';
 
 type ApiSuccess<T> = { success: true; message?: string; data: T; meta?: any };
 type ApiError = { success: false; message: string; errors?: Record<string, string[]> };

@@ -1,13 +1,13 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
-import prisma from '../../plugins/prisma.js';
-import { authenticate } from '../../utils/authenticate.js';
-import { calcularScoreQualidadePorAtivo } from './quality.js';
-import { sincronizarCatalogoBasico } from './scanner.js';
-import { executarScanPiiAmostral } from './pii-scanner.js';
-import { aceitarSugestaoClassificacao, rejeitarSugestaoClassificacao } from './classificacao.js';
-import { auditGovernanca } from './audit.js';
+import prisma from '@/plugins/prisma.js';
+import { authenticate } from '@/utils/authenticate.js';
+import { calcularScoreQualidadePorAtivo } from '@/modules/governanca-dados/quality.js';
+import { sincronizarCatalogoBasico } from '@/modules/governanca-dados/scanner.js';
+import { executarScanPiiAmostral } from '@/modules/governanca-dados/pii-scanner.js';
+import { aceitarSugestaoClassificacao, rejeitarSugestaoClassificacao } from '@/modules/governanca-dados/classificacao.js';
+import { auditGovernanca } from '@/modules/governanca-dados/audit.js';
 
 type ApiSuccess<T> = { success: true; message?: string; data: T; meta?: any };
 type ApiError = { success: false; message: string; errors?: Record<string, string[]> };

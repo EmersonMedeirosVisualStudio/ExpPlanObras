@@ -1,9 +1,9 @@
 import bcrypt from 'bcryptjs'
-import prisma from '../../../../shared/plugins/prisma.js'
-import { UserAlreadyExistsError } from '../../domain/errors/AuthErrors.js'
-import type { RegisterDto } from '../dtos/registerDto.js'
-import { generateUniqueTenantSlug } from '../../../../utils/slug.js'
-import { normalizeEmail, validateCEP, validateCNPJ, validateCPF, validateSlug } from '../../../../utils/validators.js'
+import prisma from '@/shared/plugins/prisma.js'
+import { UserAlreadyExistsError } from '@/modules/auth/domain/errors/AuthErrors.js'
+import type { RegisterDto } from '@/modules/auth/application/dtos/registerDto.js'
+import { generateUniqueTenantSlug } from '@/utils/slug.js'
+import { normalizeEmail, validateCEP, validateCNPJ, validateCPF, validateSlug } from '@/utils/validators.js'
 
 export class RegisterUseCase {
   async execute(input: RegisterDto) {

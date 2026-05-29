@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify'
-import type { ITenantRepository } from '../../domain/ports/ITenantRepository.js'
-import type { IUserRepository } from '../../domain/ports/IUserRepository.js'
-import { TenantAccessDeniedError } from '../../domain/errors/AuthErrors.js'
-import { assertTenantActive, buildSubscriptionAlert } from '../../domain/entities/Tenant.js'
+import { TenantAccessDeniedError } from '@/modules/auth/domain/errors/AuthErrors.js'
+import type { ITenantRepository } from '@/modules/auth/domain/ports/ITenantRepository.js'
+import type { IUserRepository } from '@/modules/auth/domain/ports/IUserRepository.js'
+import { assertTenantActive } from '@/modules/auth/domain/services/assertTenantActive.js'
+import { buildSubscriptionAlert } from '@/modules/auth/domain/services/buildSubscriptionAlert.js'
 
 export class SelectTenantUseCase {
   constructor(

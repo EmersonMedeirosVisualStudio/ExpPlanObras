@@ -1,9 +1,9 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import prisma from '../../plugins/prisma.js';
-import { authenticate } from '../../utils/authenticate.js';
-import { emitObservabilityEvent } from '../observabilidade/emit.js';
-import { classificarScore, reduzirScorePorControles, scoreFromImpactProbability } from './score.js';
+import prisma from '@/plugins/prisma.js';
+import { authenticate } from '@/utils/authenticate.js';
+import { emitObservabilityEvent } from '@/modules/observabilidade/emit.js';
+import { classificarScore, reduzirScorePorControles, scoreFromImpactProbability } from '@/modules/grc/score.js';
 
 type ApiSuccess<T> = { success: true; data: T; meta?: any; message?: string };
 type ApiError = { success: false; message: string; errors?: Record<string, string[]> };

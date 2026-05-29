@@ -1,4 +1,4 @@
-import prisma from '../../plugins/prisma.js';
+import prisma from '@/plugins/prisma.js';
 
 export type RetentionResourceHandler = {
   resource: string;

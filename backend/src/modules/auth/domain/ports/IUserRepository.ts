@@ -1,4 +1,4 @@
-import type { User, UserTenant } from '../entities/User.js'
+import type { User, UserTenant } from '@/modules/auth/domain/entities/User.js'
 
 export interface CreateUserInput {
   email: string

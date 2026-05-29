@@ -1,5 +1,5 @@
 import type { FastifyReply } from 'fastify'
-import { AppError } from './AppError.js'
+import { AppError } from '@/shared/errors/AppError.js'
 
 const STATUS_MAP: Record<string, number> = {
   NOT_FOUND: 404,

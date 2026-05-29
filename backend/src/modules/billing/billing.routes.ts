@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
-import { authenticate } from '../../utils/authenticate.js';
-import { createCheckoutSchema, createClaimCheckoutSchema } from './billing.schema.js';
-import { createTenantCheckout } from './billing.service.js';
-import prisma from '../../plugins/prisma.js';
+import { authenticate } from '@/utils/authenticate.js';
+import { createCheckoutSchema, createClaimCheckoutSchema } from '@/modules/billing/billing.schema.js';
+import { createTenantCheckout } from '@/modules/billing/billing.service.js';
+import prisma from '@/plugins/prisma.js';
 
 export default async function billingRoutes(server: FastifyInstance) {
   server.post(

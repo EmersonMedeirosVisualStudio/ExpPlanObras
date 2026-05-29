@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs'
-import type { IUserRepository } from '../../domain/ports/IUserRepository.js'
-import { UserNotFoundError, InvalidCredentialsError } from '../../domain/errors/AuthErrors.js'
+import type { IUserRepository } from '@/modules/auth/domain/ports/IUserRepository.js'
+import { UserNotFoundError, InvalidCredentialsError } from '@/modules/auth/domain/errors/AuthErrors.js'
 
 export class ChangePasswordUseCase {
   constructor(private readonly userRepo: IUserRepository) {}

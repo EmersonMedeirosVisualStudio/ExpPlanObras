@@ -1,5 +1,5 @@
-import prisma from '../../../plugins/prisma.js';
-import type { PlaybookActionExecutor } from '../types.js';
+import prisma from '@/plugins/prisma.js';
+import type { PlaybookActionExecutor } from '@/modules/playbooks/types.js';
 
 export const complianceExecutors: PlaybookActionExecutor[] = [
   {

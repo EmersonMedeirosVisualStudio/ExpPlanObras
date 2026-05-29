@@ -1,12 +1,12 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
-import { replyError } from '../../../../shared/errors/HttpError.js'
-import { authenticate } from '../../../../shared/middleware/authenticate.js'
-import { createObraDto } from '../../application/dtos/createObraDto.js'
-import { updateObraDto } from '../../application/dtos/updateObraDto.js'
-import { makeObraUseCases } from '../../application/factories/makeObraUseCases.js'
-import type { AbrangenciaContext } from '../../domain/entities/Obra.js'
-import { lookupCep, normalizeCep, resolveCoords, searchGeocode } from '../services/GeocodingService.js'
+import { replyError } from '@/shared/errors/HttpError.js'
+import { authenticate } from '@/shared/middleware/authenticate.js'
+import { createObraDto } from '@/modules/obras/application/dtos/createObraDto.js'
+import { updateObraDto } from '@/modules/obras/application/dtos/updateObraDto.js'
+import { makeObraUseCases } from '@/modules/obras/application/factories/makeObraUseCases.js'
+import type { AbrangenciaContext } from '@/modules/obras/domain/entities/Obra.js'
+import { lookupCep, normalizeCep, resolveCoords, searchGeocode } from '@/modules/obras/infrastructure/services/GeocodingService.js'
 
 type UserCtx = { tenantId: number; abrangencia?: AbrangenciaContext }
 function ctx(request: FastifyRequest): UserCtx {

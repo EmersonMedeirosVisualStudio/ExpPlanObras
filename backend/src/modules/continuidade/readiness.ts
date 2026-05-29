@@ -1,4 +1,4 @@
-import prisma from '../../plugins/prisma.js';
+import prisma from '@/plugins/prisma.js';
 
 function grade(score: number): 'SAUDAVEL' | 'ATENCAO' | 'RISCO' | 'CRITICO' {
   if (score >= 85) return 'SAUDAVEL';

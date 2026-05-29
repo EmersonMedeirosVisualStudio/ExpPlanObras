@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import type { QualifiedSignatureProvider } from './types.js';
+import type { QualifiedSignatureProvider } from '@/modules/documentos-qualificados/providers/types.js';
 
 function fakePdfSigned() {
   const body = '%PDF-1.4\n% Mock Signed PDF\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n';

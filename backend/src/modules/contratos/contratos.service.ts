@@ -1,7 +1,7 @@
-import prisma, { setTenantContext } from '../../plugins/prisma.js';
+import prisma, { setTenantContext } from '@/plugins/prisma.js';
 import { Prisma } from '@prisma/client';
-import type { CreateContratoInput, UpdateContratoInput } from './contratos.schema.js';
-import { publish } from './contratos.realtime.js';
+import type { CreateContratoInput, UpdateContratoInput } from '@/modules/contratos/contratos.schema.js';
+import { publish } from '@/modules/contratos/contratos.realtime.js';
 
 async function withRLS<T>(tenantId: number, callback: (tx: any) => Promise<T>): Promise<T> {
   return prisma.$transaction(async (tx) => {

@@ -1,5 +1,5 @@
-import type { PlaybookActionExecutor } from '../types.js';
-import { aplicarLegalHoldPorCriteria } from '../../retencao/legal-hold.js';
+import type { PlaybookActionExecutor } from '@/modules/playbooks/types.js';
+import { aplicarLegalHoldPorCriteria } from '@/modules/retencao/legal-hold.js';
 
 export const legalHoldExecutors: PlaybookActionExecutor[] = [
   {

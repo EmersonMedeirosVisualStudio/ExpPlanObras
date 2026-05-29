@@ -1,6 +1,6 @@
-import prisma from '../../../../shared/plugins/prisma.js'
-import type { User, UserTenant } from '../../domain/entities/User.js'
-import type { CreateUserInput, IUserRepository } from '../../domain/ports/IUserRepository.js'
+import prisma from '@/shared/plugins/prisma.js'
+import type { User, UserTenant } from '@/modules/auth/domain/entities/User.js'
+import type { CreateUserInput, IUserRepository } from '@/modules/auth/domain/ports/IUserRepository.js'
 
 export class PrismaUserRepository implements IUserRepository {
   async findByEmail(email: string): Promise<(User & { tenants: UserTenant[] }) | null> {

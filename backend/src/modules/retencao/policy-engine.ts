@@ -1,6 +1,6 @@
-import prisma from '../../plugins/prisma.js';
+import prisma from '@/plugins/prisma.js';
 import { Prisma } from '@prisma/client';
-import { getRetentionHandler } from './registry.js';
+import { getRetentionHandler } from '@/modules/retencao/registry.js';
 
 function addPeriod(base: Date, valor: number, unidade: string) {
   const d = new Date(base.getTime());

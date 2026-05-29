@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { IObraRepository, ObraWithEnderecos } from '../../domain/ports/IObraRepository.js'
-import { ObraAccessDeniedError, ObraNotFoundError } from '../../domain/errors/ObraErrors.js'
-import { GetObraByIdUseCase } from './GetObraById.js'
+import type { IObraRepository, ObraWithEnderecos } from '@/modules/obras/domain/ports/IObraRepository.js'
+import { ObraAccessDeniedError, ObraNotFoundError } from '@/modules/obras/domain/errors/ObraErrors.js'
+import { GetObraByIdUseCase } from '@/modules/obras/application/use-cases/GetObraById.js'
 
 const mockObra: ObraWithEnderecos = {
   id: 1, tenantId: 10, contratoId: 5, name: 'Obra', type: 'PUBLICA', status: 'EM_ANDAMENTO',

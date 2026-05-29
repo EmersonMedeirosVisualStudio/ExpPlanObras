@@ -1,8 +1,8 @@
-import { applyMask } from './maskers.js';
-import { getCatalogForResource } from './catalog.js';
-import { deleteAt, setAt, visitByPattern } from './path-utils.js';
-import { evaluateFieldDecision, writeSensitiveAudit } from './service.js';
-import type { FieldCatalogEntry, FieldDecision, SanitizeContext, SubjectContext } from './types.js';
+import { applyMask } from '@/modules/security-fields/maskers.js';
+import { getCatalogForResource } from '@/modules/security-fields/catalog.js';
+import { deleteAt, setAt, visitByPattern } from '@/modules/security-fields/path-utils.js';
+import { evaluateFieldDecision, writeSensitiveAudit } from '@/modules/security-fields/service.js';
+import type { FieldCatalogEntry, FieldDecision, SanitizeContext, SubjectContext } from '@/modules/security-fields/types.js';
 
 function deepClone<T>(data: T): T {
   return JSON.parse(JSON.stringify(data)) as T;

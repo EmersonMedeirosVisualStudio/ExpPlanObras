@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import prisma from '../../plugins/prisma.js';
+import prisma from '@/plugins/prisma.js';
 
 type BillingPlan = 'ANNUAL' | 'BIENNIAL';
 

@@ -1,9 +1,9 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import prisma from '../../plugins/prisma.js';
-import { authenticate } from '../../utils/authenticate.js';
-import { calcularReadinessPlano } from './readiness.js';
-import { emitObservabilityEvent } from '../observabilidade/emit.js';
+import prisma from '@/plugins/prisma.js';
+import { authenticate } from '@/utils/authenticate.js';
+import { calcularReadinessPlano } from '@/modules/continuidade/readiness.js';
+import { emitObservabilityEvent } from '@/modules/observabilidade/emit.js';
 
 type ApiSuccess<T> = { success: true; data: T; meta?: any; message?: string };
 type ApiError = { success: false; message: string; errors?: Record<string, string[]> };

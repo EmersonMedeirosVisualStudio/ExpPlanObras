@@ -1,9 +1,9 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import prisma from '../../plugins/prisma.js';
-import { authenticate } from '../../utils/authenticate.js';
-import { normalizeEvent } from './normalize.js';
-import { redactPayload } from './redaction.js';
+import prisma from '@/plugins/prisma.js';
+import { authenticate } from '@/utils/authenticate.js';
+import { normalizeEvent } from '@/modules/observabilidade/normalize.js';
+import { redactPayload } from '@/modules/observabilidade/redaction.js';
 
 type ApiSuccess<T> = { success: true; data: T; meta?: any; message?: string };
 type ApiError = { success: false; message: string; errors?: Record<string, string[]> };

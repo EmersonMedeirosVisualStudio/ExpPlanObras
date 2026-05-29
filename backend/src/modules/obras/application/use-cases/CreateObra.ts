@@ -1,6 +1,6 @@
-import type { IObraRepository } from '../../domain/ports/IObraRepository.js'
-import { ObraAccessDeniedError } from '../../domain/errors/ObraErrors.js'
-import type { CreateObraDto } from '../dtos/createObraDto.js'
+import type { IObraRepository } from '@/modules/obras/domain/ports/IObraRepository.js'
+import { ObraAccessDeniedError } from '@/modules/obras/domain/errors/ObraErrors.js'
+import type { CreateObraDto } from '@/modules/obras/application/dtos/createObraDto.js'
 
 export class CreateObraUseCase {
   constructor(private readonly repo: IObraRepository) {}

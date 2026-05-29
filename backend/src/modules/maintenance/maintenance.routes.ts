@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { purgeExpiredTenants, expireTrials, processSubscriptionsDaily } from './maintenance.service.js';
+import { purgeExpiredTenants, expireTrials, processSubscriptionsDaily } from '@/modules/maintenance/maintenance.service.js';
 
 export default async function maintenanceRoutes(server: FastifyInstance) {
   server.post('/purge-expired', async (request, reply) => {

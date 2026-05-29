@@ -1,10 +1,11 @@
 import bcrypt from 'bcryptjs'
 import type { FastifyInstance } from 'fastify'
-import { assertTenantActive, buildSubscriptionAlert } from '../../domain/entities/Tenant.js'
-import { InvalidCredentialsError } from '../../domain/errors/AuthErrors.js'
-import type { ITenantRepository } from '../../domain/ports/ITenantRepository.js'
-import type { IUserRepository } from '../../domain/ports/IUserRepository.js'
-import type { LoginDto } from '../dtos/loginDto.js'
+import { InvalidCredentialsError } from '@/modules/auth/domain/errors/AuthErrors.js'
+import type { ITenantRepository } from '@/modules/auth/domain/ports/ITenantRepository.js'
+import type { IUserRepository } from '@/modules/auth/domain/ports/IUserRepository.js'
+import { assertTenantActive } from '@/modules/auth/domain/services/assertTenantActive.js'
+import { buildSubscriptionAlert } from '@/modules/auth/domain/services/buildSubscriptionAlert.js'
+import type { LoginDto } from '@/modules/auth/application/dtos/loginDto.js'
 
 export interface LoginResult {
   token: string | null

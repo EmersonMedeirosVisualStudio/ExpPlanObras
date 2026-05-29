@@ -1,4 +1,4 @@
-import prisma from '../../plugins/prisma.js';
+import prisma from '@/plugins/prisma.js';
 import { Prisma } from '@prisma/client';
 
 type Db = Prisma.TransactionClient | typeof prisma;

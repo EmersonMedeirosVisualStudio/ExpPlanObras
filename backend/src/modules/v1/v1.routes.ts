@@ -1,16 +1,16 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
-import prisma from '../../plugins/prisma.js';
-import { authenticate } from '../../utils/authenticate.js';
+import prisma from '@/plugins/prisma.js';
+import { authenticate } from '@/utils/authenticate.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import ExcelJS from 'exceljs';
 import fs from 'fs/promises';
-import { normalizeEmail, onlyDigits } from '../../utils/validators.js';
-import { loadSubjectContext } from '../security-fields/service.js';
-import { sanitizeResourceObject } from '../security-fields/sanitizer.js';
-import { addTenantHistoryEntry } from '../admin/tenantHistory.service.js';
+import { normalizeEmail, onlyDigits } from '@/utils/validators.js';
+import { loadSubjectContext } from '@/modules/security-fields/service.js';
+import { sanitizeResourceObject } from '@/modules/security-fields/sanitizer.js';
+import { addTenantHistoryEntry } from '@/modules/admin/tenantHistory.service.js';
 
 type ApiSuccess<T> = { success: true; message?: string; data: T; meta?: any };
 type ApiError = { success: false; message: string; errors?: Record<string, string[]> };

@@ -1,6 +1,6 @@
-import prisma from '../../plugins/prisma.js';
-import { applyMask } from '../security-fields/maskers.js';
-import { detectByFieldName, detectByValue, type PiiType } from './pii-detectors.js';
+import prisma from '@/plugins/prisma.js';
+import { applyMask } from '@/modules/security-fields/maskers.js';
+import { detectByFieldName, detectByValue, type PiiType } from '@/modules/governanca-dados/pii-detectors.js';
 
 function mapToMask(type: PiiType) {
   if (type === 'CPF') return 'CPF';

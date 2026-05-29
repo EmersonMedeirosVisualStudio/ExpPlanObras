@@ -1,7 +1,7 @@
-import prisma from '../../../../shared/plugins/prisma.js'
-import type { Tenant } from '../../domain/entities/Tenant.js'
-import type { UserTenant } from '../../domain/entities/User.js'
-import type { CreateTenantInput, ITenantRepository } from '../../domain/ports/ITenantRepository.js'
+import prisma from '@/shared/plugins/prisma.js'
+import type { Tenant } from '@/modules/auth/domain/entities/Tenant.js'
+import type { UserTenant } from '@/modules/auth/domain/entities/User.js'
+import type { CreateTenantInput, ITenantRepository } from '@/modules/auth/domain/ports/ITenantRepository.js'
 
 export class PrismaTenantRepository implements ITenantRepository {
   async findById(id: number): Promise<Tenant | null> {

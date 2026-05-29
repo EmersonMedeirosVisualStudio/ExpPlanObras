@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { IUserRepository } from '../../domain/ports/IUserRepository.js'
-import type { ITenantRepository } from '../../domain/ports/ITenantRepository.js'
-import { LoginUseCase } from './Login.js'
-import { InvalidCredentialsError } from '../../domain/errors/AuthErrors.js'
+import type { IUserRepository } from '@/modules/auth/domain/ports/IUserRepository.js'
+import type { ITenantRepository } from '@/modules/auth/domain/ports/ITenantRepository.js'
+import { LoginUseCase } from '@/modules/auth/application/use-cases/Login.js'
+import { InvalidCredentialsError } from '@/modules/auth/domain/errors/AuthErrors.js'
 
 const mockUser = {
   id: 1,

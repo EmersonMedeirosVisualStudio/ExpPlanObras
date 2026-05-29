@@ -1,5 +1,5 @@
-import prisma from '../../plugins/prisma.js';
-import { FIELD_CATALOG } from '../security-fields/catalog.js';
+import prisma from '@/plugins/prisma.js';
+import { FIELD_CATALOG } from '@/modules/security-fields/catalog.js';
 
 type Classification = 'PUBLICO' | 'INTERNO' | 'SENSIVEL' | 'RESTRITO';
 

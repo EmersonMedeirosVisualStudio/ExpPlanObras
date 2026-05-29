@@ -1,13 +1,13 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import crypto from 'crypto';
-import prisma from '../../plugins/prisma.js';
-import { authenticate } from '../../utils/authenticate.js';
-import { auditRetencao } from './audit.js';
-import { simularDescarte, criarLoteDescarte, aprovarLote, executarLote } from './disposal.js';
-import { aplicarLegalHoldEmItem, aplicarLegalHoldPorCriteria, liberarLegalHold } from './legal-hold.js';
-import { listRetentionResources } from './registry.js';
-import { sincronizarItemRetencao } from './policy-engine.js';
+import prisma from '@/plugins/prisma.js';
+import { authenticate } from '@/utils/authenticate.js';
+import { auditRetencao } from '@/modules/retencao/audit.js';
+import { simularDescarte, criarLoteDescarte, aprovarLote, executarLote } from '@/modules/retencao/disposal.js';
+import { aplicarLegalHoldEmItem, aplicarLegalHoldPorCriteria, liberarLegalHold } from '@/modules/retencao/legal-hold.js';
+import { listRetentionResources } from '@/modules/retencao/registry.js';
+import { sincronizarItemRetencao } from '@/modules/retencao/policy-engine.js';
 
 type ApiSuccess<T> = { success: true; message?: string; data: T; meta?: any };
 type ApiError = { success: false; message: string; errors?: Record<string, string[]> };

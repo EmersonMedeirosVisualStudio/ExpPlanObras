@@ -1,4 +1,4 @@
-import { validateCNPJ, validateCPF } from '../../utils/validators.js';
+import { validateCNPJ, validateCPF } from '@/utils/validators.js';
 
 export type PiiType = 'CPF' | 'CNPJ' | 'EMAIL' | 'PHONE';
 

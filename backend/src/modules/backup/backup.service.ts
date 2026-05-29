@@ -1,4 +1,4 @@
-import prisma from '../../plugins/prisma.js';
+import prisma from '@/plugins/prisma.js';
 
 export async function exportTenantBackup(tenantId: number) {
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });

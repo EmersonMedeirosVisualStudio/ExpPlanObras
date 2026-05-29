@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { verifyMercadoPagoSignature, syncTenantFromPreapproval } from '../billing/billing.service.js';
+import { verifyMercadoPagoSignature, syncTenantFromPreapproval } from '@/modules/billing/billing.service.js';
 
 export default async function mercadoPagoWebhooks(server: FastifyInstance) {
   server.post('/mercadopago', async (request, reply) => {

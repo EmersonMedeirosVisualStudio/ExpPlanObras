@@ -1,6 +1,6 @@
-import prisma from '../../plugins/prisma.js';
-import { auditRetencao } from './audit.js';
-import { getRetentionHandler } from './registry.js';
+import prisma from '@/plugins/prisma.js';
+import { auditRetencao } from '@/modules/retencao/audit.js';
+import { getRetentionHandler } from '@/modules/retencao/registry.js';
 
 export async function simularDescarte(args: { tenantId: number; filtro?: { recurso?: string; elegivelAte?: Date; incluirHold?: boolean } }) {
   const where: any = { tenantId: args.tenantId };

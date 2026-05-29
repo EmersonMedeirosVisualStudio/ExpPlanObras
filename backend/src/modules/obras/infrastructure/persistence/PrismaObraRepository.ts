@@ -1,8 +1,8 @@
-import { withRLS } from '../../../../shared/plugins/prisma.js'
-import type { AbrangenciaContext, EnderecoObra, Obra, OrigemEndereco } from '../../domain/entities/Obra.js'
-import { buildScopeWhere } from '../../domain/entities/Obra.js'
-import { ContratoNotFoundError, EnderecoNotFoundError, ObraNotFoundError } from '../../domain/errors/ObraErrors.js'
-import type { CreateObraInput, EnderecoInput, IObraRepository, ObraWithEnderecos, ResumoFinanceiro, UpdateObraInput } from '../../domain/ports/IObraRepository.js'
+import { withRLS } from '@/shared/plugins/prisma.js'
+import type { AbrangenciaContext, EnderecoObra, Obra, OrigemEndereco } from '@/modules/obras/domain/entities/Obra.js'
+import { buildScopeWhere } from '@/modules/obras/domain/entities/Obra.js'
+import { ContratoNotFoundError, EnderecoNotFoundError, ObraNotFoundError } from '@/modules/obras/domain/errors/ObraErrors.js'
+import type { CreateObraInput, EnderecoInput, IObraRepository, ObraWithEnderecos, ResumoFinanceiro, UpdateObraInput } from '@/modules/obras/domain/ports/IObraRepository.js'
 
 function toNumber(v: unknown): number {
   if (v == null) return 0

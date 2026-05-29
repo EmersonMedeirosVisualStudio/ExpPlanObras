@@ -1,8 +1,8 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import prisma from '../../plugins/prisma.js';
-import { authenticate } from '../../utils/authenticate.js';
-import { simularPlaybook, executarPlaybook, aprovarExecucao, cancelarExecucao } from './playbooks.service.js';
+import prisma from '@/plugins/prisma.js';
+import { authenticate } from '@/utils/authenticate.js';
+import { simularPlaybook, executarPlaybook, aprovarExecucao, cancelarExecucao } from '@/modules/playbooks/playbooks.service.js';
 
 type ApiSuccess<T> = { success: true; data: T; meta?: any; message?: string };
 type ApiError = { success: false; message: string; errors?: Record<string, string[]> };

@@ -1,10 +1,10 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import crypto from 'crypto';
-import prisma from '../../plugins/prisma.js';
-import { authenticate } from '../../utils/authenticate.js';
-import { getQualifiedSignatureProvider } from './providers/registry.js';
-import { encryptSecret, hasSecretsKey } from './crypto.js';
+import prisma from '@/plugins/prisma.js';
+import { authenticate } from '@/utils/authenticate.js';
+import { getQualifiedSignatureProvider } from '@/modules/documentos-qualificados/providers/registry.js';
+import { encryptSecret, hasSecretsKey } from '@/modules/documentos-qualificados/crypto.js';
 
 type ApiSuccess<T> = { success: true; message?: string; data: T; meta?: any };
 type ApiError = { success: false; message: string; errors?: Record<string, string[]> };

@@ -1,4 +1,4 @@
-import type { FieldCatalogEntry } from './types.js';
+import type { FieldCatalogEntry } from '@/modules/security-fields/types.js';
 
 export const FIELD_CATALOG: FieldCatalogEntry[] = [
   { resource: 'EMPRESA_REPRESENTANTE', path: 'cpf', classification: 'SENSIVEL', defaultEffect: 'MASK', defaultMaskStrategy: 'CPF' },

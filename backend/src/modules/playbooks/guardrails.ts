@@ -1,4 +1,4 @@
-import type { PlaybookApprovalPolicy, PlaybookRiskLevel, PlaybookActionType } from './types.js';
+import type { PlaybookApprovalPolicy, PlaybookRiskLevel, PlaybookActionType } from '@/modules/playbooks/types.js';
 
 const riskRank: Record<PlaybookRiskLevel, number> = { BAIXO: 1, MEDIO: 2, ALTO: 3, CRITICO: 4 };
 

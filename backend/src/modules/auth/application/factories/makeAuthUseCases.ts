@@ -1,10 +1,10 @@
-import prisma from '../../../../shared/plugins/prisma.js'
-import { PrismaTenantRepository } from '../../infrastructure/persistence/PrismaTenantRepository.js'
-import { PrismaUserRepository } from '../../infrastructure/persistence/PrismaUserRepository.js'
-import { ChangePasswordUseCase } from '../use-cases/ChangePassword.js'
-import { LoginUseCase } from '../use-cases/Login.js'
-import { RegisterUseCase } from '../use-cases/Register.js'
-import { SelectTenantUseCase } from '../use-cases/SelectTenant.js'
+import prisma from '@/shared/plugins/prisma.js'
+import { PrismaTenantRepository } from '@/modules/auth/infrastructure/persistence/PrismaTenantRepository.js'
+import { PrismaUserRepository } from '@/modules/auth/infrastructure/persistence/PrismaUserRepository.js'
+import { ChangePasswordUseCase } from '@/modules/auth/application/use-cases/ChangePassword.js'
+import { LoginUseCase } from '@/modules/auth/application/use-cases/Login.js'
+import { RegisterUseCase } from '@/modules/auth/application/use-cases/Register.js'
+import { SelectTenantUseCase } from '@/modules/auth/application/use-cases/SelectTenant.js'
 
 async function resolveSessionAccess(
   userId: number,

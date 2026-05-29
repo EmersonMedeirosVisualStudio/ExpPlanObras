@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authenticate } from '../../utils/authenticate.js';
-import { createContratoSchema, updateContratoSchema } from './contratos.schema.js';
-import { subscribe } from './contratos.realtime.js';
+import { authenticate } from '@/utils/authenticate.js';
+import { createContratoSchema, updateContratoSchema } from '@/modules/contratos/contratos.schema.js';
+import { subscribe } from '@/modules/contratos/contratos.realtime.js';
 import {
   createContrato,
   createContratoAditivo,
@@ -42,7 +42,7 @@ import {
   updateContratoProgramacaoFinanceira,
   updateCronogramaItemDatas,
   updateSubcontrato,
-} from './contratos.service.js';
+} from '@/modules/contratos/contratos.service.js';
 
 export default async function contratosRoutes(server: FastifyInstance) {
   server.addHook('onRequest', authenticate);

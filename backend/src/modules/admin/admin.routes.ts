@@ -1,10 +1,10 @@
 
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { createTenantSchema, updateTenantSchema } from './admin.schema.js';
-import { acceptClaimAsAdmin, activateTenantSubscription, createTenantByAdmin, deleteTenant, getAllTenants, grantTenantAccessDays, manualGrantTenantAccess, resetRepresentativePassword, revokeManualTenantAccess, updateTenant } from './admin.service.js';
-import { checkSystemAdmin } from '../../utils/authenticate.js';
-import prisma from '../../plugins/prisma.js';
+import { createTenantSchema, updateTenantSchema } from '@/modules/admin/admin.schema.js';
+import { acceptClaimAsAdmin, activateTenantSubscription, createTenantByAdmin, deleteTenant, getAllTenants, grantTenantAccessDays, manualGrantTenantAccess, resetRepresentativePassword, revokeManualTenantAccess, updateTenant } from '@/modules/admin/admin.service.js';
+import { checkSystemAdmin } from '@/utils/authenticate.js';
+import prisma from '@/plugins/prisma.js';
 
 function extractLatLngFromGoogleMapsLink(link: string) {
   const v = String(link || '').trim();

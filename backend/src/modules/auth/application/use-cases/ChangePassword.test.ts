@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { IUserRepository } from '../../domain/ports/IUserRepository.js'
-import { ChangePasswordUseCase } from './ChangePassword.js'
-import { InvalidCredentialsError, UserNotFoundError } from '../../domain/errors/AuthErrors.js'
+import type { IUserRepository } from '@/modules/auth/domain/ports/IUserRepository.js'
+import { ChangePasswordUseCase } from '@/modules/auth/application/use-cases/ChangePassword.js'
+import { InvalidCredentialsError, UserNotFoundError } from '@/modules/auth/domain/errors/AuthErrors.js'
 
 const mockUser = {
   id: 1,

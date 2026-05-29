@@ -1,4 +1,4 @@
-import type { FieldMaskStrategy } from './types.js';
+import type { FieldMaskStrategy } from '@/modules/security-fields/types.js';
 
 function onlyDigits(v: string) {
   return v.replace(/\D+/g, '');

@@ -1,5 +1,5 @@
-import type { Tenant } from '../entities/Tenant.js'
-import type { UserTenant } from '../entities/User.js'
+import type { Tenant } from '@/modules/auth/domain/entities/Tenant.js'
+import type { UserTenant } from '@/modules/auth/domain/entities/User.js'
 
 export interface CreateTenantInput {
   name: string

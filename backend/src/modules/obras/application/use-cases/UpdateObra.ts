@@ -1,8 +1,8 @@
-import type { AbrangenciaContext } from '../../domain/entities/Obra.js'
-import { ObraAccessDeniedError, ObraNotFoundError } from '../../domain/errors/ObraErrors.js'
-import type { IObraRepository } from '../../domain/ports/IObraRepository.js'
-import { canAccessObra } from '../../domain/entities/Obra.js'
-import type { UpdateObraDto } from '../dtos/updateObraDto.js'
+import type { AbrangenciaContext } from '@/modules/obras/domain/entities/Obra.js'
+import { ObraAccessDeniedError, ObraNotFoundError } from '@/modules/obras/domain/errors/ObraErrors.js'
+import type { IObraRepository } from '@/modules/obras/domain/ports/IObraRepository.js'
+import { canAccessObra } from '@/modules/obras/domain/entities/Obra.js'
+import type { UpdateObraDto } from '@/modules/obras/application/dtos/updateObraDto.js'
 
 export class UpdateObraUseCase {
   constructor(private readonly repo: IObraRepository) {}

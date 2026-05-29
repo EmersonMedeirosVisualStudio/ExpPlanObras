@@ -1,5 +1,5 @@
-import type { QualifiedSignatureProvider } from './types.js';
-import { MockQualifiedSignatureProvider } from './mock.js';
+import type { QualifiedSignatureProvider } from '@/modules/documentos-qualificados/providers/types.js';
+import { MockQualifiedSignatureProvider } from '@/modules/documentos-qualificados/providers/mock.js';
 
 const providers: QualifiedSignatureProvider[] = [MockQualifiedSignatureProvider];
 

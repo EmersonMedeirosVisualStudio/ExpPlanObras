@@ -1,4 +1,4 @@
-import prisma from '../../plugins/prisma.js';
+import prisma from '@/plugins/prisma.js';
 
 export async function aceitarSugestaoClassificacao(args: { tenantId: number; userId: number; sugestaoId: number }) {
   const s = await prisma.governancaClassificacaoSugestao.findUnique({ where: { id: args.sugestaoId } }).catch(() => null);

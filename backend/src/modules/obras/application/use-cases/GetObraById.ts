@@ -1,7 +1,7 @@
-import type { AbrangenciaContext } from '../../domain/entities/Obra.js'
-import { canAccessObra } from '../../domain/entities/Obra.js'
-import { ObraAccessDeniedError, ObraNotFoundError } from '../../domain/errors/ObraErrors.js'
-import type { IObraRepository } from '../../domain/ports/IObraRepository.js'
+import type { AbrangenciaContext } from '@/modules/obras/domain/entities/Obra.js'
+import { canAccessObra } from '@/modules/obras/domain/entities/Obra.js'
+import { ObraAccessDeniedError, ObraNotFoundError } from '@/modules/obras/domain/errors/ObraErrors.js'
+import type { IObraRepository } from '@/modules/obras/domain/ports/IObraRepository.js'
 
 export class GetObraByIdUseCase {
   constructor(private readonly repo: IObraRepository) {}

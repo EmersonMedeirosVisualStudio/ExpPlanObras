@@ -1,6 +1,6 @@
-import prisma from '../../plugins/prisma.js';
+import prisma from '@/plugins/prisma.js';
 import { Prisma } from '@prisma/client';
-import { auditRetencao } from './audit.js';
+import { auditRetencao } from '@/modules/retencao/audit.js';
 
 export async function aplicarLegalHoldEmItem(args: { tenantId: number; userId: number; legalHoldId: number; retencaoItemId: number }) {
   const item = await prisma.governancaRetencaoItem.findUnique({ where: { id: args.retencaoItemId } }).catch(() => null);

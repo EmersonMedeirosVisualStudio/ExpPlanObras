@@ -1,5 +1,5 @@
-import prisma from '../../plugins/prisma.js';
-import type { FieldDecision, FieldMaskStrategy, FieldPolicyEffect, SanitizeAction, SubjectContext } from './types.js';
+import prisma from '@/plugins/prisma.js';
+import type { FieldDecision, FieldMaskStrategy, FieldPolicyEffect, SanitizeAction, SubjectContext } from '@/modules/security-fields/types.js';
 
 type PolicyRow = {
   id: number;

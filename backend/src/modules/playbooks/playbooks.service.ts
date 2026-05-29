@@ -1,9 +1,9 @@
-import prisma from '../../plugins/prisma.js';
-import { emitObservabilityEvent } from '../observabilidade/emit.js';
-import { redactPayload } from '../observabilidade/redaction.js';
-import { getPlaybookActionExecutor } from './registry.js';
-import { maxRisk, needsApproval } from './guardrails.js';
-import type { PlaybookActionType, PlaybookApprovalPolicy, PlaybookExecutionStatus, PlaybookMode, PlaybookRiskLevel } from './types.js';
+import prisma from '@/plugins/prisma.js';
+import { emitObservabilityEvent } from '@/modules/observabilidade/emit.js';
+import { redactPayload } from '@/modules/observabilidade/redaction.js';
+import { getPlaybookActionExecutor } from '@/modules/playbooks/registry.js';
+import { maxRisk, needsApproval } from '@/modules/playbooks/guardrails.js';
+import type { PlaybookActionType, PlaybookApprovalPolicy, PlaybookExecutionStatus, PlaybookMode, PlaybookRiskLevel } from '@/modules/playbooks/types.js';
 
 function toRisk(v: any): PlaybookRiskLevel {
   const s = String(v || '').toUpperCase();

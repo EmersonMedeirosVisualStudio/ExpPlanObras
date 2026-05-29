@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { checkSystemAdmin } from '../../utils/authenticate.js';
-import { exportTenantBackup, restoreTenantBackup } from './backup.service.js';
+import { checkSystemAdmin } from '@/utils/authenticate.js';
+import { exportTenantBackup, restoreTenantBackup } from '@/modules/backup/backup.service.js';
 
 export default async function backupRoutes(server: FastifyInstance) {
   server.addHook('onRequest', checkSystemAdmin);
