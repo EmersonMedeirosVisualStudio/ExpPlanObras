@@ -214,6 +214,7 @@ async function readTextSmart(file: File) {
   const [bootDone, setBootDone] = useState(false);
    const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
+  const [planilhaParamsErr, setPlanilhaParamsErr] = useState<string | null>(null);
   const [planilhaTravada, setPlanilhaTravada] = useState(false);
   const [servicoTravado, setServicoTravado] = useState(false);
   const [servicoTravadoPorCadeia, setServicoTravadoPorCadeia] = useState(false);
@@ -279,7 +280,15 @@ async function readTextSmart(file: File) {
       codigoCentroCusto: string;
     }>;
   } | null>(null);
-  const [debugCompFilter, setDebugCompFilter] = useState<{ q: string; tipo: string; etapa: string }>({ q: "", tipo: "", etapa: "" });
+  const [debugCompFilter, setDebugCompFilter] = useState<{
+    codigoServico: string;
+    tipoItem: string;
+    codigoItem: string;
+    banco: string;
+    descricao: string;
+    und: string;
+    codigoCentroCusto: string;
+  }>({ codigoServico: "", tipoItem: "", codigoItem: "", banco: "", descricao: "", und: "", codigoCentroCusto: "" });
   const [itensView, setItensView] = useState<{
     composicoes: boolean;
     materiais: boolean;
@@ -909,6 +918,7 @@ async function readTextSmart(file: File) {
   async function carregarPrevistoPlanilha() {
     if (!idObra || !codigoServico) return;
     try {
+      setPlanilhaParamsErr(null);
       setPrevistoServicoMeta(null);
       setPrevistoAlert(null);
       setServicoCatalogoMsg(null);
@@ -933,6 +943,17 @@ async function readTextSmart(file: File) {
       const pick = byQuery || atual || null;
       setPlanilhaTravada(Boolean(pick?.travado));
       const pid = pick?.idPlanilha != null ? Number(pick.idPlanilha) : 0;
+      setPlanilhaInfo(
+        pid
+          ? {
+              idPlanilha: pid,
+              numeroVersao: pick?.numeroVersao != null ? Number(pick.numeroVersao) : 0,
+              nome: pick?.nome != null ? String(pick.nome || "").trim() : "",
+              dataBaseSinapi: null,
+              ufSinapi: null,
+            }
+          : null
+      );
       setPlanilhaCtx(
         pick
           ? {
@@ -988,37 +1009,44 @@ async function readTextSmart(file: File) {
         setServicoCatalogoMsg("Não foi possível verificar o catálogo (tab_servicos). Usando dados da planilha.");
       }
 
-      const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${pid}`);
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar planilha");
-      const p = (json.data?.planilha?.parametros || {}) as any;
-      const plan = json.data?.planilha || null;
-      setPlanilhaInfo(
-        plan
-          ? {
-              idPlanilha: Number(plan.idPlanilha || pid),
-              numeroVersao: Number(plan.numeroVersao || 0),
-              nome: plan?.nome != null ? String(plan.nome || "").trim() : "",
-              dataBaseSinapi: p.dataBaseSinapi == null ? null : String(p.dataBaseSinapi || ""),
-              ufSinapi: p.ufSinapi == null ? null : String(p.ufSinapi || "").trim().toUpperCase(),
-            }
-          : null
-      );
-      setPlanilhaParams({
-        tipoEncargosSociais: p.tipoEncargosSociais == null ? null : String(p.tipoEncargosSociais || "").trim().toUpperCase(),
-        ufSinapi: p.ufSinapi == null ? null : String(p.ufSinapi || "").trim().toUpperCase(),
-        dataBaseSbc: p.dataBaseSbc == null ? null : String(p.dataBaseSbc || ""),
-        dataBaseSinapi: p.dataBaseSinapi == null ? null : String(p.dataBaseSinapi || ""),
-        bdiServicosSbc: p.bdiServicosSbc == null ? null : Number(p.bdiServicosSbc),
-        bdiServicosSinapi: p.bdiServicosSinapi == null ? null : Number(p.bdiServicosSinapi),
-        bdiDiferenciadoSbc: p.bdiDiferenciadoSbc == null ? null : Number(p.bdiDiferenciadoSbc),
-        bdiDiferenciadoSinapi: p.bdiDiferenciadoSinapi == null ? null : Number(p.bdiDiferenciadoSinapi),
-        encSociaisSemDesSbc: p.encSociaisSemDesSbc == null ? null : Number(p.encSociaisSemDesSbc),
-        encSociaisSemDesSinapi: p.encSociaisSemDesSinapi == null ? null : Number(p.encSociaisSemDesSinapi),
-        descontoSbc: p.descontoSbc == null ? null : Number(p.descontoSbc),
-        descontoSinapi: p.descontoSinapi == null ? null : Number(p.descontoSinapi),
-      });
-      const linhas = Array.isArray(json.data?.planilha?.linhas) ? json.data.planilha.linhas : [];
+      let linhas: any[] = [];
+      try {
+        const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha?planilhaId=${pid}`);
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar planilha");
+        const p = (json.data?.planilha?.parametros || {}) as any;
+        const plan = json.data?.planilha || null;
+        setPlanilhaInfo(
+          plan
+            ? {
+                idPlanilha: Number(plan.idPlanilha || pid),
+                numeroVersao: Number(plan.numeroVersao || 0),
+                nome: plan?.nome != null ? String(plan.nome || "").trim() : "",
+                dataBaseSinapi: p.dataBaseSinapi == null ? null : String(p.dataBaseSinapi || ""),
+                ufSinapi: p.ufSinapi == null ? null : String(p.ufSinapi || "").trim().toUpperCase(),
+              }
+            : null
+        );
+        setPlanilhaParams({
+          tipoEncargosSociais: p.tipoEncargosSociais == null ? null : String(p.tipoEncargosSociais || "").trim().toUpperCase(),
+          ufSinapi: p.ufSinapi == null ? null : String(p.ufSinapi || "").trim().toUpperCase(),
+          dataBaseSbc: p.dataBaseSbc == null ? null : String(p.dataBaseSbc || ""),
+          dataBaseSinapi: p.dataBaseSinapi == null ? null : String(p.dataBaseSinapi || ""),
+          bdiServicosSbc: p.bdiServicosSbc == null ? null : Number(p.bdiServicosSbc),
+          bdiServicosSinapi: p.bdiServicosSinapi == null ? null : Number(p.bdiServicosSinapi),
+          bdiDiferenciadoSbc: p.bdiDiferenciadoSbc == null ? null : Number(p.bdiDiferenciadoSbc),
+          bdiDiferenciadoSinapi: p.bdiDiferenciadoSinapi == null ? null : Number(p.bdiDiferenciadoSinapi),
+          encSociaisSemDesSbc: p.encSociaisSemDesSbc == null ? null : Number(p.encSociaisSemDesSbc),
+          encSociaisSemDesSinapi: p.encSociaisSemDesSinapi == null ? null : Number(p.encSociaisSemDesSinapi),
+          descontoSbc: p.descontoSbc == null ? null : Number(p.descontoSbc),
+          descontoSinapi: p.descontoSinapi == null ? null : Number(p.descontoSinapi),
+        });
+        linhas = Array.isArray(json.data?.planilha?.linhas) ? json.data.planilha.linhas : [];
+      } catch (e: any) {
+        setPlanilhaParams(null);
+        setPlanilhaParamsErr(e?.message || "Erro ao carregar parâmetros da planilha");
+        linhas = [];
+      }
       const navList: Array<{ item: string; codigo: string; servicos: string }> = linhas
         .filter((l: any) => String(l.tipoLinha || "").toUpperCase() === "SERVICO" && String(l.codigo || "").trim())
         .map((l: any) => ({
@@ -1549,16 +1577,6 @@ async function readTextSmart(file: File) {
     }
   }
 
-  const debugCompEtapas = useMemo(() => {
-    const rows = debugCompData?.rows || [];
-    const set = new Set<string>();
-    for (const r of rows) {
-      const e = String(r.etapa || "").trim();
-      if (e) set.add(e);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [debugCompData]);
-
   const debugCompTipos = useMemo(() => {
     const rows = debugCompData?.rows || [];
     const set = new Set<string>();
@@ -1571,17 +1589,21 @@ async function readTextSmart(file: File) {
 
   const debugCompRowsFiltered = useMemo(() => {
     const rows = debugCompData?.rows || [];
-    const q = String(debugCompFilter.q || "").trim().toLowerCase();
-    const tipo = String(debugCompFilter.tipo || "").trim().toLowerCase();
-    const etapa = String(debugCompFilter.etapa || "").trim().toLowerCase();
+    const codigoServicoF = String(debugCompFilter.codigoServico || "").trim().toLowerCase();
+    const tipoF = String(debugCompFilter.tipoItem || "").trim().toLowerCase();
+    const codigoItemF = String(debugCompFilter.codigoItem || "").trim().toLowerCase();
+    const bancoF = String(debugCompFilter.banco || "").trim().toLowerCase();
+    const descF = String(debugCompFilter.descricao || "").trim().toLowerCase();
+    const undF = String(debugCompFilter.und || "").trim().toLowerCase();
+    const ccF = String(debugCompFilter.codigoCentroCusto || "").trim().toLowerCase();
     return rows.filter((r) => {
-      if (tipo && String(r.tipoItem || "").trim().toLowerCase() !== tipo) return false;
-      if (etapa && String(r.etapa || "").trim().toLowerCase() !== etapa) return false;
-      if (q) {
-        const hay =
-          `${r.codigoServico} ${r.etapa} ${r.tipoItem} ${r.codigoItem} ${r.banco} ${r.descricao} ${r.und} ${r.codigoCentroCusto}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
+      if (codigoServicoF && !String(r.codigoServico || "").trim().toLowerCase().includes(codigoServicoF)) return false;
+      if (tipoF && String(r.tipoItem || "").trim().toLowerCase() !== tipoF) return false;
+      if (codigoItemF && !String(r.codigoItem || "").trim().toLowerCase().includes(codigoItemF)) return false;
+      if (bancoF && !String(r.banco || "").trim().toLowerCase().includes(bancoF)) return false;
+      if (descF && !String(r.descricao || "").trim().toLowerCase().includes(descF)) return false;
+      if (undF && !String(r.und || "").trim().toLowerCase().includes(undF)) return false;
+      if (ccF && !String(r.codigoCentroCusto || "").trim().toLowerCase().includes(ccF)) return false;
       return true;
     });
   }, [debugCompData, debugCompFilter]);
@@ -3535,17 +3557,17 @@ async function readTextSmart(file: File) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-6">
                 <input
                   className="input bg-white"
-                  placeholder="Filtrar (serviço, etapa, tipo, código item, banco, descrição...)"
-                  value={debugCompFilter.q}
-                  onChange={(e) => setDebugCompFilter((p) => ({ ...p, q: e.target.value }))}
+                  placeholder="Serviço (código)"
+                  value={debugCompFilter.codigoServico}
+                  onChange={(e) => setDebugCompFilter((p) => ({ ...p, codigoServico: e.target.value }))}
                 />
                 <select
                   className="input bg-white"
-                  value={debugCompFilter.tipo}
-                  onChange={(e) => setDebugCompFilter((p) => ({ ...p, tipo: e.target.value }))}
+                  value={debugCompFilter.tipoItem}
+                  onChange={(e) => setDebugCompFilter((p) => ({ ...p, tipoItem: e.target.value }))}
                 >
                   <option value="">Tipo (todos)</option>
                   {debugCompTipos.map((t) => (
@@ -3554,30 +3576,58 @@ async function readTextSmart(file: File) {
                     </option>
                   ))}
                 </select>
-                <select
+                <input
                   className="input bg-white"
-                  value={debugCompFilter.etapa}
-                  onChange={(e) => setDebugCompFilter((p) => ({ ...p, etapa: e.target.value }))}
-                >
-                  <option value="">Etapa (todas)</option>
-                  {debugCompEtapas.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Código do item"
+                  value={debugCompFilter.codigoItem}
+                  onChange={(e) => setDebugCompFilter((p) => ({ ...p, codigoItem: e.target.value }))}
+                />
+                <input
+                  className="input bg-white"
+                  placeholder="Banco"
+                  value={debugCompFilter.banco}
+                  onChange={(e) => setDebugCompFilter((p) => ({ ...p, banco: e.target.value }))}
+                />
+                <input
+                  className="input bg-white"
+                  placeholder="Descrição"
+                  value={debugCompFilter.descricao}
+                  onChange={(e) => setDebugCompFilter((p) => ({ ...p, descricao: e.target.value }))}
+                />
+                <input
+                  className="input bg-white"
+                  placeholder="UND"
+                  value={debugCompFilter.und}
+                  onChange={(e) => setDebugCompFilter((p) => ({ ...p, und: e.target.value }))}
+                />
+                <input
+                  className="input bg-white"
+                  placeholder="Centro de custo"
+                  value={debugCompFilter.codigoCentroCusto}
+                  onChange={(e) => setDebugCompFilter((p) => ({ ...p, codigoCentroCusto: e.target.value }))}
+                />
                 <button
                   className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
                   type="button"
-                  onClick={() => setDebugCompFilter((p) => ({ ...p, q: String(codigoServico || "").trim() }))}
+                  onClick={() => setDebugCompFilter((p) => ({ ...p, codigoServico: String(codigoServico || "").trim() }))}
                   title="Filtrar pelo código do serviço atual"
                 >
-                  Filtrar  {codigoServico || "—"}
+                  Filtrar {codigoServico || "—"}
                 </button>
                 <button
                   className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
                   type="button"
-                  onClick={() => setDebugCompFilter({ q: "", tipo: "", etapa: "" })}
+                  onClick={() =>
+                    setDebugCompFilter({
+                      codigoServico: "",
+                      tipoItem: "",
+                      codigoItem: "",
+                      banco: "",
+                      descricao: "",
+                      und: "",
+                      codigoCentroCusto: "",
+                    })
+                  }
                   title="Limpar filtros"
                 >
                   Limpar
@@ -3590,7 +3640,6 @@ async function readTextSmart(file: File) {
                     <tr>
                       <th className="px-3 py-2">ID</th>
                       <th className="px-3 py-2">Serviço</th>
-                      <th className="px-3 py-2">Etapa</th>
                       <th className="px-3 py-2">Tipo</th>
                       <th className="px-3 py-2">Código</th>
                       <th className="px-3 py-2">Banco</th>
@@ -3606,7 +3655,6 @@ async function readTextSmart(file: File) {
                       <tr key={`${r.idItem}-${r.codigoServico}-${r.codigoItem}-${r.tipoItem}`} className="border-t">
                         <td className="px-3 py-2 text-xs text-slate-500">{r.idItem || "—"}</td>
                         <td className="px-3 py-2 font-medium">{r.codigoServico || "—"}</td>
-                        <td className="px-3 py-2">{r.etapa || "—"}</td>
                         <td className="px-3 py-2">{r.tipoItem || "—"}</td>
                         <td className="px-3 py-2 font-medium">{r.codigoItem || "—"}</td>
                         <td className="px-3 py-2">{r.banco || "—"}</td>
@@ -3623,14 +3671,14 @@ async function readTextSmart(file: File) {
                     ))}
                     {debugCompRowsFiltered.length > 500 ? (
                       <tr className="border-t">
-                        <td colSpan={11} className="px-3 py-3 text-xs text-slate-500">
+                        <td colSpan={10} className="px-3 py-3 text-xs text-slate-500">
                           Mostrando 500 linhas. Total filtrado: {debugCompRowsFiltered.length}.
                         </td>
                       </tr>
                     ) : null}
                     {!debugCompRowsFiltered.length ? (
                       <tr className="border-t">
-                        <td colSpan={11} className="px-3 py-6 text-center text-sm text-slate-500">
+                        <td colSpan={10} className="px-3 py-6 text-center text-sm text-slate-500">
                           Nenhum item encontrado para este filtro.
                         </td>
                       </tr>
@@ -3994,7 +4042,7 @@ async function readTextSmart(file: File) {
               </div>
             </div>
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-lg border bg-white p-3">
+              <div className="rounded-lg border p-3" style={{ backgroundColor: displayPrefs.bgComposicoes }}>
                 <div className="text-[11px] text-slate-500">Composições</div>
                 <div className="mt-1 flex items-end justify-between gap-2">
                   <div className="text-base font-semibold text-slate-900">{moeda(Number(totalComposicoesBase || 0))}</div>
@@ -4003,7 +4051,7 @@ async function readTextSmart(file: File) {
                   </div>
                 </div>
               </div>
-              <div className="rounded-lg border bg-white p-3">
+              <div className="rounded-lg border p-3" style={{ backgroundColor: displayPrefs.bgMateriais }}>
                 <div className="text-[11px] text-slate-500">Materiais</div>
                 <div className="mt-1 flex items-end justify-between gap-2">
                   <div className="text-base font-semibold text-slate-900">{moeda(Number(totalMateriaisBase || 0))}</div>
@@ -4012,7 +4060,7 @@ async function readTextSmart(file: File) {
                   </div>
                 </div>
               </div>
-              <div className="rounded-lg border bg-white p-3">
+              <div className="rounded-lg border p-3" style={{ backgroundColor: displayPrefs.bgEquipamentos }}>
                 <div className="text-[11px] text-slate-500">Equipamentos</div>
                 <div className="mt-1 flex items-end justify-between gap-2">
                   <div className="text-base font-semibold text-slate-900">{moeda(Number(totalEquipamentosBase || 0))}</div>
@@ -4021,7 +4069,7 @@ async function readTextSmart(file: File) {
                   </div>
                 </div>
               </div>
-              <div className="rounded-lg border bg-white p-3">
+              <div className="rounded-lg border p-3" style={{ backgroundColor: displayPrefs.bgMao }}>
                 <div className="text-[11px] text-slate-500">Mão de obra</div>
                 <div className="mt-1 flex items-end justify-between gap-2">
                   <div className="text-base font-semibold text-slate-900">{moeda(Number(totalMaoBase || 0))}</div>
@@ -4076,8 +4124,9 @@ async function readTextSmart(file: File) {
         </div>
       </section>
         </div>
-        <aside className="w-full lg:w-[16%] lg:min-w-[240px] lg:max-w-[360px]">
-          <div className="rounded-xl border bg-white p-4 shadow-sm lg:sticky lg:top-6 lg:h-[calc(100vh-140px)] overflow-auto space-y-3">
+        <aside className="w-full lg:w-[16%] lg:min-w-[240px] lg:max-w-[360px] self-stretch">
+          <div className="rounded-xl border bg-white p-4 shadow-sm h-full flex flex-col">
+            <div className="flex-1" />
             {(() => {
               const p = planilhaParams;
               const hasSinapi = Boolean(
@@ -4110,28 +4159,35 @@ async function readTextSmart(file: File) {
                     : tipoEncargos === "ISE"
                       ? "ISE (Especial)"
                       : tipoEncargos || "—";
+              const versaoAtual = planilhaVersoes.find((v) => Boolean(v.atual)) || planilhaVersoes[0] || null;
+              const origemLabel = planilhaInfo?.nome
+                ? `v${planilhaInfo.numeroVersao} - ${planilhaInfo.nome}`
+                : versaoAtual?.nome
+                  ? `v${versaoAtual.numeroVersao} - ${versaoAtual.nome}`
+                  : "—";
 
               return (
                 <div className="space-y-3">
                   <div className="text-sm font-semibold text-slate-800">Parâmetros</div>
 
-                  <div className="grid grid-cols-1 gap-2">
-                    <div className="rounded border bg-slate-50 px-2 py-2 text-xs">
-                      <div className="text-[10px] text-slate-500">Origem dos parâmetros</div>
-                      <div className="font-semibold text-slate-900">{planilhaInfo?.nome ? `v${planilhaInfo.numeroVersao} - ${planilhaInfo.nome}` : "Planilha atual"}</div>
-                    </div>
-                  </div>
+                  {planilhaParamsErr ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">{planilhaParamsErr}</div>
+                  ) : null}
 
                   <div className="grid grid-cols-1 gap-2">
                     <div className="rounded border bg-slate-50 px-2 py-2 text-xs">
-                      <div className="text-[10px] text-slate-500">Tipo de Encargos Sociais</div>
-                      <div className="font-semibold text-slate-900">{tipoEncargosLabel}</div>
+                      <div className="text-[10px] text-slate-500">Origem dos parâmetros</div>
+                      <div className="font-semibold text-slate-900">{origemLabel}</div>
                     </div>
                   </div>
 
                   <div className="rounded border bg-slate-50 p-2">
                     <div className="text-xs font-semibold text-slate-800">1 - Usado em insumos</div>
                     <div className="mt-2 grid grid-cols-1 gap-2">
+                      <div className="rounded border bg-white px-2 py-2 text-xs">
+                        <div className="text-[10px] text-slate-500">Tipo de Encargos Sociais</div>
+                        <div className="font-semibold text-slate-900">{tipoEncargosLabel}</div>
+                      </div>
                       <div className="rounded border bg-white px-2 py-2 text-xs">
                         <div className="text-[10px] text-slate-500">UF</div>
                         <div className="font-semibold text-slate-900">{String(p?.ufSinapi || "").trim() ? String(p?.ufSinapi || "").trim() : "—"}</div>
