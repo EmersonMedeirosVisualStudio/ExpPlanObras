@@ -55,22 +55,22 @@ export interface IObraRepository {
   delete(tenantId: number, id: number): Promise<void>
 
   // Endereços
-  getEndereco(tenantId: number, obraId: number): Promise<EnderecoObra | null>
-  listEnderecos(tenantId: number, obraId: number): Promise<EnderecoObra[]>
-  upsertEndereco(tenantId: number, obraId: number, input: EnderecoInput): Promise<EnderecoObra>
-  createEndereco(tenantId: number, obraId: number, input: EnderecoInput): Promise<EnderecoObra>
-  updateEndereco(tenantId: number, obraId: number, enderecoId: number, input: EnderecoInput): Promise<EnderecoObra>
-  deleteEndereco(tenantId: number, obraId: number, enderecoId: number): Promise<void>
+  getAddress(tenantId: number, obraId: number): Promise<EnderecoObra | null>
+  listAddresses(tenantId: number, obraId: number): Promise<EnderecoObra[]>
+  upsertAddress(tenantId: number, obraId: number, input: EnderecoInput): Promise<EnderecoObra>
+  createAddress(tenantId: number, obraId: number, input: EnderecoInput): Promise<EnderecoObra>
+  updateAddress(tenantId: number, obraId: number, enderecoId: number, input: EnderecoInput): Promise<EnderecoObra>
+  deleteAddress(tenantId: number, obraId: number, enderecoId: number): Promise<void>
 
   // Orçamento / custos
-  getOrcamento(tenantId: number, obraId: number): Promise<{ obra: Obra; totalGasto: number; saldo: number; custos: unknown[] }>
-  updateOrcamento(tenantId: number, obraId: number, valorPrevisto: number): Promise<unknown>
-  addCusto(tenantId: number, obraId: number, input: { description: string; amount: number; date?: string }): Promise<unknown>
-  removeCusto(tenantId: number, obraId: number, custoId: number): Promise<unknown>
+  getBudget(tenantId: number, obraId: number): Promise<{ obra: Obra; totalGasto: number; saldo: number; custos: unknown[] }>
+  updateBudget(tenantId: number, obraId: number, valorPrevisto: number): Promise<unknown>
+  addCost(tenantId: number, obraId: number, input: { description: string; amount: number; date?: string }): Promise<unknown>
+  removeCost(tenantId: number, obraId: number, custoId: number): Promise<unknown>
 
   // Planilha contratada
-  getPlanilhaResumo(tenantId: number, obraId: number): Promise<{ existe: boolean; itens: number; temServicoMinimo: boolean }>
-  ensurePlanilhaMinima(tenantId: number, obraId: number): Promise<{ planilhaId: number; codigoServicoMinimo: string }>
-  listPlanilhaItens(tenantId: number, obraId: number): Promise<unknown[]>
-  addPlanilhaItem(tenantId: number, obraId: number, input: { codigoServico: string; descricao?: string | null; unidade?: string | null; quantidade?: number | null; precoUnitario?: number | null }): Promise<{ planilhaId: number }>
+  getSheetSummary(tenantId: number, obraId: number): Promise<{ existe: boolean; itens: number; temServicoMinimo: boolean }>
+  ensureMinimumSheet(tenantId: number, obraId: number): Promise<{ planilhaId: number; codigoServicoMinimo: string }>
+  listSheetItems(tenantId: number, obraId: number): Promise<unknown[]>
+  addSheetItem(tenantId: number, obraId: number, input: { codigoServico: string; descricao?: string | null; unidade?: string | null; quantidade?: number | null; precoUnitario?: number | null }): Promise<{ planilhaId: number }>
 }

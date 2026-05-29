@@ -110,19 +110,19 @@ export class PrismaObraRepository implements IObraRepository {
     })
   }
 
-  async getEndereco(tenantId: number, obraId: number): Promise<EnderecoObra | null> {
+  async getAddress(tenantId: number, obraId: number): Promise<EnderecoObra | null> {
     return withRLS(tenantId, async (tx) => {
       return (tx as any).enderecoObra.findFirst({ where: { tenantId, obraId }, orderBy: [{ principal: 'desc' }, { id: 'asc' }] })
     })
   }
 
-  async listEnderecos(tenantId: number, obraId: number): Promise<EnderecoObra[]> {
+  async listAddresses(tenantId: number, obraId: number): Promise<EnderecoObra[]> {
     return withRLS(tenantId, async (tx) => {
       return (tx as any).enderecoObra.findMany({ where: { tenantId, obraId }, orderBy: [{ principal: 'desc' }, { id: 'asc' }] })
     })
   }
 
-  async upsertEndereco(tenantId: number, obraId: number, input: EnderecoInput): Promise<EnderecoObra> {
+  async upsertAddress(tenantId: number, obraId: number, input: EnderecoInput): Promise<EnderecoObra> {
     return withRLS(tenantId, async (tx) => {
       const obra = await (tx as any).obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } })
       if (!obra) throw new ObraNotFoundError(obraId)
@@ -147,7 +147,7 @@ export class PrismaObraRepository implements IObraRepository {
     })
   }
 
-  async createEndereco(tenantId: number, obraId: number, input: EnderecoInput): Promise<EnderecoObra> {
+  async createAddress(tenantId: number, obraId: number, input: EnderecoInput): Promise<EnderecoObra> {
     return withRLS(tenantId, async (tx) => {
       const obra = await (tx as any).obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } })
       if (!obra) throw new ObraNotFoundError(obraId)
@@ -169,7 +169,7 @@ export class PrismaObraRepository implements IObraRepository {
     })
   }
 
-  async updateEndereco(tenantId: number, obraId: number, enderecoId: number, input: EnderecoInput): Promise<EnderecoObra> {
+  async updateAddress(tenantId: number, obraId: number, enderecoId: number, input: EnderecoInput): Promise<EnderecoObra> {
     return withRLS(tenantId, async (tx) => {
       const obra = await (tx as any).obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } })
       if (!obra) throw new ObraNotFoundError(obraId)
@@ -196,7 +196,7 @@ export class PrismaObraRepository implements IObraRepository {
     })
   }
 
-  async deleteEndereco(tenantId: number, obraId: number, enderecoId: number): Promise<void> {
+  async deleteAddress(tenantId: number, obraId: number, enderecoId: number): Promise<void> {
     await withRLS(tenantId, async (tx) => {
       const obra = await (tx as any).obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } })
       if (!obra) throw new ObraNotFoundError(obraId)
@@ -213,7 +213,7 @@ export class PrismaObraRepository implements IObraRepository {
     })
   }
 
-  async getOrcamento(tenantId: number, obraId: number) {
+  async getBudget(tenantId: number, obraId: number) {
     return withRLS(tenantId, async (tx) => {
       const obra = await (tx as any).obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true, name: true, valorPrevisto: true, valorAtual: true } })
       if (!obra) throw new ObraNotFoundError(obraId)
@@ -223,32 +223,32 @@ export class PrismaObraRepository implements IObraRepository {
     })
   }
 
-  async updateOrcamento(tenantId: number, obraId: number, valorPrevisto: number) {
+  async updateBudget(tenantId: number, obraId: number, valorPrevisto: number) {
     return withRLS(tenantId, async (tx) => {
       const updated = await (tx as any).obra.updateMany({ where: { id: obraId, tenantId }, data: { valorPrevisto } })
       if (updated.count === 0) throw new ObraNotFoundError(obraId)
-      return this.getOrcamento(tenantId, obraId)
+      return this.getBudget(tenantId, obraId)
     })
   }
 
-  async addCusto(tenantId: number, obraId: number, input: { description: string; amount: number; date?: string }) {
+  async addCost(tenantId: number, obraId: number, input: { description: string; amount: number; date?: string }) {
     return withRLS(tenantId, async (tx) => {
       const obra = await (tx as any).obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } })
       if (!obra) throw new ObraNotFoundError(obraId)
       await (tx as any).custo.create({ data: { obraId, tenantId, description: input.description, amount: input.amount, date: input.date ? new Date(input.date) : new Date() } })
-      return this.getOrcamento(tenantId, obraId)
+      return this.getBudget(tenantId, obraId)
     })
   }
 
-  async removeCusto(tenantId: number, obraId: number, custoId: number) {
+  async removeCost(tenantId: number, obraId: number, custoId: number) {
     return withRLS(tenantId, async (tx) => {
       const deleted = await (tx as any).custo.deleteMany({ where: { id: custoId, obraId, tenantId } })
       if (deleted.count === 0) throw new Error('Custo not found or access denied')
-      return this.getOrcamento(tenantId, obraId)
+      return this.getBudget(tenantId, obraId)
     })
   }
 
-  async getPlanilhaResumo(tenantId: number, obraId: number) {
+  async getSheetSummary(tenantId: number, obraId: number) {
     return withRLS(tenantId, async (tx) => {
       const obra = await (tx as any).obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true } })
       if (!obra) throw new ObraNotFoundError(obraId)
@@ -262,7 +262,7 @@ export class PrismaObraRepository implements IObraRepository {
     })
   }
 
-  async ensurePlanilhaMinima(tenantId: number, obraId: number): Promise<{ planilhaId: number; codigoServicoMinimo: string }> {
+  async ensureMinimumSheet(tenantId: number, obraId: number): Promise<{ planilhaId: number; codigoServicoMinimo: string }> {
     return withRLS(tenantId, async (tx) => {
       const obra = await (tx as any).obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true, contratoId: true } })
       if (!obra) throw new ObraNotFoundError(obraId)
@@ -279,7 +279,7 @@ export class PrismaObraRepository implements IObraRepository {
     })
   }
 
-  async listPlanilhaItens(tenantId: number, obraId: number): Promise<unknown[]> {
+  async listSheetItems(tenantId: number, obraId: number): Promise<unknown[]> {
     return withRLS(tenantId, async (tx) => {
       const planilha = await (tx as any).obraPlanilhaContratada.findFirst({ where: { tenantId, obraId } }).catch(() => null)
       if (!planilha) return []
@@ -287,7 +287,7 @@ export class PrismaObraRepository implements IObraRepository {
     })
   }
 
-  async addPlanilhaItem(tenantId: number, obraId: number, input: { codigoServico: string; descricao?: string | null; unidade?: string | null; quantidade?: number | null; precoUnitario?: number | null }): Promise<{ planilhaId: number }> {
+  async addSheetItem(tenantId: number, obraId: number, input: { codigoServico: string; descricao?: string | null; unidade?: string | null; quantidade?: number | null; precoUnitario?: number | null }): Promise<{ planilhaId: number }> {
     return withRLS(tenantId, async (tx) => {
       const obra = await (tx as any).obra.findFirst({ where: { id: obraId, tenantId }, select: { id: true, contratoId: true } })
       if (!obra) throw new ObraNotFoundError(obraId)

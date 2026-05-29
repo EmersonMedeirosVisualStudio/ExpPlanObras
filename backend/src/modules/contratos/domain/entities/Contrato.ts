@@ -12,7 +12,7 @@ export interface Contrato {
   objeto: string | null
   descricao: string | null
   tipoPapel: ContractRole | null
-  tipoContratante: ContractPartyType
+  contractorType: ContractPartyType
   empresaParceiraNome: string | null
   empresaParceiraDocumento: string | null
   status: string

@@ -7,7 +7,7 @@ export const createContratoDto = z.object({
   objeto: z.string().optional().nullable(),
   descricao: z.string().optional().nullable(),
   tipoPapel: z.enum(['CONTRATADO', 'CONTRATANTE']).optional().nullable(),
-  tipoContratante: z.enum(['PUBLICO', 'PRIVADO', 'PF']).optional().nullable(),
+  contractorType: z.enum(['PUBLICO', 'PRIVADO', 'PF']).optional().nullable(),
   empresaParceiraNome: z.string().optional().nullable(),
   empresaParceiraDocumento: z.string().optional().nullable(),
   status: z.string().optional().nullable(),

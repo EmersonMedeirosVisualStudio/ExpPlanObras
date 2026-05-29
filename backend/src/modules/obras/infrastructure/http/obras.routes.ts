@@ -167,7 +167,7 @@ export default async function obrasRoutes(server: FastifyInstance) {
     try {
       const { tenantId } = ctx(request)
       const { id } = request.params as { id: number }
-      return reply.send(await repo.getEndereco(tenantId, id))
+      return reply.send(await repo.getAddress(tenantId, id))
     } catch (e) { return replyError(reply, e) }
   })
 
@@ -175,7 +175,7 @@ export default async function obrasRoutes(server: FastifyInstance) {
     try {
       const { tenantId } = ctx(request)
       const { id } = request.params as { id: number }
-      return reply.send(await repo.upsertEndereco(tenantId, id, await buildEnderecoInput(request.body as EnderecoBody)))
+      return reply.send(await repo.upsertAddress(tenantId, id, await buildEnderecoInput(request.body as EnderecoBody)))
     } catch (e) { return replyError(reply, e) }
   })
 
@@ -183,7 +183,7 @@ export default async function obrasRoutes(server: FastifyInstance) {
     try {
       const { tenantId } = ctx(request)
       const { id } = request.params as { id: number }
-      return reply.send(await repo.listEnderecos(tenantId, id))
+      return reply.send(await repo.listAddresses(tenantId, id))
     } catch (e) { return replyError(reply, e) }
   })
 
@@ -191,7 +191,7 @@ export default async function obrasRoutes(server: FastifyInstance) {
     try {
       const { tenantId } = ctx(request)
       const { id } = request.params as { id: number }
-      return reply.send(await repo.createEndereco(tenantId, id, await buildEnderecoInput(request.body as EnderecoBody)))
+      return reply.send(await repo.createAddress(tenantId, id, await buildEnderecoInput(request.body as EnderecoBody)))
     } catch (e) { return replyError(reply, e) }
   })
 
@@ -199,7 +199,7 @@ export default async function obrasRoutes(server: FastifyInstance) {
     try {
       const { tenantId } = ctx(request)
       const { id, enderecoId } = request.params as { id: number; enderecoId: number }
-      return reply.send(await repo.updateEndereco(tenantId, id, enderecoId, await buildEnderecoInput(request.body as EnderecoBody)))
+      return reply.send(await repo.updateAddress(tenantId, id, enderecoId, await buildEnderecoInput(request.body as EnderecoBody)))
     } catch (e) { return replyError(reply, e) }
   })
 
@@ -207,7 +207,7 @@ export default async function obrasRoutes(server: FastifyInstance) {
     try {
       const { tenantId } = ctx(request)
       const { id, enderecoId } = request.params as { id: number; enderecoId: number }
-      await repo.deleteEndereco(tenantId, id, enderecoId)
+      await repo.deleteAddress(tenantId, id, enderecoId)
       return reply.send({ success: true })
     } catch (e) { return replyError(reply, e) }
   })
@@ -218,7 +218,7 @@ export default async function obrasRoutes(server: FastifyInstance) {
     try {
       const { tenantId } = ctx(request)
       const { id } = request.params as { id: number }
-      return reply.send(await repo.getOrcamento(tenantId, id))
+      return reply.send(await repo.getBudget(tenantId, id))
     } catch (e) { return replyError(reply, e) }
   })
 
@@ -227,7 +227,7 @@ export default async function obrasRoutes(server: FastifyInstance) {
       const { tenantId } = ctx(request)
       const { id } = request.params as { id: number }
       const { valorPrevisto } = request.body as { valorPrevisto: number }
-      return reply.send(await repo.updateOrcamento(tenantId, id, valorPrevisto))
+      return reply.send(await repo.updateBudget(tenantId, id, valorPrevisto))
     } catch (e) { return replyError(reply, e) }
   })
 
@@ -235,7 +235,7 @@ export default async function obrasRoutes(server: FastifyInstance) {
     try {
       const { tenantId } = ctx(request)
       const { id } = request.params as { id: number }
-      return reply.send((await repo.getOrcamento(tenantId, id)).custos)
+      return reply.send((await repo.getBudget(tenantId, id)).custos)
     } catch (e) { return replyError(reply, e) }
   })
 
@@ -243,7 +243,7 @@ export default async function obrasRoutes(server: FastifyInstance) {
     try {
       const { tenantId } = ctx(request)
       const { id } = request.params as { id: number }
-      return reply.code(201).send(await repo.addCusto(tenantId, id, request.body as { description: string; amount: number; date?: string }))
+      return reply.code(201).send(await repo.addCost(tenantId, id, request.body as { description: string; amount: number; date?: string }))
     } catch (e) { return replyError(reply, e) }
   })
 
@@ -251,7 +251,7 @@ export default async function obrasRoutes(server: FastifyInstance) {
     try {
       const { tenantId } = ctx(request)
       const { id, custoId } = request.params as { id: number; custoId: number }
-      return reply.send(await repo.removeCusto(tenantId, id, custoId))
+      return reply.send(await repo.removeCost(tenantId, id, custoId))
     } catch (e) { return replyError(reply, e) }
   })
 
@@ -261,7 +261,7 @@ export default async function obrasRoutes(server: FastifyInstance) {
     try {
       const { tenantId } = ctx(request)
       const { id } = request.params as { id: number }
-      return reply.send(await repo.getPlanilhaResumo(tenantId, id))
+      return reply.send(await repo.getSheetSummary(tenantId, id))
     } catch (e) { return replyError(reply, e) }
   })
 
@@ -269,7 +269,7 @@ export default async function obrasRoutes(server: FastifyInstance) {
     try {
       const { tenantId } = ctx(request)
       const { id } = request.params as { id: number }
-      return reply.send(await repo.ensurePlanilhaMinima(tenantId, id))
+      return reply.send(await repo.ensureMinimumSheet(tenantId, id))
     } catch (e) { return replyError(reply, e) }
   })
 
@@ -277,7 +277,7 @@ export default async function obrasRoutes(server: FastifyInstance) {
     try {
       const { tenantId } = ctx(request)
       const { id } = request.params as { id: number }
-      return reply.send(await repo.listPlanilhaItens(tenantId, id))
+      return reply.send(await repo.listSheetItems(tenantId, id))
     } catch (e) { return replyError(reply, e) }
   })
 
@@ -287,7 +287,7 @@ export default async function obrasRoutes(server: FastifyInstance) {
     try {
       const { tenantId } = ctx(request)
       const { id } = request.params as { id: number }
-      return reply.send(await repo.addPlanilhaItem(tenantId, id, request.body as { codigoServico: string; descricao?: string | null; unidade?: string | null; quantidade?: number | null; precoUnitario?: number | null }))
+      return reply.send(await repo.addSheetItem(tenantId, id, request.body as { codigoServico: string; descricao?: string | null; unidade?: string | null; quantidade?: number | null; precoUnitario?: number | null }))
     } catch (e) { return replyError(reply, e) }
   })
 }

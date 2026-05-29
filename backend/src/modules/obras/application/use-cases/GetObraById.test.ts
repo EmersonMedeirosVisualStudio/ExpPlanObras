@@ -12,10 +12,10 @@ const mockObra: ObraWithEnderecos = {
 const makeRepo = (): IObraRepository => ({
   findById: vi.fn(), findAll: vi.fn(), findResumoFinanceiro: vi.fn(),
   create: vi.fn(), update: vi.fn(), delete: vi.fn(),
-  getEndereco: vi.fn(), listEnderecos: vi.fn(), upsertEndereco: vi.fn(),
-  createEndereco: vi.fn(), updateEndereco: vi.fn(), deleteEndereco: vi.fn(),
-  getOrcamento: vi.fn(), updateOrcamento: vi.fn(), addCusto: vi.fn(), removeCusto: vi.fn(),
-  getPlanilhaResumo: vi.fn(), ensurePlanilhaMinima: vi.fn(), listPlanilhaItens: vi.fn(), addPlanilhaItem: vi.fn(),
+  getAddress: vi.fn(), listAddresses: vi.fn(), upsertAddress: vi.fn(),
+  createAddress: vi.fn(), updateAddress: vi.fn(), deleteAddress: vi.fn(),
+  getBudget: vi.fn(), updateBudget: vi.fn(), addCost: vi.fn(), removeCost: vi.fn(),
+  getSheetSummary: vi.fn(), ensureMinimumSheet: vi.fn(), listSheetItems: vi.fn(), addSheetItem: vi.fn(),
 })
 
 describe('GetObraByIdUseCase', () => {
