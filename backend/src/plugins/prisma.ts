@@ -1,19 +1,3 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient({
-  log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['warn', 'error'],
-});
-
-// Helper function to set tenant context
-export async function setTenantContext(tx: any, tenantId: number) {
-  // SQLite does not support RLS like PostgreSQL.
-  // In development, we skip this step and rely on application logic.
-  if (process.env.DATABASE_URL?.startsWith('file:')) {
-    return;
-  }
-  // Using raw SQL to set the session variable for RLS
-  // In a transaction, this applies to subsequent queries in the same transaction
-  await tx.$executeRaw`SELECT set_config('app.tenant_id', ${String(tenantId)}, TRUE)`;
-}
-
-export default prisma;
+// Re-export from shared — use src/shared/plugins/prisma.ts for new code
+export type { PrismaTx } from '../shared/plugins/prisma.js'
+export { default, setTenantContext, withRLS } from '../shared/plugins/prisma.js'

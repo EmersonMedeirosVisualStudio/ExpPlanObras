@@ -2,7 +2,7 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
-  "main": "dist/server.js",
+  "main": "src/server.ts",
   "type": "module",
   "engines": {
     "node": "22.x"
@@ -14,12 +14,12 @@
     "postinstall": "npm run prisma:generate",
     "create-system-admin": "npm run prisma:generate && tsx scripts/create-system-admin.ts",
     "seed-demo-tenants": "tsx scripts/seed-demo-tenants.ts",
-    "build": "npm run prisma:generate && tsc",
-    "start": "npm run prisma:migrate:deploy && node dist/server.js",
+    "build": "npm run prisma:generate",
+    "start": "npm run prisma:migrate:deploy && tsx src/server.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "npx tsc --noEmit"
   },
   "keywords": [],
   "author": "",
@@ -32,16 +32,19 @@
     "@types/node": "^25.3.5",
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.3.1",
+    "exceljs": "^4.4.0",
     "fastify": "^5.8.2",
     "fastify-type-provider-zod": "^6.1.0",
-    "exceljs": "^4.4.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
+    "@vitest/coverage-v8": "^4.1.7",
     "prisma": "^6.19.2",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.1.7"
   }
 }
