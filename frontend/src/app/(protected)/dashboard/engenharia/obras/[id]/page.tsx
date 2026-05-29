@@ -1300,7 +1300,7 @@ export default function EngenhariaObraHomePage() {
               Menu
             </span>
           </div>
-          <h1 className="text-2xl font-semibold">Obra selecionada</h1>
+          <h1 className="text-2xl font-semibold">Obra selecionada - Menu</h1>
           <div className="text-sm text-slate-600">
             {`Obra #${idObra}${obraNomeParam ? ` — ${obraNomeParam}` : ""}${contrato?.numeroContrato?.trim() ? ` — Contrato: ${contrato.numeroContrato}` : ""} — janelas operacionais da obra selecionada.`}
           </div>

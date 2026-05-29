@@ -431,6 +431,7 @@ async function readTextSmart(file: File) {
  
    const fileInputRef = useRef<HTMLInputElement | null>(null);
   const compTotalCacheRef = useRef<Map<string, number>>(new Map());
+  const precoUnitCacheRef = useRef<Map<string, number>>(new Map());
 
   function getUserKeyBase() {
     try {
@@ -515,6 +516,27 @@ async function readTextSmart(file: File) {
      return res;
    }
  
+  function isTipoComposicao(tipoItem: string) {
+    const t = String(tipoItem || "").trim().toUpperCase();
+    return t === "COMPOSICAO" || t === "COMPOSICAO_AUXILIAR";
+  }
+
+  async function getPrecoUnitarioServico(cod: string) {
+    const key = String(cod || "").trim().toUpperCase();
+    if (!key) return 0;
+    const cached = precoUnitCacheRef.current.get(key);
+    if (cached != null) return cached;
+    const pid = planilhaInfo?.idPlanilha || planilhaId;
+    const qs = pid ? `?planilhaId=${encodeURIComponent(String(pid))}` : "";
+    const res = await authFetch(`/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(key)}/preco-unitario${qs}`);
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar preço unitário da composição");
+    const v = Number(json.data?.valorUnitario || 0);
+    const val = Number.isFinite(v) ? v : 0;
+    precoUnitCacheRef.current.set(key, val);
+    return val;
+  }
+
   async function carregar(silent?: boolean) {
      if (!idObra || !codigoServico) return;
      try {
@@ -570,7 +592,7 @@ async function readTextSmart(file: File) {
         descricao: String(i.descricao || ""),
         und: String(i.und || ""),
         quantidade: i.quantidade == null ? "" : String(i.quantidade),
-        valorUnitario: i.valorUnitario == null ? "" : String(i.valorUnitario),
+        valorUnitario: i.valorUnitario == null ? "0" : String(i.valorUnitario),
         perdaPercentual: i.perdaPercentual == null ? "" : String(i.perdaPercentual),
         codigoCentroCusto: String(i.codigoCentroCusto || ""),
         codigoCentroCustoBase: String(i.codigoCentroCustoBase || ""),
@@ -579,6 +601,29 @@ async function readTextSmart(file: File) {
         origemTipo: String(i.origemTipo || ""),
         origemChave: String(i.origemChave || ""),
       }));
+      const distinctCompCodes: string[] = Array.from(
+        new Set<string>(
+          mapped
+            .filter((r: any) => isTipoComposicao(r.tipoItem) && String(r.codigoItem || "").trim())
+            .map((r: any) => String(r.codigoItem || "").trim().toUpperCase())
+        )
+      );
+      if (distinctCompCodes.length) {
+        for (const c of distinctCompCodes) {
+          const current = mapped
+            .filter((r: any) => String(r.codigoItem || "").trim().toUpperCase() === c && isTipoComposicao(r.tipoItem))
+            .map((r: any) => String(r.valorUnitario || "").trim());
+          const allZeroOrEmpty = current.every((x: string) => !x || Number(x) === 0);
+          if (!allZeroOrEmpty) continue;
+          try {
+            const vu = await getPrecoUnitarioServico(c);
+            const vuStr = String(vu);
+            for (const r of mapped) {
+              if (isTipoComposicao(r.tipoItem) && String(r.codigoItem || "").trim().toUpperCase() === c) r.valorUnitario = vuStr;
+            }
+          } catch {}
+        }
+      }
       setItens(mapped);
       itensSavedRef.current = mapped.map((r: any) => ({ ...r }));
       if (!silent) setOkMsg("Composição carregada.");
@@ -3087,23 +3132,6 @@ async function readTextSmart(file: File) {
                 <input type="checkbox" checked={servicoDisplayPrefs.colUnd} onChange={(e) => setServicoDisplayPrefs((p) => ({ ...p, colUnd: Boolean(e.target.checked) }))} />
                 <span>UND</span>
               </label>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" checked={servicoDisplayPrefs.colValorUnit} onChange={(e) => setServicoDisplayPrefs((p) => ({ ...p, colValorUnit: Boolean(e.target.checked) }))} />
-                <span>Valor unit.</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" checked={servicoDisplayPrefs.colTotalSemBDI} onChange={(e) => setServicoDisplayPrefs((p) => ({ ...p, colTotalSemBDI: Boolean(e.target.checked) }))} />
-                <span>Total sem BDI</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={servicoDisplayPrefs.colTotalSemBDIComDesconto}
-                  onChange={(e) => setServicoDisplayPrefs((p) => ({ ...p, colTotalSemBDIComDesconto: Boolean(e.target.checked) }))}
-                  disabled={Number(descontoPercent || 0) <= 0}
-                />
-                <span className={Number(descontoPercent || 0) <= 0 ? "text-slate-400" : ""}>Total sem BDI com desconto</span>
-              </label>
             </div>
             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {[
@@ -3111,9 +3139,6 @@ async function readTextSmart(file: File) {
                 { key: "wFontePx", label: "FONTE" },
                 { key: "wServicoPx", label: "SERVIÇO" },
                 { key: "wUndPx", label: "UND" },
-                { key: "wValorUnitPx", label: "VALOR UNIT." },
-                { key: "wTotalSemBDIPx", label: "TOTAL SEM BDI" },
-                { key: "wTotalSemBDIComDescontoPx", label: "TOTAL COM DESCONTO" },
               ].map((c) => (
                 <div key={c.key} className="flex items-center justify-between gap-2 rounded border bg-white px-3 py-2 text-[10px]">
                   <div className="text-slate-700 font-medium">{c.label}</div>
@@ -3746,7 +3771,7 @@ async function readTextSmart(file: File) {
         ) : null}
 
         <div className="overflow-auto">
-          <table className="min-w-[1050px] w-full text-sm border border-slate-200" style={{ fontSize: `${servicoDisplayPrefs.fsPx}px` }}>
+          <table className="min-w-[820px] w-full text-sm border border-slate-200" style={{ fontSize: `${servicoDisplayPrefs.fsPx}px` }}>
             <thead className="bg-slate-50 text-center text-slate-700">
               <tr>
                 <th className="px-3 py-2 border-r border-slate-200" style={{ width: `${servicoDisplayPrefs.wCodigoPx}px` }}>
@@ -3765,23 +3790,6 @@ async function readTextSmart(file: File) {
                     UND
                   </th>
                 ) : null}
-                {servicoDisplayPrefs.colValorUnit ? (
-                  <th className="px-3 py-2 border-r border-slate-200" style={{ width: `${servicoDisplayPrefs.wValorUnitPx}px` }}>
-                    VALOR UNIT.
-                  </th>
-                ) : null}
-                {servicoDisplayPrefs.colTotalSemBDI ? (
-                  <th className="px-3 py-2 border-r border-slate-200" style={{ width: `${servicoDisplayPrefs.wTotalSemBDIPx}px` }}>
-                    TOTAL SEM BDI
-                  </th>
-                ) : null}
-                {Number(descontoPercent || 0) > 0 && servicoDisplayPrefs.colTotalSemBDIComDesconto ? (
-                  <th className="px-3 py-2" style={{ width: `${servicoDisplayPrefs.wTotalSemBDIComDescontoPx}px` }}>
-                    TOTAL SEM BDI COM DESCONTO
-                  </th>
-                ) : (
-                  <th className="px-3 py-2">—</th>
-                )}
               </tr>
             </thead>
             <tbody>
@@ -3953,22 +3961,6 @@ async function readTextSmart(file: File) {
                     />
                   </td>
                 ) : null}
-
-                {servicoDisplayPrefs.colValorUnit ? (
-                  <td className="px-3 py-2 border-r border-slate-200 text-right" style={{ width: `${servicoDisplayPrefs.wValorUnitPx}px` }}>
-                    {moeda(Number(totalComLSComBDI || 0))}
-                  </td>
-                ) : null}
-
-                {servicoDisplayPrefs.colTotalSemBDI ? (
-                  <td className="px-3 py-2 border-r border-slate-200 text-right" style={{ width: `${servicoDisplayPrefs.wTotalSemBDIPx}px` }}>
-                    {moeda(Number(totalSemBDI || 0))}
-                  </td>
-                ) : null}
-
-                <td className="px-3 py-2 text-right" style={{ width: `${servicoDisplayPrefs.wTotalSemBDIComDescontoPx}px` }}>
-                  {Number(descontoPercent || 0) > 0 && servicoDisplayPrefs.colTotalSemBDIComDesconto ? moeda(Number(totalSemBDIComDesconto || 0)) : "—"}
-                </td>
               </tr>
             </tbody>
           </table>
@@ -4126,7 +4118,6 @@ async function readTextSmart(file: File) {
         </div>
         <aside className="w-full lg:w-[16%] lg:min-w-[240px] lg:max-w-[360px] self-stretch">
           <div className="rounded-xl border bg-white p-4 shadow-sm h-full flex flex-col">
-            <div className="flex-1" />
             {(() => {
               const p = planilhaParams;
               const hasSinapi = Boolean(

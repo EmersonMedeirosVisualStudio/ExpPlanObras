@@ -6406,6 +6406,7 @@ export default async function v1Routes(server: FastifyInstance) {
         ? ((await prisma.$queryRawUnsafe(
           `
           SELECT
+            tipo_encargos_sociais AS "tipoEncargosSociais",
             data_base_sbc AS "dataBaseSbc",
             data_base_sinapi AS "dataBaseSinapi",
             uf_sinapi AS "ufSinapi",
@@ -6513,6 +6514,7 @@ export default async function v1Routes(server: FastifyInstance) {
           valorTotal,
           totalServicos,
           parametros: {
+            tipoEncargosSociais: pRow?.tipoEncargosSociais ? String(pRow.tipoEncargosSociais).trim() : null,
             dataBaseSbc: pRow?.dataBaseSbc ? String(pRow.dataBaseSbc) : null,
             dataBaseSinapi: pRow?.dataBaseSinapi ? String(pRow.dataBaseSinapi) : null,
             ufSinapi: pRow?.ufSinapi ? String(pRow.ufSinapi) : null,

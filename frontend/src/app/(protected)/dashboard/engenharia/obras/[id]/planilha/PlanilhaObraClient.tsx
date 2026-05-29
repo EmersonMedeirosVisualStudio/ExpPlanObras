@@ -1505,7 +1505,9 @@ export default function PlanilhaObraClient({
           setComposicaoValidacaoByCodigo({});
           return;
         }
-        await Promise.all([carregarPlanilha(planilhaId), carregarComposicaoStatus(planilhaId), carregarComposicaoValidacao(planilhaId)]);
+        await carregarPlanilha(planilhaId);
+        await carregarComposicaoStatus(planilhaId);
+        await carregarComposicaoValidacao(planilhaId);
         void carregarVersoes("FULL", { silent: true });
       } finally {
         if (!cancelled) {
@@ -1712,7 +1714,10 @@ export default function PlanilhaObraClient({
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao salvar linha");
       resetLinhaForm();
-      await Promise.all([carregarPlanilha(planilha.idPlanilha), carregarVersoes(), carregarComposicaoStatus(planilha.idPlanilha), carregarComposicaoValidacao(planilha.idPlanilha)]);
+      await carregarPlanilha(planilha.idPlanilha);
+      await carregarVersoes();
+      await carregarComposicaoStatus(planilha.idPlanilha);
+      await carregarComposicaoValidacao(planilha.idPlanilha);
       setOkMsg(editingLinhaId ? "Serviço atualizado com sucesso." : "Linha salva com sucesso.");
     } catch (e: any) {
       setErr(e?.message || "Erro ao salvar linha");
@@ -1735,7 +1740,10 @@ export default function PlanilhaObraClient({
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao excluir linha");
       setEditingLinhaId((cur) => (cur === idLinha ? null : cur));
-      await Promise.all([carregarPlanilha(planilha.idPlanilha), carregarVersoes(), carregarComposicaoStatus(planilha.idPlanilha), carregarComposicaoValidacao(planilha.idPlanilha)]);
+      await carregarPlanilha(planilha.idPlanilha);
+      await carregarVersoes();
+      await carregarComposicaoStatus(planilha.idPlanilha);
+      await carregarComposicaoValidacao(planilha.idPlanilha);
     } catch (e: any) {
       setErr(e?.message || "Erro ao excluir linha");
     } finally {
