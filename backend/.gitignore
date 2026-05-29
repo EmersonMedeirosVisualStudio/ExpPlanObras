@@ -1,5 +1,4 @@
 node_modules
-# Keep environment variables out of version control
 .env
 
 /generated/prisma
@@ -7,3 +6,8 @@ dist
 prisma/*.db
 prisma/*.sqlite
 prisma/*.sqlite3
+
+# TypeScript compiled output — src runs via tsx, no dist needed
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
