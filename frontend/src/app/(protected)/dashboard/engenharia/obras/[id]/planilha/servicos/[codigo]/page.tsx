@@ -3762,6 +3762,7 @@ async function readTextSmart(file: File) {
             return displayPrefs.bgMateriais;
           }, { showFiltro: true })}
         </div>
+        </div>
       </section>
         </div>
         <aside className="w-full lg:w-[20%] lg:min-w-[300px] lg:max-w-[420px]">
