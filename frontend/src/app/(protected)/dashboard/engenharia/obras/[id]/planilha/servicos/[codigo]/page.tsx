@@ -34,6 +34,7 @@ type PrevistoPlanilhaRow = {
 };
 
 type PlanilhaParams = {
+  tipoEncargosSociais: string | null;
   ufSinapi: string | null;
   dataBaseSbc: string | null;
   dataBaseSinapi: string | null;
@@ -255,6 +256,27 @@ async function readTextSmart(file: File) {
   const [bancosCustom, setBancosCustom] = useState<string[]>([]);
   const [showDisplayConfig, setShowDisplayConfig] = useState(false);
   const [showPrintConfig, setShowPrintConfig] = useState(false);
+  const [debugCompOpen, setDebugCompOpen] = useState(false);
+  const [debugCompLoading, setDebugCompLoading] = useState(false);
+  const [debugCompErr, setDebugCompErr] = useState<string | null>(null);
+  const [debugCompData, setDebugCompData] = useState<{
+    codigoNormalizado: string;
+    servicoCatalogo: null | { codigo: string; fonte: string; servico: string; und: string };
+    composicaoCount: number;
+    rows: Array<{
+      idItem: number;
+      etapa: string;
+      tipoItem: string;
+      codigoItem: string;
+      banco: string;
+      descricao: string;
+      und: string;
+      quantidade: number | null;
+      perdaPercentual: number | null;
+      codigoCentroCusto: string;
+    }>;
+  } | null>(null);
+  const [debugCompFilter, setDebugCompFilter] = useState<{ q: string; tipo: string; etapa: string }>({ q: "", tipo: "", etapa: "" });
   const [itensView, setItensView] = useState<{
     composicoes: boolean;
     materiais: boolean;
@@ -963,6 +985,7 @@ async function readTextSmart(file: File) {
           : null
       );
       setPlanilhaParams({
+        tipoEncargosSociais: p.tipoEncargosSociais == null ? null : String(p.tipoEncargosSociais || "").trim().toUpperCase(),
         ufSinapi: p.ufSinapi == null ? null : String(p.ufSinapi || "").trim().toUpperCase(),
         dataBaseSbc: p.dataBaseSbc == null ? null : String(p.dataBaseSbc || ""),
         dataBaseSinapi: p.dataBaseSinapi == null ? null : String(p.dataBaseSinapi || ""),
@@ -1453,6 +1476,90 @@ async function readTextSmart(file: File) {
 
   const bancosBase = useMemo(() => ["SINAPI", "Próprio", "SBC", "SICRO3"], []);
   const bancosOptions = useMemo(() => Array.from(new Set([...bancosBase, ...bancosCustom])), [bancosBase, bancosCustom]);
+
+  async function carregarDebugComposicao() {
+    if (!idObra || !codigoServico) return;
+    try {
+      setDebugCompLoading(true);
+      setDebugCompErr(null);
+      const qs = new URLSearchParams();
+      const pid = planilhaInfo?.idPlanilha || planilhaId;
+      if (pid) qs.set("planilhaId", String(pid));
+      const res = await authFetch(
+        `/api/v1/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}/composicao-debug?${qs.toString()}`
+      );
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || "Erro ao carregar diagnóstico da composição");
+      const d = json.data || {};
+      const rows = Array.isArray(d.rows) ? d.rows : [];
+      setDebugCompData({
+        codigoNormalizado: String(d.codigoNormalizado || ""),
+        servicoCatalogo: d.servicoCatalogo
+          ? {
+              codigo: String(d.servicoCatalogo.codigo || ""),
+              fonte: String(d.servicoCatalogo.fonte || ""),
+              servico: String(d.servicoCatalogo.servico || ""),
+              und: String(d.servicoCatalogo.und || ""),
+            }
+          : null,
+        composicaoCount: Number(d.composicaoCount || 0),
+        rows: rows.map((r: any) => ({
+          idItem: typeof r.idItem === "bigint" ? Number(r.idItem) : Number(r.idItem || 0),
+          etapa: String(r.etapa || ""),
+          tipoItem: String(r.tipoItem || ""),
+          codigoItem: String(r.codigoItem || ""),
+          banco: String(r.banco || ""),
+          descricao: String(r.descricao || ""),
+          und: String(r.und || ""),
+          quantidade: r.quantidade == null ? null : Number(r.quantidade),
+          perdaPercentual: r.perdaPercentual == null ? null : Number(r.perdaPercentual),
+          codigoCentroCusto: String(r.codigoCentroCusto || ""),
+        })),
+      });
+    } catch (e: any) {
+      setDebugCompErr(e?.message || "Erro ao carregar diagnóstico da composição");
+      setDebugCompData(null);
+    } finally {
+      setDebugCompLoading(false);
+    }
+  }
+
+  const debugCompEtapas = useMemo(() => {
+    const rows = debugCompData?.rows || [];
+    const set = new Set<string>();
+    for (const r of rows) {
+      const e = String(r.etapa || "").trim();
+      if (e) set.add(e);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [debugCompData]);
+
+  const debugCompTipos = useMemo(() => {
+    const rows = debugCompData?.rows || [];
+    const set = new Set<string>();
+    for (const r of rows) {
+      const t = String(r.tipoItem || "").trim();
+      if (t) set.add(t);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [debugCompData]);
+
+  const debugCompRowsFiltered = useMemo(() => {
+    const rows = debugCompData?.rows || [];
+    const q = String(debugCompFilter.q || "").trim().toLowerCase();
+    const tipo = String(debugCompFilter.tipo || "").trim().toLowerCase();
+    const etapa = String(debugCompFilter.etapa || "").trim().toLowerCase();
+    return rows.filter((r) => {
+      if (tipo && String(r.tipoItem || "").trim().toLowerCase() !== tipo) return false;
+      if (etapa && String(r.etapa || "").trim().toLowerCase() !== etapa) return false;
+      if (q) {
+        const hay =
+          `${r.etapa} ${r.tipoItem} ${r.codigoItem} ${r.banco} ${r.descricao} ${r.und} ${r.codigoCentroCusto}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [debugCompData, debugCompFilter]);
 
   function excluirBancoCustom(banco: string) {
     setBancosCustom((prev) => prev.filter((b) => b !== banco));
@@ -2676,6 +2783,18 @@ async function readTextSmart(file: File) {
           >
              Carregar
            </button>
+          <button
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-500 disabled:opacity-60"
+            type="button"
+            onClick={async () => {
+              setDebugCompOpen(true);
+              await carregarDebugComposicao();
+            }}
+            disabled={loading || debugCompLoading}
+            title="Abrir um diagnóstico direto da tabela de composições (tab_composicoes)"
+          >
+            Diagnóstico
+          </button>
            <input
              ref={fileInputRef}
              type="file"
@@ -3338,6 +3457,158 @@ async function readTextSmart(file: File) {
         </section>
       ) : null}
 
+      {debugCompOpen ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-auto">
+          <div className="w-full max-w-6xl rounded-xl border bg-white shadow-lg">
+            <div className="flex items-center justify-between gap-3 border-b p-4">
+              <div>
+                <div className="text-lg font-semibold">Diagnóstico da composição</div>
+                <div className="text-sm text-slate-600">{`Código: ${codigoServico || "—"}`}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60"
+                  type="button"
+                  onClick={carregarDebugComposicao}
+                  disabled={debugCompLoading}
+                  title="Recarregar diagnóstico"
+                >
+                  Recarregar
+                </button>
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                  type="button"
+                  onClick={() => setDebugCompOpen(false)}
+                  title="Fechar"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+            <div className="p-4 space-y-3">
+              {debugCompErr ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{debugCompErr}</div> : null}
+
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                <div className="rounded-lg border bg-slate-50 p-3">
+                  <div className="text-[11px] text-slate-500">Serviço no catálogo (tab_servicos)</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-900">{debugCompData?.servicoCatalogo ? "SIM" : "NÃO"}</div>
+                  {debugCompData?.servicoCatalogo ? (
+                    <div className="mt-1 text-xs text-slate-700">
+                      {`${debugCompData.servicoCatalogo.fonte || "—"} • ${debugCompData.servicoCatalogo.und || "—"} • ${debugCompData.servicoCatalogo.servico || "—"}`}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="rounded-lg border bg-slate-50 p-3">
+                  <div className="text-[11px] text-slate-500">Itens na composição (tab_composicoes)</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-900">{debugCompData?.composicaoCount ?? 0}</div>
+                  <div className="mt-1 text-xs text-slate-700">{debugCompData?.codigoNormalizado ? `Chave normalizada: ${debugCompData.codigoNormalizado}` : "—"}</div>
+                </div>
+                <div className="rounded-lg border bg-slate-50 p-3">
+                  <div className="text-[11px] text-slate-500">Quem está divergindo?</div>
+                  <div className="mt-1 text-xs text-slate-700">
+                    A lista de serviços e esta análise devem ler a mesma tabela (tab_composicoes). Se aqui aparecer contagem &gt; 0, a composição existe no banco.
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
+                <input
+                  className="input bg-white"
+                  placeholder="Filtrar (etapa, tipo, código, banco, descrição...)"
+                  value={debugCompFilter.q}
+                  onChange={(e) => setDebugCompFilter((p) => ({ ...p, q: e.target.value }))}
+                />
+                <select
+                  className="input bg-white"
+                  value={debugCompFilter.tipo}
+                  onChange={(e) => setDebugCompFilter((p) => ({ ...p, tipo: e.target.value }))}
+                >
+                  <option value="">Tipo (todos)</option>
+                  {debugCompTipos.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="input bg-white"
+                  value={debugCompFilter.etapa}
+                  onChange={(e) => setDebugCompFilter((p) => ({ ...p, etapa: e.target.value }))}
+                >
+                  <option value="">Etapa (todas)</option>
+                  {debugCompEtapas.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"
+                  type="button"
+                  onClick={() => setDebugCompFilter({ q: "", tipo: "", etapa: "" })}
+                  title="Limpar filtros"
+                >
+                  Limpar
+                </button>
+              </div>
+
+              <div className="overflow-auto rounded-lg border">
+                <table className="min-w-[1200px] w-full text-sm">
+                  <thead className="bg-slate-50 text-left text-slate-700">
+                    <tr>
+                      <th className="px-3 py-2">ID</th>
+                      <th className="px-3 py-2">Etapa</th>
+                      <th className="px-3 py-2">Tipo</th>
+                      <th className="px-3 py-2">Código</th>
+                      <th className="px-3 py-2">Banco</th>
+                      <th className="px-3 py-2">Descrição</th>
+                      <th className="px-3 py-2">UND</th>
+                      <th className="px-3 py-2 text-right">Qtd</th>
+                      <th className="px-3 py-2 text-right">Perda %</th>
+                      <th className="px-3 py-2">CC</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {debugCompRowsFiltered.slice(0, 500).map((r) => (
+                      <tr key={`${r.idItem}-${r.codigoItem}-${r.tipoItem}`} className="border-t">
+                        <td className="px-3 py-2 text-xs text-slate-500">{r.idItem || "—"}</td>
+                        <td className="px-3 py-2">{r.etapa || "—"}</td>
+                        <td className="px-3 py-2">{r.tipoItem || "—"}</td>
+                        <td className="px-3 py-2 font-medium">{r.codigoItem || "—"}</td>
+                        <td className="px-3 py-2">{r.banco || "—"}</td>
+                        <td className="px-3 py-2">{r.descricao || "—"}</td>
+                        <td className="px-3 py-2">{r.und || "—"}</td>
+                        <td className="px-3 py-2 text-right">
+                          {r.quantidade == null ? "—" : r.quantidade.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {r.perdaPercentual == null ? "—" : r.perdaPercentual.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-3 py-2">{r.codigoCentroCusto || "—"}</td>
+                      </tr>
+                    ))}
+                    {debugCompRowsFiltered.length > 500 ? (
+                      <tr className="border-t">
+                        <td colSpan={10} className="px-3 py-3 text-xs text-slate-500">
+                          Mostrando 500 linhas. Total filtrado: {debugCompRowsFiltered.length}.
+                        </td>
+                      </tr>
+                    ) : null}
+                    {!debugCompRowsFiltered.length ? (
+                      <tr className="border-t">
+                        <td colSpan={10} className="px-3 py-6 text-center text-sm text-slate-500">
+                          Nenhum item encontrado para este filtro.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {importChoiceOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-xl rounded-xl border bg-white p-4 shadow-sm space-y-3">
@@ -3734,17 +4005,17 @@ async function readTextSmart(file: File) {
                 <div className="text-[10px] text-slate-500">LS</div>
                 <div className="text-[13px] font-semibold text-slate-900">{Number(lsPercent || 0).toFixed(2)}%</div>
               </div>
-              <div className="rounded-lg border border-indigo-600 bg-indigo-50 px-2 py-2">
-                <div className="text-[10px] text-slate-500">Total (c/ LS)</div>
-                <div className="text-[13px] font-semibold text-slate-900">{moeda(Number(totalComLS || 0))}</div>
+              <div className="rounded-lg border border-blue-600 bg-blue-600 px-2 py-2 text-white">
+                <div className="text-[10px] opacity-90">Total (c/ LS)</div>
+                <div className="text-[13px] font-semibold">{moeda(Number(totalComLS || 0))}</div>
               </div>
               <div className="rounded-lg border bg-white px-2 py-2">
                 <div className="text-[10px] text-slate-500">BDI</div>
                 <div className="text-[13px] font-semibold text-slate-900">{Number(bdiPercent || 0).toFixed(2)}%</div>
               </div>
-              <div className="rounded-lg border bg-blue-600 px-2 py-2 text-white">
-                <div className="text-[10px] opacity-90">Total final</div>
-                <div className="text-[13px] font-semibold">{moeda(Number(totalComLSComBDI || 0))}</div>
+              <div className="rounded-lg border bg-white px-2 py-2">
+                <div className="text-[10px] text-slate-500">Total c/ BDI</div>
+                <div className="text-[13px] font-semibold text-slate-900">{moeda(Number(totalComLSComBDI || 0))}</div>
               </div>
               <div className="rounded-lg border bg-white px-2 py-2">
                 <div className="text-[10px] text-slate-500">{Number(descontoPercent || 0) > 0 ? `Total c/ desc. (${Number(descontoPercent || 0).toFixed(2)}%)` : "Total c/ desc."}</div>
@@ -3765,40 +4036,8 @@ async function readTextSmart(file: File) {
         </div>
       </section>
         </div>
-        <aside className="w-full lg:w-[20%] lg:min-w-[300px] lg:max-w-[420px]">
+        <aside className="w-full lg:w-[16%] lg:min-w-[240px] lg:max-w-[360px]">
           <div className="rounded-xl border bg-white p-4 shadow-sm lg:sticky lg:top-6 lg:h-[calc(100vh-140px)] overflow-auto space-y-3">
-            <div className="space-y-2">
-              <div className="text-sm font-semibold text-slate-900">Planilha</div>
-              <select
-                className="input bg-white w-full"
-                value={String(planilhaInfo?.idPlanilha || planilhaId || planilhaVersoes[0]?.idPlanilha || "")}
-                onChange={(e) => {
-                  const pid = Number(e.target.value || 0);
-                  if (!Number.isFinite(pid) || pid <= 0) return;
-                  const qs = new URLSearchParams();
-                  if (trailCodes.length) qs.set("trail", trailCodes.join(","));
-                  qs.set("planilhaId", String(pid));
-                  const rt = getBackTargetUrl();
-                  qs.set("returnTo", rt);
-                  if (itemFromPlanilhaParam) qs.set("item", itemFromPlanilhaParam);
-                  if (fonteFromPlanilhaParam) qs.set("fonte", fonteFromPlanilhaParam);
-                  if (servicosFromPlanilhaParam) qs.set("servicos", servicosFromPlanilhaParam);
-                  if (undFromPlanilhaParam) qs.set("und", undFromPlanilhaParam);
-                  router.push(`/dashboard/engenharia/obras/${idObra}/planilha/servicos/${encodeURIComponent(codigoServico)}?${qs.toString()}`);
-                }}
-                disabled={loading || planilhaVersoes.length === 0}
-              >
-                {planilhaVersoes.map((v) => (
-                  <option key={v.idPlanilha} value={String(v.idPlanilha)}>
-                    {`v${v.numeroVersao} — #${v.idPlanilha} - ${v.nome || "—"}${v.atual ? " (Atual)" : ""}`}
-                  </option>
-                ))}
-              </select>
-              <div className="text-xs text-slate-600">
-                {planilhaInfo?.idPlanilha ? `Usando: #${planilhaInfo.idPlanilha} - ${planilhaInfo.nome || "—"} (v${planilhaInfo.numeroVersao})` : "—"}
-              </div>
-            </div>
-
             {(() => {
               const p = planilhaParams;
               const hasSinapi = Boolean(
@@ -3822,6 +4061,15 @@ async function readTextSmart(file: File) {
               const bdiDiferenciado = tipoBase === "SINAPI" ? p?.bdiDiferenciadoSinapi : p?.bdiDiferenciadoSbc;
               const encSociais = tipoBase === "SINAPI" ? p?.encSociaisSemDesSinapi : p?.encSociaisSemDesSbc;
               const desconto = tipoBase === "SINAPI" ? p?.descontoSinapi : p?.descontoSbc;
+              const tipoEncargos = String(p?.tipoEncargosSociais || "").trim().toUpperCase();
+              const tipoEncargosLabel =
+                tipoEncargos === "ISD"
+                  ? "ISD (Sem desoneração)"
+                  : tipoEncargos === "ICD"
+                    ? "ICD (Com desoneração)"
+                    : tipoEncargos === "ISE"
+                      ? "ISE (Especial)"
+                      : tipoEncargos || "—";
 
               return (
                 <div className="space-y-3">
@@ -3829,21 +4077,15 @@ async function readTextSmart(file: File) {
 
                   <div className="grid grid-cols-1 gap-2">
                     <div className="rounded border bg-slate-50 px-2 py-2 text-xs">
-                      <div className="text-[10px] text-slate-500">Planilha dos parâmetros</div>
-                      <div className="font-semibold text-slate-900">
-                        {planilhaInfo?.idPlanilha ? `#${planilhaInfo.idPlanilha} - ${planilhaInfo.nome || "—"} (v${planilhaInfo.numeroVersao})` : "—"}
-                      </div>
+                      <div className="text-[10px] text-slate-500">Origem dos parâmetros</div>
+                      <div className="font-semibold text-slate-900">{planilhaInfo?.nome ? `v${planilhaInfo.numeroVersao} - ${planilhaInfo.nome}` : "Planilha atual"}</div>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 gap-2">
                     <div className="rounded border bg-slate-50 px-2 py-2 text-xs">
-                      <div className="text-[10px] text-slate-500">id do parâmetro</div>
-                      <div className="font-semibold text-slate-900">{planilhaCtx?.idParametros ? `#${planilhaCtx.idParametros}` : "—"}</div>
-                    </div>
-                    <div className="rounded border bg-slate-50 px-2 py-2 text-xs">
-                      <div className="text-[10px] text-slate-500">Nome</div>
-                      <div className="font-semibold text-slate-900">{planilhaCtx?.parametrosNome || "—"}</div>
+                      <div className="text-[10px] text-slate-500">Tipo de Encargos Sociais</div>
+                      <div className="font-semibold text-slate-900">{tipoEncargosLabel}</div>
                     </div>
                   </div>
 

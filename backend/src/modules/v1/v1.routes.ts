@@ -11069,6 +11069,96 @@ export default async function v1Routes(server: FastifyInstance) {
     });
   });
 
+  server.get('/engenharia/obras/:id/planilha/servicos/:codigo/composicao-debug', async (request, reply) => {
+    const ctx = await requireTenantUser(request, reply);
+    if (!ctx || (ctx as any).success === false) return;
+    const { id, codigo } = z.object({ id: z.coerce.number().int().positive(), codigo: z.string().min(1) }).parse(request.params || {});
+    const idObra = Number(id);
+    const codigoServico = normalizeCodigoKey(codigo);
+    const q = z.object({ planilhaId: z.coerce.number().int().positive().optional().nullable() }).parse(request.query || {});
+
+    const scope = (request.user as any)?.abrangencia as any;
+    if (!canAccessObraId(idObra, scope)) return fail(reply, 403, 'Sem acesso à obra');
+
+    await ensurePlanilhaEstruturaUnicaTables(prisma);
+    await ensurePlanilhaServicosTables(prisma);
+    await ensurePlanilhaComposicaoTables(prisma);
+    const idPlanilha = await resolvePlanilhaIdForObra(prisma, ctx.tenantId, idObra, q.planilhaId);
+    await prismaTx(async (tx: any) => {
+      await ensurePlanilhaMigratedToEstruturaUnica(tx, ctx.tenantId, idObra, idPlanilha);
+    });
+
+    const serv = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        COALESCE(s.codigo,'') AS codigo,
+        COALESCE(s.fonte,'') AS fonte,
+        COALESCE(s.servico,'') AS servico,
+        COALESCE(s.und,'') AS und
+      FROM tab_servicos s
+      WHERE s.tenant_id = $1 AND s.id_obra = 0 AND s.id_planilha = 0 AND ${sqlNormalizeCodigoExpr('s.codigo')} = $2
+      ORDER BY s.id_servico ASC
+      LIMIT 1
+      `,
+      ctx.tenantId,
+      codigoServico
+    )) as any[];
+
+    const compCountRow = (await prisma.$queryRawUnsafe(
+      `
+      SELECT COUNT(1)::int AS qtd
+      FROM tab_composicoes c
+      WHERE c.tenant_id = $1 AND c.id_obra = 0 AND c.id_planilha = 0 AND ${sqlNormalizeCodigoExpr('c.codigo_servico')} = $2
+      `,
+      ctx.tenantId,
+      codigoServico
+    )) as any[];
+
+    const rows = (await prisma.$queryRawUnsafe(
+      `
+      SELECT
+        c.id_item AS "idItem",
+        COALESCE(c.etapa,'') AS "etapa",
+        COALESCE(c.tipo_item,'') AS "tipoItem",
+        COALESCE(c.codigo_item,'') AS "codigoItem",
+        COALESCE(c.banco,'') AS "banco",
+        COALESCE(c.descricao,'') AS "descricao",
+        COALESCE(c.und,'') AS "und",
+        c.quantidade AS "quantidade",
+        c.perda_percentual AS "perdaPercentual",
+        COALESCE(c.codigo_centro_custo,'') AS "codigoCentroCusto"
+      FROM tab_composicoes c
+      WHERE c.tenant_id = $1 AND c.id_obra = 0 AND c.id_planilha = 0 AND ${sqlNormalizeCodigoExpr('c.codigo_servico')} = $2
+      ORDER BY COALESCE(c.etapa,'') ASC, c.id_item ASC
+      LIMIT 5000
+      `,
+      ctx.tenantId,
+      codigoServico
+    )) as any[];
+
+    const servicoCatalogo = serv?.[0]
+      ? {
+          codigo: String(serv[0].codigo || ''),
+          fonte: String(serv[0].fonte || ''),
+          servico: String(serv[0].servico || ''),
+          und: String(serv[0].und || ''),
+        }
+      : null;
+
+    return ok(reply, {
+      codigoNormalizado: codigoServico,
+      idPlanilha,
+      servicoCatalogo,
+      composicaoCount: Number(compCountRow?.[0]?.qtd || 0),
+      rows: (rows || []).map((r: any) => ({
+        ...r,
+        idItem: typeof r.idItem === 'bigint' ? Number(r.idItem) : Number(r.idItem || 0),
+        quantidade: r.quantidade == null ? null : Number(r.quantidade),
+        perdaPercentual: r.perdaPercentual == null ? null : Number(r.perdaPercentual),
+      })),
+    });
+  });
+
   server.put('/engenharia/obras/:id/planilha/servicos/:codigo/composicao-itens', async (request, reply) => {
     const ctx = await requireTenantUser(request, reply);
     if (!ctx || (ctx as any).success === false) return;

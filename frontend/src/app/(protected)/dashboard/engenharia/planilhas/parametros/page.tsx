@@ -122,7 +122,19 @@ export default function ParametrosPage() {
     try {
       if (typeof window !== "undefined") token = localStorage.getItem("token");
     } catch {}
-    return fetch(input, {
+    if (!token && typeof document !== "undefined") {
+      try {
+        const m = document.cookie.match(/(?:^|;\s*)exp_token=([^;]+)/);
+        const v = m?.[1] ? decodeURIComponent(m[1]) : "";
+        if (v) {
+          token = v;
+          try {
+            localStorage.setItem("token", v);
+          } catch {}
+        }
+      } catch {}
+    }
+    const res = await fetch(input, {
       ...init,
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -130,6 +142,15 @@ export default function ParametrosPage() {
       },
       cache: "no-store",
     });
+    if (res.status === 401 || res.status === 402) {
+      try {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        localStorage.setItem("auth_error", "Sessão expirada. Faça login novamente.");
+      } catch {}
+      if (typeof window !== "undefined") window.location.href = "/login";
+    }
+    return res;
   }
 
   async function carregar() {
