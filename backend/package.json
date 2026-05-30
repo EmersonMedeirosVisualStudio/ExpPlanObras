@@ -8,14 +8,14 @@
     "node": "22.x"
   },
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "tsx watch src/main.ts",
     "prisma:generate": "prisma generate --schema=./prisma/postgres/schema.prisma",
     "prisma:migrate:deploy": "prisma migrate deploy --schema=./prisma/postgres/schema.prisma",
     "postinstall": "npm run prisma:generate",
     "create-system-admin": "npm run prisma:generate && tsx scripts/create-system-admin.ts",
     "seed-demo-tenants": "tsx scripts/seed-demo-tenants.ts",
     "build": "npm run prisma:generate",
-    "start": "npm run prisma:migrate:deploy && tsx src/server.ts",
+    "start": "npm run prisma:migrate:deploy && tsx src/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

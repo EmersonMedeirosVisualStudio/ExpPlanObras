@@ -1,0 +1,19 @@
+import type { IContinuidadeRepository } from '@/domain/repositories/IContinuidadeRepository.js'
+import { DrExecucaoNotFoundError } from '@/domain/errors/ContinuidadeErrors.js'
+import type { ConcludeDrExecucaoDto } from '@/application/dto/continuidade/concludeDrExecucaoDto.js'
+
+export class ConcludeDrExecucaoUseCase {
+  constructor(private readonly repo: IContinuidadeRepository) {}
+
+  async execute(tenantId: number, id: number, dto: ConcludeDrExecucaoDto) {
+    const ex = await this.repo.getDrExecucaoById(tenantId, id)
+    if (!ex) throw new DrExecucaoNotFoundError(id)
+
+    await this.repo.concludeDrExecucao(tenantId, id, {
+      sucesso: dto.sucesso,
+      rtoRealMinutos: dto.rtoRealMinutos ?? null,
+      rpoRealMinutos: dto.rpoRealMinutos ?? null,
+      resultadoResumoJson: dto.resultadoResumoJson ?? null,
+    })
+  }
+}
