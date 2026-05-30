@@ -1,5 +1,5 @@
-import type { FastifyInstance } from 'fastify'
 import { TenantAccessDeniedError } from '@/modules/auth/domain/errors/AuthErrors.js'
+import type { ITokenSigner } from '@/modules/auth/domain/ports/ITokenSigner.js'
 import type { ITenantRepository } from '@/modules/auth/domain/ports/ITenantRepository.js'
 import type { IUserRepository } from '@/modules/auth/domain/ports/IUserRepository.js'
 import { assertTenantActive } from '@/modules/auth/domain/services/assertTenantActive.js'
@@ -14,9 +14,10 @@ export class SelectTenantUseCase {
       tenantId: number,
       role: string,
     ) => Promise<{ perfis: string[]; permissoes: string[]; abrangencia: unknown }>,
+    private readonly tokenSigner: ITokenSigner,
   ) {}
 
-  async execute(userId: number, tenantId: number, app: FastifyInstance) {
+  async execute(userId: number, tenantId: number) {
     const tenantUser = await this.tenantRepo.findTenantUser(tenantId, userId)
     if (!tenantUser) throw new TenantAccessDeniedError()
 
@@ -26,7 +27,7 @@ export class SelectTenantUseCase {
     const allTenants = await this.tenantRepo.getUserTenants(userId)
     const user = await this.userRepo.findById(userId)
 
-    const token = app.jwt.sign({ userId, tenantId, role: tenantUser.role, email: user?.email ?? '' })
+    const token = this.tokenSigner.sign({ userId, tenantId, role: tenantUser.role, email: user?.email ?? '' })
 
     return {
       token,

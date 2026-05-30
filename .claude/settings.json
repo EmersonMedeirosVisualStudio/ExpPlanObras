@@ -9,5 +9,34 @@
       "Bash(cd backend*)",
       "Bash(cd frontend*)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"D:\\programas\\nodejs\\node.exe\" \"C:\\Users\\Pessoal\\.claude\\hooks\\caveman-activate.js\"",
+            "timeout": 5,
+            "statusMessage": "Loading caveman mode..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"D:\\programas\\nodejs\\node.exe\" \"C:\\Users\\Pessoal\\.claude\\hooks\\caveman-mode-tracker.js\"",
+            "timeout": 5,
+            "statusMessage": "Tracking caveman mode..."
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "caveman@caveman": true
   }
 }

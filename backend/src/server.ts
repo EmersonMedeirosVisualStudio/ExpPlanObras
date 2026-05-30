@@ -7,25 +7,24 @@ import {
   serializerCompiler,
   validatorCompiler,
 } from "fastify-type-provider-zod";
-import adminRoutes from "@/modules/admin/admin.routes.js";
+import adminRoutes from "@/modules/admin/infrastructure/http/admin.routes.js";
 import authRoutes from "@/modules/auth/infrastructure/http/auth.routes.js";
-import backupRoutes from "@/modules/backup/backup.routes.js";
-import billingRoutes from "@/modules/billing/billing.routes.js";
-import continuidadeRoutes from "@/modules/continuidade/continuidade.routes.js";
+import backupRoutes from "@/modules/backup/infrastructure/http/backup.routes.js";
+import billingRoutes from "@/modules/billing/infrastructure/http/billing.routes.js";
+import continuidadeRoutes from "@/modules/continuidade/infrastructure/http/continuidade.routes.js";
 import contratosRoutes from "@/modules/contratos/infrastructure/http/contratos.routes.js";
-import documentosRoutes from "@/modules/documentos/documentos.routes.js";
-import documentosQualificadosRoutes from "@/modules/documentos-qualificados/documentos-qualificados.routes.js";
-import geoRoutes from "@/modules/geo/geo.routes.js";
-import governancaDadosRoutes from "@/modules/governanca-dados/governanca.routes.js";
-import grcRoutes from "@/modules/grc/grc.routes.js";
-import maintenanceRoutes from "@/modules/maintenance/maintenance.routes.js";
-import obraRoutes from "@/modules/obras/obras.routes.js";
-import observabilidadeRoutes from "@/modules/observabilidade/observabilidade.routes.js";
-import playbooksRoutes from "@/modules/playbooks/playbooks.routes.js";
-import retencaoRoutes from "@/modules/retencao/retencao.routes.js";
-import securityFieldsRoutes from "@/modules/security-fields/security-fields.routes.js";
-import v1Routes from "@/modules/v1/v1.routes.js";
-import mercadoPagoWebhooks from "@/modules/webhooks/mercadopago.routes.js";
+import documentosRoutes from "@/modules/documentos/infrastructure/http/documentos.routes.js";
+import documentosQualificadosRoutes from "@/modules/documentos-qualificados/infrastructure/http/documentos-qualificados.routes.js";
+import geoRoutes from "@/modules/geo/infrastructure/http/geo.routes.js";
+import governancaDadosRoutes from "@/modules/governanca-dados/infrastructure/http/governanca.routes.js";
+import grcRoutes from "@/modules/grc/infrastructure/http/grc.routes.js";
+import maintenanceRoutes from "@/modules/maintenance/infrastructure/http/maintenance.routes.js";
+import obraRoutes from "@/modules/obras/infrastructure/http/obras.routes.js";
+import observabilidadeRoutes from "@/modules/observabilidade/infrastructure/http/observabilidade.routes.js";
+import playbooksRoutes from "@/modules/playbooks/infrastructure/http/playbooks.routes.js";
+import retencaoRoutes from "@/modules/retencao/infrastructure/http/retencao.routes.js";
+import securityFieldsRoutes from "@/modules/security-fields/infrastructure/http/security-fields.routes.js";
+import mercadoPagoWebhooks from "@/modules/webhooks/infrastructure/http/mercadopago.routes.js";
 import prisma from "@/plugins/prisma.js";
 
 dotenv.config();
@@ -54,7 +53,6 @@ server.register(multipart, {
 server.register(jwt, { secret: process.env.JWT_SECRET || "supersecret" });
 
 server.register(authRoutes, { prefix: "/api/auth" });
-server.register(v1Routes, { prefix: "/api/v1" });
 server.register(geoRoutes, { prefix: "/api/geo" });
 server.register(obraRoutes, { prefix: "/api/obras" });
 server.register(contratosRoutes, { prefix: "/api/contratos" });

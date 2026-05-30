@@ -39,7 +39,7 @@ import {
   updateContratoProgramacaoFinanceira,
   updateCronogramaItemDatas,
   updateSubcontrato as updateSubcontract,
-} from '@/modules/contratos/contratos.service.js'
+} from '@/modules/contratos/infrastructure/services/contratosOps.js'
 
 export class PrismaContratoRepository implements IContratoRepository {
   async list(tenantId: number, filter?: ListContratosFilter) {

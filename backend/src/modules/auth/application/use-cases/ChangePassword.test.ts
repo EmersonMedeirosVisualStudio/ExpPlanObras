@@ -21,6 +21,7 @@ const mockUser = {
 const makeUserRepo = (): IUserRepository => ({
   findByEmail: vi.fn(),
   findById: vi.fn(),
+  existsByEmail: vi.fn(),
   create: vi.fn(),
   updatePassword: vi.fn(),
 })

@@ -1,10 +1,11 @@
 import prisma from '@/shared/plugins/prisma.js'
-import { PrismaTenantRepository } from '@/modules/auth/infrastructure/persistence/PrismaTenantRepository.js'
-import { PrismaUserRepository } from '@/modules/auth/infrastructure/persistence/PrismaUserRepository.js'
 import { ChangePasswordUseCase } from '@/modules/auth/application/use-cases/ChangePassword.js'
 import { LoginUseCase } from '@/modules/auth/application/use-cases/Login.js'
 import { RegisterUseCase } from '@/modules/auth/application/use-cases/Register.js'
 import { SelectTenantUseCase } from '@/modules/auth/application/use-cases/SelectTenant.js'
+import type { ITokenSigner } from '@/modules/auth/domain/ports/ITokenSigner.js'
+import { PrismaTenantRepository } from '@/modules/auth/infrastructure/persistence/PrismaTenantRepository.js'
+import { PrismaUserRepository } from '@/modules/auth/infrastructure/persistence/PrismaUserRepository.js'
 
 async function resolveSessionAccess(
   userId: number,
@@ -77,13 +78,14 @@ async function resolveSessionAccess(
   }
 }
 
-export function makeAuthUseCases() {
+export function makeAuthUseCases(tokenSigner: ITokenSigner) {
   const userRepo = new PrismaUserRepository()
   const tenantRepo = new PrismaTenantRepository()
   return {
-    login: new LoginUseCase(userRepo, tenantRepo, resolveSessionAccess),
-    selectTenant: new SelectTenantUseCase(userRepo, tenantRepo, resolveSessionAccess),
+    login: new LoginUseCase(userRepo, tenantRepo, resolveSessionAccess, tokenSigner),
+    selectTenant: new SelectTenantUseCase(userRepo, tenantRepo, resolveSessionAccess, tokenSigner),
     changePassword: new ChangePasswordUseCase(userRepo),
     register: new RegisterUseCase(),
+    userRepo,
   }
 }

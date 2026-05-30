@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs'
-import type { FastifyInstance } from 'fastify'
 import { InvalidCredentialsError } from '@/modules/auth/domain/errors/AuthErrors.js'
+import type { ITokenSigner } from '@/modules/auth/domain/ports/ITokenSigner.js'
 import type { ITenantRepository } from '@/modules/auth/domain/ports/ITenantRepository.js'
 import type { IUserRepository } from '@/modules/auth/domain/ports/IUserRepository.js'
 import { assertTenantActive } from '@/modules/auth/domain/services/assertTenantActive.js'
@@ -33,9 +33,10 @@ export class LoginUseCase {
       tenantId: number,
       role: string,
     ) => Promise<{ perfis: string[]; permissoes: string[]; abrangencia: unknown }>,
+    private readonly tokenSigner: ITokenSigner,
   ) {}
 
-  async execute(input: LoginDto, app: FastifyInstance): Promise<LoginResult> {
+  async execute(input: LoginDto): Promise<LoginResult> {
     const user = await this.userRepo.findByEmail(input.email)
     if (!user) throw new InvalidCredentialsError()
 
@@ -43,7 +44,7 @@ export class LoginUseCase {
     if (!isValid) throw new InvalidCredentialsError()
 
     if (user.isSystemAdmin) {
-      const token = app.jwt.sign({ userId: user.id, role: 'SYSTEM_ADMIN', email: user.email, isSystemAdmin: true })
+      const token = this.tokenSigner.sign({ userId: user.id, role: 'SYSTEM_ADMIN', email: user.email, isSystemAdmin: true })
       return {
         token,
         subscriptionAlert: null,
@@ -58,7 +59,7 @@ export class LoginUseCase {
       if (fullTenant) assertTenantActive(fullTenant)
       const subscriptionAlert = fullTenant ? buildSubscriptionAlert(fullTenant) : null
       const session = await this.resolveSessionAccess(user.id, selected.tenantId, selected.role)
-      const token = app.jwt.sign({ userId: user.id, tenantId: selected.tenantId, role: selected.role, email: user.email })
+      const token = this.tokenSigner.sign({ userId: user.id, tenantId: selected.tenantId, role: selected.role, email: user.email })
       return {
         token,
         subscriptionAlert,

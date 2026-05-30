@@ -8,6 +8,7 @@
 | Frontend: componentes, hooks, TanStack Query   | `expertobras-frontend-skill`  |
 | Convenções: inglês, 1 arquivo = 1 responsabilidade | `code-conventions-skill` |
 | Git: branches, commits, releases, pre-commit   | `gitflow-skill`               |
+| Respostas compactas, menos tokens              | `caveman`                     |
 
 ---
 

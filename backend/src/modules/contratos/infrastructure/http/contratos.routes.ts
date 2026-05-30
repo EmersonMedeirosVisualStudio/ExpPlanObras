@@ -5,7 +5,7 @@ import { authenticate } from '@/shared/middleware/authenticate.js'
 import { makeContratoUseCases } from '@/modules/contratos/application/factories/makeContratoUseCases.js'
 import { createContratoDto } from '@/modules/contratos/application/dtos/createContratoDto.js'
 import { updateContratoDto } from '@/modules/contratos/application/dtos/updateContratoDto.js'
-import { subscribe } from '@/modules/contratos/contratos.realtime.js'
+import { subscribe } from '@/modules/contratos/infrastructure/realtime/contratosRealtime.js'
 
 type UserCtx = { tenantId: number }
 function ctx(request: FastifyRequest): UserCtx {

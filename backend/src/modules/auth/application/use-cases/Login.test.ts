@@ -34,6 +34,7 @@ const mockTenant = {
 const makeUserRepo = (): IUserRepository => ({
   findByEmail: vi.fn(),
   findById: vi.fn(),
+  existsByEmail: vi.fn(),
   create: vi.fn(),
   updatePassword: vi.fn(),
 })
@@ -51,9 +52,9 @@ const mockSessionAccess = vi.fn().mockResolvedValue({
   abrangencia: { empresa: true, obras: [], unidades: [] },
 })
 
-const mockApp = {
-  jwt: { sign: vi.fn().mockReturnValue('signed-token') },
-} as any
+const mockTokenSigner = {
+  sign: vi.fn().mockReturnValue('signed-token'),
+}
 
 describe('LoginUseCase', () => {
   let userRepo: IUserRepository
@@ -63,16 +64,16 @@ describe('LoginUseCase', () => {
   beforeEach(() => {
     userRepo = makeUserRepo()
     tenantRepo = makeTenantRepo()
-    useCase = new LoginUseCase(userRepo, tenantRepo, mockSessionAccess)
+    useCase = new LoginUseCase(userRepo, tenantRepo, mockSessionAccess, mockTokenSigner)
     vi.clearAllMocks()
-    mockApp.jwt.sign.mockReturnValue('signed-token')
+    mockTokenSigner.sign.mockReturnValue('signed-token')
   })
 
   it('throws InvalidCredentialsError when user not found', async () => {
     vi.mocked(userRepo.findByEmail).mockResolvedValue(null)
 
     await expect(
-      useCase.execute({ email: 'notfound@test.com', password: '123' }, mockApp),
+      useCase.execute({ email: 'notfound@test.com', password: '123' }),
     ).rejects.toThrow(InvalidCredentialsError)
   })
 
@@ -80,7 +81,7 @@ describe('LoginUseCase', () => {
     vi.mocked(userRepo.findByEmail).mockResolvedValue(mockUser)
 
     await expect(
-      useCase.execute({ email: mockUser.email, password: 'wrongpassword' }, mockApp),
+      useCase.execute({ email: mockUser.email, password: 'wrongpassword' }),
     ).rejects.toThrow(InvalidCredentialsError)
   })
 
@@ -92,7 +93,7 @@ describe('LoginUseCase', () => {
     const hashed = await bcrypt.hash(realPassword, 10)
     vi.mocked(userRepo.findByEmail).mockResolvedValue({ ...mockUser, password: hashed, isSystemAdmin: true })
 
-    const result = await useCase.execute({ email: mockUser.email, password: realPassword }, mockApp)
+    const result = await useCase.execute({ email: mockUser.email, password: realPassword })
 
     expect(result.token).toBe('signed-token')
     expect(result.user.isSystemAdmin).toBe(true)
@@ -106,7 +107,7 @@ describe('LoginUseCase', () => {
     vi.mocked(userRepo.findByEmail).mockResolvedValue({ ...mockUser, password: hashed })
     vi.mocked(tenantRepo.findById).mockResolvedValue(mockTenant)
 
-    const result = await useCase.execute({ email: mockUser.email, password: realPassword }, mockApp)
+    const result = await useCase.execute({ email: mockUser.email, password: realPassword })
 
     expect(result.token).toBe('signed-token')
     expect(result.user.perfis).toEqual(['REPRESENTANTE_EMPRESA'])
@@ -127,7 +128,7 @@ describe('LoginUseCase', () => {
     }
     vi.mocked(userRepo.findByEmail).mockResolvedValue(multiTenantUser)
 
-    const result = await useCase.execute({ email: mockUser.email, password: realPassword }, mockApp)
+    const result = await useCase.execute({ email: mockUser.email, password: realPassword })
 
     expect(result.token).toBeNull()
     expect(result.user.tenants).toHaveLength(2)

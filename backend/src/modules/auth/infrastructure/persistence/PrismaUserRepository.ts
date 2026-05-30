@@ -45,6 +45,11 @@ export class PrismaUserRepository implements IUserRepository {
     return { ...row, name: row.name ?? null }
   }
 
+  async existsByEmail(email: string): Promise<boolean> {
+    const row = await prisma.user.findUnique({ where: { email }, select: { id: true } })
+    return row !== null
+  }
+
   async updatePassword(userId: number, hashedPassword: string): Promise<void> {
     await prisma.user.update({ where: { id: userId }, data: { password: hashedPassword } })
   }
